@@ -86,12 +86,14 @@ void QueryImpl::RunForwardsTaintAnalysis(void) {
           case InputColumnRole::kFunctorInput:
           case InputColumnRole::kJoinNonPivot:
           case InputColumnRole::kMergedColumn: {
-//            auto res = TaintWithCol(out_col->impl, in_col.impl,
-//                                    col_taints);
-//            changed = changed || res;
-            auto res = TaintWithCol(in_col.impl, out_col->impl,
-                                    col_taints);
-            changed = changed || res;
+
+            // An INSERT's attached witness columns are read but produce no
+            // output column, so there is nothing to taint through them.
+            if (out_col) {
+              auto res = TaintWithCol(in_col.impl, out_col->impl,
+                                      col_taints);
+              changed = changed || res;
+            }
             break;
           }
           case InputColumnRole::kAggregatedColumn:
@@ -162,9 +164,14 @@ void QueryImpl::RunBackwardsTaintAnalysis(void) {
           case InputColumnRole::kCopied:
           case InputColumnRole::kMergedColumn:
           case InputColumnRole::kJoinNonPivot: {
-            auto res = TaintWithCol(out_col->impl, in_col.impl,
-                                    col_taints, true);
-            changed = changed || res;
+
+            // An INSERT's attached witness columns are read but produce no
+            // output column, so there is nothing to taint through them.
+            if (out_col) {
+              auto res = TaintWithCol(out_col->impl, in_col.impl,
+                                      col_taints, true);
+              changed = changed || res;
+            }
             break;
           }
           case InputColumnRole::kJoinPivot: {

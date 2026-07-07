@@ -857,6 +857,14 @@ class QueryInsert : public Node<QueryInsert, QueryInsertImpl> {
   QueryColumn NthInputColumn(unsigned n) const noexcept;
   UsedNodeRange<QueryColumn> InputColumns(void) const noexcept;
 
+  // Attached columns are read-only witness edges: they are read from the
+  // incoming view to establish this INSERT's dataflow dependency on it, but
+  // are not stored into the target relation. Only `InputColumns()` are
+  // persisted.
+  unsigned NumAttachedColumns(void) const noexcept;
+  QueryColumn NthAttachedColumn(unsigned n) const noexcept;
+  UsedNodeRange<QueryColumn> AttachedColumns(void) const noexcept;
+
   OutputStream &DebugString(OutputStream &) const noexcept;
 
   // Apply a callback `with_col` to each input column of this view.

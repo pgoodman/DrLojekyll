@@ -2244,6 +2244,14 @@ static void BuildEquivalenceSets(QueryImpl *query) {
   // Note(sonya): Order does matter here. This should be done before iterating
   // over all views to prioritize merging INSERT and guard TUPLE tables
   for (auto insert : query->inserts) {
+
+    // A witness-bearing INSERT stores only its `input_columns`, while its
+    // predecessor TUPLE also carries the attached witness columns, so the
+    // two views have different table shapes and must not share a model.
+    if (!insert->attached_columns.Empty()) {
+      continue;
+    }
+
     EquivalenceSet *insert_model = insert->equivalence_set.get()->Find();
     for (auto pred_view : insert->predecessors) {
       if (pred_view->AsTuple()) {

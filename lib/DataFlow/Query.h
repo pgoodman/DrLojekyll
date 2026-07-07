@@ -684,6 +684,17 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   static QueryViewImpl *GetIncomingView(const UseList<QueryColumnImpl> &cols1,
                                         const UseList<QueryColumnImpl> &cols2);
 
+  // The keep-last-edge rule: a canonicalization step may drop a column edge
+  // to `incoming_view` only if at least one input-or-attached column edge
+  // to `incoming_view` remains afterward, because a column edge is what
+  // expresses a view's presence dependency on its predecessor in the
+  // dataflow. Returns `true` if at least one column in `cols1` or `cols2`
+  // is produced by `incoming_view`, i.e. the candidate rewritten lists
+  // retain the edge.
+  static bool RetainsEdgeTo(const QueryViewImpl *incoming_view,
+                            const UseList<QueryColumnImpl> &cols1,
+                            const UseList<QueryColumnImpl> &cols2);
+
   // Try to figure out if `view` is conditional. That could mean that it
   // depends directly on a condition, or that it depends on something that
   // may be present or may be absent (e.g. the output of a `JOIN`).

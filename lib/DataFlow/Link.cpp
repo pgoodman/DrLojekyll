@@ -27,9 +27,25 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
     proxy_col->CopyConstantFrom(col);
   }
 
+  // Attached (witness) columns ride along after the stored columns so that
+  // the proxy preserves the INSERT's read edge to its incoming view.
+  const auto num_input_cols = col_index;
+  for (COL *col : view->attached_columns) {
+    COL *const proxy_col =
+        proxy->columns.Create(col->var, col->type, proxy, col->id, col_index++);
+    proxy->input_columns.AddUse(col);
+    proxy_col->CopyConstantFrom(col);
+  }
+
   view->input_columns.Clear();
+  view->attached_columns.Clear();
+  auto i = 0u;
   for (COL *col : proxy->columns) {
-    view->input_columns.AddUse(col);
+    if (i++ < num_input_cols) {
+      view->input_columns.AddUse(col);
+    } else {
+      view->attached_columns.AddUse(col);
+    }
   }
 
   view->TransferSetConditionTo(proxy);
@@ -228,7 +244,8 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
 // SELECTs and such.
 void QueryImpl::ProxyInsertsWithTuples(void) {
   for (auto view : inserts) {
-    auto incoming_view = VIEW::GetIncomingView(view->input_columns);
+    auto incoming_view =
+        VIEW::GetIncomingView(view->input_columns, view->attached_columns);
     (void) ProxyInsertWithTuple(this, view, incoming_view);
   }
 }
@@ -278,7 +295,8 @@ void QueryImpl::LinkViews(bool recursive) {
   for (auto view : inserts) {
     assert(!view->is_dead);
     assert(view->columns.Empty());
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
+    if (auto incoming_view =
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
         incoming_view && !incoming_view->AsTuple()) {
       ProxyInsertWithTuple(this, view, incoming_view);
     }
@@ -398,7 +416,8 @@ void QueryImpl::LinkViews(bool recursive) {
   for (auto view : inserts) {
     assert(!view->is_dead);
     assert(view->columns.Empty());
-    if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
+    if (auto incoming_view =
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
         incoming_view) {
       assert(incoming_view->AsTuple() != nullptr);
       view->predecessors.AddUse(incoming_view);

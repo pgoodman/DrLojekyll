@@ -20,6 +20,12 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
   for (VIEW *insert : old_inserts) {
     assert(insert->AsInsert());
 
+    // A witness-bearing INSERT reads more columns than it stores; inlining
+    // it into its readers through a stored-columns-only proxy would sever
+    // its read edge to the incoming view, so such INSERTs are never inlined
+    // here.
+    assert(insert->attached_columns.Empty());
+
     // Only proxy an INSERT if it actually inserts data; otherwise it's a
     // DELETE and we want to maintain that.
     TUPLE *const proxy = impl->tuples.Create();

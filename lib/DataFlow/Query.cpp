@@ -1600,6 +1600,20 @@ UsedNodeRange<QueryColumn> QueryInsert::InputColumns(void) const noexcept {
           UsedNodeIterator<QueryColumn>(impl->input_columns.end())};
 }
 
+unsigned QueryInsert::NumAttachedColumns(void) const noexcept {
+  return static_cast<unsigned>(impl->attached_columns.Size());
+}
+
+QueryColumn QueryInsert::NthAttachedColumn(unsigned n) const noexcept {
+  assert(n < impl->attached_columns.Size());
+  return QueryColumn(impl->attached_columns[n]);
+}
+
+UsedNodeRange<QueryColumn> QueryInsert::AttachedColumns(void) const noexcept {
+  return {UsedNodeIterator<QueryColumn>(impl->attached_columns.begin()),
+          UsedNodeIterator<QueryColumn>(impl->attached_columns.end())};
+}
+
 OutputStream &QueryInsert::DebugString(OutputStream &os) const noexcept {
   return impl->DebugString(os);
 }
@@ -1609,6 +1623,7 @@ void QueryInsert::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                                 std::optional<QueryColumn>)>
                                  with_col) const {
   if (IsStream()) {
+    assert(impl->attached_columns.Empty());
     for (auto in_col : impl->input_columns) {
       with_col(QueryColumn(in_col), InputColumnRole::kPublished, std::nullopt);
     }
@@ -1631,6 +1646,12 @@ void QueryInsert::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
           assert(false);
         }
       }
+    }
+
+    // Attached columns are read-only witness edges: read from the incoming
+    // view, never stored, so there is no output column for them.
+    for (auto in_col : impl->attached_columns) {
+      with_col(QueryColumn(in_col), InputColumnRole::kCopied, std::nullopt);
     }
 
   } else {

@@ -34,11 +34,13 @@ const char *QueryTagImpl::KindName(void) const noexcept {
 // constants is a tuple. This simplifies lots of stuff later.
 void QueryImpl::ConvertConstantInputsToTuples(void) {
   for (auto view : inserts) {
-    const auto incoming_view = VIEW::GetIncomingView(view->input_columns);
+    const auto incoming_view =
+        VIEW::GetIncomingView(view->input_columns, view->attached_columns);
     if (incoming_view) {
       continue;
     }
-    ReplaceInputsWithTuple(this, view, &(view->input_columns));
+    ReplaceInputsWithTuple(this, view, &(view->input_columns),
+                           &(view->attached_columns));
   }
 
   for (auto view : compares) {

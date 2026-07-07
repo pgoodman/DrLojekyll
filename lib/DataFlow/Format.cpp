@@ -676,6 +676,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << "</TD>";
     }
 
+    // Attached witness columns: read from the incoming view, never stored.
+    for (auto i = 0u, max_i = insert.NumAttachedColumns(); i < max_i; ++i) {
+      os << "<TD port=\"a" << i << "\">attached "
+         << do_col(insert.NthAttachedColumn(i)) << "</TD>";
+    }
+
     DEBUG(os << "</TR><TR><TD colspan=\"10\">" << insert.DebugString(os)
              << "</TD>";)
 
@@ -688,6 +694,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       const auto col = insert.NthInputColumn(i);
       const auto view = QueryView::Containing(col);
       os << "v" << insert.UniqueId() << ":c" << i << " -> "
+         << "v" << view.UniqueId() << ":c" << col.Id() << color << ";\n";
+    }
+
+    for (auto i = 0u, max_i = insert.NumAttachedColumns(); i < max_i; ++i) {
+      const auto col = insert.NthAttachedColumn(i);
+      const auto view = QueryView::Containing(col);
+      os << "v" << insert.UniqueId() << ":a" << i << " -> "
          << "v" << view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 

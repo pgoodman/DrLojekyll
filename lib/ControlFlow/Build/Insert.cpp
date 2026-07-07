@@ -22,6 +22,11 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
                             QueryInsert insert, Context &context, OP *parent,
                             TABLE *last_table) {
   const auto view = QueryView(insert);
+
+  // Only the stored (input) columns are persisted and published. Attached
+  // witness columns are read-only edges to the incoming view; their
+  // variables are already in scope at the insert site and nothing about
+  // them is emitted.
   const auto cols = insert.InputColumns();
 
   DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
