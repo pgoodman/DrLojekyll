@@ -37,6 +37,36 @@ top-down checker machinery integrates much more cleanly (one evaluation
 strategy everywhere, no unbounded recursion, and the recheck set becomes
 observable/optimizable like any other relation).
 
+Prior art to read first — this is a studied problem (incremental maintenance
+of datalog materialisations under deletion):
+
+- DRed (Delete/Rederive): Gupta, Mumick & Subrahmanian, "Maintaining Views
+  Incrementally", SIGMOD 1993. Over-delete everything possibly supported by
+  the deleted facts, then re-derive bottom-up — the canonical fixpoint
+  formulation of exactly our recheck, plus the counting algorithm for the
+  non-recursive case.
+- Backward/Forward: Motik, Nenov, Piro & Horrocks, "Incremental Update of
+  Datalog Materialisation: the Backward/Forward Algorithm", AAAI 2015 —
+  bounds DRed's over-deletion by interleaving backward-chaining proof checks
+  with forward propagation. Refined as FBF in "Maintenance of Datalog
+  Materialisations Revisited" (Artificial Intelligence, 2019,
+  https://www.cs.ox.ac.uk/people/boris.motik/pubs/mnph19maintenance-revisited.pdf);
+  the DRed^c variant keeps per-fact counters split into nonrecursive vs
+  recursive derivation counts. Our present checker design is closest to the
+  backward-chaining half of B/F, implemented as compiled recursion — the
+  papers describe how to drive it as a set-at-a-time fixpoint instead.
+- Differential dataflow: McSherry, Murray, Isaacs & Isard, "Differential
+  Dataflow", CIDR 2013; the living book at
+  https://timelydataflow.github.io/differential-dataflow/ and many posts in
+  https://github.com/frankmcsherry/blog. The strongest form of the "dual
+  program" idea: updates are multisets with signed multiplicities, and
+  retraction is a negative-weight tuple flowing through the *same* bottom-up
+  operators — there is no separate recheck program at all. DDlog (Ryzhyk &
+  Budiu, "Differential Datalog", Datalog 2.0 2019) compiles datalog onto it.
+- Provenance semirings: Green, Karvounarakis & Tannen, PODS 2007 — deletion
+  propagation via provenance polynomials; useful frame for deciding how much
+  support bookkeeping to store vs recompute.
+
 ## 3. Ideas from "Compositional Datalog on SQL"
 
 https://www.philipzucker.com/compose_datalog/ (Philip Zucker, 2025-08-26).
