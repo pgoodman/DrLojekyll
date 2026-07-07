@@ -273,6 +273,49 @@ relation is differential (body support retracts the tuple), while the
 interned storage is immortal arena state (a value having been constructed is
 not undone by retraction).
 
+Records-as-heads as asynchronous messages (SPECULATIVE — may hurt
+convergence; one clear payoff identified: cyclic data structures). Record
+formation could be treated as message PUBLICATION rather than ordinary
+in-graph derivation: the record type's unary relation behaves like a
+message stream, producers publish by forming, consumers subscribe by using
+the type — detaching producer from consumer. Differential contagion would
+apply: if any producing rule is differential, the record message must be
+marked differential too (consumers must see membership retractions).
+
+The payoff that pure interning cannot provide: CYCLIC data structures.
+Hash-consed records are DAG-only by construction — identity is a function
+of field values, so a cycle has no valid formation order. Detached
+formation supplies the forward reference: an ID can be published in one
+round and its referent tied in a later one (doubly-linked lists, graphs
+with back-edges, cyclic CFGs). The cost is the identity question: cyclic
+records force either generative/nominal identity (a published record gets
+a fresh ID; equality is ID equality, not structure — gensym-style
+existential invention) or, if structural identity over cycles is wanted,
+bisimulation-based canonicalization (partition refinement, à la DFA
+minimization) instead of hashing. That choice splits record types into two
+kinds — interned/structural (acyclic, canonical, cheap) and
+generative/nominal (cyclic, identity-carrying) — which may be worth
+surfacing in the type system explicitly.
+
+Reasons for doubt, recorded up front:
+- Convergence: an async boundary inside the dataflow delays and batches
+  deliveries. Within a recursive cycle it is item 5's
+  distributed-fixpoint problem outright; even in acyclic graphs,
+  differential producers can publish derive/retract churn that oscillates
+  consumer state and pushes quiescence out — today's synchronous in-graph
+  derivation converges in one fixpoint pass by construction.
+- For DECOUPLING alone the benefit is unclear: explicit #message
+  declarations already give deliberate decoupling where wanted, and item
+  1's sub-database boundaries are the principled place for module ABIs
+  (where record-typed messages as the wire format DO make sense).
+
+If revisited, the plausible version is opt-in, per record type: acyclic
+interned record types stay synchronous in-graph derivation; generative
+record types (the cyclic ones) get the detached/message-like formation
+that cycles require, and records cross module/external boundaries as
+messages (flyweight ID + store pages as the wire representation, unifying
+with item 5's @async responses).
+
 Implicit typing transform. If forming works that way, then ANY use of a
 record type is a use of the formed unary relation. A record-typed parameter
 
@@ -303,11 +346,21 @@ Consequences:
   support (retract the message, membership retracts; storage stays), so
   message-borne records satisfy implicit typing consistently.
 
-Caution: record construction in heads is function symbols in heads —
-datalog with constructors is Turing-complete, and a recursive rule that
-builds ever-deeper records diverges (infinite Herbrand universe). Needs a
-termination story: stratify construction, require acyclicity of the
-type-construction graph (cf. chase termination / weak acyclicity), or bound
-depth. Prior art: Soufflé implements exactly this shape — records/ADTs
-interned to integral IDs with pattern matching in rules — and is the thing
-to study first, alongside DDlog's constructed types and Flix.
+Caution and payoff — recursive construction. Record construction in heads
+is function symbols in heads: datalog with constructors is Turing-complete,
+and a recursive rule that builds ever-deeper records diverges (infinite
+Herbrand universe). But that same power is the point: a record type whose
+field is the record type itself enables full-on linked lists (cons cells),
+trees, and chains built by rules — e.g. materialized paths instead of just
+path existence, derivation witnesses / provenance chains (item 2's
+bookkeeping as a first-class datalog value), or parse/proof trees. The
+flyweight makes them cheap: a list is an ID chain through the store,
+sharing tails structurally by interning. So the termination story is the
+gating design problem, not a reason to drop the feature: stratify
+construction, require acyclicity of the type-construction graph for
+unrestricted rules (cf. chase termination / weak acyclicity), and let
+genuinely recursive construction in only where the recursion is grounded by
+a finite driver (demand/magic-set-bounded, or depth-bounded). Prior art:
+Soufflé implements exactly this shape — records/ADTs interned to integral
+IDs, including recursive list types, with pattern matching in rules — and
+is the thing to study first, alongside DDlog's constructed types and Flix.
