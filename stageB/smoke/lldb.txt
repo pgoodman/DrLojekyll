@@ -1,3 +1,0 @@
-run
-bt 30
-quit

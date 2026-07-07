@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     'stageB/smoke/tuple_3/tuple_3.none/case'
-relocations:     []
-...

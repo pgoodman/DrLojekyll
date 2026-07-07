@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     'stageB/smoke/optimize_5/optimize_5.none/case'
-relocations:     []
-...

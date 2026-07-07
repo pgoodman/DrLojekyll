@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     'stageB/smoke/insert_4/insert_4.opt/case'
-relocations:     []
-...

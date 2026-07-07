@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     'stageB/smoke/view_4/view_4.nocf/case'
-relocations:     []
-...

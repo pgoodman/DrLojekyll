@@ -1,9 +1,0 @@
-out7:
-outdup:
-outflag:
-out7: 1 2
-outdup: 1 3
-outflag: 1
-out7: 2 4
-outdup: 1 3 4
-outflag:

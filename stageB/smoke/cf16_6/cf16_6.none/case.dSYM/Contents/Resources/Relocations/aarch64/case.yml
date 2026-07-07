@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     'stageB/smoke/cf16_6/cf16_6.none/case'
-relocations:     []
-...

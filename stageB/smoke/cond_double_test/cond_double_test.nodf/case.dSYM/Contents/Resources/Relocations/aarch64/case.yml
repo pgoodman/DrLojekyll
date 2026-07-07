@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     'stageB/smoke/cond_double_test/cond_double_test.nodf/case'
-relocations:     []
-...

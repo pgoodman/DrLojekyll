@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     'stageB/smoke/prove_constant/prove_constant.nocf/case'
-relocations:     []
-...
