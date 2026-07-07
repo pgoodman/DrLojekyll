@@ -32,6 +32,65 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
     negated_view_cols.push_back(neg_col);
   }
 
+  // The absence of the negated tuple is established: pass the data through
+  // the negation and onward to its successors.
+  //
+  // NOTE(pag): A negation can never share the same data model as its
+  //           predecessor, as it might not pass through all of its
+  //           predecessor's data.
+  auto continue_negation = [&](OP *let) {
+    auto [succ_parent, table, last_table] =
+        InTryInsert(impl, context, negate_view, let, nullptr);
+    (void) table;
+
+    // If this is an inductive negation, then we might defer processing its
+    // outputs until we get into a successor.
+    if (negate_view.InductionGroupId().has_value()) {
+      INDUCTION *const induction =
+          GetOrInitInduction(impl, negate_view, context, succ_parent);
+      if (NeedsInductionCycleVector(negate_view)) {
+        AppendToInductionInputVectors(impl, negate_view, negate_view, context,
+                                      succ_parent, induction, true);
+        return;
+      }
+    }
+
+    BuildEagerInsertionRegions(impl, negate_view, context, succ_parent,
+                               negate_view.Successors(), last_table);
+  };
+
+  // Negation of a unit (condition) relation: gate on a CHECKTUPLE existence
+  // test of the unit table instead of calling the negated view's top-down
+  // checker. The `(true)` row being present means the negation fails; absent
+  // means it holds; unknown asks the negated view's checker to settle it.
+  DataModel *const negated_model =
+      impl->view_to_model[negated_view]->FindAs<DataModel>();
+  if (TABLE *const negated_table = negated_model->table;
+      negated_table && negated_table->is_condition) {
+
+    CHECKTUPLE *const gate = BuildTopDownCheckerStateCheck(
+        impl, parent, negated_table, negated_view_cols,
+        BuildStateCheckCaseNothing,
+        [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
+          OP *const let =
+              impl_->operation_regions.CreateDerived<LET>(in_check);
+          continue_negation(let);
+          return let;
+        },
+        [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
+          const auto [rec_check, rec_check_call] =
+              CallTopDownChecker(impl_, context, in_check, negated_view,
+                                 negated_view_cols, negated_view, nullptr);
+          OP *const let =
+              impl_->operation_regions.CreateDerived<LET>(rec_check_call);
+          rec_check_call->false_body.Emplace(rec_check_call, let);
+          continue_negation(let);
+          return rec_check;
+        });
+    parent->body.Emplace(parent, gate);
+    return;
+  }
+
   // Call the top-down checker for the negated view.
   const auto [neg_check, neg_check_call] =
       CallTopDownChecker(impl, context, parent, negated_view, negated_view_cols,
@@ -41,27 +100,7 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   // If the data isn't there, then keep going.
   OP *let = impl->operation_regions.CreateDerived<LET>(neg_check_call);
   neg_check_call->false_body.Emplace(neg_check_call, let);
-
-  // NOTE(pag): A negation can never share the same data model as its
-  //            predecessor, as it might not pass through all of its
-  //            predecessor's data.
-  auto [succ_parent, table, last_table] =
-      InTryInsert(impl, context, negate_view, let, nullptr);
-
-  // If this is an inductive negation, then we might defer processing its
-  // outputs until we get into a successor.
-  if (negate_view.InductionGroupId().has_value()) {
-    INDUCTION *const induction =
-        GetOrInitInduction(impl, negate_view, context, succ_parent);
-    if (NeedsInductionCycleVector(negate_view)) {
-      AppendToInductionInputVectors(impl, negate_view, negate_view, context,
-                                    succ_parent, induction, true);
-      return;
-    }
-  }
-
-  BuildEagerInsertionRegions(impl, negate_view, context, succ_parent,
-                             negate_view.Successors(), last_table);
+  continue_negation(let);
 }
 
 void CreateBottomUpNegationRemover(ProgramImpl *impl, Context &context,
@@ -210,6 +249,47 @@ REGION *BuildTopDownNegationChecker(ProgramImpl *impl, Context &context,
   }
 
   // If it's there, then we need to make sure it's not in the negated view.
+  //
+  // Negation of a unit (condition) relation: gate on a CHECKTUPLE existence
+  // test of the unit table. The `(true)` row being present means the
+  // negation fails; absent means it holds; unknown asks the negated view's
+  // checker to settle it.
+  DataModel *const negated_model =
+      impl->view_to_model[negated_view]->FindAs<DataModel>();
+  if (TABLE *const negated_table = negated_model->table;
+      negated_table && negated_table->is_condition) {
+
+    CHECKTUPLE *const gate = BuildTopDownCheckerStateCheck(
+        impl, check_call, negated_table, negated_view_cols,
+        BuildStateCheckCaseReturnFalse, BuildStateCheckCaseReturnTrue,
+        [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
+          const auto [rec_check, rec_check_call] =
+              CallTopDownChecker(impl_, context, in_check, negated_view,
+                                 negated_view_cols, negated_view, nullptr);
+
+          // The negated `(true)` row was re-proven: the negation fails.
+          rec_check_call->body.Emplace(
+              rec_check_call,
+              BuildStateCheckCaseReturnFalse(impl_, rec_check_call));
+
+          // The negated row is gone: the negation holds.
+          rec_check_call->false_body.Emplace(
+              rec_check_call,
+              BuildStateCheckCaseReturnTrue(impl_, rec_check_call));
+
+          return rec_check;
+        });
+    check_call->body.Emplace(check_call, gate);
+
+    // If it's not in `view`, then it doesn't matter if it is or isn't in
+    // `negated_view`, because we only care about stuff that has previously
+    // flowed through the data flow.
+    check_call->false_body.Emplace(
+        check_call, BuildStateCheckCaseReturnFalse(impl, check_call));
+
+    return check;
+  }
+
   const auto [neg_check, neg_check_call] =
       CallTopDownChecker(impl, context, check_call, negated_view,
                          negated_view_cols, negated_view, nullptr);

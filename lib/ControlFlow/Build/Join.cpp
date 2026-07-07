@@ -115,6 +115,16 @@ REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
 
 namespace {
 
+// A joined view backed by a unit (condition) table is not a scan source of
+// the join: its only possible row is `(true)`, so it never multiplies
+// cardinality — it only gates. `BuildJoin` excludes such views from the
+// emitted TABLEJOIN's scan arms, and `ContinueJoinWorkItem::Run` gates the
+// join body on a CHECKTUPLE existence test of the unit table instead.
+static bool JoinedViewIsUnit(ProgramImpl *impl, QueryView pred_view) {
+  DataModel *const model = impl->view_to_model[pred_view]->FindAs<DataModel>();
+  return model->table != nullptr && model->table->is_condition;
+}
+
 // Heuristic sorting of predecessors.
 std::vector<QueryView> SortedPredecessors(QueryJoin join) {
 
@@ -334,6 +344,15 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
   // the indexes that we're scanning.
   auto pred_view_index = 0u;
   for (QueryView pred_view : sorted_pred_views) {
+
+    // Unit sides are gated with a CHECKTUPLE by our callers; they contribute
+    // no scan arm. Their sole `bool` column is the pivot, whose variable
+    // comes from the pivot vector.
+    if (JoinedViewIsUnit(impl, pred_view)) {
+      assert(pred_view.Columns().size() == 1u);
+      continue;
+    }
+
     auto i = 0u;
     for (; i < max_i; ++i) {
       if (pred_views[i] == pred_view) {
@@ -396,6 +415,10 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     }
   }
 
+  // Every join keeps at least one scanned side: the desugaring always joins
+  // unit relations against a non-unit view carrying the user's data flow.
+  assert(0u < join->tables.Size());
+
   // Figure out which input relation is "most represented" in the outputs,
   // in terms of non-pivot columns. The way JOINs get emitted is as a loop
   // over a pivot vector, followed by some index scans, and then comparing
@@ -420,8 +443,9 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     assert(!in_col.IsConstant());
 
     const QueryView pred_view = QueryView::Containing(in_col);
-    const unsigned pred_view_idx = view_to_index[pred_view];
-    num_non_pivot_outputs[pred_view_idx] += 1u;
+    const auto it = view_to_index.find(pred_view);
+    assert(it != view_to_index.end());  // Unit sides contribute only pivots.
+    num_non_pivot_outputs[it->second] += 1u;
   });
 
   unsigned most_represented_pred_view_idx = 0u;
@@ -444,7 +468,16 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     assert(!in_col.IsConstant());
 
     const QueryView pred_view = QueryView::Containing(in_col);
-    const unsigned pred_view_idx = view_to_index[pred_view];
+    const auto it = view_to_index.find(pred_view);
+    if (it == view_to_index.end()) {
+
+      // A unit side: there is no scanned row to bind an output variable to.
+      // Its sole column is a pivot, and the join's output pivot column is
+      // already bound to the pivot-vector variable via `join->col_id_to_var`.
+      assert(InputColumnRole::kJoinPivot == role);
+      return;
+    }
+    const unsigned pred_view_idx = it->second;
     TABLE * const pred_table = join->tables[pred_view_idx];
     auto &out_cols = join->output_cols.at(pred_view_idx);
     auto &out_vars = join->output_vars.at(pred_view_idx);
@@ -551,9 +584,23 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   auto [join, cmp] = BuildJoin(impl, join_view, swap_pivot_vec, seq);
   OP *parent = cmp;
 
-  // If this join can receive deletions, then we need to possibly double check
-  // its sources, because indices don't actually maintain states.
-  if (view.CanReceiveDeletions()) {
+  // Figure out if any of the joined views is backed by a unit (condition)
+  // table. Such views are not scan sources of the join (`BuildJoin` excludes
+  // them), so each one is tested here with a CHECKTUPLE existence check on
+  // its unit table.
+  auto has_unit_pred = false;
+  for (auto pred_view : view.Predecessors()) {
+    if (JoinedViewIsUnit(impl, pred_view)) {
+      has_unit_pred = true;
+      break;
+    }
+  }
+
+  // Gate the join body on tuple states. Unit sides always need their
+  // CHECKTUPLE gate. If this join can receive deletions, then we also need
+  // to possibly double check its non-unit sources, because indices don't
+  // actually maintain states.
+  if (view.CanReceiveDeletions() || has_unit_pred) {
 
     // We (should) have all columns by this point, so we'll proceed like that.
     std::vector<QueryColumn> view_cols(view.Columns().begin(),
@@ -573,15 +620,16 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     // that means we have failed.
     for (auto pred_view : view.Predecessors()) {
 
-      if (!pred_view.CanProduceDeletions()) {
-        continue;
-      }
-
       // NOTE(pag): All views leading into a JOIN are always backed by a table.
       DataModel *const pred_model =
           impl->view_to_model[pred_view]->FindAs<DataModel>();
       TABLE *const pred_table = pred_model->table;
       assert(pred_table != nullptr);
+
+      if (!pred_table->is_condition &&
+          !(view.CanReceiveDeletions() && pred_view.CanProduceDeletions())) {
+        continue;
+      }
 
       // Check to see if the data is present. If it's not (either absent or
       // unknown), then our assumption is that we are in some kind of inductive
