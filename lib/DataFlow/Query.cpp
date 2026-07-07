@@ -781,6 +781,12 @@ const ParsedDeclaration &QueryRelation::Declaration(void) const noexcept {
   return impl->declaration;
 }
 
+// Whether this is a unit relation modeling a zero-arity predicate (a
+// condition): its only possible row is `(true)`.
+bool QueryRelation::IsCondition(void) const noexcept {
+  return impl->is_condition;
+}
+
 // The list of inserts into this relation.
 UsedNodeRange<QueryView> QueryRelation::Inserts(void) const {
   return {impl->inserts.begin(), impl->inserts.end()};

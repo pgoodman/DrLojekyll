@@ -799,6 +799,12 @@ bool DataTable::IsDifferential(void) const noexcept {
   return false;
 }
 
+// Whether this table backs a unit relation modeling a zero-arity predicate
+// (a condition): its only possible row is `(true)`.
+bool DataTable::IsCondition(void) const noexcept {
+  return impl->is_condition;
+}
+
 VectorKind DataVector::Kind(void) const noexcept {
   return impl->kind;
 }

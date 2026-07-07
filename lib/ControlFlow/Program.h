@@ -123,6 +123,10 @@ class DataTableImpl final : public Def<DataTableImpl>, public User {
 
   // All views sharing this table.
   std::vector<QueryView> views;
+
+  // Whether this table backs a unit relation modeling a zero-arity predicate
+  // (a condition): its only possible row is `(true)`.
+  bool is_condition{false};
 };
 
 using TABLE = DataTableImpl;

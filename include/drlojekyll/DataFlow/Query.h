@@ -141,6 +141,10 @@ class QueryRelation : public Node<QueryRelation, QueryRelationImpl> {
 
   const ParsedDeclaration &Declaration(void) const noexcept;
 
+  // Whether this is a unit relation modeling a zero-arity predicate (a
+  // condition): its only possible row is `(true)`.
+  bool IsCondition(void) const noexcept;
+
   // The list of inserts into this relation.
   UsedNodeRange<QueryView> Inserts(void) const;
 

@@ -183,6 +183,10 @@ class QueryRelationImpl : public Def<QueryRelationImpl>, public User {
 
   const ParsedDeclaration declaration;
 
+  // Whether this is a unit relation modeling a zero-arity predicate (a
+  // condition): its only possible row is `(true)`.
+  const bool is_condition;
+
   // List of nodes that insert data into this relation.
   UseList<QueryViewImpl> inserts;
 

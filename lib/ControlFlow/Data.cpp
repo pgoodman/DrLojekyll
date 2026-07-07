@@ -211,6 +211,20 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
     (void) model->table->GetOrCreateIndex(impl, std::move(offsets));
   }
 
+  // A table backing a unit (condition) relation is flagged as such; any
+  // SELECT from or INSERT into a condition relation marks the shared table.
+  if (view.IsInsert()) {
+    const auto insert = QueryInsert::From(view);
+    if (insert.IsRelation() && insert.Relation().IsCondition()) {
+      model->table->is_condition = true;
+    }
+  } else if (view.IsSelect()) {
+    const auto select = QuerySelect::From(view);
+    if (select.IsRelation() && select.Relation().IsCondition()) {
+      model->table->is_condition = true;
+    }
+  }
+
   const auto old_size = model->table->views.size();
   model->table->views.push_back(view);
 

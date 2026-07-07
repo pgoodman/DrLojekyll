@@ -330,6 +330,10 @@ class DataTable : public Node<DataTable, DataTableImpl> {
   // Are there any views that will possibly remove entries from this table?
   bool IsDifferential(void) const noexcept;
 
+  // Whether this table backs a unit relation modeling a zero-arity predicate
+  // (a condition): its only possible row is `(true)`.
+  bool IsCondition(void) const noexcept;
+
  private:
   using Node<DataTable, DataTableImpl>::Node;
 };
