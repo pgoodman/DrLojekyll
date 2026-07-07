@@ -256,3 +256,28 @@ Design questions:
 - Foreign-type interop: today's opaque foreign types (e.g. ASTNode as u64)
   are the degenerate single-field case; records generalize them without
   losing the integral-column property.
+
+Records as heads/goals. A record type could itself appear as a clause head:
+
+    RecordType{A, B, C} : rule(...), ..., rule(...).
+
+Read `RecordType` as a unary relation over the foreign record type — its
+rows are the interned IDs, and the flyweight provides field access. Deriving
+the clause constructs (interns) the record AND asserts its membership in the
+relation; the columnar field store is then just the n-ary view of the same
+relation, connected by the ID. The dual falls out for free: a record literal
+in a BODY position, `..., RecordType{A, B, C}, ...`, is a join against that
+relation with destructuring — which answers the pattern-matching question
+above. Differential semantics get cleanly split too: membership in the
+relation is differential (body support retracts the tuple), while the
+interned storage is immortal arena state (a value having been constructed is
+not undone by retraction).
+
+Caution: record construction in heads is function symbols in heads —
+datalog with constructors is Turing-complete, and a recursive rule that
+builds ever-deeper records diverges (infinite Herbrand universe). Needs a
+termination story: stratify construction, require acyclicity of the
+type-construction graph (cf. chase termination / weak acyclicity), or bound
+depth. Prior art: Soufflé implements exactly this shape — records/ADTs
+interned to integral IDs with pattern matching in rules — and is the thing
+to study first, alongside DDlog's constructed types and Flix.
