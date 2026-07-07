@@ -1,0 +1,29 @@
+; Condition-dependency creation in GuardWithOptimizedTuple:
+; `indirect(1)` carries no data from `something`, so its guard tuple's
+; inputs are all constants and a CONDition dependency on the view must
+; be minted (existence is load-bearing). `ind2(1)` depends on a
+; zero-arity condition with TWO setters, forcing a fresh guard tuple +
+; new condition rather than reusing the shared one. `factt(1, 2)` is an
+; all-constant unconditional TUPLE that must NOT gain any condition.
+
+#message something(i32 X).
+#message a(i32 X).
+#message b(i32 X).
+#local indirect(i32 X).
+#local ind2(i32 X).
+#local factt(i32 A, i32 B).
+#query proof(free i32 X).
+#query q_shared(free i32 X).
+#query q_fact(free i32 A, free i32 B).
+
+has_something : something(_).
+indirect(1) : has_something.
+proof(A) : indirect(A).
+
+cond : a(_).
+cond : b(_).
+ind2(1) : cond.
+q_shared(A) : ind2(A).
+
+factt(1, 2).
+q_fact(A, B) : factt(A, B).

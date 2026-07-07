@@ -1,0 +1,20 @@
+; MAP canonicalization: filter-like functor (zero free parameters) in both
+; polarities (CSE must not merge the positive and negated MAPs), and a MAP
+; that feeds a UNION directly (guard TUPLE suppressed because the MAP view
+; is used directly by the MERGE).
+
+#functor is_even(bound i32 X).
+#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.).
+
+#message m(i32 X).
+#message n(i32 Y).
+
+#query evens(free i32 X).
+#query odds(free i32 X).
+#query merged(free i32 Y).
+
+evens(X) : m(X), is_even(X).
+odds(X) : m(X), @never is_even(X).
+
+merged(Y) : m(X), add_i32(X, 7, Y).
+merged(Y) : n(Y).

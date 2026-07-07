@@ -1,0 +1,22 @@
+; INDUCTION with a no-op init region: the only base clause of the loop is
+; guarded by contradictory constant comparisons (A = 1, A = 2) that fold to
+; an empty region. The @differential message also produces bottom-up remover
+; procedures whose bodies fold to nothing (empty-body PROC guard, and the
+; message handler is retained despite having no observable work).
+
+#message input(i32 A) @differential.
+#message edge(i32 A, i32 B).
+
+#local loop(i32 A).
+#local alive(i32 A).
+
+#query reach(free i32 A).
+#query live(free i32 A).
+
+loop(A) : input(A), A = 1, A = 2.
+loop(B) : loop(A), edge(A, B).
+
+alive(A) : input(A).
+
+reach(A) : loop(A).
+live(A) : alive(A).

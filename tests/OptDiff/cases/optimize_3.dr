@@ -1,0 +1,31 @@
+; Three mutually equal filtered views (a, b, c): CSE records pairs (a,b),
+; (a,c), (b,c); after one merge the later records must chase the union-find
+; and re-verify. UpHash ordering: a and b share identical consumers (out),
+; c's consumer diverges (a product), so the like-used pair merges first.
+; Also: a condition-guarded all-constant TUPLE (indirect(1) : has_something),
+; the ShrinkConditions COND0->COND1 forwarding shape.
+
+#message in(u64 X, u64 Y).
+#message m(u64 Y).
+#local a(u64 X).
+#local b(u64 X).
+#local c(u64 X).
+#query out(free u64 X).
+#query out2(free u64 X, free u64 Y).
+
+a(X) : in(X, Y), X < Y.
+b(X) : in(X, Y), X < Y.
+c(X) : in(X, Y), X < Y.
+
+out(X) : a(X).
+out(X) : b(X).
+
+out2(X, Y) @product : c(X), m(Y).
+
+#message something(i32 X).
+#local indirect(i32 X).
+#query proof(free i32 X).
+
+has_something : something(_).
+indirect(1) : has_something.
+proof(A) : indirect(A).

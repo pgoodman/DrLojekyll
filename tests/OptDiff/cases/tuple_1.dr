@@ -1,0 +1,12 @@
+; Forwarding elimination through trivial predecessor TUPLEs: the TUPLE
+; for `out` reads through the copy-only TUPLEs for `b` and `a`, and the
+; bypassed TUPLEs (all columns dropped, no users) self-delete.
+
+#message input(i32 X).
+#local a(i32 X).
+#local b(i32 X).
+#query out(free i32 X).
+
+a(X) : input(X).
+b(X) : a(X).
+out(X) : b(X).

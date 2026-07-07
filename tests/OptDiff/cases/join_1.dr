@@ -1,0 +1,19 @@
+; Corner cases: sink-equality-compare-on-pivot (CMP[A == 1] is the only user
+; of the JOIN's pivot output and is sunk below the join), plus
+; unsatisfiable-input-view / dead-unsat-invalid-early-out (A = 1, A = 2
+; conflict, making the JOIN unsat).
+
+#message t1(i32 A, i32 B).
+#message t2(i32 A).
+
+#local p(i32 A, i32 B).
+#local r(i32 A).
+
+p(A, B) : t1(A, B).
+r(A) : t2(A).
+
+#query q(free i32 B).
+q(B) : p(A, B), r(A), A = 1.
+
+#query never(free i32 B).
+never(B) : p(A, B), r(A), A = 1, A = 2.

@@ -7,6 +7,41 @@
 namespace hyde {
 namespace {
 
+// Optimizes a MODESWITCH region, which switches the execution mode of its
+// body between bottom-up addition and bottom-up removal of tuples. A mode
+// switch only has meaning relative to the mode already in effect: the
+// innermost switch always wins, procedures implicitly begin in addition
+// mode, and re-asserting the mode already in effect changes nothing. This
+// pass exploits those three facts to delete redundant switches, which
+// shrinks region nesting and exposes switch bodies to sibling merging in
+// enclosing PARALLEL regions.
+//
+//    if parent is a MODESWITCH p:     // p's whole body is this switch,
+//      replace p with this switch     // and the inner mode wins
+//    else if nearest enclosing MODESWITCH sets the same mode:
+//      replace this switch with its body   // re-assertion is a no-op
+//    else if new mode is addition and there is no enclosing MODESWITCH:
+//      replace this switch with its body   // addition is the default
+//
+// Nested switch (outer is superseded by its own body):
+//
+//    SERIES                            SERIES
+//    └─ MODESWITCH<add>         ==>    └─ MODESWITCH<remove>
+//       └─ MODESWITCH<remove>             └─ CHANGETUPLE ...
+//          └─ CHANGETUPLE ...
+//
+// Redundant re-assertion of the enclosing mode:
+//
+//    MODESWITCH<remove>                MODESWITCH<remove>
+//    └─ SERIES                  ==>    └─ SERIES
+//       └─ MODESWITCH<remove>             └─ CHANGETUPLE ...
+//          └─ CHANGETUPLE ...
+//
+// Switch to the default (addition) mode at the top level:
+//
+//    PROC (implicitly <add>)           PROC
+//    └─ MODESWITCH<add>         ==>    └─ CHANGETUPLE ...
+//       └─ CHANGETUPLE ...
 static bool OptimizeImpl(ProgramImpl *prog, MODESWITCH *ms) {
   if (!ms->IsUsed() || !ms->parent) {
     return false;
@@ -45,6 +80,50 @@ static bool OptimizeImpl(ProgramImpl *prog, MODESWITCH *ms) {
   return false;
 }
 
+// Optimizes a PARALLEL region, whose child regions have no mutual ordering
+// constraints and may execute concurrently. The pass first canonicalizes
+// the region: a single child is elevated to replace the PARALLEL, a
+// PARALLEL nested inside another PARALLEL donates its children to the
+// parent, and no-op children are deleted. It then performs common
+// subexpression elimination across the remaining children: children are
+// bucketed by structural hash, children that are structurally identical at
+// unlimited depth are deduplicated outright, and children whose root
+// operations are identical (Equals at depth 0, e.g. two CHANGETUPLEs on
+// the same table over the same tuple) but whose bodies differ are merged
+// via MergeEqual, so a single copy of the root operation dispatches into
+// the distinct bodies through a new nested PARALLEL. Because the children
+// are unordered and the deduplicated work is identical, this preserves
+// behavior while shrinking the program and executing shared work (state
+// transitions, comparisons, calls) once instead of once per child. No
+// child of a PARALLEL ends with a RETURN (asserted).
+//
+//    if exactly one child:  replace PARALLEL with that child
+//    if parent is PARALLEL: move all children into the parent
+//    remove no-op children; if any removed, re-run on this node
+//    bucket children by Hash(0)
+//    within each bucket:
+//      drop children Equals() at unlimited depth      // exact CSE
+//      MergeEqual() children Equals() at depth 0      // factor roots
+//    if anything was dropped or merged, re-run on this node
+//
+// Flattening a nested PARALLEL:
+//
+//    PARALLEL              PARALLEL
+//    ├─ A                  ├─ A
+//    └─ PARALLEL    ==>    ├─ B
+//       ├─ B               └─ C
+//       └─ C
+//
+// Deduplicating an identical child, then merging a same-rooted one:
+//
+//    PARALLEL                             PARALLEL
+//    ├─ CHANGETUPLE T (x)                 └─ CHANGETUPLE T (x)
+//    │  └─ bodyA                             └─ PARALLEL
+//    ├─ CHANGETUPLE T (x)          ==>          ├─ bodyA
+//    │  └─ bodyA          (duplicate)           └─ bodyB
+//    └─ CHANGETUPLE T (x)
+//       └─ bodyB          (same root)
+//
 // TODO(pag): Find all ending returns in the children of the par, and if there
 //            are any, check that they all match, and if so, create a sequence
 //            that moves the `return <X>` to after the parallel, and also
@@ -206,9 +285,42 @@ static bool OptimizeImpl(ProgramImpl *prog, PARALLEL *par) {
   return false;
 }
 
-// Optimize induction regions.
-// * Clear out empty output regions of inductions.
-// * Optimize nested loop inductions.
+// Optimize an INDUCTION region. An INDUCTION is the fixpoint loop that
+// implements an inductive UNION(MERGE) in the dataflow: its `init_region`
+// fills the induction vectors with the initial tuples, its `cyclic_region`
+// iterates until no new tuples appear, and its `output_region` processes the
+// accumulated results. This pass does two things. First, it deletes no-op
+// init and output regions so the induction carries only meaningful work.
+// Second, when the induction's parent is a SERIES, it hoists the init region
+// out of the induction and splices it into that parent SERIES immediately
+// before the induction itself, flattening the init region's children into
+// the parent if the init region is itself a SERIES. Hoisting is sound
+// because the init region executes exactly once, before the first iteration
+// of the fixpoint loop -- precisely the behavior of a preceding sibling in
+// the parent SERIES. It is beneficial because the hoisted regions become
+// visible to SERIES-level optimizations (no-op removal, flattening, merging
+// with neighbors), and the induction itself is reduced to a pure fixpoint
+// loop plus output.
+//
+//    if induction is unused or unlinked:      return false
+//    if init_region is a no-op:               remove it
+//    if output_region is a no-op:             remove it
+//    if parent is a SERIES and init_region exists:
+//      splice init_region's contents (flattened when it is a SERIES)
+//      into the parent SERIES immediately before the induction
+//    return whether anything changed
+//
+// Before:                             After:
+//
+//   SERIES                             SERIES
+//   +-- A                              +-- A
+//   +-- INDUCTION                      +-- I1
+//   |     init:   SERIES [I1, I2]      +-- I2
+//   |     cyclic: PARALLEL [loop...]   +-- INDUCTION
+//   |     output: PARALLEL [no-op]     |     init:   <none>
+//   +-- B                              |     cyclic: PARALLEL [loop...]
+//                                      |     output: <none>
+//                                      +-- B
 //
 // TODO(pag): Check if the fixpoint loop region ends in a return. If so, bail
 //            out.
@@ -350,6 +462,37 @@ static bool OptimizeImpl(ProgramImpl *prog, INDUCTION *induction) {
   //  return changed;
 }
 
+// Optimizes a SERIES region, whose child regions execute strictly in
+// order. The pass canonicalizes the region and performs local dead-code
+// elimination: a single child is elevated to replace the SERIES; a SERIES
+// nested inside another SERIES is spliced inline into its parent's child
+// list at its own position (order preserved); no-op children are deleted;
+// and any children following a child through which every path returns —
+// either a direct RETURN operation or a region whose every path ends in a
+// RETURN — are unreachable and are truncated. Flattening produces one
+// canonical sequence per straight-line stretch of code, which makes
+// sibling regions hash/compare consistently for the PARALLEL merging pass,
+// and truncation removes code that can never execute.
+//
+//    if exactly one child:  replace SERIES with that child
+//    if parent is SERIES:   splice children into parent at this position
+//    else:
+//      scan children for a no-op, or for any child positioned after a
+//      child that ends with a return
+//      if found: rebuild the child list, dropping no-ops and stopping
+//      after the first child that ends with a return
+//
+// Splicing a nested SERIES:            Dead-code elimination:
+//
+//    SERIES                              SERIES
+//    ├─ A                                ├─ LET []        (no-op: dropped)
+//    ├─ SERIES        ==>  SERIES        ├─ CHANGETUPLE ...
+//    │  ├─ B               ├─ A          ├─ RETURN-true
+//    │  └─ C               ├─ B          └─ CALL ...      (unreachable)
+//    └─ D                  ├─ C                    ==>
+//                          └─ D          SERIES
+//                                        ├─ CHANGETUPLE ...
+//                                        └─ RETURN-true
 static bool OptimizeImpl(SERIES *series) {
   if (!series->IsUsed() || !series->parent) {
     return false;
@@ -459,7 +602,29 @@ static bool OptimizeImpl(SERIES *series) {
   }
 }
 
-// Down-propagate all bindings.
+// Down-propagates all bindings of a LET region, then dissolves the region.
+// A LET is a pure renaming: it pairwise binds each variable in
+// `defined_vars` to the variable in `used_vars` that it aliases, and
+// executes its body under those names. Because each defined variable is
+// exactly an alias of its paired used variable, rewriting every use of the
+// defined variable to refer directly to the used variable (copy
+// propagation) preserves semantics. After propagation the pass clears both
+// variable lists and replaces the LET with its body when one exists; a
+// bindingless, bodiless LET reports no change and is deleted by dead-
+// region removal. Eliminating LETs removes a layer of nesting, and the
+// resulting uniform variable naming lets structurally identical sibling
+// regions hash and compare as equal in the PARALLEL merging pass.
+//
+//    for (def, use) in zip(defined_vars, used_vars):
+//      replace all uses of def with use
+//    clear defined_vars and used_vars
+//    if body: replace LET with body
+//
+//    SERIES                              SERIES
+//    ├─ LET [x := y]                     ├─ TUPLECMP (y == z)
+//    │  └─ TUPLECMP (x == z)      ==>    │  └─ CHANGETUPLE T (y, z)
+//    │     └─ CHANGETUPLE T (x, z)       └─ ...
+//    └─ ...
 static bool OptimizeImpl(LET *let) {
   if (!let->IsUsed() || !let->parent) {
     return false;
@@ -486,8 +651,48 @@ static bool OptimizeImpl(LET *let) {
   return changed;
 }
 
-// Propagate comparisons upwards, trying to join towers of comparisons into
-// single tuple group comparisons.
+// Simplify a TUPLECMP region, which pairwise compares the variables of
+// `lhs_vars` against those of `rhs_vars` using `cmp_op`, executing `body`
+// when the comparison holds and `false_body` when it does not. This pass
+// prunes no-op bodies, statically decides variable pairs whose outcome is
+// knowable at compile time (both sides are the same variable, or both sides
+// are constants with visible values), and canonicalizes the operand order of
+// single-pair equality comparisons. Statically deciding pairs shrinks or
+// entirely eliminates the comparison, deleting whole unreachable subtrees;
+// canonicalization makes structurally equivalent TUPLECMPs hash and compare
+// alike, so the PARALLEL pass can deduplicate and merge them. Constant-based
+// deciding is skipped inside tuple-finder procedures: those execute
+// top-down, and constants that were propagated bottom-up through the data
+// flow (e.g. through one input of a UNION) say nothing about the tuple
+// values actually being checked from above.
+//
+//    if body / false_body is a no-op, unlink and clear it
+//    if there are no variable pairs:
+//      kEqual: vacuously true  -> replace TUPLECMP with body
+//      other:  vacuously false -> replace TUPLECMP with false_body
+//    for each pair (l, r):
+//      l is r (same variable)                     -> trivially equal
+//      l, r both constant (not in a tuple finder):
+//        same tag value / same literal /
+//        same foreign constant                    -> trivially equal
+//        distinct tags, or distinct foreign
+//        constants where one is @unique           -> never equal
+//    if some pair can never be equal and cmp_op is kEqual:
+//      drop `body`; replace TUPLECMP with false_body
+//    else drop trivially equal pairs; if none remain, recurse
+//    if exactly one pair remains and cmp_op is kEqual:
+//      put the higher-id variable, then any constant, on the LHS
+//
+// Statically false equality (C1, C2 known-distinct constants):
+//
+//    TUPLECMP{=, [(C1,C2)]}
+//     +- body          (deleted)    ======>    false_body
+//     +- false_body
+//
+// Trivially equal pair removal plus canonicalization (C0 a constant):
+//
+//    TUPLECMP{=, [(A,A),(B,C0)]}    ======>    TUPLECMP{=, [(C0,B)]}
+//     +- body                                   +- body
 static bool OptimizeImpl(TUPLECMP *cmp) {
   if (!cmp->IsUsed() || !cmp->parent) {
     return false;
@@ -556,8 +761,10 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
       }
 
     } else {
-      assert(false);  // This is weird....
 
+      // A strict comparison with no column pairs left (every pair was
+      // trivially equal, e.g. `X < X`) compares empty tuples, which is
+      // definitively false: drop the true body and promote the false body.
       if (const auto body = cmp->body.get(); body) {
         body->parent = nullptr;
         cmp->body.Clear();
@@ -735,8 +942,24 @@ static bool OptimizeImpl(TUPLECMP *cmp) {
   return changed;
 }
 
-// Try to eliminate unnecessary function calls. This is pretty common when
-// generating bottom-up deleters.
+// Prune the conditional branches of a CALL region. A CALL invokes another
+// IR procedure and conditionally executes `body` if the callee returns
+// `true`, or `false_body` if it returns `false`. When either branch region
+// is a no-op, this pass unlinks and clears it, so the call's return value no
+// longer guards anything on that path. This situation is common in
+// bottom-up deleters, where the continuation of a call to a top-down
+// checker often reduces to nothing once other passes strip it. The CALL
+// itself is always kept (calls are never considered no-ops, since the
+// callee may have side effects); with its branches gone, the enclosing
+// SERIES/PARALLEL structure simplifies, and procedure-level deduplication
+// can merge structurally identical callers and callees.
+//
+//    if body is a no-op:       unlink it; clear body
+//    if false_body is a no-op: unlink it; clear false_body
+//
+//    CALL $proc(args)                          CALL $proc(args)
+//     +- body:       LET []        ======>      (no conditional
+//     +- false_body: PARALLEL []                 branches remain)
 static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
   auto changed = false;
 
@@ -767,8 +990,21 @@ static bool OptimizeImpl(ProgramImpl *impl, CALL *call) {
   return changed;
 }
 
-// Try to eliminate unnecessary function calls. This is pretty common when
-// generating bottom-up deleters.
+// Prune the conditional branches of a GENERATOR region. A GENERATOR applies
+// a functor to its `used_vars`; `body` executes once per generated result
+// (binding `defined_vars`), and `empty_body` executes when the functor
+// produces no results. When either branch is a no-op, this pass unlinks and
+// clears it. Once both branches are gone, a pure functor's application has
+// no observable effect, so the region's IsNoOp() reports it as dead and the
+// enclosing SERIES/PARALLEL passes delete it entirely; an impure functor is
+// retained for its side effects.
+//
+//    if body is a no-op:       unlink it; clear body
+//    if empty_body is a no-op: unlink it; clear empty_body
+//
+//    GENERATOR sum(A,B; S)                     GENERATOR sum(A,B; S)
+//     +- body:       LET []        ======>     (branchless; removed
+//     +- empty_body: SERIES []                  later if `sum` is pure)
 static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
 
   auto changed = false;
@@ -799,7 +1035,30 @@ static bool OptimizeImpl(ProgramImpl *impl, GENERATOR *gen) {
   return changed;
 }
 
-// Try to eliminate unnecessary children of a transition state regions.
+// Try to eliminate unnecessary children of a CHANGETUPLE (tuple state
+// transition) region. A CHANGETUPLE tries to move the state of the tuple
+// `col_values` in `table` from `from_state` to `to_state` (e.g. absent ->
+// present for an insert, present -> unknown for a speculative delete);
+// on success it executes `body`, and on failure it executes `failed_body`.
+// Each child region that does nothing observable (`IsNoOp`) is detached.
+// This is sound because a no-op child has no effect on any table, vector,
+// variable, or control flow that outlives it, and it is beneficial because
+// enclosing SERIES/PARALLEL passes can then erase the empty scaffolding and
+// the dead-region sweep can reclaim the detached subtree. The CHANGETUPLE
+// itself is never removed: the state transition mutates the table, so the
+// region is a side effect even when both children are gone.
+//
+//    changed = false
+//    if body and body.IsNoOp():                // success continuation
+//      detach body; changed = true
+//    if failed_body and failed_body.IsNoOp():  // failure continuation
+//      detach failed_body; changed = true
+//    return changed
+//
+//    Before:                               After:
+//      CHANGETUPLE(T, present -> absent)     CHANGETUPLE(T, present -> absent)
+//      +-succeeded: LET {}       (no-op)       (no children; the table state
+//      +-failed:    PARALLEL {}  (no-op)        transition still executes)
 static bool OptimizeImpl(ProgramImpl *impl, CHANGETUPLE *transition) {
   auto changed = false;
 
@@ -830,7 +1089,31 @@ static bool OptimizeImpl(ProgramImpl *impl, CHANGETUPLE *transition) {
   return changed;
 }
 
-// Try to eliminate unnecessary children of a emplace state regions.
+// Try to eliminate unnecessary children of a CHANGERECORD (record emplace)
+// region. A CHANGERECORD, like a CHANGETUPLE, tries to move the state of the
+// tuple `col_values` in `table` from `from_state` to `to_state`, but it also
+// defines fresh `record_vars` bound to the table-resident record for that
+// tuple, so that its children operate on the canonical stored values rather
+// than the input tuple values. On success it executes `body`, and on failure
+// it executes `failed_body`; each child that does nothing observable
+// (`IsNoOp`) is detached, dropping that child's uses of the record variables
+// and letting enclosing SERIES/PARALLEL passes and the dead-region sweep
+// clean up around it. The CHANGERECORD itself is never removed: the emplace
+// mutates the table, so the region is a side effect even when both children
+// (and therefore all uses of `record_vars`) are gone.
+//
+//    changed = false
+//    if body and body.IsNoOp():                // success continuation
+//      detach body; changed = true
+//    if failed_body and failed_body.IsNoOp():  // failure continuation
+//      detach failed_body; changed = true
+//    return changed
+//
+//    Before:                                After:
+//      CHANGERECORD(T, absent -> present)     CHANGERECORD(T, absent->present)
+//      defines [r0, r1] from [v0, v1]         defines [r0, r1] from [v0, v1]
+//      +-succeeded: LET {}       (no-op)        (no children; the emplace
+//      +-failed:    PARALLEL {}  (no-op)         side effect remains)
 static bool OptimizeImpl(ProgramImpl *impl, CHANGERECORD *emplace) {
   auto changed = false;
 
@@ -861,7 +1144,35 @@ static bool OptimizeImpl(ProgramImpl *impl, CHANGERECORD *emplace) {
   return changed;
 }
 
-// Try to eliminate unnecessary children of a check state region.
+// Try to eliminate unnecessary children of a CHECKTUPLE (tuple state check)
+// region. A CHECKTUPLE reads the state of the tuple `col_values` in `table`
+// and dispatches to at most one of three children: `body` if the tuple is
+// present, `absent_body` if it is absent, and `unknown_body` if it is
+// speculatively deleted and awaiting re-proof. Each child that does nothing
+// observable (`IsNoOp`) is detached. Because the check itself is a pure read
+// of table state, once all three children are gone the whole region is dead
+// code: it is replaced with an empty LET (a no-op placeholder that the
+// surrounding LET/SERIES/PARALLEL passes then erase) and orphaned so the
+// dead-region sweep reclaims it.
+//
+//    changed = false
+//    for child in {body (present), unknown_body, absent_body}:
+//      if child and child.IsNoOp():
+//        detach child; changed = true
+//    if not (body or unknown_body or absent_body):
+//      replace check with empty LET; orphan check; changed = true
+//    return changed
+//
+//    Before:                             After:
+//      CHECKTUPLE(T, [v0, v1])             CHECKTUPLE(T, [v0, v1])
+//      +-present: SERIES [...]             +-present: SERIES [...]
+//      +-absent:  LET {}       (no-op)     +-unknown: CALL checker
+//      +-unknown: CALL checker
+//
+//    When every child is pruned, the pure read drives nothing:
+//
+//      CHECKTUPLE(T, [v0, v1])      =>     LET {}   (no-op; later erased)
+//      (no children)
 static bool OptimizeImpl(ProgramImpl *impl, CHECKTUPLE *check) {
   auto changed = false;
 
@@ -906,7 +1217,40 @@ static bool OptimizeImpl(ProgramImpl *impl, CHECKTUPLE *check) {
   return changed;
 }
 
-// Try to eliminate unnecessary children of a check state / get record region.
+// Try to eliminate unnecessary children of a CHECKRECORD (record state check
+// / get record) region. A CHECKRECORD, like a CHECKTUPLE, reads the state of
+// the tuple `col_values` in `table` and dispatches to at most one of three
+// children (`body` if present, `absent_body` if absent, `unknown_body` if
+// speculatively deleted and awaiting re-proof), but it also defines fresh
+// `record_vars` bound to the table-resident record so its children operate
+// on the canonical stored values. Each child that does nothing observable
+// (`IsNoOp`) is detached, dropping that child's uses of the record
+// variables. Because the check is a pure read of table state and the record
+// variables have no uses outside its children, once all three children are
+// gone the whole region is dead code: it is replaced with an empty LET (a
+// no-op placeholder that the surrounding LET/SERIES/PARALLEL passes then
+// erase) and orphaned so the dead-region sweep reclaims it.
+//
+//    changed = false
+//    for child in {body (present), unknown_body, absent_body}:
+//      if child and child.IsNoOp():
+//        detach child; changed = true
+//    if not (body or unknown_body or absent_body):
+//      replace check with empty LET; orphan check; changed = true
+//    return changed
+//
+//    Before:                             After:
+//      CHECKRECORD(T, [v0, v1])            CHECKRECORD(T, [v0, v1])
+//      defines [r0, r1]                    defines [r0, r1]
+//      +-present: SERIES [...uses r0]      +-present: SERIES [...uses r0]
+//      +-absent:  LET {}       (no-op)     +-unknown: CALL checker
+//      +-unknown: CALL checker
+//
+//    When every child is pruned, the pure read (and its now-unused record
+//    variables) drives nothing:
+//
+//      CHECKRECORD(T, [v0, v1])     =>     LET {}   (no-op; later erased)
+//      (no children)
 static bool OptimizeImpl(ProgramImpl *impl, CHECKRECORD *check) {
   auto changed = false;
 
@@ -951,7 +1295,21 @@ static bool OptimizeImpl(ProgramImpl *impl, CHECKRECORD *check) {
   return changed;
 }
 
-// Perform dead argument elimination.
+// Per-procedure rewrite hook of the optimization driver, invoked once for
+// every PROC on each fixpoint iteration. It checks structural invariants of
+// the procedure -- a PROC is its own containing procedure, so its `parent`
+// must point at itself, and its body (when present) must name the PROC as
+// its parent -- and applies no transformation, always reporting no change.
+// Dead argument elimination is intended to live here.
+//
+//    assert proc.parent == proc.containing_procedure  (self-parented)
+//    if proc has a body: assert body.parent == proc
+//    return false
+//
+// Before:                         After (identical):
+//
+//   PROC(vars..., vecs...)          PROC(vars..., vecs...)
+//   +-- body                        +-- body
 static bool OptimizeImpl(PROC *proc) {
   assert(proc->parent == proc->containing_procedure);
   if (auto body = proc->body.get()) {
@@ -972,6 +1330,60 @@ static void CheckProcedures(ProgramImpl *impl) {
 
 }  // namespace
 
+// Optimize the whole control-flow IR to a fixpoint, then deduplicate
+// structurally identical procedures. The main loop repeatedly sweeps every
+// region kind with its region-local rewrite. Each region list is sorted
+// deepest-first (by cached lexical depth) before its sweep because most
+// rewrites either call `IsNoOp()`, which inspects children, or hoist
+// children into parents; starting at the leaves lets removals "bubble up":
+// deleting an innermost no-op body can turn its parent into a no-op that the
+// same sweep then deletes. A sweep visits PARALLEL regions (flattening,
+// duplicate-child elimination, and merging of equal children -- merging can
+// append new PARALLELs, so that loop iterates by index), then INDUCTION
+// regions (no-op init/output removal, init hoisting), then SERIES regions
+// (flattening, no-op and unreachable-code removal), then all OPERATION
+// regions dispatched by kind (LET binding down-propagation, TUPLECMP
+// simplification, and no-op body pruning for CALL, GENERATOR, CHECKTUPLE,
+// CHECKRECORD, CHANGETUPLE, CHANGERECORD, MODESWITCH, and generically every
+// other operation), and finally each PROC. Regions already detached by an
+// earlier rewrite in the same sweep -- unused, or whose `Ancestor()` is no
+// longer linked under a procedure -- are skipped. After every sweep,
+// `remove_unused` erases unreferenced regions and procedures, always keeping
+// initializers, entry/primary dataflow functions, and message handlers.
+// Once no sweep changes anything, procedures are deduplicated: every used
+// (or raw-used) procedure other than the entry-point kinds and query message
+// injectors is bucketed by `Hash`, buckets are compared pairwise with
+// `Equals`, and each duplicate is replaced by one representative via
+// `ReplaceAllUsesWith`. Raw (non-use-list) references held by `ProgramQuery`
+// tuple checkers and forcing functions are rewritten to the representative,
+// which inherits `has_raw_use`. A final `remove_unused` deletes the dead
+// duplicates.
+//
+//    repeat until a full pass changes nothing:
+//      for KIND in [PARALLEL, INDUCTION, SERIES, OPERATION, PROC]:
+//        sort regions of KIND deepest-first
+//        for region in that list:
+//          if region is used and still linked into a procedure:
+//            changed |= OptimizeImpl(region)
+//      remove unused regions and procedures
+//    bucket eligible PROCs by Hash()
+//    for each pair in a bucket where Equals():
+//      duplicate.ReplaceAllUsesWith(representative)
+//      rewrite raw uses in query tuple_checker / forcing_function
+//    remove unused regions and procedures
+//
+// No-op bubbling within one pass (deepest regions rewritten first):
+//
+//   PROC                    PROC                    PROC
+//   +-- SERIES              +-- SERIES              +-- <no body>
+//       +-- LET        =>       +-- <removed>  =>
+//           +-- TUPLECMP
+//               (no body)
+//
+// Procedure deduplication:
+//
+//   PROC $p1 { X }   CALL $p1        PROC $p1 { X }   CALL $p1
+//   PROC $p2 { X }   CALL $p2   =>   (removed)        CALL $p1
 void ProgramImpl::Optimize(void) {
 
   // A bunch of the optimizations check `region->IsNoOp()`, which looks down

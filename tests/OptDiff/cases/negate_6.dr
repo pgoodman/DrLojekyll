@@ -1,0 +1,15 @@
+; AND-NOT (!) vs AND-NEVER (@never) negations are structurally distinct and
+; must never CSE together despite identical column structure.
+#message feed(i32 A).
+#message unsee(i32 A).
+
+#local seen(i32 A).
+seen(A) : unsee(A).
+
+#local x(i32 A).
+#local y(i32 A).
+x(A) : feed(A), !seen(A).
+y(A) : feed(A), @never seen(A).
+
+#query qx(free i32 A) : x(A).
+#query qy(free i32 A) : y(A).

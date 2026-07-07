@@ -1,0 +1,11 @@
+; CHANGETUPLE: no-op success body pruned. The only consumer of the inserted
+; table is a query that scans it directly, so the success body of the tuple
+; state change collapses to a no-op and is detached while the insert side
+; effect remains.
+
+#message add_user(i32 Id).
+#local user(i32 Id).
+#query all_users(free i32 Id).
+
+user(Id) : add_user(Id).
+all_users(Id) : user(Id).

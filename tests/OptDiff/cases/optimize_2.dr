@@ -1,0 +1,15 @@
+; group_ids cross-product safety: the two SELECTs of node feeding the same
+; product must NOT be CSE'd (or the product self-pairs), while the SELECT in
+; the separate diag clause and self_pairs clause (different groups) may merge.
+
+#message add_node(u64 N).
+#local node(u64 N).
+#query pairs(free u64 A, free u64 B).
+#query self_pairs(free u64 A).
+
+node(N) : add_node(N).
+
+pairs(A, B) @product : node(A), node(B), A != B.
+pairs(A, A) : node(A).
+
+self_pairs(A) : node(A).

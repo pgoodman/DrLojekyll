@@ -1,0 +1,19 @@
+; MODESWITCH corner cases: a @differential message chained through several
+; locals nests removal-mode switches inside removal-mode contexts (inner
+; switch as sole body of outer switch; re-assertion of the mode already in
+; effect), plus a top-level switch to the default addition mode. The unused
+; local gives a switch whose body is DCE'd first (empty-body switch left
+; for RemoveUnused).
+
+#message add(i32 A) @differential.
+#local a(i32 A).
+#local b(i32 A).
+#local c(i32 A).
+#local dead(i32 A).
+#query q(free i32 A).
+
+a(A) : add(A).
+b(A) : a(A).
+c(A) : b(A).
+dead(A) : add(A).
+q(A) : c(A).

@@ -99,7 +99,25 @@ unsigned QueryJoinImpl::Depth(void) noexcept {
   return depth;
 }
 
-// Convert a trivial join (only has a single input view) into a TUPLE.
+// Convert a trivial join (only has a single input view) into a TUPLE. With a
+// single joined view there are no pivot sets spanning multiple views, so the
+// JOIN performs no matching: every output column forwards exactly one input
+// column, or a constant. A TUPLE expresses that forwarding directly, carries
+// no pivot bookkeeping, and is a better candidate for later merging and
+// elimination.
+//
+//    create TUPLE with one output column per JOIN output column
+//    for each JOIN output column:
+//      if it maps to an input column: TUPLE forwards that input column
+//      else (constant output):        TUPLE forwards the constant
+//    replace all uses of the JOIN with the TUPLE
+//
+//   Before:                          After:
+//     V[a b]                           V[a b]
+//       |                                |
+//     JOIN[out=(a, b)]                 TUPLE[out=(a, b)]
+//       |                                |
+//     users                            users
 void QueryJoinImpl::ConvertTrivialJoinToTuple(QueryImpl *impl) {
   TUPLE * const tuple = impl->tuples.Create();
   tuple->color = color;
@@ -136,7 +154,31 @@ void QueryJoinImpl::ConvertTrivialJoinToTuple(QueryImpl *impl) {
 
 // Returns `true` if any joined views were identified where one or more of
 // their columns are not used by the JOIN. If so, we proxy those views with
-// TUPLEs.
+// TUPLEs. A JOIN implicitly carries every column of every joined view, so a
+// joined view column that is neither a pivot nor demanded by any user of the
+// JOIN only widens the data flowing through the JOIN. Interposing a TUPLE
+// that forwards just the needed columns narrows each such input, and the
+// JOIN's own output shape is rebuilt without the unused non-pivot columns.
+// This does not run when the JOIN is used directly as a whole view (e.g. by
+// a MERGE, or as the setter of a used condition), because those uses depend
+// on the JOIN keeping its exact column shape.
+//
+//    if the JOIN is used directly as a view: return false
+//    needed = all pivot input/output columns
+//           + non-pivot input/output columns whose output is used
+//    if every input view column is needed: return false
+//    for each joined view with a column not in needed:
+//      interpose TUPLE forwarding only its needed columns
+//    rebuild columns/out_to_in, keeping pivots and used non-pivots
+//
+//   Before (b unused by any user):    After:
+//     U[x]      V[x b]                  U[x]     V[x b]
+//        \      /                         \        |
+//     JOIN[P={U.x,V.x},                    \    TUPLE[x]
+//          out=(P, b)]                      \    /
+//          |                            JOIN[P={U.x,T.x}, out=(P)]
+//     users of P only                        |
+//                                          users
 bool QueryJoinImpl::ProxyUnusedInputColumns(QueryImpl *impl) {
   const auto is_used_in_merge = IsUsedDirectly();
   if (is_used_in_merge) {
@@ -261,6 +303,46 @@ bool QueryJoinImpl::ProxyUnusedInputColumns(QueryImpl *impl) {
 }
 
 // Remove all constant uses and outputs. This is a pretty aggressive function.
+// Every output column whose value is a known constant is deleted from the
+// JOIN itself: the equality it encodes is enforced instead by guarding each
+// joined view with a tower of CMP[==] nodes that compare the incoming
+// columns against their required constants, and the constant value is
+// re-emitted by a TUPLE placed above the rebuilt JOIN that reproduces the
+// original JOIN's output shape (and takes over its set/tested conditions).
+// Constant pivots need no join-time matching, so the pivot set shrinks; the
+// JOIN may degrade into a PRODUCT (no non-constant pivots but several
+// remaining views), into a direct read of a single remaining view, or vanish
+// entirely (every column constant). A joined view whose every contributed
+// column is constant drops out of the JOIN; its guard CMP then sets a COND
+// that the output TUPLE tests, so the constant row is only produced while
+// that dropped view actually holds matching data.
+//
+//    for each constant output column:
+//      record the required constant of each of its input columns
+//    for each joined view:
+//      while some column carries a required constant it does not equal:
+//        wrap the view in CMP[col == const], forwarding the rest
+//    rebuild the JOIN from the non-constant pivots, then the
+//      non-constant non-pivots
+//    create TUPLE with the original output shape: constants emitted
+//      directly, surviving columns read from the rebuilt JOIN; move the
+//      JOIN's set condition and tested conditions onto the TUPLE
+//    for each joined view that no longer feeds the JOIN:
+//      TUPLE tests a COND set by that view's guard
+//    if no non-constant pivots remain:
+//      no non-pivots either -> delete the JOIN (TUPLE + CONDs remain)
+//      one view remains     -> TUPLE reads it directly; delete the JOIN
+//      several views remain -> keep the JOIN as a PRODUCT (0 pivots)
+//
+//   Before (pivot P is constant 1):   After:
+//     A[x y]        B[x]                A[x y]          B[x]
+//        \          /                     |               |
+//     JOIN[P={A.x,B.x},              CMP[A.x==1]     CMP[B.x==1]
+//          out=(P, y)]                out=(1, y)      out=(1)
+//          |                              |           sets COND c
+//        users                       TUPLE[out=(1, y)] tests c
+//                                         |
+//                                       users
 void QueryJoinImpl::RemoveConstants(QueryImpl *impl) {
 
   std::unordered_map<VIEW *, VIEW *> view_map;
@@ -590,8 +672,49 @@ void QueryJoinImpl::RemoveConstants(QueryImpl *impl) {
 }
 
 // Put this join into a canonical form, which will make comparisons and
-// replacements easier. The approach taken is to sort the incoming columns, and
-// to ensure that the iteration order of `out_to_in` matches `columns`.
+// replacements easier. A JOIN equates each pivot column across all of its
+// joined views and forwards every other column unchanged, so several shapes
+// admit a strictly simpler equivalent: an input column feeding two output
+// columns makes those outputs identical, so all but one are redundant; a
+// constant flowing into (or inferred for) an output column turns pivot
+// matching into a per-view comparison against that constant, handled by
+// RemoveConstants; a joined view with columns the JOIN never uses can be
+// narrowed by ProxyUnusedInputColumns; and a JOIN over a single view performs
+// no matching at all and becomes a TUPLE via ConvertTrivialJoinToTuple. Each
+// rewrite shrinks the JOIN's columns or removes the JOIN, exposing further
+// optimization (e.g. CSE of identical views, dead node removal) to the
+// surrounding fixpoint driver. Constant knowledge is also pulled in from
+// above: when the JOIN's only user is an equality CMP of a pivot output
+// against a constant, that constant is marked on the pivot output, which
+// routes the JOIN through RemoveConstants and sinks the comparison below the
+// join.
+//
+//    if out_to_in is empty:        unlink; the JOIN is dead
+//    if dead/unsat/invalid:        do nothing
+//    if any joined view is unsat:  mark this JOIN unsatisfiable
+//    if the only user is CMP[pivot output == constant]:
+//      mark that pivot output column as constant
+//    propagate constants from input columns to output columns
+//    if two output columns share an input column:
+//      redirect users of the later duplicates to the first output,
+//      rebuild the JOIN with unique columns (recounting pivots), put a
+//      TUPLE above it restoring the original shape, re-canonicalize
+//    if any output column is constant:   RemoveConstants
+//    else if allowed and profitable:     ProxyUnusedInputColumns
+//    else if only one joined view:       ConvertTrivialJoinToTuple
+//    else: the JOIN is canonical
+//
+// Duplicate output elimination (two outputs read V.b):
+//
+//   Before:                          After:
+//     U[a]      V[a b]                 U[a]      V[a b]
+//        \      /                         \      /
+//     JOIN[P={U.a,V.a},               JOIN[P={U.a,V.a},
+//          out=(P, b, b)]                  out=(P, b)]
+//          |                               |
+//        users                        TUPLE[out=(P, b, b)]
+//                                          |
+//                                        users
 //
 // TODO(pag): If *all* incoming columns for a pivot column are the same, then
 //            it no longer needs to be a pivot column.

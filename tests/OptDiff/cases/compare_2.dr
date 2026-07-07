@@ -1,0 +1,15 @@
+; CMP canonicalization of attached columns: constant attached outputs get
+; guarded with an optimized TUPLE, and unused attached columns are dropped.
+
+#message in(i32 X, i32 Y).
+#message in3(i32 X, i32 Y, i32 Z).
+#local src(i32 X, i32 Y).
+src(X, Y) : in(X, Y).
+
+; Constant attached output C alongside a real comparison.
+#query q_c(free i32 X, free i32 C).
+q_c(X, C) : src(X, Y), C = 7, X < Y.
+
+; Z is attached but never used downstream of the comparison.
+#query q_u(free i32 X).
+q_u(X) : in3(X, Y, _), X < Y.

@@ -1,0 +1,26 @@
+; INDUCTION init-region splicing into an enclosing SERIES: tc has two
+; non-inductive base clauses so its init region is itself a SERIES whose
+; children get re-parented individually; tc2 has exactly one base clause so
+; its init region is a single non-SERIES region spliced as one node.
+
+#message base1(i32 A).
+#message base2(i32 A).
+#message base3(i32 A).
+#message edge(i32 A, i32 B).
+#message edge2(i32 A, i32 B).
+
+#local tc(i32 A).
+#local tc2(i32 A).
+
+#query out1(free i32 A).
+#query out2(free i32 A).
+
+tc(A) : base1(A).
+tc(A) : base2(A).
+tc(B) : tc(A), edge(A, B).
+
+tc2(A) : base3(A).
+tc2(B) : tc2(A), edge2(A, B).
+
+out1(A) : tc(A).
+out2(A) : tc2(A).

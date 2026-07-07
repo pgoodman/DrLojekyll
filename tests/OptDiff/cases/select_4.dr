@@ -1,0 +1,11 @@
+; SELECT Equals/Hash for CONST streams: both clauses select the literal 1
+; (in different column positions), producing two CONST selects that are
+; structurally equal and merge unconditionally (InsertSetsOverlap is
+; skipped for constants). The query output must contain both orientations.
+#message m(i32 X).
+#local p(i32 X, i32 Y).
+#query q(free i32 X, free i32 Y).
+
+p(X, 1) : m(X).
+p(1, X) : m(X).
+q(X, Y) : p(X, Y).

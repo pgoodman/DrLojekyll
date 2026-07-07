@@ -1,0 +1,28 @@
+; MAP canonicalization: pulling inputs through trivial forwarding TUPLEs
+; (single-clause local) and trivial single-source UNIONs (duplicate clauses),
+; while a genuine two-source UNION is left alone.
+
+#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.).
+
+#message m(i32 X).
+#message n(i32 X).
+
+#local t(i32 X).
+#local u(i32 X).
+#local v(i32 X).
+
+#query out_t(free i32 Y).
+#query out_u(free i32 Y).
+#query out_v(free i32 Y).
+
+t(X) : m(X).
+
+u(X) : m(X).
+u(X) : m(X).
+
+v(X) : m(X).
+v(X) : n(X).
+
+out_t(Y) : t(X), add_i32(X, 1, Y).
+out_u(Y) : u(X), add_i32(X, 10, Y).
+out_v(Y) : v(X), add_i32(X, 100, Y).

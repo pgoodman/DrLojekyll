@@ -1,0 +1,20 @@
+; INSERT canonicalization: PullDataFromBeyondTrivialTuples hops the INSERT's
+; inputs over a tower of trivial forwarding TUPLEs that only permute columns.
+; q_mix has one constant input column and one view input column, exercising
+; the mixed constant/view pass-through during the hop.
+
+#message m(i32 X, i32 Y).
+
+#local a(i32 Y, i32 X).
+#local b(i32 X, i32 Y).
+#local c(i32 Y, i32 X).
+
+#query q_perm(free i32 Y, free i32 X).
+#query q_mix(free i32 X, free i32 K).
+
+a(Y, X) : m(X, Y).
+b(X, Y) : a(Y, X).
+c(Y, X) : b(X, Y).
+
+q_perm(Y, X) : c(Y, X).
+q_mix(X, 99) : m(X, _).

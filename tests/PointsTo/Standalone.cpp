@@ -1,38 +1,28 @@
 // Copyright 2021, Trail of Bits. All rights reserved.
 
-#include <gtest/gtest.h>
-#include <glog/logging.h>
+#include <DrTest.h>
 
 #include <sys/time.h>
 
-#include <algorithm>
-#include <fstream>
-#include <iomanip>
-#include <iostream>
-#include <set>
-#include <cstdio>
 #include <cinttypes>
+#include <cstdint>
+#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include <string>
 
 #include "FactPaths.h"
+#include "points_to.h"  // Auto-generated.
 
-#include <drlojekyll/Runtime/StdRuntime.h>
-#include "points_to.db.h"  // Auto-generated.
-
-using DatabaseStorage = hyde::rt::StdStorage;
-using DatabaseFunctors = points_to::DatabaseFunctors<DatabaseStorage>;
-using DatabaseLog = points_to::DatabaseLog<DatabaseStorage>;
-using Database = points_to::Database<DatabaseStorage, DatabaseLog, DatabaseFunctors>;
-
-template <typename... Args>
-using Vector = hyde::rt::Vector<DatabaseStorage, Args...>;
+namespace {
 
 class Timed {
  private:
-  const char * const timer;
+  const char *const timer;
   int64_t start;
+
  public:
-  Timed(const char *timer_)
-      : timer(timer_) {
+  Timed(const char *timer_) : timer(timer_) {
     struct timeval x2_t;
     gettimeofday(&x2_t, NULL);
     start = x2_t.tv_sec * 1000000L + x2_t.tv_usec;
@@ -42,19 +32,20 @@ class Timed {
     struct timeval x2_t;
     gettimeofday(&x2_t, NULL);
     auto now = (x2_t.tv_sec * 1000000L) + x2_t.tv_usec;
-
     std::cerr << timer << ": " << (now - start) << "\n";
   }
 };
 
+}  // namespace
+
 TEST(PointsTo, RunOnFacts) {
+  const auto allocator = hyde::rt::MallocAllocator();
 
-  DatabaseFunctors functors;
-  DatabaseLog log;
-  DatabaseStorage storage;
-  Database db(storage, log, functors);
+  points_to::DatabaseFunctors functors;
+  points_to::DatabaseLog log;
+  points_to::Database db(allocator, log, functors);
 
-  Vector<uint32_t, uint32_t> assign_alloc_facts(storage, 0);
+  hyde::rt::Vec<points_to::assign_alloc_input> assign_alloc_facts(allocator);
   {
     Timed timer("Time to load AssignAlloc.facts");
     std::ifstream fs(kAssignAllocPath);
@@ -62,12 +53,12 @@ TEST(PointsTo, RunOnFacts) {
       uint32_t var;
       uint32_t heap;
       if (2 == sscanf(line.c_str(), "%u\t%u", &var, &heap)) {
-        assign_alloc_facts.Add(var, heap);
+        assign_alloc_facts.Add({var, heap});
       }
     }
   }
 
-  Vector<uint32_t, uint32_t, uint32_t> load_facts(storage, 1);
+  hyde::rt::Vec<points_to::load_input> load_facts(allocator);
   {
     Timed timer("Time to load Load.facts");
     std::ifstream fs(kLoadPath);
@@ -76,12 +67,13 @@ TEST(PointsTo, RunOnFacts) {
       uint32_t dest;
       uint32_t field;
       if (3 == sscanf(line.c_str(), "%u\t%u\t%u", &base, &dest, &field)) {
-        load_facts.Add(base, dest, field);
+        load_facts.Add({base, dest, field});
       }
     }
   }
 
-  Vector<uint32_t, uint32_t> primitive_assign_facts(storage, 2);
+  hyde::rt::Vec<points_to::primitive_assign_input> primitive_assign_facts(
+      allocator);
   {
     Timed timer("Time to load PrimitiveAssign.facts");
     std::ifstream fs(kPrimitiveAssignPath);
@@ -89,12 +81,12 @@ TEST(PointsTo, RunOnFacts) {
       uint32_t source;
       uint32_t dest;
       if (2 == sscanf(line.c_str(), "%u\t%u", &source, &dest)) {
-        primitive_assign_facts.Add(source, dest);
+        primitive_assign_facts.Add({source, dest});
       }
     }
   }
 
-  Vector<uint32_t, uint32_t, uint32_t> store_facts(storage, 3);
+  hyde::rt::Vec<points_to::store_input> store_facts(allocator);
   {
     Timed timer("Time to load Store.facts");
     std::ifstream fs(kStorePath);
@@ -103,7 +95,7 @@ TEST(PointsTo, RunOnFacts) {
       uint32_t base;
       uint32_t field;
       if (3 == sscanf(line.c_str(), "%u\t%u\t%u", &source, &base, &field)) {
-        store_facts.Add(source, base, field);
+        store_facts.Add({source, base, field});
       }
     }
   }
@@ -114,35 +106,43 @@ TEST(PointsTo, RunOnFacts) {
     db.load_3(std::move(load_facts));
     db.primitive_assign_2(std::move(primitive_assign_facts));
     db.store_3(std::move(store_facts));
-//    db.proc_41_(std::move(primitive_assign_facts), std::move(store_facts),
-//                std::move(load_facts), std::move(assign_alloc_facts));
   }
 
+  size_t num_aliases = 0;
   {
     Timed timer("Time to write Alias.tsv");
     std::ofstream fs(kAliasPath);
-    db.alias_ff([&fs] (uint32_t x, uint32_t y) {
+    auto cursor = db.alias_ff();
+    for (uint32_t x, y; cursor.next(x, y);) {
       fs << x << '\t' << y << '\n';
-      return true;
-    });
+      ++num_aliases;
+    }
   }
 
+  size_t num_assigns = 0;
   {
     Timed timer("Time to write Assign.tsv");
     std::ofstream fs(kAssignPath);
-    db.assign_ff([&fs] (uint32_t source, uint32_t dest) {
+    auto cursor = db.assign_ff();
+    for (uint32_t source, dest; cursor.next(source, dest);) {
       fs << source << '\t' << dest << '\n';
-      return true;
-    });
+      ++num_assigns;
+    }
   }
 
+  size_t num_points_to = 0;
   {
     Timed timer("Time to write VarPointsTo.tsv");
     std::ofstream fs(kVarPointsToPath);
-    db.var_points_to_ff([&fs] (uint32_t var, uint32_t heap) {
+    auto cursor = db.var_points_to_ff();
+    for (uint32_t var, heap; cursor.next(var, heap);) {
       fs << var << '\t' << heap << '\n';
-      return true;
-    });
+      ++num_points_to;
+    }
   }
-}
 
+  // The relations must be non-trivial; the analysis derived something.
+  ASSERT_TRUE(num_aliases > 0u);
+  ASSERT_TRUE(num_assigns > 0u);
+  ASSERT_TRUE(num_points_to > 0u);
+}

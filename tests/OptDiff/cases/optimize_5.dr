@@ -1,0 +1,10 @@
+; ShrinkConditions: have_ping is set unconditionally from the ping receive,
+; so DropSetConditions should fire and the test on out's clause should die.
+; Minimal shape: a zero-arity condition tested in a clause that also
+; positively receives a view.
+
+#message ping(i32 X).
+#query out(free i32 X).
+
+have_ping : ping(_).
+out(X) : have_ping, ping(X).

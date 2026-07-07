@@ -3,15 +3,13 @@
 include(CTest)
 enable_testing()
 
-include("${CMAKE_SOURCE_DIR}/cmake/Compiler.cmake")
+include("${PROJECT_SOURCE_DIR}/cmake/Compiler.cmake")
+
+# Dependency-free unit-test harness; a drop-in for the sliver of GoogleTest the
+# tests use (`TEST` + `ASSERT_*` + a `main`).
+add_library(drtest STATIC DrTest/DrTest.cpp)
+target_include_directories(drtest PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/DrTest")
 
 add_subdirectory(MiniDisassembler)
 add_subdirectory(PointsTo)
-
-find_package(gap CONFIG)
-find_package(LLVM CONFIG)
-if(NOT "${gap}" STREQUAL "gap-NOTFOUND")
-  if(NOT "${LLVM}" STREQUAL "LLVM-NOTFOUND")
-    add_subdirectory(LLVM)
-  endif()
-endif()
+add_subdirectory(Runtime)

@@ -335,8 +335,16 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // Converts this node to be unconditional, it doesn't affect set conditions.
   void DropTestedConditions(void);
 
-  // Converts this node to not set any conditions.
+  // Converts this node to not set any conditions. When this was the last
+  // setter, the condition is unconditionally satisfied, and every test of it
+  // is dropped.
   void DropSetConditions(void);
+
+  // Stops this (dying) node from setting any conditions. When this was the
+  // last setter, the condition can never be satisfied: positive testers are
+  // unsatisfiable and are deleted, and negative tests are vacuously true and
+  // are dropped.
+  void DropSetConditionsOfDeadView(void);
 
   // If `sets_condition` is non-null, then transfer the setter to `that`.
   void TransferSetConditionTo(QueryViewImpl *that);
@@ -647,9 +655,21 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
       UseList<QueryColumnImpl> &cols2);
 
  private:
-  // Similar to, and called by, `PullDataFromBeyondTrivialTuples`.
+  // Recursive core of `PullDataFromBeyondTrivialTuples`. `visited` holds
+  // every view the chase has already stepped beyond; the chase stops when
+  // the incoming view repeats, which terminates walks around source-less
+  // forwarding cycles.
+  QueryViewImpl *
+  PullDataFromBeyondTrivialTuplesImpl(
+      std::vector<QueryViewImpl *> &visited,
+      QueryViewImpl *incoming_view,
+      UseList<QueryColumnImpl> &cols1,
+      UseList<QueryColumnImpl> &cols2);
+
+  // Similar to, and called by, `PullDataFromBeyondTrivialTuplesImpl`.
   QueryViewImpl *
   PullDataFromBeyondTrivialUnions(
+      std::vector<QueryViewImpl *> &visited,
       QueryViewImpl *incoming_view,
       UseList<QueryColumnImpl> &cols1,
       UseList<QueryColumnImpl> &cols2);

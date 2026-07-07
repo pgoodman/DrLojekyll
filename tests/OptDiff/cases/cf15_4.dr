@@ -1,0 +1,23 @@
+; TUPLECMP inside a tuple-finder procedure: the top-down checker for the
+; bound query entry_1 compares the bound B against the constant 1 flowing up
+; from the second UNION arm. Constant-based folding is unsound there (the
+; constant describes only one arm, not the tuple being checked), so a correct
+; compiler keeps the runtime compare; entry_1(a, 2) must not report true just
+; because some arm pins B to 1.
+
+#message add_entry(i32 A, i32 B).
+#message add_entry2(i32 A).
+#local entry_2(i32 A, i32 B).
+#query entry_1(bound i32 A, bound i32 B).
+
+entry_2(A, B) : add_entry(A, B).
+entry_1(A, B) : entry_2(A, B), A < B.
+entry_1(A, 1) : add_entry2(A).
+
+; Empty kEqual compare replaced by its body: A = B fuses both columns of the
+; message into one variable, the (A, A) pair is dropped, and the emptied
+; equality compare is vacuously true, forwarding rows unfiltered.
+#local pp(i32 A, i32 B).
+#query get_p(free i32 A, free i32 B).
+pp(A, B) : add_entry(A, B), A = B.
+get_p(A, B) : pp(A, B).

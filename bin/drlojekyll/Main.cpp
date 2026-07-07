@@ -43,10 +43,11 @@ struct FileStream {
 namespace {
 
 static unsigned gFirstId = 0u;
+static bool gOptimizeDataFlow = true;
+static bool gOptimizeControlFlow = true;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
 static const char *gCxxOutDir = nullptr;
-static const char *gPyOutDir = nullptr;
 
 static OutputStream *gDOTStream = nullptr;
 static OutputStream *gDRStream = nullptr;
@@ -54,53 +55,46 @@ static OutputStream *gIRStream = nullptr;
 
 static int CompileModule(const Parser &parser, DisplayManager display_manager,
                          ErrorLog error_log, ParsedModule module) {
-  auto query_opt = Query::Build(module, error_log);
+  auto query_opt = Query::Build(module, error_log, gOptimizeDataFlow);
   if (!query_opt) {
     return EXIT_FAILURE;
   }
 
-  auto ret = EXIT_SUCCESS;
-  try {
-    std::string fb_schema;
+  auto program_opt =
+      Program::Build(*query_opt, error_log, gFirstId, gOptimizeControlFlow);
+  if (!program_opt) {
+    return EXIT_FAILURE;
+  }
 
-    auto program_opt = Program::Build(*query_opt, gFirstId);
-    if (!program_opt) {
+  auto ret = EXIT_SUCCESS;
+
+  if (gIRStream) {
+    (*gIRStream) << *program_opt;
+    gIRStream->Flush();
+  }
+
+  if (gCxxOutDir) {
+    const std::filesystem::path dir = gCxxOutDir;
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+      error_log.Append() << "Unable to create C++ output directory '"
+                         << gCxxOutDir << "': " << ec.message();
       return EXIT_FAILURE;
     }
 
-    if (gIRStream) {
-      (*gIRStream) << *program_opt;
-      gIRStream->Flush();
+    const auto header_name = gDatabaseName + ".h";
+    hyde::FileStream h_fs(display_manager,
+                          (dir / header_name).generic_string());
+    hyde::FileStream cc_fs(display_manager,
+                           (dir / (gDatabaseName + ".cpp")).generic_string());
+    if (!h_fs.fs.is_open() || !cc_fs.fs.is_open()) {
+      error_log.Append() << "Unable to open C++ output files in directory '"
+                         << gCxxOutDir << "'";
+      return EXIT_FAILURE;
     }
-
-    if (gCxxOutDir) {
-      std::filesystem::path dir = gCxxOutDir;
-      hyde::FileStream db_fs(
-          display_manager,
-          (dir / (gDatabaseName + ".db.h")).generic_string());
-      hyde::cxx::GenerateDatabaseCode(*program_opt, db_fs.os);
-
-      hyde::FileStream interface_fs(
-          display_manager,
-          (dir / (gDatabaseName + ".interface.h")).generic_string());
-      hyde::cxx::GenerateInterfaceCode(*program_opt, interface_fs.os);
-    }
-
-    if (gPyOutDir) {
-      std::filesystem::path dir = gPyOutDir;
-      if (gHasDatabaseName) {
-        dir /= gDatabaseName;
-      }
-
-      hyde::FileStream db_fs(
-          display_manager,
-          (dir / "__init__.py").generic_string());
-      db_fs.os.SetIndentSize(4u);
-      hyde::python::GenerateDatabaseCode(*program_opt, db_fs.os);
-    }
-
-  } catch (...) {
-    ret = EXIT_FAILURE;
+    hyde::cxx::GenerateDatabaseCode(*program_opt, h_fs.os, cc_fs.os,
+                                    header_name);
   }
 
   // NOTE(pag): We do this later because if we produce the control-flow IR
@@ -183,7 +177,6 @@ static int HelpMessage(const char *argv[]) {
       << "OUTPUT OPTIONS:" << std::endl
       << "  -ir-out <PATH>            Emit IR output to PATH." << std::endl
       << "  -cpp-out <DIR>            Emit transpiled C++ output files into DIR." << std::endl
-      << "  -py-out <DIR>             Emit transpiled Python output files into DIR." << std::endl
       << "  -dr-out <PATH>            Emit an amalgamation of all the input and transitively." << std::endl
       << "                            imported modules to PATH." << std::endl
       << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
@@ -191,6 +184,10 @@ static int HelpMessage(const char *argv[]) {
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
       << "  -M <PATH>                 Directory where import statements can find needed Datalog modules." << std::endl
+      << "  -disable-dataflow-opt     Skip the aggressive data flow optimization pass (CSE, union sinking," << std::endl
+      << "                            dead flow elimination)." << std::endl
+      << "  -disable-controlflow-opt  Skip control-flow IR optimization (region flattening, no-op removal," << std::endl
+      << "                            procedure deduplication)." << std::endl
       << std::endl
       << "OTHER OPTIONS:" << std::endl
       << "  -help, -h                 Show help and exit." << std::endl
@@ -250,7 +247,6 @@ extern "C" int main(int argc, const char *argv[]) {
   hyde::gOut = &os;
 
   std::unique_ptr<hyde::FileStream> dot_out;
-  std::unique_ptr<hyde::FileStream> fb_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -268,17 +264,6 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gCxxOutDir = argv[i];
       }
 
-    // Python output file of the transpiled from the Dr. Lojekyll source code.
-    } else if (!strcmp(argv[i], "-py-out") || !strcmp(argv[i], "--py-out")) {
-      ++i;
-      if (i >= argc) {
-        error_log.Append()
-            << "Command-line argument '" << argv[i - 1]
-            << "' must be followed by a directory path for Python code output";
-      } else {
-        hyde::gPyOutDir = argv[i];
-      }
-
     } else if (!strcmp(argv[i], "-ir-out") || !strcmp(argv[i], "--ir-out")) {
       ++i;
       if (i >= argc) {
@@ -286,6 +271,10 @@ extern "C" int main(int argc, const char *argv[]) {
                            << "' must be followed by a file path for IR output";
       } else {
         ir_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!ir_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for IR output";
+        }
         hyde::gIRStream = &(ir_out->os);
       }
 
@@ -299,6 +288,10 @@ extern "C" int main(int argc, const char *argv[]) {
                            << "amalgamated Datalog output";
       } else {
         dr_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!dr_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for amalgamated Datalog output";
+        }
         hyde::gDRStream = &(dr_out->os);
       }
 
@@ -311,6 +304,10 @@ extern "C" int main(int argc, const char *argv[]) {
                            << "GraphViz DOT digraph output";
       } else {
         dot_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!dot_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for GraphViz DOT output";
+        }
         hyde::gDOTStream = &(dot_out->os);
       }
 
@@ -327,6 +324,16 @@ extern "C" int main(int argc, const char *argv[]) {
       } else {
         hyde::gFirstId = static_cast<unsigned>(strtoul(argv[i], nullptr, 10));
       }
+
+    // Disable the aggressive data flow optimization pass.
+    } else if (!strcmp(argv[i], "-disable-dataflow-opt") ||
+               !strcmp(argv[i], "--disable-dataflow-opt")) {
+      hyde::gOptimizeDataFlow = false;
+
+    // Disable control-flow IR optimization.
+    } else if (!strcmp(argv[i], "-disable-controlflow-opt") ||
+               !strcmp(argv[i], "--disable-controlflow-opt")) {
+      hyde::gOptimizeControlFlow = false;
 
     // Datalog module file search path.
     } else if (!strcmp(argv[i], "-M")) {

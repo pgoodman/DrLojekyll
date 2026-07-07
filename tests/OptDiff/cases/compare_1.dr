@@ -1,0 +1,21 @@
+; CMP canonicalization: trivially-true equality (both inputs fuse to the
+; same column) and unsatisfiable ordered compare over an identical column,
+; fed by a @differential message through a forwarding local.
+
+#message add_pair(i32 X, i32 Y) @differential.
+#local pair(i32 X, i32 Y).
+pair(X, Y) : add_pair(X, Y).
+
+; X = Y fuses the pair; Y = X then compares a column with itself: kEqual
+; over pointer-identical inputs must fold to a forwarding TUPLE.
+#query q_eq(free i32 X).
+q_eq(X) : pair(X, Y), X = Y, Y = X.
+
+; X = Y fuses inside eqpair; the X < Y in the query then compares a column
+; with itself after inlining: always false, the CMP must be marked
+; unsatisfiable and the query stays empty.
+#local eqpair(i32 X, i32 Y).
+eqpair(X, Y) : pair(X, Y), X = Y.
+
+#query q_lt(free i32 X).
+q_lt(X) : eqpair(X, Y), X < Y.

@@ -1,0 +1,36 @@
+; Union sinking through NEGATEs:
+;  - `same` negates the identical view `deny` in both clauses, so the
+;    negated view is shared and only the predecessors are unioned under
+;    a single NEGATE;
+;  - `tagd` negates two different views (`deny_a` vs `deny_b`), forcing
+;    the tag-column mode: tagged negated views and tagged predecessors
+;    are unioned under one tag-aware NEGATE, and a final TUPLE strips
+;    the tag.  Differential messages feed the negated views so the
+;    differential/group IDs must survive the wrapper tuples.
+
+#message a(i32 X).
+#message b(i32 X).
+#message da(i32 X) @differential.
+#message db(i32 X) @differential.
+
+#local deny(i32 X).
+#local deny_a(i32 X).
+#local deny_b(i32 X).
+#local same(i32 X).
+#local tagd(i32 X).
+
+#query q_same(free i32 X).
+#query q_tag(free i32 X).
+
+deny(X) : da(X).
+deny_a(X) : da(X).
+deny_b(X) : db(X).
+
+same(X) : a(X), !deny(X).
+same(X) : b(X), !deny(X).
+
+tagd(X) : a(X), !deny_a(X).
+tagd(X) : b(X), !deny_b(X).
+
+q_same(X) : same(X).
+q_tag(X) : tagd(X).

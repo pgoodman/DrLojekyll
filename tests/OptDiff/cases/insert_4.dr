@@ -1,0 +1,15 @@
+; INSERT canonicalization: the zero-arity `is_on` clause makes an INSERT with
+; empty input columns (an INCREMENT of a CONDition), and the positive/negative
+; tests of `is_on` put conditions on the TUPLEs feeding the query INSERTs,
+; blocking PullDataFromBeyondTrivialTuples from hopping over them.
+
+#message log_in(i32 UserId).
+#message m(i32 X).
+
+#query on_vals(free i32 X).
+#query off_vals(free i32 X).
+
+is_on : log_in(_).
+
+on_vals(X) : is_on, m(X).
+off_vals(X) : !is_on, m(X).

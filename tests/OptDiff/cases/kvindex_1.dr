@@ -1,0 +1,12 @@
+; KVINDEX canonicalization: no value column used. Every output column
+; past the keys of the mutable relation is unused, so the KVINDEX is
+; replaced by a TUPLE forwarding the keys and the dead value column is
+; then eliminated. The query reads only the key columns.
+
+#functor add_u32(bound u32 LHS, bound u32 RHS, free u32 Res).
+#message add_edge(u64 From, u64 To, u32 W).
+#local edge_weight(u64 From, u64 To, mutable(add_u32) W).
+#query has_edge(bound u64 From, free u64 To).
+
+edge_weight(F, T, W) : add_edge(F, T, W).
+has_edge(F, T) : edge_weight(F, T, _).

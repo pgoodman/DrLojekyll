@@ -1,0 +1,19 @@
+; TUPLECMP simplification over @unique foreign constants: the RED fact can
+; never satisfy C = BLUE (distinct unique constants are provably unequal, the
+; body is deleted and the compare replaced by its false_body), while
+; message-fed rows must still be compared at runtime.
+
+#foreign Tok ```int```.
+#constant Tok RED ```1``` @unique.
+#constant Tok BLUE ```2``` @unique.
+
+#message like(Tok C).
+#local likes(Tok C).
+likes(RED).
+likes(C) : like(C).
+
+#query result(free Tok C).
+result(C) : likes(C), C = BLUE.
+
+#query all_likes(free Tok C).
+all_likes(C) : likes(C).

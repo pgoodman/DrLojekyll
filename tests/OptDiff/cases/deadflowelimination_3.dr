@@ -1,0 +1,8 @@
+; Dead-flow: NEGATE requires both the data predecessor and the negated
+; view to be live; negating an underivable relation.
+#message input(i32 A).
+#local dead_rel(i32 A).
+#query out(free i32 A).
+
+dead_rel(A) : dead_rel(A).
+out(A) : input(A), !dead_rel(A).

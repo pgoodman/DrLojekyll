@@ -56,6 +56,61 @@ uint64_t QueryInsertImpl::Hash(void) noexcept {
   return local_hash;
 }
 
+// Put this INSERT into a canonical form. An INSERT is a data sink: it writes
+// its input columns into a relation (INSERT), a message stream (TRANSMIT), a
+// query result (MATERIALIZE), or increments a zero-arity CONDition
+// (INCREMENT), and produces no output columns of its own. Its canonical form
+// reads its inputs from as far up the dataflow as possible: the pass hops
+// the input columns over trivially forwarding TUPLEs and single-source
+// UNIONs, so long as each hopped-over node is unconditional or guarded only
+// by trivial positive conditions. This is beneficial because it makes the
+// intervening forwarding nodes dead (hence deletable) and makes structurally
+// identical INSERTs more likely to hash/compare as equal, enabling CSE in
+// the optimizer driver. It is sound because a TUPLE only forwards values and
+// a single-source UNION emits exactly its one source's data, so rewiring the
+// reads upstream leaves the multiset of inserted tuples unchanged. If the
+// view feeding the INSERT is unsatisfiable then the INSERT can never fire,
+// so it is marked unsatisfiable and unlinked from the graph.
+//
+//   is_canonical = true
+//   if valid and the non-constant inputs read from multiple
+//   views: mark self invalid (debug-only invariant check)
+//   incoming = PullDataFromBeyondTrivialTuples(input_columns)
+//     // may clear `is_canonical` if it rewires any input
+//   if self is not already unsatisfiable and incoming is:
+//     mark self unsatisfiable  // dirties all users
+//     unlink self from the dataflow graph
+//     return changed
+//   return whether any input was rewired
+//
+// Hopping over an unconditional forwarding TUPLE:
+//
+//   Before:                          After:
+//
+//     VIEW V[a, b]                     VIEW V[a, b]
+//      |a  |b                           |a  |b
+//     TUPLE T[x=a, y=b]                INSERT rel(a, b)
+//      |x  |y
+//     INSERT rel(x, y)                 (T deleted once unused)
+//
+// Hopping over a UNION whose only distinct source is one view (its other
+// arms are itself or this INSERT's own view):
+//
+//   Before:                          After:
+//
+//     VIEW V[a]                        VIEW V[a]
+//      |a    \                          |a
+//     UNION U[m]                       INSERT rel(a)
+//      |m
+//     INSERT rel(m)                    (U deleted once unused)
+//
+// Unsatisfiable predecessor:
+//
+//   Before:                          After:
+//
+//     VIEW V[a]  (unsat)               VIEW V[a]  (unsat)
+//      |a
+//     INSERT rel(a)                    (INSERT unsat, unlinked)
 bool QueryInsertImpl::Canonicalize(QueryImpl *, const OptimizationContext &,
                                      const ErrorLog &) {
   is_canonical = true;

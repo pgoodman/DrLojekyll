@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -95,6 +97,13 @@ class Use {
 template <typename T>
 class UseListIterator {
  public:
+  // Iterator traits: this is a proxy iterator yielding `T *` by value.
+  using iterator_category = std::forward_iterator_tag;
+  using value_type = T *;
+  using difference_type = std::ptrdiff_t;
+  using pointer = void;
+  using reference = T *;
+
   inline UseListIterator(void) noexcept : it(nullptr) {}
   inline UseListIterator(const Use<T> *const *it_) noexcept : it(it_) {}
 
@@ -378,6 +387,14 @@ class DefList;
 template <typename T>
 class DefListIterator {
  public:
+  // Iterator traits: this is a proxy iterator yielding `T *` by value.
+  using iterator_category = std::forward_iterator_tag;
+  using value_type = T *;
+  using difference_type = std::ptrdiff_t;
+  using pointer = void;
+  using reference = T *;
+
+  inline DefListIterator(void) noexcept : it(nullptr) {}
   inline DefListIterator(const std::unique_ptr<T> *it_) noexcept : it(it_) {}
 
   inline DefListIterator<T> &operator++(void) noexcept {
@@ -971,6 +988,13 @@ class UsedNodeIterator {
   using PrivateType = typename T::PrivateType;
   using NodeType = Node<PublicType, PrivateType>;
 
+  // Iterator traits: this is a proxy iterator yielding `T` by value.
+  using iterator_category = std::forward_iterator_tag;
+  using value_type = T;
+  using difference_type = std::ptrdiff_t;
+  using pointer = const T *;
+  using reference = T;
+
   static_assert(std::is_same_v<T, PublicType>);
 
   inline UsedNodeIterator(void) : it(nullptr) {}
@@ -1016,6 +1040,13 @@ class DefinedNodeIterator {
   using PublicType = typename T::PublicType;
   using PrivateType = typename T::PrivateType;
   using NodeType = Node<PublicType, PrivateType>;
+
+  // Iterator traits: this is a proxy iterator yielding `T` by value.
+  using iterator_category = std::forward_iterator_tag;
+  using value_type = T;
+  using difference_type = std::ptrdiff_t;
+  using pointer = const T *;
+  using reference = T;
 
   inline DefinedNodeIterator(void) : it(nullptr) {}
   inline DefinedNodeIterator(DefListIterator<PrivateType> it_) : it(it_) {}
@@ -1104,46 +1135,3 @@ struct DefinedNodeRange {
 };
 
 }  // namespace hyde
-namespace std {
-
-template <typename T>
-struct iterator_traits<::hyde::UseListIterator<T>> {
- public:
-  typedef std::forward_iterator_tag iterator_category;
-  typedef T *value_type;
-  typedef unsigned difference_type;
-  typedef void pointer;
-  typedef void reference;
-};
-
-template <typename T>
-struct iterator_traits<::hyde::DefListIterator<T>> {
- public:
-  typedef std::forward_iterator_tag iterator_category;
-  typedef T *value_type;
-  typedef unsigned difference_type;
-  typedef void pointer;
-  typedef void reference;
-};
-
-template <typename T>
-struct iterator_traits<::hyde::UsedNodeIterator<T>> {
- public:
-  typedef std::forward_iterator_tag iterator_category;
-  typedef T value_type;
-  typedef unsigned difference_type;
-  typedef void pointer;
-  typedef T reference;
-};
-
-template <typename T>
-struct iterator_traits<::hyde::DefinedNodeIterator<T>> {
- public:
-  typedef std::forward_iterator_tag iterator_category;
-  typedef T value_type;
-  typedef unsigned difference_type;
-  typedef void pointer;
-  typedef T reference;
-};
-
-}  // namespace std

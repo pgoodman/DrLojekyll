@@ -1,0 +1,11 @@
+; SERIES splicing: a recursive rule builds an INDUCTION whose init-region
+; hoisting manufactures SERIES-inside-SERIES shapes that must be spliced
+; into the parent in order.
+
+#message edge(i32 A, i32 B).
+#local path(i32 A, i32 B).
+#query q(free i32 A, free i32 B).
+
+path(A, B) : edge(A, B).
+path(A, C) : path(A, B), edge(B, C).
+q(A, B) : path(A, B).

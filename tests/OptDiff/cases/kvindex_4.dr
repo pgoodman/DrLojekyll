@@ -1,0 +1,12 @@
+; KVINDEX canonicalization: constant key removal. The only key of the
+; mutable relation is the literal 7, so the key column is replaced by
+; the constant and dropped from the index, narrowing it to just the
+; merged value.
+
+#functor add_u32(bound u32 LHS, bound u32 RHS, free u32 Res).
+#message seen(u64 EA, u32 N).
+#local bucket_count(u64 Bucket, mutable(add_u32) Count).
+#query get_bucket(bound u64 Bucket, free u32 Count).
+
+bucket_count(7, N) : seen(_, N).
+get_bucket(B, C) : bucket_count(B, C).

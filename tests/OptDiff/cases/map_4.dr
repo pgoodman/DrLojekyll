@@ -1,0 +1,17 @@
+; MAP canonicalization: unsatisfiability upstream of a functor application.
+; out_bad feeds the functor from a local whose only clause is unsatisfiable
+; (X = 1, X = 2); it must always be empty. out_ok is a live control.
+
+#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.).
+
+#message m(i32 X).
+
+#local bad(i32 X).
+
+#query out_bad(free i32 Y).
+#query out_ok(free i32 Y).
+
+bad(X) : m(X), X = 1, X = 2.
+
+out_bad(Y) : bad(X), add_i32(X, 1, Y).
+out_ok(Y) : m(X), add_i32(X, 0, Y).

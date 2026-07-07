@@ -1,0 +1,12 @@
+; Driver-loop filtering of detached CHECK*/CHANGE* regions: a differential
+; query through a zero-arity condition orphans sibling regions in the same
+; optimization iteration; the pass itself has no IsUsed/parent early-out.
+
+#message log_in(i32 UserId) @differential.
+#message add_user(i32 UserId).
+#local user(i32 UserId).
+#query user_is_logged_in(bound i32 UserId).
+
+user(Id) : add_user(Id).
+is_logged_in : log_in(Id), user(Id).
+user_is_logged_in(Id) : is_logged_in, user(Id).

@@ -71,9 +71,51 @@ unsigned QueryMergeImpl::Depth(void) noexcept {
   return depth;
 }
 
-// Put this merge into a canonical form, which will make comparisons and
-// replacements easier. For example, after optimizations, some of the merged
-// views might be the same.
+// Put this merge (UNION) into a canonical form, which makes comparisons and
+// replacements easier. A UNION's operands form an unordered multiset of
+// same-arity views; canonicalization flattens and deduplicates that multiset
+// so that structurally identical UNIONs hash and compare equal, and so that
+// degenerate UNIONs vanish entirely. This shrinks the dataflow graph, exposes
+// common sub-expressions, and (when enabled) sinks the UNION deeper toward
+// the data sources, where merged operands can share downstream operators.
+//
+//    if this view is dead or unsatisfiable: done
+//    if there is exactly one operand and no conditions are tested/set:
+//      replace this UNION with the operand (looking through a perfectly
+//      forwarding TUPLE if there is one)
+//    worklist-flatten the operand list:
+//      drop `this` (a UNION contributes nothing to itself)
+//      drop UNSATisfiable operands
+//      drop duplicate operands
+//      look through exclusively-owned, perfectly-forwarding TUPLEs
+//      splice in the operands of exclusively-owned, condition-free
+//        child UNIONs
+//    if no operands remain:  mark this UNION as unsatisfiable
+//    if one operand remains: replace this UNION with a forwarding TUPLE
+//    if an output column is unused and removal is permitted:
+//      route each operand through a guard TUPLE that projects only the
+//      used columns, and shrink this UNION to those columns
+//    if opt.can_sink_unions:
+//      group operands by node kind; for kinds with two or more operands
+//      (none of which test or set conditions), invoke the matching
+//      SinkThroughTuples / SinkThroughMaps / SinkThroughNegations /
+//      SinkThroughJoins rewrite
+//
+// Flattening (UNION-1 has no other users and tests/sets no conditions):
+//
+//      A   B  UNSAT                  A  B  C  D
+//       \  |  /                       \ \ / /
+//        UNION-1   C  D      =>       UNION-2
+//            \     | /
+//             UNION-2
+//
+// Unused-column elimination (output column `y` has no users):
+//
+//      A(x,y)   B(x,y)           A(x,y)     B(x,y)
+//         \       /                 |          |
+//        UNION(x,y)      =>      TUPLE(x)   TUPLE(x)
+//                                    \        /
+//                                    UNION(x)
 //
 // NOTE(pag): If a merge directly merges with itself then we filter it out.
 bool QueryMergeImpl::Canonicalize(QueryImpl *query,
@@ -126,6 +168,16 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
         replacement_view = tuple_source;
       }
     }
+
+    // A merge whose only source is itself (directly, or through a forwarding
+    // tuple) receives no data from anywhere else, so it can never produce
+    // any tuples; it is unsatisfiable.
+    if (replacement_view == this) {
+      MarkAsUnsatisfiable();
+      is_canonical = true;
+      return true;
+    }
+
     ReplaceAllUsesWith(replacement_view);
     return true;  // Definitely made non-local changes.
   }
@@ -383,15 +435,39 @@ done:
   return non_local_changes;
 }
 
-// Convert two or more tuples into a single tuple that reads its data from
-// a union, where that union reads its data from the sources of the two
-// tuples. The returned tuple is likely superficial but serves to prevent
-// the union of the tuple's sources from being merged upward. What we are
-// looking for are cases where the tuples leading into the union have
-// similarly shaped inputs. We want a union over those inputs (which may be
-// wider than the tuple itself, hence the returned tuple).
-// Returns `true` if successful, and updates `tuples` in place with the
-// new merged entries.
+// Convert two or more TUPLEs feeding this UNION into a single TUPLE that
+// reads its data from a sunken UNION, where that sunken UNION reads its data
+// from the predecessors of the original TUPLEs. Two TUPLEs are mergeable when
+// each reads all of its inputs (no constants) from exactly one predecessor,
+// the two predecessors have the same column count and column types, and both
+// TUPLEs project the same predecessor column indices in the same order. This
+// is beneficial because N projections collapse into one and the UNION moves
+// closer to the data sources, where it can combine with other operators. The
+// sunken UNION ranges over the full predecessor width, which may be wider
+// than the TUPLE itself; the replacement TUPLE narrows the result back down,
+// and its presence also keeps the sunken UNION from being flattened back
+// upward into this UNION.
+//
+//    find the first non-null TUPLE T0; require that it has a single
+//      non-constant predecessor P0
+//    for each later non-null TUPLE Tn with single predecessor Pn:
+//      if Pn's shape/types match P0 and Tn projects the same indices
+//         as T0: add Pn to the sunken UNION and null out Tn's slot
+//    recurse to merge the still-unmatched views among themselves
+//    if at least one Tn matched: write the replacement TUPLE into T0's
+//      slot, else restore T0
+//
+//     P0(a,b,c)    P1(a,b,c)         P0(a,b,c)  P1(a,b,c)
+//        |            |                   \       /
+//    TUPLE(a,c)   TUPLE(a,c)     =>      UNION(a,b,c)
+//         \          /                        |
+//          UNION(a,c)                     TUPLE(a,c)
+//                                             |
+//                                         UNION(a,c)
+//
+// Returns `true` if successful, and updates `inout_views` in place: merged
+// entries are nulled out and the replacement TUPLE takes the slot of the
+// first merged TUPLE.
 bool QueryMergeImpl::SinkThroughTuples(QueryImpl *impl,
                                          std::vector<VIEW *> &inout_views) {
   VIEW *first_tuple_pred = nullptr;
@@ -594,9 +670,41 @@ static TUPLE *MakeSameShapedTuple(QueryImpl *impl, MAP *map) {
 
 }  // namespace
 
-// Convert two or more MAPs into a single MAP that reads its data from
-// a union, where that union reads its data from the sources of the two
-// MAPs.
+// Convert two or more MAPs (functor applications) feeding this UNION into a
+// single MAP that reads its data from a sunken UNION, where that UNION reads
+// from same-shaped TUPLEs wrapping each original MAP's inputs. Two MAPs are
+// mergeable when they apply the same functor with the same polarity
+// (`is_positive`), the same number of free parameters, and the same counts of
+// output, input, and attached columns. This rewrite is nearly always
+// profitable: the functor application is shared, no tag columns are needed,
+// and the sunken UNION composes with further sinking below it. Each original
+// MAP's bound and attached input columns are re-materialized through a fresh
+// TUPLE — which also carries the MAP's tested conditions and its
+// differential/group IDs — so that constant inputs can safely flow into the
+// sunken UNION.
+//
+//    find the first non-null MAP M0
+//    for each later non-null MAP Mn applying the same functor with the
+//        same polarity and column counts:
+//      wrap Mn's (input, attached) columns in a TUPLE, add that TUPLE
+//      to the sunken UNION, and null out Mn's slot
+//    recurse to merge the still-unmatched views among themselves
+//    if at least one Mn matched: write the merged MAP into M0's slot,
+//      else restore M0
+//
+//        A          B                  A          B
+//        |          |                  |          |
+//    MAP f(..)  MAP f(..)    =>    TUPLE(in)  TUPLE(in)
+//         \        /                    \        /
+//          \      /                   UNION(in cols)
+//           UNION                          |
+//                                      MAP f(..)
+//                                          |
+//                                        UNION
+//
+// Returns `true` if successful, and updates `inout_views` in place: merged
+// entries are nulled out and the merged MAP takes the slot of the first
+// merged MAP.
 bool QueryMergeImpl::SinkThroughMaps(QueryImpl *impl,
                                        std::vector<VIEW *> &inout_views) {
 
@@ -869,6 +977,58 @@ static COL *CreateTag(QueryImpl *impl, unsigned &num_used_tags) {
 
 }  // namespace
 
+// Convert two or more NEGATE nodes feeding this UNION into a single NEGATE
+// that reads its data from a sunken UNION of the original NEGATEs'
+// predecessors. Two NEGATEs are candidates when they agree on their output,
+// input, and attached column counts and on their `is_never` flag. Sharing one
+// NEGATE means one negation check instead of N, and moves the UNION below the
+// negation where it can merge with other operators. Two strategies apply:
+//
+//   1. While every candidate negates a structurally equal view, the negated
+//      view is shared directly and only the predecessors are unioned:
+//
+//           A          B                A     B
+//           |          |                 \   /
+//       NEGATE !N   NEGATE !N    =>      UNION
+//            \        /                    |
+//             UNION                    NEGATE !N
+//                                          |
+//                                        UNION
+//
+//   2. As soon as a candidate negates a different view, tag mode begins: a
+//      distinct constant 16-bit tag column disambiguates the sources. Each
+//      predecessor and each negated view is wrapped in a TUPLE that prepends
+//      its tag constant, the tagged negated views are unioned into a single
+//      negated view, and one tag-aware NEGATE matches (tag, cols) rows
+//      against (tag, cols) rows. A final TUPLE strips the tag so the result
+//      has the original shape.
+//
+//           A          B            TUPLE(t0,A)  TUPLE(t1,B)
+//           |          |                  \        /
+//       NEGATE !N0  NEGATE !N1   =>        UNION        TUPLE(t0,N0)
+//            \        /                      |          TUPLE(t1,N1)
+//             UNION                          |            |    |
+//                                     NEGATE !(------- UNION --+
+//                                            tagged views)
+//                                            |
+//                                      TUPLE(strip tag)
+//                                            |
+//                                          UNION
+//
+//    find the first non-null NEGATE G0
+//    for each later non-null same-shaped NEGATE Gn:
+//      if Gn's negated view is not structurally equal to G0's:
+//        enter (and stay in) tag mode
+//      union Gn's predecessor (tag-prefixed in tag mode) into the
+//        sunken UNION; in tag mode also union Gn's tag-prefixed negated
+//        view into the negated-view UNION; null out Gn's slot
+//    recurse to merge the still-unmatched views among themselves
+//    if at least one Gn matched: write the merged result into G0's
+//      slot, else restore G0
+//
+// Returns `true` if successful, and updates `inout_views` in place: merged
+// entries are nulled out and the merged result takes the slot of the first
+// merged NEGATE.
 bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
                                           std::vector<VIEW *> &inout_views) {
 
@@ -1126,7 +1286,48 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
   }
 }
 
-// Similar to above, but for joins.
+// Convert two or more JOINs feeding this UNION into a single lifted JOIN over
+// sunken UNIONs of the corresponding joined views, using a constant tag
+// column as an extra pivot so that rows originating from different source
+// JOINs never cross-join with each other. Candidate JOINs must have at least
+// one pivot, test/set no conditions, and agree with the first candidate on
+// pivot count, number of joined views, per-position joined-view shapes and
+// column types, and the exact output-to-input column ordering. The payoff is
+// that N JOINs collapse into one JOIN whose inputs are UNIONs, sharing the
+// join machinery across all sources. To maximize matches, the top-level
+// (non-recursive) entry first sorts every candidate's joined views (and each
+// pivot's input-column list) by a global most-frequent-view-hash ordering, so
+// that equivalent views tend to land at the same position across JOINs.
+//
+//    if entered non-recursively: align joined views across all JOINs by
+//      sorting on descending view-hash frequency
+//    pick the first eligible JOIN J0; record, per output column, which
+//      joined view and column index feeds it (abort if any non-pivot
+//      output is fed by a free-floating constant)
+//    for each later JOIN Jn matching J0's pivot count, shape, and
+//      column ordering: add it to the merge set and null out its slot
+//    if only J0 matched: recurse over the remaining views, restore J0
+//    otherwise:
+//      create one constant tag column t_k per matched JOIN
+//      for each joined-view position i, build UNION_i over per-JOIN
+//        TUPLEs of the form (t_k, Jk's position-i input columns)
+//      build the lifted JOIN over UNION_0..UNION_(v-1), pivoting on
+//        (tag, original pivots)
+//      strip the tag with a final TUPLE and write it into J0's slot
+//
+//     A0  B0     A1  B1        TUP(t0,A0) TUP(t1,A1) TUP(t0,B0) TUP(t1,B1)
+//      \  /       \  /                \    /               \    /
+//     JOIN-0     JOIN-1    =>        UNION-A              UNION-B
+//     [piv P]    [piv P]                  \                /
+//         \       /                    JOIN [pivots: tag, P]
+//          \     /                             |
+//           UNION                       TUPLE(strip tag)
+//                                              |
+//                                            UNION
+//
+// Returns `true` if successful, and updates `inout_views` in place: merged
+// entries are nulled out and the tag-stripping TUPLE takes the slot of the
+// first merged JOIN.
 bool QueryMergeImpl::SinkThroughJoins(
     QueryImpl *impl, std::vector<VIEW *> &inout_views, bool recursive) {
 

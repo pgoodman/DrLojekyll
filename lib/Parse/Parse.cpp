@@ -478,20 +478,21 @@ DisplayRange ParsedLiteral::SpellingRange(void) const noexcept {
 std::optional<std::string_view>
 ParsedLiteral::Spelling(Language lang) const noexcept {
   if (IsConstant()) {
-    const auto &info = impl->foreign_type->info[static_cast<unsigned>(lang)];
+    // Each constant is linked into the list of its own language, so prefer a
+    // language-specific definition and fall back to a language-agnostic
+    // (`Language::kUnknown`) one.
     const auto id = impl->literal.IdentifierId();
-    ParsedForeignConstantImpl *backup = nullptr;
-    for (ParsedForeignConstantImpl * const const_ptr : *(info.constants)) {
-      if (const_ptr->name.IdentifierId() == id) {
-        if (const_ptr->lang == lang) {
-          return const_ptr->code;
-        } else if (const_ptr->lang == Language::kUnknown) {
-          backup = const_ptr;
+    for (auto search_lang : {lang, Language::kUnknown}) {
+      const auto &info =
+          impl->foreign_type->info[static_cast<unsigned>(search_lang)];
+      for (ParsedForeignConstantImpl *const const_ptr : *(info.constants)) {
+        if (const_ptr->name.IdentifierId() == id) {
+          return std::string_view(const_ptr->code);
         }
       }
-    }
-    if (backup) {
-      return backup->code;
+      if (lang == Language::kUnknown) {
+        break;  // Requested list already searched.
+      }
     }
     return std::nullopt;
 

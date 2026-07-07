@@ -1,0 +1,15 @@
+; Dead-flow: condition with no setters. Positive users become
+; unsatisfiable, negative tests are vacuously true, and killing the
+; positive user of flag removes the sole setter of flag2 (cascade).
+#message in(i32 A).
+#local dead_src(i32 A).
+#query out_pos(free i32 A).
+#query out_neg(free i32 A).
+#query out_chain(free i32 A).
+
+dead_src(A) : dead_src(A).
+flag : dead_src(_A).
+out_pos(A) : in(A), flag.
+out_neg(A) : in(A), !flag.
+flag2 : in(_B), flag.
+out_chain(A) : in(A), flag2.

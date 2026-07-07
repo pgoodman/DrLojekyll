@@ -1,0 +1,18 @@
+; Corner case: unsatisfiable-input-view. The JOIN's pivot columns demand
+; 2 == 5 and 3 == 6, which conflict, so one of the joined views becomes
+; unsat and the JOIN is marked unsatisfiable. The foo query must stay empty
+; no matter what messages arrive; bar_all shows the data actually flowing.
+
+#message mb(i32 A).
+
+#local bar(i32 A, i32 B, i32 C).
+#local baz(i32 A, i32 B, i32 C).
+
+bar(A, 2, 3) : mb(A).
+baz(4, 5, 6).
+
+#query foo(free i32 A, free i32 B, free i32 C).
+foo(A, B, C) : bar(A, B, C), baz(A, B, C).
+
+#query bar_all(free i32 A, free i32 B, free i32 C).
+bar_all(A, B, C) : bar(A, B, C).

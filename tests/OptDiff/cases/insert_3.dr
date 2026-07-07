@@ -1,0 +1,21 @@
+; INSERT canonicalization: PullDataFromBeyondTrivialUnions hops the INSERT
+; past a MERGE that collapses to a single distinct source (the self-recursive
+; arm of `direct` merges the union with itself), while the two-message MERGE
+; feeding out2 has two distinct sources and blocks the hop.
+
+#message input(i32 A).
+#message m2(i32 A).
+
+#local direct(i32 A).
+#local both(i32 A).
+
+#query out1(free i32 A).
+#query out2(free i32 A).
+
+direct(A) : direct(A).
+direct(A) : input(A).
+out1(A) : direct(A).
+
+both(A) : input(A).
+both(A) : m2(A).
+out2(A) : both(A).

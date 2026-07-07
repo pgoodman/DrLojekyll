@@ -14,9 +14,58 @@ namespace {
 using CandidateList = std::vector<VIEW *>;
 using CandidateLists = std::unordered_map<uint64_t, CandidateList>;
 
-// Perform common subexpression elimination, which will first identify
-// candidate subexpressions for possible elimination using hashing, and
-// then will perform recursive equality checks.
+// Perform common subexpression elimination (CSE) over the views in
+// `all_views`. Two structurally equivalent views compute the same relation,
+// so all users of one can be redirected to the other; this shrinks the graph
+// and lets downstream consumers share a single materialization and a single
+// stream of updates. Candidates are bucketed by `HashInit`, a shallow hash of
+// a view's kind and shape that ignores the view's transitive inputs, so views
+// participating in cycles (e.g. through inductive UNIONs) still land in the
+// same bucket. Deep equivalence is then established pairwise by `Equals`,
+// which records in-progress assumptions in an `EqualitySet` so that checks
+// over cyclic graphs converge. Verified pairs are applied in a priority
+// order: pairs whose `UpHash`es (rough hashes of how each view is *used*,
+// looking a bounded depth up the graph) agree come first, and shallower views
+// come before deeper ones, so merges tend to unify similarly used subgraphs
+// and cascade upward. Soundness around cross-products is maintained via
+// `group_ids`, refreshed by `RelabelGroupIDs` before the pass and after each
+// merge: `Equals` refuses to unify two views whose group ID sets overlap,
+// e.g. two SELECTs of the same relation feeding one JOIN as distinct pivots.
+//
+//    bucket views by HashInit()
+//    for each bucket, for each pair (v1, v2) in the bucket:
+//      if v1.Equals(v2): record (v1.UpHash, v1, v2.UpHash, v2)
+//    sort records: matching up-hashes first, then shallower first
+//    for each record (v1, v2), chasing v2 through prior merges:
+//      if v1 != v2, both still used, and still Equals:
+//        v1.ReplaceAllUsesWith(v2); RelabelGroupIDs()
+//
+//  Before:                             After:
+//
+//    SELECT[edge]  SELECT[edge]          SELECT[edge]
+//         |             |                     |
+//       MAP[f]        MAP[f]                MAP[f]
+//         |             |                   /    \
+//     INSERT[a]     INSERT[b]        INSERT[a]  INSERT[b]
+// Returns `true` if `user` reads any of `def`'s output columns. Two views
+// related this way can only prove `Equals` around a source-less forwarding
+// cycle; they do not represent a common subexpression, and redirecting the
+// user's reads onto its own outputs would make it its own user.
+static bool DirectlyUsesColumnsOf(VIEW *user, VIEW *def) {
+  for (auto col : def->columns) {
+    auto used = false;
+    col->ForEachUser([&](VIEW *user_view) {
+      if (user_view == user) {
+        used = true;
+      }
+    });
+    if (used) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static bool CSE(QueryImpl *impl, CandidateList &all_views) {
   EqualitySet eq;
   CandidateLists candidate_groups;
@@ -95,7 +144,8 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
       (void) v2_uphash;
 
       eq.Clear();
-      if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && v1->Equals(eq, v2)) {
+      if (v1 != v2 && v1->IsUsed() && v2->IsUsed() && v1->Equals(eq, v2) &&
+          !DirectlyUsesColumnsOf(v1, v2) && !DirectlyUsesColumnsOf(v2, v1)) {
 #ifndef NDEBUG
         std::stringstream ss;
         ss << "CSE(" << v2->producer << ", " << v1->producer << ")";
@@ -257,6 +307,32 @@ bool QueryImpl::RemoveUnusedViews(void) {
   return 0 != all_ret;
 }
 
+// Performs a limited amount of optimization before INSERTs are linked to
+// SELECTs. CSE runs over the SELECTs alone so that duplicate SELECTs of the
+// same relation or stream collapse first, which makes the initial TUPLEs
+// built on top of them look identical and thus easier to canonicalize later.
+// Then every used JOIN is canonicalized with default (conservative) options,
+// which drops useless pivot columns and rewrites degenerate JOINs -- e.g. a
+// JOIN whose columns all derive from a single incoming view -- into
+// forwarding TUPLEs; a second sweep over the JOINs canonicalizes any forms
+// exposed by the first sweep. Finally, unused views are removed. Running
+// this before INSERT-to-SELECT linking is beneficial because it shrinks the
+// graph while uses are still simple, without risking the over-merging
+// hazards of full canonicalization.
+//
+//    CSE(used SELECTs)
+//    for each used JOIN: JOIN.Canonicalize(default opts)
+//    for each used JOIN: JOIN.Canonicalize(default opts)  // cascaded forms
+//    RemoveUnusedViews()
+//
+//  Before:                            After:
+//
+//    SELECT[t]                          SELECT[t]
+//      |    |                               |
+//    JOIN(A=A)   (both pivot             TUPLE
+//        |        inputs are the           |
+//     INSERT      same column)          INSERT
+//
 // TODO(pag): The join canonicalization introduces a bug in Solypsis if the
 //            dataflow builder builds functors before joins. I'm not sure why
 //            and this is probably a serious bug.
@@ -288,9 +364,39 @@ void QueryImpl::Simplify(const ErrorLog &log) {
   RemoveUnusedViews();
 }
 
-// Canonicalize the dataflow. This tries to put each node into its current
-// "most optimal" form. Previously it was more about re-arranging columns
-// to encourage better CSE results.
+// Canonicalize the dataflow: drive every VIEW's local `Canonicalize` rewrite
+// (constant propagation, duplicate/unused column elimination, guard-TUPLE
+// introduction, deduplication of UNION inputs, collapsing of trivial nodes
+// into forwarding TUPLEs, etc.) to a fixpoint, putting each node into its
+// "most optimal" form. Each per-node rewrite is locally sound and preserves
+// the view's produced relation, and iterating them in depth order lets one
+// node's simplification expose simplifications in its neighbors, so the
+// whole graph settles into a smaller, more uniform shape that later CSE can
+// exploit. Every view is first marked non-canonical; passes then visit live
+// views in depth order (bottom-up, from SELECTs toward INSERTs) or reverse
+// depth order when `opt.bottom_up` is false. Termination is doubly guarded:
+// a pass-count cap of roughly max(2N, N^2) for N views, and an eight-entry
+// history of per-pass change hashes that detects when the rewrites cycle
+// through a repeating pattern without net progress and breaks out of the
+// loop. Unused views are removed afterward.
+//
+//    mark all views non-canonical
+//    repeat up to max(2N, N^2) passes:
+//      hash = 0
+//      for each live view in (reverse) depth order:
+//        if view.Canonicalize(opt) reports non-local changes:
+//          hash = rotate(hash) ^ view.Hash()
+//      stop if no view reported non-local changes, or if the
+//      last 8 pass hashes are all identical (cyclic non-progress)
+//    RemoveUnusedViews()
+//
+//  Before (one rewrite among many):     After:
+//
+//        MAP[f]                             MAP[f]
+//         |  |     (duplicate                 |
+//    UNION(MERGE)   inputs)                 TUPLE
+//         |                                   |
+//       INSERT                             INSERT
 void QueryImpl::Canonicalize(const OptimizationContext &opt,
                              const ErrorLog &log) {
   uint64_t num_views = 0u;
@@ -335,8 +441,14 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
       const auto ret = view->Canonicalize(this, opt, log);
       check_consistency(view);
       if (ret) {
-        hash = RotateRight64(hash, 13) ^ view->Hash();
         non_local_changes = true;
+
+        // A view may unlink itself from the graph during canonicalization,
+        // e.g. by replacing all of its uses with another view. A dead view
+        // has no structure left to fingerprint for convergence detection.
+        if (!view->is_dead) {
+          hash = RotateRight64(hash, 13) ^ view->Hash();
+        }
       }
     }
   };
@@ -382,10 +494,39 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
   RemoveUnusedViews();
 }
 
-// Sometimes we have a bunch of dumb condition patterns, roughly looking like
-// a chain of constant input tuples, conditioned on the next one in the chain,
-// and so we want to eliminate all the unnecessary intermediary tuples and
-// conditions and shrink down to a more minimal form.
+// Shrink the graph of zero-argument CONDitions. Chains of constant-input
+// TUPLEs, each conditioned on the next condition in the chain, add spurious
+// control dependencies; this pass deletes unnecessary condition-setting
+// edges and forwards condition users across trivial links, leaving a more
+// minimal condition structure. It works over the conditions in depth order,
+// to a fixpoint. A setter that is not itself conditional -- all of its data
+// is unconditionally present, per `VIEW::IsConditional` -- stops setting its
+// condition, because that setter makes the condition unconditionally
+// satisfied. When a condition COND0 has exactly one setter, and that setter
+// is a TUPLE with all-constant inputs tested on exactly one positive
+// condition COND1 (and no negative conditions), every positive and negative
+// user of COND0 is rewired to test COND1 directly, and the TUPLE stops
+// setting COND0. Conditions left with no setters are removed at the end.
+//
+//    sort conditions by depth; repeat until no change:
+//      for each condition C with setters:
+//        if any setter S has !IsConditional(S):
+//          S.DropSetConditions()
+//        else if C has one setter S, S is an all-constant TUPLE
+//             with one positive condition C1 and no negatives:
+//          retarget every user of C to test C1
+//          S.DropSetConditions()
+//    remove conditions that no longer have setters
+//
+//  Before:                           After:
+//
+//    CMP                               CMP
+//     '--sets--> COND1                  '--sets--> COND1
+//                  | (tests)                         | (tests)
+//    TUPLE(consts)-'                   TUPLE[user]---'
+//     '--sets--> COND0
+//                  | (tests)
+//    TUPLE[user]---'
 bool QueryImpl::ShrinkConditions(void) {
   std::vector<COND *> conds;
   ForEachView([&](VIEW *view) { view->depth = 0; });
@@ -530,7 +671,48 @@ bool QueryImpl::ShrinkConditions(void) {
   return conditions.RemoveIf([](COND *cond) { return cond->setters.Empty(); });
 }
 
-// Apply common subexpression elimination (CSE) to the dataflow.
+// Top-level dataflow optimization driver. It interleaves three global
+// passes -- CSE, canonicalization, and condition/dead-flow cleanup --
+// because each exposes work for the others: CSE merges duplicate subgraphs,
+// which gives UNIONs duplicate inputs for canonicalization to fold;
+// canonicalization normalizes node shapes, which makes more views
+// structurally equal for the next CSE round. `do_cse` re-runs CSE until no
+// merges happen (bounded by the number of views), removing dead views and
+// re-deriving differential-update tracking after each round, since merging
+// changes which flows can carry deletions. `do_sink` is the UNION-sinking
+// hook, a re-canonicalization point that pushes MERGEs below the TUPLEs,
+// MAPs, and NEGATEs above them; its body is currently disabled. After a
+// first conservative bottom-up canonicalization, up to max-INSERT-depth
+// rounds of aggressive top-down canonicalization run, with unused-column
+// removal and constant-input replacement enabled, each followed by
+// condition shrinking and taint-based dead-flow elimination; the loop
+// continues while dead flows keep disappearing. A final CSE round and
+// unused-view removal finish the pipeline.
+//
+//    do_cse():  while CSE(all views) merges something:
+//                 RemoveUnusedViews(); TrackDifferentialUpdates()
+//    do_sink(): UNION-sinking re-canonicalization (disabled)
+//
+//    do_sink(); do_cse()
+//    Canonicalize(default: bottom-up, conservative)
+//    do_sink(); do_cse(); do_sink()
+//    for up to max INSERT depth, while EliminateDeadFlows() changes:
+//      Canonicalize(top-down, +remove unused columns,
+//                   +replace constant inputs)
+//      do_sink()
+//      if ShrinkConditions(): Canonicalize(same opts)
+//      RemoveUnusedViews()
+//    do_cse(); RemoveUnusedViews()
+//
+//  Before:                            After:
+//
+//    SELECT[r]    SELECT[r]              SELECT[r]
+//       |            |                       |
+//     MAP[f]       MAP[f]                  MAP[f]
+//        \          /                        |
+//       UNION(MERGE)                       TUPLE
+//            |                               |
+//         INSERT                          INSERT
 void QueryImpl::Optimize(const ErrorLog &log) {
   CandidateList views;
 

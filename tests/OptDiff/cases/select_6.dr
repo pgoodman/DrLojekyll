@@ -1,0 +1,12 @@
+; Differential RECEIVE: the SELECT over the @differential message is
+; constructed with can_receive_deletions/can_produce_deletions set, and
+; must not unify with the non-differential RECEIVE of `boot` feeding the
+; same MERGE. Removals must retract derived rows that lack other support.
+#message log_in(i32 UserId) @differential.
+#message boot(i32 UserId).
+#local user_on(i32 UserId).
+#query check(free i32 UserId).
+
+user_on(U) : log_in(U).
+user_on(U) : boot(U).
+check(U) : user_on(U).

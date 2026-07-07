@@ -1,0 +1,38 @@
+; Union sinking through TUPLEs:
+;  - `swap` unions two identically-shaped column swaps, so
+;    UNION(TUPLE(t1),TUPLE(t2)) can become TUPLE(UNION(t1,t2));
+;  - `kconst` has a constant input column in each tuple, which blocks
+;    the sinking attempt;
+;  - `fact` mixes an all-constant tuple (fact clause) with a normal one;
+;  - `mix` projects different column indices (0 vs 1), so the second
+;    tuple must be skipped rather than merged.
+
+#message t1(i32 X, i32 Y).
+#message t2(i32 X, i32 Y).
+
+#local swap(i32 A, i32 B).
+#local kconst(i32 X, i32 C).
+#local fact(i32 X, i32 Y).
+#local mix(i32 X).
+
+#query q_swap(free i32 A, free i32 B).
+#query q_kconst(free i32 X, free i32 C).
+#query q_fact(free i32 X, free i32 Y).
+#query q_mix(free i32 X).
+
+swap(Y, X) : t1(X, Y).
+swap(Y, X) : t2(X, Y).
+
+kconst(X, C) : t1(X, _), C = 1.
+kconst(X, C) : t2(X, _), C = 1.
+
+fact(1, 2).
+fact(X, Y) : t1(X, Y).
+
+mix(X) : t1(X, _).
+mix(X) : t2(_, X).
+
+q_swap(A, B) : swap(A, B).
+q_kconst(X, C) : kconst(X, C).
+q_fact(X, Y) : fact(X, Y).
+q_mix(X) : mix(X).

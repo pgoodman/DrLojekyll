@@ -1,0 +1,23 @@
+; ProxyWithComparison shapes: kEqual fuses A/B into one CMP output that
+; both restored columns map to; B = 3 has the constant on the right of a
+; symmetric operator so operands swap; B < C keeps two outputs and A is
+; an attached carried-along column that drops once unused. Plus group-id
+; overlap: the two `node` SELECTs in the @product clause must not be
+; CSE-merged or the cross product collapses to its diagonal.
+
+#message e(i32 A, i32 B, i32 C).
+#message add_node(i32 N).
+#local node(i32 N).
+#local node_pairs(i32 A, i32 B).
+#query q_eq(free i32 A, free i32 B).
+#query q_ceq(free i32 A).
+#query q_lt(free i32 A).
+#query pairs(free i32 A, free i32 B).
+
+q_eq(A, B) : e(A, B, _), A = B.
+q_ceq(A) : e(A, B, _), B = 3.
+q_lt(A) : e(A, B, C), B < C.
+
+node(N) : add_node(N).
+node_pairs(A, B) @product : node(A), node(B).
+pairs(A, B) : node_pairs(A, B).

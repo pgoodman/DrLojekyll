@@ -1,0 +1,30 @@
+; Procedure deduplication with raw-use rewrite: two structurally identical
+; locals with identical bound queries generate identical tuple-checker procs
+; that collapse onto one representative whose raw uses are rewritten.
+; Also MergeEqual growth: a and b have shallow-equal clause bodies (same
+; filter over the same message) whose sibling regions merge, appending fresh
+; PARALLEL regions to the list mid-sweep.
+
+#message in(i32 A, i32 B).
+#message in2(i32 A, i32 B).
+
+#local p(i32 A, i32 B).
+#local q(i32 A, i32 B).
+#local a(i32 A).
+#local b(i32 A).
+
+#query getp(bound i32 A, free i32 B).
+#query getq(bound i32 A, free i32 B).
+#query qa(free i32 A).
+#query qb(free i32 A).
+
+p(A, B) : in(A, B).
+q(A, B) : in(A, B).
+
+a(A) : in2(A, B), A < B.
+b(A) : in2(A, B), A < B.
+
+getp(A, B) : p(A, B).
+getq(A, B) : q(A, B).
+qa(A) : a(A).
+qb(A) : b(A).

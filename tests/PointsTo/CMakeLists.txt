@@ -1,8 +1,5 @@
 # Copyright 2021, Trail of Bits, Inc. All rights reserved.
 
-find_package(GTest CONFIG REQUIRED)
-include(GoogleTest)
-
 compile_datalog(
   DATABASE_NAME points_to
   LIBRARY_NAME points_to
@@ -29,5 +26,9 @@ configure_file(
 add_executable(points_to_standalone
   Standalone.cpp)
 
-target_link_libraries(points_to_standalone PUBLIC GTest::gtest GTest::gtest_main PRIVATE points_to)
+target_link_libraries(points_to_standalone PRIVATE drtest points_to)
+
+add_test(
+  NAME PointsTo
+  COMMAND points_to_standalone)
 

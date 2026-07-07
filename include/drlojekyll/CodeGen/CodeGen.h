@@ -4,6 +4,8 @@
 
 #include <drlojekyll/Parse/Parse.h>
 
+#include <string_view>
+
 namespace hyde {
 
 class Program;
@@ -17,19 +19,11 @@ std::vector<ParsedInline> Inlines(ParsedModule module, Language lang);
 
 namespace cxx {
 
-// Emits C++ code for the given program to `os`.
-void GenerateDatabaseCode(const Program &module, OutputStream &os);
-
-// Emits C++ code to build up and collect messages to send to a database,
-// or to collect messages published by the database and aggregate them into
-// a single object.
-void GenerateInterfaceCode(const Program &program, OutputStream &os);
+// Emits a concrete C++ implementation of `program`: a header (row structs,
+// enums, the `Database` class) and a source file (procedure and cursor
+// definitions). `header_name` is the file name the source file `#include`s.
+void GenerateDatabaseCode(const Program &program, OutputStream &os_h,
+                          OutputStream &os_cc, std::string_view header_name);
 
 }  // namespace cxx
-namespace python {
-
-// Emits Python code for the given program to `os`.
-void GenerateDatabaseCode(const Program &module, OutputStream &os);
-
-}  // namespace python
 }  // namespace hyde

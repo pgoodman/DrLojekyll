@@ -1,1728 +1,1965 @@
-// Copyright 2021, Trail of Bits. All rights reserved.
+// Copyright 2026, Trail of Bits. All rights reserved.
+//
+// The C++ backend. Emits a concrete implementation of a Datalog program:
+// a header with named row structs, enums, and a `Database` class, plus a
+// source file with the procedure and query-cursor definitions. The emitted
+// code contains no templates; storage is provided by the small concrete
+// runtime (`hyde::rt::Table`, `hyde::rt::Index`, `hyde::rt::Vec`) and all
+// allocation goes through an explicit `hyde::rt::Allocator`.
 
 #include <drlojekyll/CodeGen/CodeGen.h>
-#include <drlojekyll/ControlFlow/Format.h>
 #include <drlojekyll/ControlFlow/Program.h>
+#include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Lex/Format.h>
 #include <drlojekyll/Parse/Format.h>
-#include <drlojekyll/Parse/ModuleIterator.h>
+#include <drlojekyll/Parse/Parse.h>
 
-#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
+#include <optional>
 #include <sstream>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-#include "Util.h"
 
 namespace hyde {
 namespace cxx {
 namespace {
 
-static bool CanInlineDefineConstant(ParsedModule module, DataVariable global) {
-  switch (global.DefiningRole()) {
-    case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne:
-    case VariableRole::kConstantFalse:
-    case VariableRole::kConstantTrue: return true;
-    default: break;
-  }
-
-  auto type = global.Type();
-  return type.IsReferentiallyTransparent(module, Language::kCxx);
+[[noreturn]] void Unsupported(const char *what) {
+  std::fprintf(stderr, "error: C++ backend cannot emit %s\n", what);
+  std::abort();
 }
 
-static void DefineGlobal(OutputStream &os, ParsedModule module,
-                         DataVariable global) {
-  TypeLoc type = global.Type();
+// Turns arbitrary text into a valid C++ identifier fragment.
+std::string Sanitize(std::string_view text) {
+  std::string out;
+  out.reserve(text.size());
+  for (char c : text) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                    (c >= '0' && c <= '9') || c == '_';
+    out.push_back(ok ? c : '_');
+  }
+  if (out.empty() || (out[0] >= '0' && out[0] <= '9')) {
+    out.insert(out.begin(), '_');
+  }
+  return out;
+}
 
-  os << os.Indent();
-  if (global.IsConstant()) {
-    if (CanInlineDefineConstant(module, global)) {
-      os << "static constexpr ";
-    } else {
-      os << "static const ";
+// The C++ spelling of a Datalog type.
+std::string TypeName(ParsedModule module, TypeLoc kind) {
+  switch (kind.UnderlyingKind()) {
+    case TypeKind::kBoolean: return "bool";
+    case TypeKind::kSigned8: return "int8_t";
+    case TypeKind::kSigned16: return "int16_t";
+    case TypeKind::kSigned32: return "int32_t";
+    case TypeKind::kSigned64: return "int64_t";
+    case TypeKind::kUnsigned8: return "uint8_t";
+    case TypeKind::kUnsigned16: return "uint16_t";
+    case TypeKind::kUnsigned32: return "uint32_t";
+    case TypeKind::kUnsigned64: return "uint64_t";
+    case TypeKind::kFloat: return "float";
+    case TypeKind::kDouble: return "double";
+    case TypeKind::kForeignType:
+      if (auto type = module.ForeignType(kind); type) {
+        if (type->IsEnum()) {
+          return std::string(type->NameAsString());
+        } else if (auto code = type->CodeToInline(Language::kCxx)) {
+          return std::string(*code);
+        }
+      }
+      Unsupported("a foreign type with no C++ representation");
+    default: Unsupported("an invalid type");
+  }
+}
+
+// A short type tag used to mangle tuple-struct names.
+std::string TypeTag(ParsedModule module, TypeLoc kind) {
+  switch (kind.UnderlyingKind()) {
+    case TypeKind::kBoolean: return "b";
+    case TypeKind::kSigned8: return "i8";
+    case TypeKind::kSigned16: return "i16";
+    case TypeKind::kSigned32: return "i32";
+    case TypeKind::kSigned64: return "i64";
+    case TypeKind::kUnsigned8: return "u8";
+    case TypeKind::kUnsigned16: return "u16";
+    case TypeKind::kUnsigned32: return "u32";
+    case TypeKind::kUnsigned64: return "u64";
+    case TypeKind::kFloat: return "f32";
+    case TypeKind::kDouble: return "f64";
+    default: return Sanitize(TypeName(module, kind));
+  }
+}
+
+const char *OperatorString(ComparisonOperator op) {
+  switch (op) {
+    case ComparisonOperator::kEqual: return "==";
+    case ComparisonOperator::kNotEqual: return "!=";
+    case ComparisonOperator::kLessThan: return "<";
+    case ComparisonOperator::kGreaterThan: return ">";
+  }
+  Unsupported("an unknown comparison operator");
+}
+
+// Recover a relation name for a table from the insert views that feed it.
+std::optional<ParsedDeclaration> TableDecl(DataTable table) {
+  for (QueryView view : table.Views()) {
+    if (view.IsInsert()) {
+      return QueryInsert::From(view).Declaration();
     }
   }
-
-  os << TypeName(os, module, type) << " " << Var(os, global) << ";\n";
+  return std::nullopt;
 }
 
-// Similar to DefineGlobal except has constexpr to enforce const-ness
-static void DefineConstant(OutputStream &os, ParsedModule module,
-                           DataVariable global) {
-  switch (global.DefiningRole()) {
-    case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne:
-    case VariableRole::kConstantFalse:
-    case VariableRole::kConstantTrue: return;
-    default: break;
-  }
-  auto type = global.Type();
-  if (CanInlineDefineConstant(module, global)) {
-    os << os.Indent() << "static constexpr " << TypeName(module, type) << " "
-       << Var(os, global) << " = "
-       << TypeValueOrDefault(module, type, global) << ";\n";
-  } else {
-    os << os.Indent() << "const " << TypeName(os, module, type)
-       << Var(os, global) << ";\n";
-  }
-}
-
-class CPPCodeGenVisitor final : public ProgramVisitor {
+class Generator {
  public:
-  explicit CPPCodeGenVisitor(OutputStream &os_, ParsedModule module_)
-      : os(os_),
-        module(module_) {}
-
-  void Visit(ProgramModeSwitchRegion region) override {
-    os << Comment(os, region, "ProgramModeSwitchRegion");
-    if (auto body = region.Body()) {
-      body->Accept(*this);
-    }
-  }
-
-  void Visit(ProgramCallRegion region) override {
-    os << Comment(os, region, "ProgramCallRegion");
-
-    const auto called_proc = region.CalledProcedure();
-
-    os << os.Indent() << "if (" << Procedure(os, called_proc) << "(";
-
-    auto sep = "";
-
-    // Pass in the vector parameters, or the references to the vectors.
-    for (auto vec : region.VectorArguments()) {
-      os << sep << "std::move(" << Vector(os, vec) << ")";
-      sep = ", ";
-    }
-
-    // Pass in the variable parameters, or the references to the variables.
-    for (auto var : region.VariableArguments()) {
-      os << sep << Var(os, var);
-      sep = ", ";
-    }
-
-    os << ")) {\n";
-    os.PushIndent();
-
-    if (auto true_body = region.BodyIfTrue(); true_body) {
-      true_body->Accept(*this);
-    }
-
-    os.PopIndent();
-    os << os.Indent() << '}';
-
-    if (auto false_body = region.BodyIfFalse(); false_body) {
-      os << " else {\n";
-      os.PushIndent();
-      false_body->Accept(*this);
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    } else {
-      os << '\n';
-    }
-  }
-
-  void Visit(ProgramReturnRegion region) override {
-    os << Comment(os, region, "ProgramReturnRegion");
-    os << os.Indent() << "return "
-       << (region.ReturnsFalse() ? "false;\n" : "true;\n");
-  }
-
-  void Visit(ProgramTestAndSetRegion region) override {
-    os << Comment(os, region, "ProgramTestAndSetRegion");
-    const auto acc = region.Accumulator();
-    const auto disp = region.Displacement();
-    const auto cmp = region.Comparator();
-
-    auto body = region.Body();
-
-    os << os.Indent();
-    if (body) {
-      os << "if ((";
-    }
-
-    os << Var(os, acc);
-    if (region.IsAdd()) {
-      os << " += ";
-    } else if (region.IsSubtract()) {
-      os << " -= ";
-    } else {
-      assert(false);
-    }
-    os << Var(os, disp);
-
-    if (body) {
-      os << ") == " << Var(os, cmp) << ") {\n";
-      os.PushIndent();
-      body->Accept(*this);
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    } else {
-      os << ";\n";
-    }
-  }
-
-  void Visit(ProgramGenerateRegion region) override {
-    os << Comment(os, region, "ProgramGenerateRegion");
-
-    const auto functor = region.Functor();
-    const auto id = region.Id();
-
-    os << os.Indent() << "size_t num_results_" << id << " = 0;\n"
-       << os.Indent() << "(void) num_results_" << id << ";\n";
-
-    auto output_vars = region.OutputVariables();
-
-    auto call_functor = [&](void) {
-      Functor(os, functor) << "(";
-      auto sep = "";
-      for (auto in_var : region.InputVariables()) {
-        if (in_var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << sep << Var(os, in_var);
-        } else {
-          os << sep << "*" << Var(os, in_var);
-        }
-        sep = ", ";
-      }
-      os << ")";
-    };
-
-    auto do_body = [&](void) {
-      os << os.Indent() << "num_results_" << id << " += 1;\n";
-      if (auto body = region.BodyIfResults(); body) {
-        body->Accept(*this);
-
-      // Break out of the body early if there is nothing to do, and if we've
-      // already counted at least one instance of results (in the case of the
-      // functor possibly producing more than one result tuples), then that
-      // is sufficient information to be able to enter into the "empty" body.
-      } else if (const auto range = functor.Range();
-                 FunctorRange::kOneOrMore == range ||
-                 FunctorRange::kZeroOrMore == range) {
-        os << os.Indent() << "break;\n";
-      }
-    };
-
-    switch (const auto range = functor.Range()) {
-
-      // These behave like iterators.
-      case FunctorRange::kOneOrMore:
-      case FunctorRange::kZeroOrMore: {
-        if (output_vars.size() == 1u) {
-          auto out_var = output_vars[0];
-          const auto out_type = out_var.Type();
-          const auto out_type_is_transparent =
-              out_type.IsReferentiallyTransparent(module, Language::kCxx);
-          os << os.Indent() << "for (auto tmp_" << id << " : ";
-          call_functor();
-          os << ") {\n";
-          os.PushIndent();
-
-          os << os.Indent() << TypeName(os, module, out_type)
-             << " " << Var(os, out_var) << " = ";
-          if (!out_type_is_transparent) {
-            os << "storage.Intern(std::move(tmp_" << id << "))";
-          } else {
-            os << "tmp_" << id;
-          }
-          os << ";\n";
-          do_body();
-          os.PopIndent();
-          os << os.Indent() << "}\n";
-
-        } else {
-          assert(!output_vars.empty());
-
-          os << os.Indent() << "for (auto tmp_" << id << " : ";
-          call_functor();
-          os << ") {\n";
-          os.PushIndent();
-          auto out_var_index = 0u;
-          for (auto out_var : output_vars) {
-            const auto out_type = out_var.Type();
-            const auto out_type_is_transparent =
-                out_type.IsReferentiallyTransparent(module, Language::kCxx);
-            os << os.Indent() << TypeName(os, module, out_type)
-               << " " << Var(os, out_var) << " = ";
-            if (!out_type_is_transparent) {
-              os << "storage.Intern(std::move(std::get<"
-                 << (out_var_index++) << ">(tmp_" << id << ")))";
-            } else {
-              os << "std::get<" << (out_var_index++) << ">(tmp_" << id << ")";
-            }
-            os << ";\n";
-          }
-          do_body();
-          os.PopIndent();
-          os << os.Indent() << "}\n";
-        }
-
-        break;
-      }
-
-      // These behave like returns of tuples/values.
-      case FunctorRange::kOneToOne:
-        assert(!functor.IsFilter());
-
-        // Produces a single value.
-        if (output_vars.size() == 1u) {
-
-          const auto out_var = output_vars[0];
-          const auto out_type = out_var.Type();
-          const auto out_type_is_transparent =
-              out_type.IsReferentiallyTransparent(module, Language::kCxx);
-          os << os.Indent() << TypeName(os, module, out_type)
-             << " " << Var(os, out_var) << " = ";
-          if (!out_type_is_transparent) {
-            os << "storage.Intern(";
-          }
-          call_functor();
-          if (!out_type_is_transparent) {
-            os << ")";
-          }
-          os << ";\n";
-          do_body();
-
-        // Produces a tuple of values.
-        } else {
-
-          os << os.Indent() << "auto tmp_" << id << " = ";
-          call_functor();
-          os << ";\n";
-          auto out_var_index = 0u;
-          for (auto out_var : output_vars) {
-            const auto out_type = out_var.Type();
-            const auto out_type_is_transparent =
-                out_type.IsReferentiallyTransparent(module, Language::kCxx);
-            os << os.Indent() << TypeName(os, module, out_type)
-               << " " << Var(os, out_var) << " = ";
-            if (!out_type_is_transparent) {
-              os << "storage.Intern(std::move(";
-            }
-            os << "std::get<" << (out_var_index++) << ">(tmp_" << id << ")";
-            if (!out_type_is_transparent) {
-              os << "_)";
-            }
-            os << ";\n";
-          }
-          do_body();
-        }
-        break;
-
-      // These behave like returns of optional tuples/values.
-      case FunctorRange::kZeroOrOne:
-
-        // Only takes bound inputs, acts as a filter functor.
-        if (output_vars.empty()) {
-          assert(functor.IsFilter());
-
-          os << os.Indent() << "if (";
-          call_functor();
-          os << ") {\n";
-          os.PushIndent();
-          do_body();
-          os.PopIndent();
-          os << os.Indent() << "}\n";
-
-        // Produces a single value. This returns an `Optional` value.
-        } else if (output_vars.size() == 1u) {
-          assert(!functor.IsFilter());
-
-          const auto out_var = output_vars[0];
-          const auto out_type = out_var.Type();
-          const auto out_type_is_transparent =
-              out_type.IsReferentiallyTransparent(module, Language::kCxx);
-          const auto out_type_is_nullable =
-              out_type.IsNullable(module, Language::kCxx);
-          os << os.Indent() << "auto tmp_" << id << " = ";
-          call_functor();
-          os << ";\n";
-          os << os.Indent() << "if (tmp_" << id << ") {\n";
-          os.PushIndent();
-          os << os.Indent() << TypeName(os, module, out_type)
-             << " " << Var(os, out_var) << " = ";
-          if (!out_type_is_transparent) {
-            os << "storage.Intern(std::move(";
-          }
-          if (out_type_is_nullable) {
-            os << "tmp_" << id;
-          } else {
-            os << "tmp_" << id << ".value()";
-          }
-          if (!out_type_is_transparent) {
-            os << "))";
-          }
-          os << ";\n";
-          do_body();
-          os.PopIndent();
-          os << os.Indent() << "}\n";
-
-        // Produces a tuple of values.
-        } else {
-          assert(!functor.IsFilter());
-
-          os << os.Indent() << "auto tmp_" << id << " = ";
-          call_functor();
-          os << ";\n" << os.Indent() << "if (tmp_" << id << ") {\n";
-          os.PushIndent();
-          auto out_var_index = 0u;
-          for (auto out_var : output_vars) {
-            const auto out_type = out_var.Type();
-            const auto out_type_is_transparent =
-                out_type.IsReferentiallyTransparent(module, Language::kCxx);
-            os << os.Indent() << TypeName(os, module, out_type)
-               << " " << Var(os, out_var) << " = ";
-            if (!out_type_is_transparent) {
-              os << "storage.Intern(std::move(";
-            }
-            os << "std::get<" << (out_var_index++) << ">(tmp_" << id << ")";
-            if (!out_type_is_transparent) {
-              os << "))";
-            }
-            os << ";\n";
-          }
-          do_body();
-          os.PopIndent();
-          os << os.Indent() << "}\n";
-        }
-        break;
-    }
-
-    if (auto empty_body = region.BodyIfEmpty(); empty_body) {
-      os << os.Indent() << "if (!num_results_" << id << ") {\n";
-      os.PushIndent();
-      empty_body->Accept(*this);
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    }
-  }
-
-  void Visit(ProgramInductionRegion region) override {
-    os << Comment(os, region, "ProgramInductionRegion");
-
-    // Base case
-    if (auto init_region = region.Initializer(); init_region) {
-      init_region->Accept(*this);
-    }
-
-    // Fixpoint
-    os << Comment(os, region, "Induction Fixpoint Loop Region");
-    os << os.Indent() << "for (auto changed_" << region.Id()
-       << " = true; changed_" << region.Id() << "; changed_" << region.Id()
-       << " = !!(";
-    auto sep = "";
-    for (auto vec : region.Vectors()) {
-      os << sep << Vector(os, vec) << ".Size()";
-      sep = " | ";
-    }
-    os << ")) {\n";
-
-    os.PushIndent();
-
-    os << os.Indent() << "DumpStats();\n"
-       << os.Indent() << "if constexpr (false) {\n";
-    os.PushIndent();
-    os << os.Indent() << "fprintf(stderr, \"";
-
-    sep = "";
-    for (auto vec : region.Vectors()) {
-      os << sep << "vec_" << vec.Id() << " = %\" PRIu64 \"";
-      sep = " ";
-    }
-    sep = "\\n\", ";
-    for (auto vec : region.Vectors()) {
-      os << sep << Vector(os, vec) << ".Size()";
-      sep = ", ";
-    }
-    os << ");\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n\n";
-
-    region.FixpointLoop().Accept(*this);
-
-    os.PopIndent();
-    os << os.Indent() << "}\n";
-
-    // Output
-    if (auto output = region.Output(); output) {
-      os << Comment(os, region, "Induction Output Region");
-      output->Accept(*this);
-    }
-  }
-
-  void Visit(ProgramLetBindingRegion region) override {
-    os << Comment(os, region, "ProgramLetBindingRegion");
-    auto i = 0u;
-    const auto used_vars = region.UsedVariables();
-    for (auto var : region.DefinedVariables()) {
-      os << os.Indent() << "auto " << Var(os, var) << " = "
-         << Var(os, used_vars[i++]) << ";\n";
-    }
-
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
-    }
-  }
-
-  void Visit(ProgramParallelRegion region) override {
-    os << Comment(os, region, "ProgramParallelRegion");
-    for (auto sub_region : region.Regions()) {
-      sub_region.Accept(*this);
-    }
-  }
-
-  // Should never be reached; defined below.
-  void Visit(ProgramProcedure) override {
-    assert(false);
-  }
-
-  void Visit(ProgramPublishRegion region) override {
-    os << Comment(os, region, "ProgramPublishRegion");
-    auto message = region.Message();
-
-    os << os.Indent() << "log." << message.Name() << '_' << message.Arity();
-
-    auto sep = "(";
-    for (auto var : region.VariableArguments()) {
-      if (var.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-        os << sep << Var(os, var);
-      } else {
-        os << sep << "*" << Var(os, var);
-      }
-      sep = ", ";
-    }
-
-    if (region.IsRemoval()) {
-      os << sep << "false";
-    } else {
-      os << sep << "true";
-    }
-
-    os << ");\n";
-  }
-
-  void Visit(ProgramSeriesRegion region) override {
-    os << Comment(os, region, "ProgramSeriesRegion");
-
-    for (auto sub_region : region.Regions()) {
-      sub_region.Accept(*this);
-    }
-  }
-
-  void Visit(ProgramVectorAppendRegion region) override {
-    os << Comment(os, region, "ProgramVectorAppendRegion");
-
-    const auto tuple_vars = region.TupleVariables();
-
-    os << os.Indent() << Vector(os, region.Vector());
-    auto sep = ".Add(";
-    for (DataVariable var : tuple_vars) {
-      os << sep << Var(os, var);
-      sep = ", ";
-    }
-    os << ");\n";
-  }
-
-  void Visit(ProgramVectorClearRegion region) override {
-    os << Comment(os, region, "ProgramVectorClearRegion");
-    os << os.Indent() << Vector(os, region.Vector()) << ".Clear();\n";
-  }
-
-  void Visit(ProgramVectorSwapRegion region) override {
-    os << Comment(os, region, "Program VectorSwap Region");
-    os << os.Indent() << Vector(os, region.LHS()) << ".Swap("
-       << Vector(os, region.RHS()) << ");\n";
-  }
-
-  void Visit(ProgramVectorLoopRegion region) override {
-    auto body = region.Body();
-    if (!body) {
-      os << Comment(os, region, "Empty ProgramVectorLoopRegion");
-      return;
-    }
-
-    os << Comment(os, region, "ProgramVectorLoopRegion");
-    auto vec = region.Vector();
-    os << os.Indent() << "for (auto [";
-
-    const auto tuple_vars = region.TupleVariables();
-    auto sep = "";
-    for (auto var : tuple_vars) {
-      os << sep << Var(os, var);
-      sep = ", ";
-    }
-    // Need to differentiate between our Vector and regular
-    os << "] : " << Vector(os, vec) << ") {\n";
-
-    os.PushIndent();
-    body->Accept(*this);
-    os.PopIndent();
-    os << os.Indent() << "}\n";
-  }
-
-  void Visit(ProgramVectorUniqueRegion region) override {
-    os << Comment(os, region, "ProgramVectorUniqueRegion");
-    os << os.Indent() << Vector(os, region.Vector()) << ".SortAndUnique();\n";
-  }
-
-  void Visit(ProgramChangeTupleRegion region) override {
-    os << Comment(os, region, "ProgramChangeTupleRegion");
-    const auto tuple_vars = region.TupleVariables();
-
-    auto print_state_enum = [&](TupleState state) {
-      switch (state) {
-        case TupleState::kAbsent: os << "Absent"; break;
-        case TupleState::kPresent: os << "Present"; break;
-        case TupleState::kUnknown: os << "Unknown"; break;
-        case TupleState::kAbsentOrUnknown: os << "AbsentOrUnknown"; break;
-      }
-    };
-
-    os << os.Indent() << "if (" << Table(os, region.Table())
-       << ".TryChangeTupleFrom";
-
-    print_state_enum(region.FromState());
-    os << "To";
-    print_state_enum(region.ToState());
-
-    auto sep = "(";
-    for (auto var : tuple_vars) {
-      os << sep << Var(os, var);
-      sep = ", ";
-    }
-
-    os << ")) {\n";
-    os.PushIndent();
-
-    if (auto succeeded_body = region.BodyIfSucceeded(); succeeded_body) {
-      succeeded_body->Accept(*this);
-    }
-
-    os.PopIndent();
-    os << os.Indent() << "}";
-    if (auto failed_body = region.BodyIfFailed(); failed_body) {
-      os << " else {\n";
-      os.PushIndent();
-      failed_body->Accept(*this);
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    } else {
-      os << '\n';
-    }
-  }
-
-  void Visit(ProgramCheckTupleRegion region) override {
-    os << Comment(os, region, "ProgramCheckTupleRegion");
-    const auto table = region.Table();
-    const auto vars = region.TupleVariables();
-    os << os.Indent() << "switch (" << Table(os, table) << ".GetState(";
-    auto sep = "";
-    for (auto var : vars) {
-      os << sep << Var(os, var);
-      sep = ", ";
-    }
-    os << ")) {\n";
-
-    os.PushIndent();
-
-    if (auto absent_body = region.IfAbsent(); absent_body) {
-      os << os.Indent() << "case ::hyde::rt::TupleState::kAbsent: {\n";
-      os.PushIndent();
-      absent_body->Accept(*this);
-      os << os.Indent() << "break;\n";
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    } else {
-      os << os.Indent() << "case ::hyde::rt::TupleState::kAbsent: break;\n";
-    }
-
-    if (auto present_body = region.IfPresent(); present_body) {
-      os << os.Indent() << "case ::hyde::rt::TupleState::kPresent: {\n";
-      os.PushIndent();
-      present_body->Accept(*this);
-      os << os.Indent() << "break;\n";
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    } else {
-      os << os.Indent() << "case ::hyde::rt::TupleState::kPresent: break;\n";
-    }
-
-    if (auto unknown_body = region.IfUnknown(); unknown_body) {
-      os << os.Indent() << "case ::hyde::rt::TupleState::kUnknown: {\n";
-      os.PushIndent();
-      unknown_body->Accept(*this);
-      os << os.Indent() << "break;\n";
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    } else {
-      os << os.Indent() << "case ::hyde::rt::TupleState::kUnknown: break;\n";
-    }
-
-    os.PopIndent();
-    os << os.Indent() << "}\n";
-  }
-
-  void Visit(ProgramTableJoinRegion region) override {
-    auto body = region.Body();
-    if (!body) {
-      os << Comment(os, region, "Empty ProgramTableJoinRegion");
-      return;
-    }
-
-    const auto id = region.Id();
-
-    os << Comment(os, region, "ProgramTableJoinRegion");
-
-    // Nested loop join
-    auto vec = region.PivotVector();
-    os << os.Indent() << "for (auto [";
-
-    std::vector<std::string> var_names;
-    auto sep = "";
-    for (auto var : region.OutputPivotVariables()) {
-      std::stringstream var_name;
-      (void) Var(var_name, var);
-      var_names.emplace_back(var_name.str());
-      os << sep << var_names.back();
-      sep = ", ";
-    }
-    os << "] : " << Vector(os, vec) << ") {\n";
-    os.PushIndent();
-
-    auto tables = region.Tables();
-
-    // First, build the scans.
-    for (auto i = 0u; i < tables.size(); ++i) {
-      auto maybe_index = region.Index(i);
-      assert(maybe_index.has_value());
-
-      const auto table = tables[i];
-      const auto index = *maybe_index;
-      const auto index_keys = index.KeyColumns();
-
-      os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::IndexTag<"
-         << index.Id() << ">> scan_" << id << '_' << i << "(storage, "
-         << Table(os, table);
-
-      for (auto index_col : index_keys) {
-        auto j = 0u;
-        for (auto used_col : region.IndexedColumns(i)) {
-          if (used_col == index_col) {
-            os << ", " << var_names[j];
-          }
-          ++j;
-        }
-      }
-
-      os << ");\n";
-    }
-
-    // Now, iterate over the scans over the tables where we do use an index.
-    for (auto i = 0u; i < tables.size(); ++i) {
-      auto out_vars = region.OutputVariables(i);
-      assert(out_vars.size() == region.SelectedColumns(i).size());
-      os << os.Indent() << "for (auto [";
-      sep = "";
-      for (auto var : out_vars) {
-        os << sep << Var(os, var);
-        sep = ", ";
-      }
-
-      os << "] : scan_" << id << '_' << i << ") {\n";
-
-      // We increase indentation here, and the corresponding `PopIndent()`
-      // only comes *after* visiting the `region.Body()`.
-      os.PushIndent();
-    }
-
-    body->Accept(*this);
-
-    // Outdent for each nested for loop over an index.
-    for (auto table : tables) {
-      (void) table;
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    }
-
-    // Output of the loop over the pivot vector.
-    os.PopIndent();
-    os << os.Indent() << "}\n";
-  }
-
-  void Visit(ProgramTableProductRegion region) override {
-    auto body = region.Body();
-    if (!body) {
-      os << Comment(os, region, "Empty ProgramTableProductRegion");
-      return;
-    }
-
-    auto id = region.Id();
-    os << Comment(os, region, "ProgramTableProductRegion");
-
-    os << os.Indent();
-
-    auto i = 0u;
-    os << "Vector<StorageT";
-    for (auto table : region.Tables()) {
-      (void) table;
-      for (auto var : region.OutputVariables(i++)) {
-        os << ", " << TypeName(os, module, var.Type());
-      }
-    }
-
-    os << "> "
-       << "vec_" << region.Id() << "(storage, " << region.Id() << ");\n";
-
-    i = 0u;
-
-    // Products work by having tables and vectors for each proposer. We want
-    // to take the product of each proposer's vector against all other tables.
-    // The outer loop deals with the vectors.
-    for (auto outer_table : region.Tables()) {
-      const auto outer_vars = region.OutputVariables(i);
-      const auto outer_vec = region.Vector(i++);
-      (void) outer_table;
-
-      os << os.Indent() << "for (auto ";
-      auto outer_vars_size = outer_vars.size();
-      if (outer_vars_size > 1) {
-        os << "[";
-      }
-      auto sep = "";
-      for (auto var : outer_vars) {
-        os << sep << Var(os, var);
-        sep = ", ";
-      }
-      if (outer_vars_size > 1) {
-        os << "]";
-      }
-
-      os << " : " << Vector(os, outer_vec) << ") {\n";
-      auto indents = 1u;
-      os.PushIndent();
-
-      // The inner loop deals with the tables.
-      auto j = 0u;
-      for (auto inner_table : region.Tables()) {
-        const auto inner_vars = region.OutputVariables(j++);
-
-        // NOTE(pag): Both `i` and `j` are already `+1`d.
-        if (i == j) {
-          continue;
-        }
-
-        os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::TableTag<"
-           << inner_table.Id() << ">> scan_" << id << "_" << i << "_" << j
-           << "(storage, " << Table(os, inner_table) << ");\n";
-
-        os << os.Indent() << "for (auto ";
-        auto inner_vars_size = inner_vars.size();
-        if (inner_vars_size > 1) {
-          os << "[";
-        }
-        sep = "";
-        for (auto var : inner_vars) {
-          os << sep << Var(os, var);
-          sep = ", ";
-        }
-        if (inner_vars_size > 1) {
-          os << "]";
-        }
-        os << " : scan_" << id << "_" << i << "_" << j << ") {\n";
-        os.PushIndent();
-        ++indents;
-      }
-
-      // Collect all product things into a vector.
-      os << os.Indent() << "vec_" << region.Id();
-      sep = ".Add(";
-      auto k = 0u;
-      for (auto table : region.Tables()) {
-        (void) table;
-        for (auto var : region.OutputVariables(k++)) {
-          os << sep << Var(os, var);
-          sep = ", ";
-        }
-      }
-      os << ");\n";
-
-      // De-dent everything.
-      for (auto table : region.Tables()) {
-        os.PopIndent();
-        os << os.Indent() << "}\n";
-        assert(0u < indents);
-        indents--;
-        (void) table;
-      }
-    }
-
-    os << os.Indent();
-    auto sep = "for (auto [";
-    auto k = 0u;
-    for (auto table : region.Tables()) {
-      (void) table;
-      for (auto var : region.OutputVariables(k++)) {
-        os << sep << Var(os, var);
-        sep = ", ";
-      }
-    }
-
-    os << "] : vec_" << region.Id() << ") {\n";
-    os.PushIndent();
-    body->Accept(*this);
-    os.PopIndent();
-    os << os.Indent() << "}\n";
-  }
-
-  void Visit(ProgramTableScanRegion region) override {
-    os << Comment(os, region, "ProgramTableScanRegion");
-    const auto body = region.Body();
-    if (!body) {
-      return;
-    }
-
-    const auto id = region.Id();
-    const auto table = region.Table();
-    const auto input_vars = region.InputVariables();
-    os << os.Indent() << "{\n";
-    os.PushIndent();
-    os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
-    if (auto maybe_index = region.Index(); maybe_index) {
-      os << "IndexTag<" << maybe_index->Id() << ">";
-    } else {
-      os << "TableTag<" << table.Id() << ">";
-    }
-
-    os << "> scan_" << id << "(storage, " << Table(os, table);
-    for (auto var : input_vars) {
-      os << ", " << Var(os, var);
-    }
-    os << ");\n";
-
-    os << os.Indent() << "for (auto [";
-    auto sep = "";
-    for (auto var : region.OutputVariables()) {
-      os << sep << Var(os, var);
-      sep = ", ";
-    }
-    os << "] : scan_" << id << ") {\n";
-
-    os.PushIndent();
-    body->Accept(*this);
-    os.PopIndent();
-    os << os.Indent() << "}\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n";
-  }
-
-  void Visit(ProgramTupleCompareRegion region) override {
-    os << Comment(os, region, "ProgramTupleCompareRegion");
-
-    const auto lhs_vars = region.LHS();
-    const auto rhs_vars = region.RHS();
-
-    os << os.Indent() << "if (std::make_tuple(";
-
-    auto sep = "";
-    for (auto var : lhs_vars) {
-      os << sep << Var(os, var);
-      sep = ", ";
-    }
-
-    os << ") " << OperatorString(region.Operator()) << " std::make_tuple(";
-    sep = "";
-    for (auto var : rhs_vars) {
-      os << sep << Var(os, var);
-      sep = ", ";
-    }
-    os << ")) {\n";
-
-    os.PushIndent();
-    if (auto true_body = region.BodyIfTrue(); true_body) {
-      true_body->Accept(*this);
-    }
-    os.PopIndent();
-    os << os.Indent() << '}';
-
-    if (auto false_body = region.BodyIfFalse(); false_body) {
-      os << " else {\n";
-      os.PushIndent();
-      false_body->Accept(*this);
-      os.PopIndent();
-      os << os.Indent() << "}\n";
-    } else {
-      os << '\n';
-    }
-  }
-
-  void Visit(ProgramWorkerIdRegion region) override {
-    os << Comment(os, region, "Program WorkerId Region");
-    if (auto body = region.Body(); body) {
-      body->Accept(*this);
-    }
-  }
+  Generator(const Program &program_, OutputStream &hh_, OutputStream &cc_,
+            std::string_view header_name_)
+      : program(program_),
+        module(program_.ParsedModule()),
+        hh(hh_),
+        cc(cc_),
+        header_name(header_name_) {}
+
+  void Run(void);
 
  private:
-  OutputStream &os;
+  // ---------------------------------------------------------------------
+  // Naming.
+
+  // Stringify anything the OutputStream can print (tokens, names).
+  template <typename T>
+  std::string ToString(const T &val) {
+    std::stringstream ss;
+    do {
+      OutputStream ss_os(hh.display_manager, ss);
+      ss_os << val;
+    } while (false);
+    return ss.str();
+  }
+
+  std::string VarName(DataVariable var) {
+    switch (var.DefiningRole()) {
+      case VariableRole::kConstantZero: return "0";
+      case VariableRole::kConstantOne: return "1";
+      case VariableRole::kConstantFalse: return "false";
+      case VariableRole::kConstantTrue: return "true";
+      default: break;
+    }
+    if (var.IsConstant()) {
+      return ConstantExpr(var);
+    }
+    if (var.IsGlobal()) {
+      return "g" + std::to_string(var.Id());
+    }
+    return "v" + std::to_string(var.Id());
+  }
+
+  // The inline expression for a constant variable: an enumerator reference,
+  // a literal spelling, or a zero default.
+  std::string ConstantExpr(DataVariable var) {
+    auto val = var.Value();
+    if (val && val->IsTag()) {
+      return std::to_string(QueryTag::From(*val).Value());
+    }
+    if (val) {
+      if (std::optional<ParsedLiteral> lit = val->Literal()) {
+        if (lit->IsEnumerator()) {
+          auto type = ParsedForeignType::Of(*lit);
+          auto enumerator = ParsedForeignConstant::From(*lit);
+          return std::string(type->NameAsString()) + "::" +
+                 std::string(enumerator.NameAsString());
+        }
+        if (auto spelling = lit->Spelling(Language::kCxx); spelling) {
+          return std::string(*spelling);
+        }
+      }
+    }
+    if (var.Type().UnderlyingKind() == TypeKind::kBoolean) {
+      return "false";
+    }
+    return TypeName(module, var.Type()) + "{}";
+  }
+
+  std::string ProcName(ProgramProcedure proc) {
+    switch (proc.Kind()) {
+      case ProcedureKind::kInitializer:
+        return "init_" + std::to_string(proc.Id());
+      case ProcedureKind::kPrimaryDataFlowFunc:
+        return "flow_" + std::to_string(proc.Id());
+      case ProcedureKind::kMessageHandler:
+        return Sanitize(ToString(proc.Message()->Name())) + "_" +
+               std::to_string(proc.Message()->Arity());
+      case ProcedureKind::kTupleFinder:
+        return "find_" + std::to_string(proc.Id());
+      case ProcedureKind::kConditionTester:
+        return "test_" + std::to_string(proc.Id());
+      case ProcedureKind::kQueryMessageInjector:
+        return "inject_" + std::to_string(proc.Id());
+      default: return "proc_" + std::to_string(proc.Id());
+    }
+  }
+
+  // Vectors are passed by value into dataflow entry points and moved down;
+  // all other procedure kinds take them by reference.
+  static bool TakesVectorsByValue(ProgramProcedure proc) {
+    switch (proc.Kind()) {
+      case ProcedureKind::kMessageHandler:
+      case ProcedureKind::kEntryDataFlowFunc:
+      case ProcedureKind::kPrimaryDataFlowFunc: return true;
+      default: return false;
+    }
+  }
+
+  std::string VecName(DataVector vec) {
+    return "vec" + std::to_string(vec.Id());
+  }
+
+  // ---------------------------------------------------------------------
+  // Layout pre-pass.
+
+  void ComputeNames(void);
+  void CollectVectorShapes(void);
+  void RegisterShape(const std::vector<TypeLoc> &types);
+  std::string ShapeName(const std::vector<TypeLoc> &types);
+  std::string VecType(DataVector vec);
+  void WalkRegion(ProgramRegion region);
+
+  // ---------------------------------------------------------------------
+  // Header emission.
+
+  void EmitInlines(OutputStream &os, const char *stage);
+  void EmitEnums(void);
+  void EmitShapeStructs(void);
+  void EmitHashStruct(const std::string &name,
+                      const std::vector<std::pair<std::string, std::string>>
+                          &typed_fields);
+  void EmitRowStructs(void);
+  void EmitFunctorsDecl(void);
+  void EmitLogDecl(void);
+  void EmitDatabaseDecl(void);
+
+  // ---------------------------------------------------------------------
+  // Source emission.
+
+  void EmitConstructor(void);
+  void EmitProcedure(ProgramProcedure proc);
+  void EmitQueries(void);
+
+  void EmitRegion(ProgramRegion region);
+  void EmitOptional(std::optional<ProgramRegion> region) {
+    if (region) {
+      EmitRegion(*region);
+    }
+  }
+  void EmitComment(ProgramRegion region) {
+    if (!region.Comment().empty()) {
+      cc << cc.Indent() << "// " << region.Comment() << "\n";
+    }
+  }
+
+  void EmitCall(ProgramCallRegion region);
+  void EmitChangeTuple(ProgramChangeTupleRegion region);
+  void EmitCheckTuple(ProgramCheckTupleRegion region);
+  void EmitGenerate(ProgramGenerateRegion region);
+  void EmitInduction(ProgramInductionRegion region);
+  void EmitJoin(ProgramTableJoinRegion region);
+  void EmitProduct(ProgramTableProductRegion region);
+  void EmitScan(ProgramTableScanRegion region);
+  void EmitCompare(ProgramTupleCompareRegion region);
+
+  // Emits the per-index maintenance that follows a fresh row insertion.
+  void EmitIndexAdds(DataTable table, const std::string &ins,
+                     const std::vector<std::string> &tuple_exprs);
+
+  // The braced row expression `{a, b, c}`.
+  static std::string RowExpr(const std::vector<std::string> &exprs) {
+    std::string out = "{";
+    auto sep = "";
+    for (const auto &e : exprs) {
+      out += sep;
+      out += e;
+      sep = ", ";
+    }
+    out += "}";
+    return out;
+  }
+
+  static std::string JoinExprs(const std::vector<std::string> &exprs,
+                               const char *sep_text) {
+    std::string out;
+    auto sep = "";
+    for (const auto &e : exprs) {
+      out += sep;
+      out += e;
+      sep = sep_text;
+    }
+    return out;
+  }
+
+  template <typename Range>
+  std::vector<std::string> VarExprs(Range vars) {
+    std::vector<std::string> out;
+    for (DataVariable var : vars) {
+      out.push_back(VarName(var));
+    }
+    return out;
+  }
+
+  // Whether a region's control flow always ends in a `return`.
+  static bool EndsWithReturn(ProgramRegion region) {
+    if (region.IsReturn()) {
+      return true;
+    }
+    if (region.IsSeries()) {
+      auto regions = ProgramSeriesRegion::From(region).Regions();
+      if (regions.empty()) {
+        return false;
+      }
+      return EndsWithReturn(regions[regions.size() - 1u]);
+    }
+    return false;
+  }
+
+  const Program &program;
   const ParsedModule module;
+  OutputStream &hh;
+  OutputStream &cc;
+  const std::string header_name;
+
+  std::string ns_name;
+
+  // Table id -> member name / row struct name / per-column field names.
+  std::unordered_map<unsigned, std::string> table_member;
+  std::unordered_map<unsigned, std::string> row_type;
+  std::unordered_map<unsigned, std::vector<std::string>> col_field;
+
+  // Index id -> member name / key struct name. Covering indexes (keys over
+  // every column) get neither: the table's own hash lookup serves them.
+  std::unordered_map<unsigned, std::string> index_member;
+  std::unordered_map<unsigned, std::string> key_type;
+
+  // Tuple shape (mangled type list) -> (struct name, column types).
+  std::map<std::string, std::pair<std::string, std::vector<TypeLoc>>> shapes;
+
+  unsigned next_ins_id{0};
 };
 
-static void DeclareFunctor(OutputStream &os, ParsedModule module,
-                           ParsedFunctor func) {
-  ParsedDeclaration decl(func);
-  std::stringstream return_tuple;
-  std::vector<ParsedParameter> args;
-  auto sep_ret = "";
-  auto num_ret_types = 0u;
-  for (auto param : decl.Parameters()) {
-    if (param.Binding() == ParameterBinding::kBound) {
-      args.push_back(param);
-    } else {
-      ++num_ret_types;
-      return_tuple << sep_ret << TypeName(module, param.Type());
-      sep_ret = ", ";
-    }
+void Generator::ComputeNames(void) {
+  if (auto db_name = module.DatabaseName()) {
+    ns_name = db_name->NamespaceName(Language::kCxx);
   }
 
-  os << os.Indent();
+  for (DataTable table : program.Tables()) {
+    const auto id = table.Id();
 
-  if (func.IsFilter()) {
-    assert(func.Range() == FunctorRange::kZeroOrOne);
-    os << "bool";
-
-  } else {
-    auto tuple_prefix = "";
-    auto tuple_suffix = "";
-    if (1u < num_ret_types) {
-      tuple_prefix = "std::tuple<";
-      tuple_suffix = ">";
-    } else {
-      assert(0u < num_ret_types);
+    std::string base = "table";
+    if (auto decl = TableDecl(table)) {
+      base = Sanitize(ToString(decl->Name()));
     }
+    table_member.emplace(id, base + "_" + std::to_string(id));
+    row_type.emplace(id, "Row" + std::to_string(id));
 
-    switch (func.Range()) {
-      case FunctorRange::kOneOrMore:
-      case FunctorRange::kZeroOrMore:
-        os << "std::vector<" << tuple_prefix << return_tuple.str()
-           << tuple_suffix << ">";
-        break;
-      case FunctorRange::kOneToOne:
-        os << tuple_prefix << return_tuple.str() << tuple_suffix;
-        break;
-      case FunctorRange::kZeroOrOne:
-        os << "std::optional<" << tuple_prefix << return_tuple.str()
-           << tuple_suffix << ">";
-    }
-  }
-
-  os << " " << func.Name() << '_'
-     << ParsedDeclaration(func).BindingPattern() << '(';
-
-  auto arg_sep = "";
-  for (ParsedParameter arg : args) {
-    const TypeLoc type = arg.Type();
-    os << arg_sep;
-    if (type.IsReferentiallyTransparent(module, Language::kCxx)) {
-      os << TypeName(module, type) << ' ';
-    } else {
-      os << "const " << TypeName(module, type) << " &";
-    }
-    os << arg.Name();
-    arg_sep = ", ";
-  }
-
-  os << ')';
-}
-
-static void DefineFunctor(OutputStream &os, ParsedModule module,
-                          ParsedFunctor func, const std::string &ns_name) {
-  ParsedDeclaration decl(func);
-
-  os << os.Indent() << "virtual\n";
-  DeclareFunctor(os, module, func);
-  os << " = 0;\n";
-}
-
-static void DeclareFunctors(OutputStream &os, Program program,
-                            ParsedModule root_module,
-                            const std::string &ns_name,
-                            const std::vector<ParsedInline> &inlines) {
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:functors:prologue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  os << os.Indent() << "template <typename StorageT>\n"
-     << os.Indent() << "class " << gClassName << "Functors {\n";
-  os.PushIndent();
-  os << os.Indent() << "public:\n";
-  os << os.Indent() << " virtual ~" << gClassName
-     << "Functors(void) = default;\n";
-  os.PushIndent();
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:functors:definition:prologue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  for (ParsedFunctor func : Functors(root_module)) {
-    if (!func.IsInline(Language::kCxx)) {
-      DefineFunctor(os, root_module, func, ns_name);
-    }
-  }
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:functors:definition:epilogue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  os.PopIndent();
-
-  os.PopIndent();
-  os << os.Indent() << "};\n\n";
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:functors:epilogue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-}
-
-static void DeclareMessageLogger(OutputStream &os, ParsedModule module,
-                                 ParsedMessage message) {
-  ParsedDeclaration decl(message);
-  os << os.Indent() << "void " << message.Name() << "_" << message.Arity()
-     << "(";
-
-  auto sep = "";
-  for (auto param : decl.Parameters()) {
-    os << sep;
-    if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-      os << TypeName(module, param.Type()) << " p";
-    } else {
-      os << "const " << TypeName(module, param.Type()) << " &p";
-    }
-    os << param.Index() << " /* " << param.Name() << " */";
-    sep = ", ";
-  }
-
-  os << sep << "bool added) {}\n";
-}
-
-static void DeclareMessageLog(OutputStream &os, Program program,
-                              ParsedModule root_module,
-                              const std::vector<ParsedInline> &inlines) {
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:log:prologue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  os << os.Indent() << "template <typename StorageT>\n"
-     << os.Indent() << "class " << gClassName << "Log {\n";
-  os.PushIndent();
-  os << os.Indent() << "public:\n";
-  os.PushIndent();
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:log:definition:prologue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  for (auto message : Messages(root_module)) {
-    if (message.IsPublished()) {
-      DeclareMessageLogger(os, root_module, message);
-    }
-  }
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:log:definition:epilogue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  os.PopIndent();
-  os.PopIndent();
-  os << os.Indent() << "};\n\n";
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:log:epilogue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-}
-
-static void DefineProcedure(OutputStream &os, ParsedModule module,
-                            ProgramProcedure proc) {
-
-  // Every procedure has a boolean return type. A lot of the time the return
-  // type is not used, but for top-down checkers (which try to prove whether or
-  // not a tuple in an unknown state is either present or absent) it is used.
-  os << os.Indent() << "bool " << Procedure(os, proc) << "(";
-
-  const auto vec_params = proc.VectorParameters();
-  const auto var_params = proc.VariableParameters();
-  auto sep = "";
-
-  // First, declare all vector parameters.
-  for (auto vec : vec_params) {
-    os << sep << "::hyde::rt::Vector<StorageT";
-    const auto &col_types = vec.ColumnTypes();
-    for (auto type : col_types) {
-      auto type_loc = TypeLoc(type);
-      os << ", " << TypeName(os, module, type_loc);
-    }
-    os << "> ";
-
-    if (proc.Kind() != ProcedureKind::kMessageHandler &&
-        proc.Kind() != ProcedureKind::kEntryDataFlowFunc &&
-        proc.Kind() != ProcedureKind::kPrimaryDataFlowFunc) {
-      os << '&';
-    }
-    os << Vector(os, vec);
-    sep = ", ";
-  }
-
-  // Then, declare all variable parameters.
-  for (auto param : var_params) {
-    os << sep << TypeName(os, module, param.Type()) << ' ' << Var(os, param);
-    sep = ", ";
-  }
-
-  os << ") {\n";
-  os.PushIndent();
-
-  // Define the vectors that will be created and used within all procedures.
-  // These vectors exist to support inductions, joins (pivot vectors), etc.
-  // Define the vectors that will be created and used within all procedures.
-  // These vectors exist to support inductions, joins (pivot vectors), etc.
-  for (DataVector vec : proc.DefinedVectors()) {
-    os << os.Indent() << "VectorT " << Vector(os, vec)
-       << "(storage, ::hyde::rt::Shape<";
-    sep = "";
-    for (TypeLoc type : vec.ColumnTypes()) {
-      os << sep << TypeName(os, module, type);
-      sep = ", ";
-    }
-    os << ">{});";
-  }
-
-  // Visit the body of the procedure. Procedure bodies are never empty; the
-  // most trivial procedure body contains a `return False`.
-  CPPCodeGenVisitor visitor(os, module);
-  proc.Body().Accept(visitor);
-
-  // From a codegen perspective, we guarantee that all paths through all
-  // functions return, but mypy isn't always smart enough, mostly because we
-  // have our returns inside of conditionals that mypy doesn't know are
-  // complete.
-  os << os.Indent() << "assert(false);\n" << os.Indent() << "return false;\n";
-
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";
-}
-
-static void DefineQueryEntryPoint(OutputStream &os, ParsedModule module,
-                                  const ProgramQuery &spec) {
-  const ParsedDeclaration decl(spec.query);
-
-  auto num_bound_params = 0u;
-  auto num_free_params = 0u;
-  const auto params = decl.Parameters();
-  const auto num_params = decl.Arity();
-  (void) num_params;
-
-  for (auto param : params) {
-    if (param.Binding() == ParameterBinding::kBound) {
-      ++num_bound_params;
-    } else {
-      ++num_free_params;
-    }
-  }
-  if (num_free_params) {
-    os << os.Indent() << "template <typename _Generator>\n";
-  }
-
-  os << os.Indent() << "size_t " << decl.Name() << '_'
-     << decl.BindingPattern() << "(";
-
-  auto sep = "";
-  auto has_refs = false;
-  for (auto param : params) {
-    if (param.Binding() == ParameterBinding::kBound) {
-      os << sep << TypeName(module, param.Type()) << " ";
-      if (!param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-        has_refs = true;
-        os << "val_";
+    // Column field names: prefer a parsed name, fall back to c<position>,
+    // dedupe within the table.
+    std::unordered_set<std::string> used_fields;
+    std::vector<std::string> fields;
+    for (DataColumn col : table.Columns()) {
+      std::string field;
+      if (const auto &names = col.PossibleNames(); !names.empty()) {
+        field = Sanitize(ToString(names[0]));
+        for (auto &c : field) {
+          c = static_cast<char>(std::tolower(c));
+        }
       }
-      os << "param_" << param.Index();
-      sep = ", ";
+      if (field.empty() || field == "_" || used_fields.contains(field)) {
+        field = "c" + std::to_string(col.Index());
+      }
+      used_fields.insert(field);
+      fields.push_back(std::move(field));
     }
-  }
+    col_field.emplace(id, std::move(fields));
 
-  if (num_free_params) {
-    os << sep << "_Generator _generator";
-  }
-  os << ") {\n";
-
-  assert(num_params == (num_bound_params + num_free_params));
-
-  os.PushIndent();
-  if (has_refs) {
-    for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound ||
-          param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
+    for (DataIndex index : table.Indices()) {
+      if (index.ValueColumns().empty()) {
         continue;
       }
-
-      os << os.Indent()
-         << "::hyde::rt::InternRef<" << TypeName(module, param.Type())
-         << "> param_" << param.Index()
-         << "(storage.Intern(std::move(val_param_" << param.Index() << ")));\n";
+      index_member.emplace(index.Id(), "idx_" + std::to_string(index.Id()));
+      key_type.emplace(index.Id(), "Key" + std::to_string(index.Id()));
     }
   }
-  os << os.Indent() << "size_t num_generated = 0;\n"
-     << os.Indent() << "(void) num_generated;\n";
+}
 
-  if (spec.forcing_function) {
-    os << os.Indent() << Procedure(os, *(spec.forcing_function)) << '(';
-    sep = "";
-    for (auto param : params) {
+void Generator::RegisterShape(const std::vector<TypeLoc> &types) {
+  std::string mangled;
+  for (TypeLoc t : types) {
+    mangled += "_";
+    mangled += TypeTag(module, t);
+  }
+  if (!shapes.contains(mangled)) {
+    shapes.emplace(mangled, std::make_pair("Tup" + mangled, types));
+  }
+}
+
+std::string Generator::ShapeName(const std::vector<TypeLoc> &types) {
+  std::string mangled;
+  for (TypeLoc t : types) {
+    mangled += "_";
+    mangled += TypeTag(module, t);
+  }
+  const auto it = shapes.find(mangled);
+  assert(it != shapes.end());
+  return it->second.first;
+}
+
+std::string Generator::VecType(DataVector vec) {
+  return ShapeName(vec.ColumnTypes());
+}
+
+// Collect every tuple shape the program needs: procedure parameter and local
+// vectors, plus product staging vectors.
+void Generator::CollectVectorShapes(void) {
+  for (ProgramProcedure proc : program.Procedures()) {
+    for (DataVector vec : proc.VectorParameters()) {
+      RegisterShape(vec.ColumnTypes());
+    }
+    for (DataVector vec : proc.DefinedVectors()) {
+      RegisterShape(vec.ColumnTypes());
+    }
+    WalkRegion(proc.Body());
+  }
+}
+
+void Generator::WalkRegion(ProgramRegion region) {
+  if (region.IsSeries()) {
+    for (auto sub : ProgramSeriesRegion::From(region).Regions()) {
+      WalkRegion(sub);
+    }
+  } else if (region.IsParallel()) {
+    for (auto sub : ProgramParallelRegion::From(region).Regions()) {
+      WalkRegion(sub);
+    }
+  } else if (region.IsInduction()) {
+    auto induction = ProgramInductionRegion::From(region);
+    if (auto init = induction.Initializer()) {
+      WalkRegion(*init);
+    }
+    WalkRegion(induction.FixpointLoop());
+    if (auto out = induction.Output()) {
+      WalkRegion(*out);
+    }
+  } else if (region.IsTableProduct()) {
+    auto product = ProgramTableProductRegion::From(region);
+    std::vector<TypeLoc> types;
+    const auto num_tables = product.Tables().size();
+    for (auto i = 0u; i < num_tables; ++i) {
+      for (DataVariable var : product.OutputVariables(i)) {
+        types.push_back(var.Type());
+      }
+    }
+    RegisterShape(types);
+    if (auto body = product.Body()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsVectorLoop()) {
+    if (auto body = ProgramVectorLoopRegion::From(region).Body()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsLetBinding()) {
+    if (auto body = ProgramLetBindingRegion::From(region).Body()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsModeSwitch()) {
+    if (auto body = ProgramModeSwitchRegion::From(region).Body()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsChangeTuple()) {
+    auto change = ProgramChangeTupleRegion::From(region);
+    if (auto body = change.BodyIfSucceeded()) {
+      WalkRegion(*body);
+    }
+    if (auto body = change.BodyIfFailed()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsCheckTuple()) {
+    auto check = ProgramCheckTupleRegion::From(region);
+    if (auto body = check.IfPresent()) {
+      WalkRegion(*body);
+    }
+    if (auto body = check.IfAbsent()) {
+      WalkRegion(*body);
+    }
+    if (auto body = check.IfUnknown()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsTableJoin()) {
+    if (auto body = ProgramTableJoinRegion::From(region).Body()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsTableScan()) {
+    if (auto body = ProgramTableScanRegion::From(region).Body()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsTupleCompare()) {
+    auto cmp = ProgramTupleCompareRegion::From(region);
+    if (auto body = cmp.BodyIfTrue()) {
+      WalkRegion(*body);
+    }
+    if (auto body = cmp.BodyIfFalse()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsGenerate()) {
+    auto gen = ProgramGenerateRegion::From(region);
+    if (auto body = gen.BodyIfResults()) {
+      WalkRegion(*body);
+    }
+    if (auto body = gen.BodyIfEmpty()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsCall()) {
+    auto call = ProgramCallRegion::From(region);
+    if (auto body = call.BodyIfTrue()) {
+      WalkRegion(*body);
+    }
+    if (auto body = call.BodyIfFalse()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsTestAndSet()) {
+    if (auto body = ProgramTestAndSetRegion::From(region).Body()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsWorkerId()) {
+    if (auto body = ProgramWorkerIdRegion::From(region).Body()) {
+      WalkRegion(*body);
+    }
+  }
+  // Leaf regions (return, publish, vector ops) have no nested bodies.
+}
+
+// -----------------------------------------------------------------------
+// Header emission.
+
+void Generator::EmitInlines(OutputStream &os, const char *stage) {
+  for (ParsedInline code : Inlines(module, Language::kCxx)) {
+    if (code.Stage() == stage) {
+      os << code.CodeToInline() << "\n";
+    }
+  }
+}
+
+void Generator::EmitEnums(void) {
+  for (ParsedEnumType type : module.EnumTypes()) {
+    hh << "enum class " << type.NameAsString() << " : "
+       << TypeName(module, type.UnderlyingType()) << " {\n";
+    hh.PushIndent();
+    for (ParsedForeignConstant enumerator : type.Enumerators()) {
+      hh << hh.Indent() << enumerator.NameAsString();
+      if (auto code = enumerator.Constructor(); !code.empty()) {
+        hh << " = " << code;
+      }
+      hh << ",\n";
+    }
+    hh.PopIndent();
+    hh << "};\n\n";
+  }
+}
+
+// Emits a plain aggregate with a `Hash` method and defaulted equality.
+void Generator::EmitHashStruct(
+    const std::string &name,
+    const std::vector<std::pair<std::string, std::string>> &typed_fields) {
+  hh << "struct " << name << " {\n";
+  hh.PushIndent();
+  std::vector<std::string> field_names;
+  for (const auto &[type, field] : typed_fields) {
+    hh << hh.Indent() << type << " " << field << ";\n";
+    field_names.push_back(field);
+  }
+  hh << hh.Indent() << "uint64_t Hash(void) const noexcept {\n";
+  hh.PushIndent();
+  hh << hh.Indent() << "return ::hyde::rt::HashRow("
+     << JoinExprs(field_names, ", ") << ");\n";
+  hh.PopIndent();
+  hh << hh.Indent() << "}\n";
+  hh << hh.Indent() << "bool operator==(const " << name
+     << " &) const noexcept = default;\n";
+  hh.PopIndent();
+  hh << "};\n\n";
+}
+
+void Generator::EmitShapeStructs(void) {
+  for (const auto &[mangled, shape] : shapes) {
+    const auto &[name, types] = shape;
+    hh << "struct " << name << " {\n";
+    hh.PushIndent();
+    auto i = 0u;
+    for (TypeLoc t : types) {
+      hh << hh.Indent() << TypeName(module, t) << " c" << (i++) << ";\n";
+    }
+    hh << hh.Indent() << "auto operator<=>(const " << name
+       << " &) const noexcept = default;\n";
+    hh.PopIndent();
+    hh << "};\n\n";
+  }
+}
+
+void Generator::EmitRowStructs(void) {
+  for (DataTable table : program.Tables()) {
+    const auto id = table.Id();
+    const auto &fields = col_field[id];
+
+    hh << "// Rows of `" << table_member[id] << "`";
+    if (auto decl = TableDecl(table)) {
+      hh << " (" << decl->Name() << "/" << decl->Arity() << ")";
+    }
+    hh << ".\n";
+
+    std::vector<std::pair<std::string, std::string>> typed_fields;
+    auto i = 0u;
+    for (DataColumn col : table.Columns()) {
+      typed_fields.emplace_back(TypeName(module, col.Type()), fields[i++]);
+    }
+    EmitHashStruct(row_type[id], typed_fields);
+
+    for (DataIndex index : table.Indices()) {
+      if (!key_type.contains(index.Id())) {
+        continue;
+      }
+      hh << "// Key of `" << index_member[index.Id()] << "` over `"
+         << table_member[id] << "`.\n";
+      std::vector<std::pair<std::string, std::string>> key_fields;
+      for (DataColumn col : index.KeyColumns()) {
+        key_fields.emplace_back(TypeName(module, col.Type()),
+                                fields[col.Index()]);
+      }
+      EmitHashStruct(key_type[index.Id()], key_fields);
+    }
+  }
+}
+
+void Generator::EmitFunctorsDecl(void) {
+  EmitInlines(hh, "c++:database:functors:prologue");
+  hh << "// User-provided functors. Define the declared member functions in\n"
+     << "// your own translation unit; the generated code calls them.\n"
+     << "struct DatabaseFunctors {\n";
+  hh.PushIndent();
+  EmitInlines(hh, "c++:database:functors:definition:prologue");
+  for (ParsedFunctor func : Functors(module)) {
+    if (func.IsInline(Language::kCxx)) {
+      continue;
+    }
+    const ParsedDeclaration decl(func);
+
+    std::vector<ParsedParameter> free_params;
+    for (ParsedParameter param : decl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kFree) {
+        free_params.push_back(param);
+      }
+    }
+
+    std::string val_type;
+    if (free_params.size() == 1u) {
+      val_type = TypeName(module, free_params[0].Type());
+    } else if (free_params.size() > 1u) {
+      val_type = "std::tuple<";
+      auto sep = "";
+      for (ParsedParameter param : free_params) {
+        val_type += sep + TypeName(module, param.Type());
+        sep = ", ";
+      }
+      val_type += ">";
+    }
+
+    // Return convention by range: filter -> bool; zero-or-one -> optional
+    // (or the nullable type itself); one-to-one -> the value; zero-or-more
+    // and one-or-more -> a materialized std::vector.
+    std::string ret;
+    switch (func.Range()) {
+      case FunctorRange::kZeroOrOne:
+        if (free_params.empty()) {
+          ret = "bool";
+        } else if (free_params.size() == 1u &&
+                   free_params[0].Type().IsNullable(module, Language::kCxx)) {
+          ret = val_type;
+        } else {
+          ret = "std::optional<" + val_type + ">";
+        }
+        break;
+      case FunctorRange::kOneToOne: ret = val_type; break;
+      case FunctorRange::kZeroOrMore:
+      case FunctorRange::kOneOrMore:
+        ret = "std::vector<" + val_type + ">";
+        break;
+    }
+
+    hh << hh.Indent() << ret << " " << func.Name() << "_"
+       << decl.BindingPattern() << "(";
+    auto sep = "";
+    for (ParsedParameter param : decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
+        hh << sep << TypeName(module, param.Type()) << " "
+           << Sanitize(ToString(param.Name()));
         sep = ", ";
       }
     }
-    os << ");\n";
+    hh << ");\n";
+  }
+  EmitInlines(hh, "c++:database:functors:definition:epilogue");
+  hh.PopIndent();
+  hh << "};\n\n";
+  EmitInlines(hh, "c++:database:functors:epilogue");
+}
+
+void Generator::EmitLogDecl(void) {
+  EmitInlines(hh, "c++:database:log:prologue");
+  hh << "// Receives published messages. The default methods do nothing.\n"
+     << "struct DatabaseLog {\n";
+  hh.PushIndent();
+  EmitInlines(hh, "c++:database:log:definition:prologue");
+  for (ParsedMessage message : Messages(module)) {
+    if (!message.IsPublished()) {
+      continue;
+    }
+    hh << hh.Indent() << "void " << message.Name() << "_" << message.Arity()
+       << "(";
+    for (ParsedParameter param : ParsedDeclaration(message).Parameters()) {
+      hh << TypeName(module, param.Type()) << " "
+         << Sanitize(ToString(param.Name())) << ", ";
+    }
+    hh << "bool added) {}\n";
+  }
+  EmitInlines(hh, "c++:database:log:definition:epilogue");
+  hh.PopIndent();
+  hh << "};\n\n";
+  EmitInlines(hh, "c++:database:log:epilogue");
+}
+
+void Generator::EmitDatabaseDecl(void) {
+  hh << "class Database {\n"
+     << " public:\n";
+  hh.PushIndent();
+  hh << hh.Indent()
+     << "explicit Database(::hyde::rt::Allocator allocator_, DatabaseLog "
+        "&log_, DatabaseFunctors &functors_);\n\n";
+
+  // Message entry points.
+  for (ProgramProcedure proc : program.Procedures()) {
+    if (proc.Kind() != ProcedureKind::kMessageHandler) {
+      continue;
+    }
+    hh << hh.Indent() << "// Message `" << proc.Message()->Name() << "/"
+       << proc.Message()->Arity() << "`.\n";
+    hh << hh.Indent() << "bool " << ProcName(proc) << "(";
+    auto sep = "";
+    for (DataVector vec : proc.VectorParameters()) {
+      hh << sep << "::hyde::rt::Vec<" << VecType(vec) << "> " << VecName(vec);
+      sep = ", ";
+    }
+    for (DataVariable var : proc.VariableParameters()) {
+      hh << sep << TypeName(module, var.Type()) << " " << VarName(var);
+      sep = ", ";
+    }
+    hh << ");\n\n";
   }
 
-  // This is either a table or index scan.
-  if (num_free_params) {
-    os << os.Indent() << "::hyde::rt::Scan<StorageT, ::hyde::rt::";
+  // Query entry points and their cursors.
+  for (const ProgramQuery &spec : program.Queries()) {
+    const ParsedDeclaration decl(spec.query);
+    const auto name =
+        Sanitize(ToString(decl.Name())) + "_" + std::string(decl.BindingPattern());
 
-    // This is an index scan.
-    if (num_bound_params) {
-      assert(spec.index.has_value());
-      os << "IndexTag<" << spec.index->Id() << ">";
+    std::vector<ParsedParameter> bound_params, free_params;
+    for (ParsedParameter param : decl.Parameters()) {
+      (param.Binding() == ParameterBinding::kBound ? bound_params
+                                                   : free_params)
+          .push_back(param);
+    }
 
-    // This is a full table scan.
+    hh << hh.Indent() << "// Query `" << decl.Name() << "/" << decl.Arity()
+       << "` (" << decl.BindingPattern() << ").\n";
+
+    if (free_params.empty()) {
+      hh << hh.Indent() << "bool " << name << "(";
+      auto sep = "";
+      for (ParsedParameter param : bound_params) {
+        hh << sep << TypeName(module, param.Type()) << " "
+           << Sanitize(ToString(param.Name()));
+        sep = ", ";
+      }
+      hh << ");\n\n";
+      continue;
+    }
+
+    hh << hh.Indent() << "struct " << name << "_cursor {\n";
+    hh.PushIndent();
+    hh << hh.Indent() << "Database &db;\n";
+    for (ParsedParameter param : bound_params) {
+      hh << hh.Indent() << TypeName(module, param.Type()) << " "
+         << Sanitize(ToString(param.Name())) << ";\n";
+    }
+    hh << hh.Indent() << "uint32_t pos;\n";
+    hh << hh.Indent() << "bool next(";
+    auto sep = "";
+    for (ParsedParameter param : free_params) {
+      hh << sep << TypeName(module, param.Type()) << " &"
+         << Sanitize(ToString(param.Name()));
+      sep = ", ";
+    }
+    hh << ");\n";
+    hh.PopIndent();
+    hh << hh.Indent() << "};\n";
+
+    hh << hh.Indent() << name << "_cursor " << name << "(";
+    sep = "";
+    for (ParsedParameter param : bound_params) {
+      hh << sep << TypeName(module, param.Type()) << " "
+         << Sanitize(ToString(param.Name()));
+      sep = ", ";
+    }
+    hh << ");\n\n";
+  }
+
+  hh.PopIndent();
+  hh << " private:\n";
+  hh.PushIndent();
+
+  // Internal procedures.
+  for (ProgramProcedure proc : program.Procedures()) {
+    if (proc.Kind() == ProcedureKind::kMessageHandler) {
+      continue;
+    }
+    hh << hh.Indent() << "bool " << ProcName(proc) << "(";
+    auto sep = "";
+    const auto by_value = TakesVectorsByValue(proc);
+    for (DataVector vec : proc.VectorParameters()) {
+      hh << sep << "::hyde::rt::Vec<" << VecType(vec) << "> "
+         << (by_value ? "" : "&") << VecName(vec);
+      sep = ", ";
+    }
+    for (DataVariable var : proc.VariableParameters()) {
+      hh << sep << TypeName(module, var.Type()) << " " << VarName(var);
+      sep = ", ";
+    }
+    hh << ");\n";
+  }
+  hh << "\n";
+
+  hh << hh.Indent() << "::hyde::rt::Allocator allocator;\n"
+     << hh.Indent() << "[[maybe_unused]] DatabaseLog &log;\n"
+     << hh.Indent() << "[[maybe_unused]] DatabaseFunctors &functors;\n\n";
+
+  // Tables and their indexes.
+  for (DataTable table : program.Tables()) {
+    const auto id = table.Id();
+    hh << hh.Indent() << "::hyde::rt::Table<" << row_type[id] << "> "
+       << table_member[id] << ";\n";
+    for (DataIndex index : table.Indices()) {
+      if (auto it = index_member.find(index.Id()); it != index_member.end()) {
+        hh << hh.Indent() << "::hyde::rt::Index<" << key_type[index.Id()]
+           << "> " << it->second << ";\n";
+      }
+    }
+  }
+  hh << "\n";
+
+  // Mutable globals (condition ref-counts, init guards, fixpoint depth).
+  for (DataVariable var : program.GlobalVariables()) {
+    hh << hh.Indent() << TypeName(module, var.Type()) << " " << VarName(var)
+       << " = 0;\n";
+  }
+
+  hh.PopIndent();
+  hh << "};\n\n";
+}
+
+// -----------------------------------------------------------------------
+// Source emission.
+
+void Generator::EmitConstructor(void) {
+  cc << "Database::Database(::hyde::rt::Allocator allocator_, DatabaseLog "
+        "&log_, DatabaseFunctors &functors_)\n"
+     << "    : allocator(allocator_),\n"
+     << "      log(log_),\n"
+     << "      functors(functors_)";
+  for (DataTable table : program.Tables()) {
+    cc << ",\n      " << table_member[table.Id()] << "(allocator_)";
+    for (DataIndex index : table.Indices()) {
+      if (auto it = index_member.find(index.Id()); it != index_member.end()) {
+        cc << ",\n      " << it->second << "(allocator_)";
+      }
+    }
+  }
+  cc << " {\n";
+  cc.PushIndent();
+  for (ProgramProcedure proc : program.Procedures()) {
+    if (proc.Kind() == ProcedureKind::kInitializer) {
+      cc << cc.Indent() << ProcName(proc) << "();\n";
+      break;
+    }
+  }
+  cc.PopIndent();
+  cc << "}\n\n";
+}
+
+void Generator::EmitProcedure(ProgramProcedure proc) {
+  cc << "bool Database::" << ProcName(proc) << "(";
+  auto sep = "";
+  const auto by_value = TakesVectorsByValue(proc);
+  for (DataVector vec : proc.VectorParameters()) {
+    cc << sep << "::hyde::rt::Vec<" << VecType(vec) << "> "
+       << (by_value ? "" : "&") << VecName(vec);
+    sep = ", ";
+  }
+  for (DataVariable var : proc.VariableParameters()) {
+    cc << sep << TypeName(module, var.Type()) << " " << VarName(var);
+    sep = ", ";
+  }
+  cc << ") {\n";
+  cc.PushIndent();
+
+  for (DataVector vec : proc.DefinedVectors()) {
+    cc << cc.Indent() << "::hyde::rt::Vec<" << VecType(vec) << "> "
+       << VecName(vec) << "(allocator);\n";
+  }
+
+  const auto body = proc.Body();
+  EmitRegion(body);
+  if (!EndsWithReturn(body)) {
+    cc << cc.Indent() << "return false;\n";
+  }
+  cc.PopIndent();
+  cc << "}\n\n";
+}
+
+// -----------------------------------------------------------------------
+// Regions.
+
+void Generator::EmitRegion(ProgramRegion region) {
+  if (region.IsSeries()) {
+    for (auto sub : ProgramSeriesRegion::From(region).Regions()) {
+      EmitRegion(sub);
+    }
+  } else if (region.IsParallel()) {
+    // Data-independent children; emitted sequentially.
+    for (auto sub : ProgramParallelRegion::From(region).Regions()) {
+      EmitRegion(sub);
+    }
+  } else if (region.IsModeSwitch()) {
+    EmitOptional(ProgramModeSwitchRegion::From(region).Body());
+  } else if (region.IsLetBinding()) {
+    auto let = ProgramLetBindingRegion::From(region);
+    EmitComment(region);
+    auto defs = let.DefinedVariables();
+    auto uses = let.UsedVariables();
+    for (auto i = 0u; i < defs.size(); ++i) {
+      cc << cc.Indent() << "const auto " << VarName(defs[i]) << " = "
+         << VarName(uses[i]) << ";\n";
+    }
+    EmitOptional(let.Body());
+  } else if (region.IsReturn()) {
+    cc << cc.Indent() << "return "
+       << (ProgramReturnRegion::From(region).ReturnsTrue() ? "true" : "false")
+       << ";\n";
+  } else if (region.IsVectorLoop()) {
+    auto loop = ProgramVectorLoopRegion::From(region);
+    auto body = loop.Body();
+    if (!body) {
+      return;
+    }
+    EmitComment(region);
+    cc << cc.Indent() << "for (auto ["
+       << JoinExprs(VarExprs(loop.TupleVariables()), ", ") << "] : "
+       << VecName(loop.Vector()) << ") {\n";
+    cc.PushIndent();
+    EmitRegion(*body);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  } else if (region.IsVectorAppend()) {
+    auto append = ProgramVectorAppendRegion::From(region);
+    cc << cc.Indent() << VecName(append.Vector()) << ".Add("
+       << RowExpr(VarExprs(append.TupleVariables())) << ");\n";
+  } else if (region.IsVectorClear()) {
+    cc << cc.Indent()
+       << VecName(ProgramVectorClearRegion::From(region).Vector())
+       << ".Clear();\n";
+  } else if (region.IsVectorUnique()) {
+    cc << cc.Indent()
+       << VecName(ProgramVectorUniqueRegion::From(region).Vector())
+       << ".SortAndUnique();\n";
+  } else if (region.IsVectorSwap()) {
+    auto swap = ProgramVectorSwapRegion::From(region);
+    cc << cc.Indent() << VecName(swap.LHS()) << ".Swap(" << VecName(swap.RHS())
+       << ");\n";
+  } else if (region.IsChangeTuple()) {
+    EmitChangeTuple(ProgramChangeTupleRegion::From(region));
+  } else if (region.IsCheckTuple()) {
+    EmitCheckTuple(ProgramCheckTupleRegion::From(region));
+  } else if (region.IsTableJoin()) {
+    EmitJoin(ProgramTableJoinRegion::From(region));
+  } else if (region.IsTableProduct()) {
+    EmitProduct(ProgramTableProductRegion::From(region));
+  } else if (region.IsTableScan()) {
+    EmitScan(ProgramTableScanRegion::From(region));
+  } else if (region.IsTupleCompare()) {
+    EmitCompare(ProgramTupleCompareRegion::From(region));
+  } else if (region.IsGenerate()) {
+    EmitGenerate(ProgramGenerateRegion::From(region));
+  } else if (region.IsCall()) {
+    EmitCall(ProgramCallRegion::From(region));
+  } else if (region.IsInduction()) {
+    EmitInduction(ProgramInductionRegion::From(region));
+  } else if (region.IsPublish()) {
+    auto publish = ProgramPublishRegion::From(region);
+    const auto message = publish.Message();
+    cc << cc.Indent() << "log." << message.Name() << "_" << message.Arity()
+       << "(";
+    for (DataVariable var : publish.VariableArguments()) {
+      cc << VarName(var) << ", ";
+    }
+    cc << (publish.IsRemoval() ? "false" : "true") << ");\n";
+  } else if (region.IsTestAndSet()) {
+    auto tas = ProgramTestAndSetRegion::From(region);
+    const auto acc = VarName(tas.Accumulator());
+    const auto disp = VarName(tas.Displacement());
+    const auto op = tas.IsAdd() ? " += " : " -= ";
+    if (auto body = tas.Body()) {
+      cc << cc.Indent() << "if ((" << acc << op << disp
+         << ") == " << VarName(tas.Comparator()) << ") {\n";
+      cc.PushIndent();
+      EmitRegion(*body);
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";
     } else {
-      os << "TableTag<" << spec.table.Id() << ">";
+      cc << cc.Indent() << acc << op << disp << ";\n";
+    }
+  } else if (region.IsWorkerId()) {
+    // Single-threaded runtime: the worker id is always zero.
+    auto worker = ProgramWorkerIdRegion::From(region);
+    cc << cc.Indent() << "const uint64_t " << VarName(worker.WorkerId())
+       << " = 0;\n"
+       << cc.Indent() << "(void) " << VarName(worker.WorkerId()) << ";\n";
+    EmitOptional(worker.Body());
+  } else if (region.IsChangeRecord() || region.IsCheckRecord()) {
+    Unsupported(
+        "record regions (the IR analysis pass that creates them is disabled)");
+  } else {
+    Unsupported("an unknown region kind");
+  }
+}
+
+void Generator::EmitCall(ProgramCallRegion region) {
+  EmitComment(region);
+  const ProgramProcedure callee = region.CalledProcedure();
+  const auto callee_by_value = TakesVectorsByValue(callee);
+
+  std::string call = ProcName(callee) + "(";
+  auto sep = "";
+  for (DataVector vec : region.VectorArguments()) {
+    call += sep;
+    if (callee_by_value) {
+      call += "std::move(" + VecName(vec) + ")";
+    } else {
+      call += VecName(vec);
+    }
+    sep = ", ";
+  }
+  for (DataVariable var : region.VariableArguments()) {
+    call += sep + VarName(var);
+    sep = ", ";
+  }
+  call += ")";
+
+  const auto true_body = region.BodyIfTrue();
+  const auto false_body = region.BodyIfFalse();
+  if (!true_body && !false_body) {
+    cc << cc.Indent() << call << ";\n";
+    return;
+  }
+  if (!true_body && false_body) {
+    cc << cc.Indent() << "if (!" << call << ") {\n";
+    cc.PushIndent();
+    EmitRegion(*false_body);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+    return;
+  }
+  cc << cc.Indent() << "if (" << call << ") {\n";
+  cc.PushIndent();
+  EmitRegion(*true_body);
+  cc.PopIndent();
+  cc << cc.Indent() << "}";
+  if (false_body) {
+    cc << " else {\n";
+    cc.PushIndent();
+    EmitRegion(*false_body);
+    cc.PopIndent();
+    cc << cc.Indent() << "}";
+  }
+  cc << "\n";
+}
+
+void Generator::EmitIndexAdds(DataTable table, const std::string &ins,
+                              const std::vector<std::string> &tuple_exprs) {
+  for (DataIndex index : table.Indices()) {
+    const auto it = index_member.find(index.Id());
+    if (it == index_member.end()) {
+      continue;
+    }
+    std::vector<std::string> key_exprs;
+    for (DataColumn col : index.KeyColumns()) {
+      key_exprs.push_back(tuple_exprs[col.Index()]);
+    }
+    cc << cc.Indent() << it->second << ".Add(" << RowExpr(key_exprs) << ", "
+       << ins << ".id);\n";
+  }
+}
+
+void Generator::EmitChangeTuple(ProgramChangeTupleRegion region) {
+  EmitComment(region);
+  const auto table = region.Table();
+  const auto tuple_exprs = VarExprs(region.TupleVariables());
+  const auto row = RowExpr(tuple_exprs);
+  const auto member = table_member[table.Id()];
+  const auto success = region.BodyIfSucceeded();
+  const auto failure = region.BodyIfFailed();
+
+  const auto from = region.FromState();
+  const auto to = region.ToState();
+
+  bool has_indexes = false;
+  for (DataIndex index : table.Indices()) {
+    if (index_member.contains(index.Id())) {
+      has_indexes = true;
+      break;
+    }
+  }
+
+  // Transitions that can insert a fresh row need index maintenance.
+  const bool inserts = (to == TupleState::kPresent) &&
+                       (from == TupleState::kAbsent ||
+                        from == TupleState::kAbsentOrUnknown);
+  if (inserts) {
+    const char *method = (from == TupleState::kAbsent)
+                             ? "TryChangeAbsentToPresent"
+                             : "TryChangeAbsentOrUnknownToPresent";
+    if (!success && !failure && !has_indexes) {
+      cc << cc.Indent() << member << "." << method << "(" << row << ");\n";
+      return;
+    }
+    const auto ins = "ins" + std::to_string(next_ins_id++);
+    cc << cc.Indent() << "if (const auto " << ins << " = " << member << "."
+       << method << "(" << row << "); " << ins << ".changed) {\n";
+    cc.PushIndent();
+    if (has_indexes) {
+      cc << cc.Indent() << "if (" << ins << ".added_row) {\n";
+      cc.PushIndent();
+      EmitIndexAdds(table, ins, tuple_exprs);
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";
+    }
+    if (success) {
+      EmitRegion(*success);
+    }
+    cc.PopIndent();
+    cc << cc.Indent() << "}";
+    if (failure) {
+      cc << " else {\n";
+      cc.PushIndent();
+      EmitRegion(*failure);
+      cc.PopIndent();
+      cc << cc.Indent() << "}";
+    }
+    cc << "\n";
+    return;
+  }
+
+  // Pure state transitions on existing rows.
+  const char *method = nullptr;
+  if (from == TupleState::kPresent && to == TupleState::kUnknown) {
+    method = "TryChangePresentToUnknown";
+  } else if (from == TupleState::kPresent && to == TupleState::kAbsent) {
+    method = "TryChangePresentToAbsent";
+  } else if (from == TupleState::kUnknown && to == TupleState::kAbsent) {
+    method = "TryChangeUnknownToAbsent";
+  } else {
+    Unsupported("a tuple state transition the runtime has no method for");
+  }
+
+  if (!success && !failure) {
+    cc << cc.Indent() << member << "." << method << "(" << row << ");\n";
+    return;
+  }
+  if (!success && failure) {
+    cc << cc.Indent() << "if (!" << member << "." << method << "(" << row
+       << ")) {\n";
+    cc.PushIndent();
+    EmitRegion(*failure);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+    return;
+  }
+  cc << cc.Indent() << "if (" << member << "." << method << "(" << row
+     << ")) {\n";
+  cc.PushIndent();
+  EmitRegion(*success);
+  cc.PopIndent();
+  cc << cc.Indent() << "}";
+  if (failure) {
+    cc << " else {\n";
+    cc.PushIndent();
+    EmitRegion(*failure);
+    cc.PopIndent();
+    cc << cc.Indent() << "}";
+  }
+  cc << "\n";
+}
+
+void Generator::EmitCheckTuple(ProgramCheckTupleRegion region) {
+  const auto present = region.IfPresent();
+  const auto absent = region.IfAbsent();
+  const auto unknown = region.IfUnknown();
+  if (!present && !absent && !unknown) {
+    return;
+  }
+  EmitComment(region);
+  const auto row = RowExpr(VarExprs(region.TupleVariables()));
+  cc << cc.Indent() << "switch (" << table_member[region.Table().Id()]
+     << ".State(" << row << ")) {\n";
+  cc.PushIndent();
+  const auto emit_case = [&](const char *state,
+                             std::optional<ProgramRegion> body) {
+    if (!body) {
+      return;
+    }
+    cc << cc.Indent() << "case ::hyde::rt::TupleState::" << state << ": {\n";
+    cc.PushIndent();
+    EmitRegion(*body);
+    cc << cc.Indent() << "break;\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  };
+  emit_case("kPresent", present);
+  emit_case("kAbsent", absent);
+  emit_case("kUnknown", unknown);
+  cc << cc.Indent() << "default: break;\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+}
+
+void Generator::EmitJoin(ProgramTableJoinRegion region) {
+  const auto body = region.Body();
+  if (!body) {
+    return;
+  }
+  EmitComment(region);
+
+  const auto id = region.Id();
+  const auto pivot_vars = VarExprs(region.OutputPivotVariables());
+
+  // Pivot loop.
+  cc << cc.Indent() << "for (auto [" << JoinExprs(pivot_vars, ", ") << "] : "
+     << VecName(region.PivotVector()) << ") {\n";
+  cc.PushIndent();
+
+  const auto tables = region.Tables();
+  unsigned depth = 1u;  // The pivot loop.
+
+  for (auto i = 0u; i < tables.size(); ++i) {
+    const auto table = tables[i];
+    const auto member = table_member[table.Id()];
+    const auto &fields = col_field[table.Id()];
+    const auto indexed_cols = region.IndexedColumns(i);
+
+    // The pivot variable expression for a given indexed column.
+    const auto pivot_for_col = [&](DataColumn col) -> std::string {
+      auto j = 0u;
+      for (DataColumn used_col : indexed_cols) {
+        if (used_col == col) {
+          return pivot_vars[j];
+        }
+        ++j;
+      }
+      Unsupported("a join key column with no pivot variable");
+    };
+
+    const auto row = "r" + std::to_string(id) + "_" + std::to_string(i);
+    const auto cursor = "j" + std::to_string(id) + "_" + std::to_string(i);
+    const auto maybe_index = region.Index(i);
+
+    if (maybe_index && index_member.contains(maybe_index->Id())) {
+      // Walk the index chain for this pivot key.
+      const auto index = *maybe_index;
+      std::vector<std::string> key_exprs;
+      for (DataColumn col : index.KeyColumns()) {
+        key_exprs.push_back(pivot_for_col(col));
+      }
+      cc << cc.Indent() << "for (uint32_t " << cursor << " = "
+         << index_member[index.Id()] << ".First(" << RowExpr(key_exprs)
+         << "); " << cursor << " != ::hyde::rt::kNoRow; " << cursor << " = "
+         << index_member[index.Id()] << ".Next(" << cursor << ")) {\n";
+    } else {
+      // The key covers every column: probe for the single matching row.
+      std::vector<std::string> all_cols;
+      all_cols.resize(fields.size());
+      for (DataColumn col : table.Columns()) {
+        all_cols[col.Index()] = pivot_for_col(col);
+      }
+      cc << cc.Indent() << "if (const uint32_t " << cursor << " = " << member
+         << ".Find(" << RowExpr(all_cols) << "); " << cursor
+         << " != ::hyde::rt::kNoRow) {\n";
+    }
+    cc.PushIndent();
+    ++depth;
+    cc << cc.Indent() << "const auto " << row << " = " << member << ".RowAt("
+       << cursor << ");\n";
+
+    // Bind this table's output variables to the scanned row, positionally
+    // in table column order (the IR's guard regions rely on this).
+    const auto out_vars = region.OutputVariables(i);
+    assert(out_vars.size() == region.SelectedColumns(i).size());
+    for (auto k = 0u; k < out_vars.size(); ++k) {
+      cc << cc.Indent() << "const auto " << VarName(out_vars[k]) << " = "
+         << row << "." << fields[k] << ";\n";
+    }
+  }
+
+  EmitRegion(*body);
+
+  for (auto i = 0u; i < depth; ++i) {
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  }
+}
+
+void Generator::EmitProduct(ProgramTableProductRegion region) {
+  const auto body = region.Body();
+  if (!body) {
+    return;
+  }
+  EmitComment(region);
+
+  const auto id = region.Id();
+  const auto tables = region.Tables();
+
+  // Staging vector holding the concatenated output tuples; the body may
+  // mutate the scanned tables, so tuples are collected first.
+  std::vector<TypeLoc> types;
+  std::vector<std::string> all_vars;
+  for (auto i = 0u; i < tables.size(); ++i) {
+    for (DataVariable var : region.OutputVariables(i)) {
+      types.push_back(var.Type());
+      all_vars.push_back(VarName(var));
+    }
+  }
+  const auto stage = "stage" + std::to_string(id);
+  cc << cc.Indent() << "::hyde::rt::Vec<" << ShapeName(types) << "> " << stage
+     << "(allocator);\n";
+
+  for (auto i = 0u; i < tables.size(); ++i) {
+    // Proposer i's new tuples...
+    cc << cc.Indent() << "for (auto ["
+       << JoinExprs(VarExprs(region.OutputVariables(i)), ", ") << "] : "
+       << VecName(region.Vector(i)) << ") {\n";
+    cc.PushIndent();
+    unsigned depth = 1u;
+
+    // ... crossed with the full contents of every other table.
+    for (auto j = 0u; j < tables.size(); ++j) {
+      if (i == j) {
+        continue;
+      }
+      const auto member = table_member[tables[j].Id()];
+      const auto &fields = col_field[tables[j].Id()];
+      const auto cursor = "p" + std::to_string(id) + "_" + std::to_string(j);
+      cc << cc.Indent() << "for (uint32_t " << cursor << " = 0; " << cursor
+         << " < " << member << ".NumRows(); ++" << cursor << ") {\n";
+      cc.PushIndent();
+      ++depth;
+      const auto row = "r" + std::to_string(id) + "_" + std::to_string(j);
+      cc << cc.Indent() << "const auto " << row << " = " << member
+         << ".RowAt(" << cursor << ");\n";
+      auto k = 0u;
+      for (DataVariable var : region.OutputVariables(j)) {
+        cc << cc.Indent() << "const auto " << VarName(var) << " = " << row
+           << "." << fields[k++] << ";\n";
+      }
     }
 
-    os << "> scan(storage, " << Table(os, spec.table);
-    for (auto param : params) {
-      if (param.Binding() == ParameterBinding::kBound) {
-        if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-          os << ", param_" << param.Index();
+    cc << cc.Indent() << stage << ".Add(" << RowExpr(all_vars) << ");\n";
+
+    for (auto d = 0u; d < depth; ++d) {
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";
+    }
+  }
+
+  // Run the body over the staged tuples.
+  cc << cc.Indent() << "for (auto [" << JoinExprs(all_vars, ", ") << "] : "
+     << stage << ") {\n";
+  cc.PushIndent();
+  EmitRegion(*body);
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+}
+
+void Generator::EmitScan(ProgramTableScanRegion region) {
+  const auto body = region.Body();
+  if (!body) {
+    return;
+  }
+  EmitComment(region);
+
+  const auto id = region.Id();
+  const auto table = region.Table();
+  const auto member = table_member[table.Id()];
+  const auto &fields = col_field[table.Id()];
+  const auto out_vars = region.OutputVariables();
+  const auto cursor = "s" + std::to_string(id);
+  const auto row = "r" + std::to_string(id);
+
+  const auto bind_outputs = [&] {
+    // One output variable per table column, bound in column order.
+    auto k = 0u;
+    for (DataVariable var : out_vars) {
+      cc << cc.Indent() << "const auto " << VarName(var) << " = " << row
+         << "." << fields[k++] << ";\n";
+    }
+  };
+
+  // A keyed scan is only possible when the region binds a value for every
+  // key column; a rescan with no (or partial) inputs walks the whole table.
+  const auto input_vars = VarExprs(region.InputVariables());
+  const auto maybe_index = region.Index();
+  const bool keyed_chain = maybe_index &&
+                           index_member.contains(maybe_index->Id()) &&
+                           input_vars.size() == maybe_index->KeyColumns().size();
+  const bool keyed_probe = maybe_index && !keyed_chain &&
+                           input_vars.size() == fields.size();
+  if (keyed_chain) {
+    // Keyed scan via the index chain.
+    cc << cc.Indent() << "for (uint32_t " << cursor << " = "
+       << index_member[maybe_index->Id()] << ".First(" << RowExpr(input_vars)
+       << "); " << cursor << " != ::hyde::rt::kNoRow; " << cursor << " = "
+       << index_member[maybe_index->Id()] << ".Next(" << cursor << ")) {\n";
+  } else if (keyed_probe) {
+    // The key covers every column: probe for the one matching row.
+    cc << cc.Indent() << "if (const uint32_t " << cursor << " = " << member
+       << ".Find(" << RowExpr(input_vars) << "); " << cursor
+       << " != ::hyde::rt::kNoRow) {\n";
+  } else {
+    // Full table scan.
+    cc << cc.Indent() << "for (uint32_t " << cursor << " = 0; " << cursor
+       << " < " << member << ".NumRows(); ++" << cursor << ") {\n";
+  }
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto " << row << " = " << member << ".RowAt("
+     << cursor << ");\n";
+
+  // A full scan standing in for a keyed scan re-checks the constrained
+  // columns itself.
+  if (!keyed_chain && !keyed_probe && !input_vars.empty()) {
+    const auto indexed_cols = region.IndexedColumns();
+    assert(indexed_cols.size() == input_vars.size());
+    std::string cond;
+    auto sep = "";
+    for (auto k = 0u; k < input_vars.size(); ++k) {
+      cond += sep + row + "." + fields[indexed_cols[k].Index()] +
+              " == " + input_vars[k];
+      sep = " && ";
+    }
+    cc << cc.Indent() << "if (" << cond << ") {\n";
+    cc.PushIndent();
+    bind_outputs();
+    EmitRegion(*body);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  } else {
+    bind_outputs();
+    EmitRegion(*body);
+  }
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+}
+
+void Generator::EmitCompare(ProgramTupleCompareRegion region) {
+  const auto true_body = region.BodyIfTrue();
+  const auto false_body = region.BodyIfFalse();
+  if (!true_body && !false_body) {
+    return;
+  }
+  EmitComment(region);
+
+  const auto lhs = VarExprs(region.LHS());
+  const auto rhs = VarExprs(region.RHS());
+  const auto op = region.Operator();
+
+  std::string cond;
+  if (op == ComparisonOperator::kEqual || op == ComparisonOperator::kNotEqual) {
+    // Field-wise comparison, skipping trivially-equal pairs.
+    std::vector<std::string> terms;
+    for (auto i = 0u; i < lhs.size(); ++i) {
+      if (lhs[i] != rhs[i]) {
+        terms.push_back(lhs[i] + " == " + rhs[i]);
+      }
+    }
+    if (terms.empty()) {
+      // Trivially equal.
+      if (op == ComparisonOperator::kEqual) {
+        if (true_body) {
+          EmitRegion(*true_body);
+        }
+      } else if (false_body) {
+        EmitRegion(*false_body);
+      }
+      return;
+    }
+    cond = JoinExprs(terms, " && ");
+    if (op == ComparisonOperator::kNotEqual) {
+      cond = "!(" + cond + ")";
+    }
+  } else {
+    // Lexicographic ordering. Operands may be constants, which render as
+    // prvalue literals, so the tuples are built by value.
+    cond = "std::make_tuple(" + JoinExprs(lhs, ", ") + ") ";
+    cond += OperatorString(op);
+    cond += " std::make_tuple(" + JoinExprs(rhs, ", ") + ")";
+  }
+
+  if (!true_body && false_body) {
+    cc << cc.Indent() << "if (!(" << cond << ")) {\n";
+    cc.PushIndent();
+    EmitRegion(*false_body);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+    return;
+  }
+  cc << cc.Indent() << "if (" << cond << ") {\n";
+  cc.PushIndent();
+  EmitRegion(*true_body);
+  cc.PopIndent();
+  cc << cc.Indent() << "}";
+  if (false_body) {
+    cc << " else {\n";
+    cc.PushIndent();
+    EmitRegion(*false_body);
+    cc.PopIndent();
+    cc << cc.Indent() << "}";
+  }
+  cc << "\n";
+}
+
+void Generator::EmitGenerate(ProgramGenerateRegion region) {
+  EmitComment(region);
+  const auto functor = region.Functor();
+  const auto id = region.Id();
+  const auto out_vars = region.OutputVariables();
+  const auto results_body = region.BodyIfResults();
+  const auto empty_body = region.BodyIfEmpty();
+
+  std::string call;
+  if (auto inline_name = functor.InlineName(Language::kCxx); inline_name) {
+    call = *inline_name;
+  } else {
+    call = "functors." + Sanitize(ToString(functor.Name())) + "_" +
+           std::string(ParsedDeclaration(functor).BindingPattern());
+  }
+  call += "(" + JoinExprs(VarExprs(region.InputVariables()), ", ") + ")";
+
+  const auto counter = "n" + std::to_string(id);
+  if (empty_body) {
+    cc << cc.Indent() << "size_t " << counter << " = 0;\n";
+  }
+
+  const auto emit_results = [&] {
+    if (empty_body) {
+      cc << cc.Indent() << "++" << counter << ";\n";
+    }
+    if (results_body) {
+      EmitRegion(*results_body);
+    }
+  };
+
+  const auto tmp = "t" + std::to_string(id);
+  const auto bind_from = [&](const std::string &expr) {
+    if (out_vars.size() == 1u) {
+      cc << cc.Indent() << "const auto " << VarName(out_vars[0]) << " = "
+         << expr << ";\n";
+    } else {
+      auto k = 0u;
+      for (DataVariable var : out_vars) {
+        cc << cc.Indent() << "const auto " << VarName(var) << " = std::get<"
+           << (k++) << ">(" << expr << ");\n";
+      }
+    }
+  };
+
+  switch (functor.Range()) {
+    case FunctorRange::kZeroOrOne:
+      if (out_vars.empty()) {
+        // Filter functor.
+        cc << cc.Indent() << "if (" << call << ") {\n";
+        cc.PushIndent();
+        emit_results();
+        cc.PopIndent();
+        cc << cc.Indent() << "}\n";
+      } else {
+        const bool nullable =
+            out_vars.size() == 1u &&
+            out_vars[0].Type().IsNullable(module, Language::kCxx);
+        cc << cc.Indent() << "if (auto " << tmp << " = " << call << "; "
+           << tmp << ") {\n";
+        cc.PushIndent();
+        if (nullable) {
+          cc << cc.Indent() << "const auto " << VarName(out_vars[0]) << " = "
+             << tmp << ";\n";
+        } else if (out_vars.size() == 1u) {
+          cc << cc.Indent() << "const auto " << VarName(out_vars[0]) << " = *"
+             << tmp << ";\n";
         } else {
-          os << ", std::move(param_" << param.Index() << ")";
+          bind_from("*" + tmp);
         }
+        emit_results();
+        cc.PopIndent();
+        cc << cc.Indent() << "}\n";
       }
-    }
-    os << ");\n"
-       << os.Indent() << "for (auto [";
-    sep = "";
-    for (auto param : params) {
-      if (param.Binding() != ParameterBinding::kBound) {
-        os << sep << "param_" << param.Index();
-      } else {
-        os << sep << "shadow_param_" << param.Index();
-      }
-      sep = ", ";
+      break;
+
+    case FunctorRange::kOneToOne: {
+      cc << cc.Indent() << "const auto " << tmp << " = " << call << ";\n";
+      bind_from(tmp);
+      emit_results();
+      break;
     }
 
-    os << "] : scan) {\n";
-    os.PushIndent();
+    case FunctorRange::kZeroOrMore:
+    case FunctorRange::kOneOrMore: {
+      cc << cc.Indent() << "for (const auto &" << tmp << " : " << call
+         << ") {\n";
+      cc.PushIndent();
+      bind_from(tmp);
+      emit_results();
+      if (!results_body && empty_body) {
+        // One witness is enough for the emptiness test.
+        cc << cc.Indent() << "break;\n";
+      }
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";
+      break;
+    }
+  }
 
-    // We have to double-check the tuples from index scans, as they can be
-    // probabilistically stored.
-    if (num_bound_params) {
-      os << os.Indent() << "if (std::make_tuple(";
-      sep = "";
-      for (auto param : params) {
-        if (param.Binding() == ParameterBinding::kBound) {
-          os << sep << "param_" << param.Index();
+  if (empty_body) {
+    cc << cc.Indent() << "if (!" << counter << ") {\n";
+    cc.PushIndent();
+    EmitRegion(*empty_body);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  }
+}
+
+void Generator::EmitInduction(ProgramInductionRegion region) {
+  EmitComment(region);
+  if (auto init = region.Initializer()) {
+    EmitRegion(*init);
+  }
+
+  const auto vectors_empty = [&](void) {
+    cc << "(true";
+    for (DataVector vec : region.Vectors()) {
+      cc << " && " << VecName(vec) << ".Empty()";
+    }
+    cc << ")";
+  };
+
+  // The output region's recheck pass re-proves rows left in an unknown state
+  // by the fixpoint's removal cascades, and re-seeds the ones that prove
+  // present back into the induction's input vectors. Their derivations must
+  // be replayed, so the fixpoint re-runs until the input vectors are still
+  // empty after the output region.
+  const auto reentry = "reenter" + std::to_string(region.Id());
+  cc << cc.Indent() << "for (bool " << reentry << " = true; " << reentry
+     << "; ) {\n";
+  cc.PushIndent();
+
+  const auto changed = "changed" + std::to_string(region.Id());
+  cc << cc.Indent() << "for (bool " << changed << " = true; " << changed
+     << "; " << changed << " = !";
+  vectors_empty();
+  cc << ") {\n";
+  cc.PushIndent();
+  EmitRegion(region.FixpointLoop());
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+
+  if (auto output = region.Output()) {
+    EmitRegion(*output);
+    cc << cc.Indent() << reentry << " = !";
+    vectors_empty();
+    cc << ";\n";
+  } else {
+    cc << cc.Indent() << reentry << " = false;\n";
+  }
+
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+}
+
+// -----------------------------------------------------------------------
+// Queries.
+
+void Generator::EmitQueries(void) {
+  for (const ProgramQuery &spec : program.Queries()) {
+    const ParsedDeclaration decl(spec.query);
+    const auto name =
+        Sanitize(ToString(decl.Name())) + "_" + std::string(decl.BindingPattern());
+    const auto table = spec.table;
+    const auto member = table_member[table.Id()];
+    const auto &fields = col_field[table.Id()];
+
+    // Query parameters map 1:1, in order, to the backing table's columns.
+    std::vector<ParsedParameter> params;
+    std::vector<bool> is_bound;
+    std::vector<std::string> param_names;
+    for (ParsedParameter param : decl.Parameters()) {
+      params.push_back(param);
+      is_bound.push_back(param.Binding() == ParameterBinding::kBound);
+      param_names.push_back(Sanitize(ToString(param.Name())));
+    }
+    const bool has_free =
+        std::find(is_bound.begin(), is_bound.end(), false) != is_bound.end();
+
+    // The state filter applied to each candidate row: a top-down checker
+    // procedure when tuples may need re-derivation, else a state lookup.
+    const auto emit_row_filter = [&](const std::string &row,
+                                     const std::string &id_expr) {
+      if (spec.tuple_checker) {
+        cc << cc.Indent() << "if (!db." << ProcName(*spec.tuple_checker)
+           << "(";
+        auto sep = "";
+        for (auto i = 0u; i < params.size(); ++i) {
+          cc << sep << row << "." << fields[i];
           sep = ", ";
         }
+        cc << ")) {\n";
+      } else {
+        cc << cc.Indent() << "if (db." << member << ".StateAt(" << id_expr
+           << ") != ::hyde::rt::TupleState::kPresent) {\n";
       }
+      cc.PushIndent();
+      cc << cc.Indent() << "continue;\n";
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";
+    };
 
-      os << ") != std::make_tuple(";
-      sep = "";
-      for (auto param : params) {
-        if (param.Binding() == ParameterBinding::kBound) {
-          os << sep << "shadow_param_" << param.Index();
-          sep = ", ";
+    if (!has_free) {
+      // Existence check.
+      cc << "bool Database::" << name << "(";
+      auto sep = "";
+      for (auto i = 0u; i < params.size(); ++i) {
+        cc << sep << TypeName(module, params[i].Type()) << " "
+           << param_names[i];
+        sep = ", ";
+      }
+      cc << ") {\n";
+      cc.PushIndent();
+      if (spec.forcing_function) {
+        cc << cc.Indent() << ProcName(*spec.forcing_function) << "("
+           << JoinExprs(param_names, ", ") << ");\n";
+      }
+      if (spec.tuple_checker) {
+        cc << cc.Indent() << "return " << ProcName(*spec.tuple_checker) << "("
+           << JoinExprs(param_names, ", ") << ");\n";
+      } else {
+        cc << cc.Indent() << "return " << member << ".State("
+           << RowExpr(param_names)
+           << ") == ::hyde::rt::TupleState::kPresent;\n";
+      }
+      cc.PopIndent();
+      cc << "}\n\n";
+      continue;
+    }
+
+    std::vector<std::string> bound_names, free_names;
+    for (auto i = 0u; i < params.size(); ++i) {
+      (is_bound[i] ? bound_names : free_names).push_back(param_names[i]);
+    }
+
+    // Factory.
+    cc << "Database::" << name << "_cursor Database::" << name << "(";
+    auto sep = "";
+    for (auto i = 0u; i < params.size(); ++i) {
+      if (is_bound[i]) {
+        cc << sep << TypeName(module, params[i].Type()) << " "
+           << param_names[i];
+        sep = ", ";
+      }
+    }
+    cc << ") {\n";
+    cc.PushIndent();
+    if (spec.forcing_function) {
+      cc << cc.Indent() << ProcName(*spec.forcing_function) << "("
+         << JoinExprs(bound_names, ", ") << ");\n";
+    }
+    cc << cc.Indent() << "return {*this";
+    for (const auto &p : bound_names) {
+      cc << ", " << p;
+    }
+    if (spec.index && index_member.contains(spec.index->Id())) {
+      std::vector<std::string> key_exprs;
+      for (DataColumn col : spec.index->KeyColumns()) {
+        key_exprs.push_back(param_names[col.Index()]);
+      }
+      cc << ", " << index_member[spec.index->Id()] << ".First("
+         << RowExpr(key_exprs) << ")";
+    } else {
+      cc << ", 0";
+    }
+    cc << "};\n";
+    cc.PopIndent();
+    cc << "}\n\n";
+
+    // Cursor::next.
+    cc << "bool Database::" << name << "_cursor::next(";
+    sep = "";
+    for (auto i = 0u; i < params.size(); ++i) {
+      if (!is_bound[i]) {
+        cc << sep << TypeName(module, params[i].Type()) << " &"
+           << param_names[i];
+        sep = ", ";
+      }
+    }
+    cc << ") {\n";
+    cc.PushIndent();
+
+    const bool via_index =
+        spec.index && index_member.contains(spec.index->Id());
+    if (via_index) {
+      cc << cc.Indent() << "while (pos != ::hyde::rt::kNoRow) {\n";
+      cc.PushIndent();
+      cc << cc.Indent() << "const uint32_t id = pos;\n";
+      cc << cc.Indent() << "pos = db." << index_member[spec.index->Id()]
+         << ".Next(id);\n";
+    } else {
+      cc << cc.Indent() << "while (pos < db." << member << ".NumRows()) {\n";
+      cc.PushIndent();
+      cc << cc.Indent() << "const uint32_t id = pos++;\n";
+    }
+    cc << cc.Indent() << "const auto row = db." << member << ".RowAt(id);\n";
+    emit_row_filter("row", "id");
+    if (!via_index) {
+      // Re-check bound columns (a full scan is unkeyed).
+      for (auto i = 0u; i < params.size(); ++i) {
+        if (is_bound[i]) {
+          cc << cc.Indent() << "if (row." << fields[i]
+             << " != " << param_names[i] << ") {\n";
+          cc.PushIndent();
+          cc << cc.Indent() << "continue;\n";
+          cc.PopIndent();
+          cc << cc.Indent() << "}\n";
         }
       }
-
-      os << ")) {\n";
-      os.PushIndent();
-      os << os.Indent() << "continue;\n";
-      os.PopIndent();
-      os << os.Indent() << "}\n";
     }
 
-  // This is an existence check.
-  } else {
-    os << os.Indent() << "if (true) {\n";
-    os.PushIndent();
-  }
-
-  // Check the tuple's state using a finder function.
-  if (spec.tuple_checker) {
-    os << os.Indent() << "if (!" << Procedure(os, *(spec.tuple_checker)) << '(';
-    sep = "";
-    for (auto param : params) {
-      os << sep << "param_" << param.Index();
-      sep = ", ";
-    }
-    os << ")) {\n";
-
-  // Check the tuple's state directly.
-  } else {
-    os << os.Indent() << "if (" << Table(os, spec.table) << ".GetState(";
-
-    sep = "";
-    for (auto param : params) {
-      os << sep << "param_" << param.Index();
-      sep = ", ";
-    }
-    os << ") != ::hyde::rt::TupleState::kPresent) {\n";
-  }
-
-  os.PushIndent();
-  if (num_free_params) {
-    os << os.Indent() << "continue;\n";
-  } else {
-    os << os.Indent() << "return num_generated;\n";
-  }
-  os.PopIndent();
-  os << os.Indent() << "}\n";
-
-  os << os.Indent() << "num_generated += 1u;\n";
-
-  if (num_free_params) {
-    os << os.Indent() << "if (!_generator(";
-    sep = "";
-    for (auto param : params) {
-      if (param.Type().IsReferentiallyTransparent(module, Language::kCxx)) {
-        os << sep << "param_" << param.Index();
-      } else {
-        os << sep << "*param_" << param.Index();
+    for (auto i = 0u; i < params.size(); ++i) {
+      if (!is_bound[i]) {
+        cc << cc.Indent() << param_names[i] << " = row." << fields[i]
+           << ";\n";
       }
-      sep = ", ";
     }
-    os << ")) {\n";
-    os.PushIndent();
-    os << os.Indent() << "return num_generated;\n";
-    os.PopIndent();
-    os << os.Indent() << "}\n";
+    cc << cc.Indent() << "return true;\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+    cc << cc.Indent() << "return false;\n";
+    cc.PopIndent();
+    cc << "}\n\n";
+  }
+}
+
+// -----------------------------------------------------------------------
+
+void Generator::Run(void) {
+  ComputeNames();
+  CollectVectorShapes();
+
+  // ---- Header.
+  hh << "// Auto-generated file; do not edit.\n\n"
+     << "#pragma once\n\n"
+     << "#include <drlojekyll/Runtime/Allocator.h>\n"
+     << "#include <drlojekyll/Runtime/Hash.h>\n"
+     << "#include <drlojekyll/Runtime/Table.h>\n"
+     << "#include <drlojekyll/Runtime/Vec.h>\n\n"
+     << "#include <cstdint>\n"
+     << "#include <optional>\n"
+     << "#include <tuple>\n"
+     << "#include <vector>\n\n";
+
+  EmitInlines(hh, "c++:database:prologue");
+
+  if (!ns_name.empty()) {
+    hh << "namespace " << ns_name << " {\n\n";
+  }
+  EmitInlines(hh, "c++:database:prologue:namespace");
+
+  EmitInlines(hh, "c++:database:enums:prologue");
+  EmitEnums();
+  EmitInlines(hh, "c++:database:enums:epilogue");
+
+  EmitShapeStructs();
+
+  // Friendly aliases for each message's input-tuple shape.
+  for (ProgramProcedure proc : program.Procedures()) {
+    if (proc.Kind() != ProcedureKind::kMessageHandler) {
+      continue;
+    }
+    auto vec_params = proc.VectorParameters();
+    if (vec_params.size() == 1u) {
+      hh << "using " << Sanitize(ToString(proc.Message()->Name()))
+         << "_input = " << VecType(vec_params[0]) << ";\n";
+    }
+  }
+  hh << "\n";
+
+  EmitRowStructs();
+  EmitFunctorsDecl();
+  EmitLogDecl();
+  EmitDatabaseDecl();
+
+  EmitInlines(hh, "c++:database:epilogue:namespace");
+  if (!ns_name.empty()) {
+    hh << "}  // namespace " << ns_name << "\n";
+  }
+  EmitInlines(hh, "c++:database:epilogue");
+
+  // ---- Source.
+  cc << "// Auto-generated file; do not edit.\n\n"
+     << "#include \"" << header_name << "\"\n\n"
+     << "#include <tuple>\n"
+     << "#include <utility>\n\n";
+  if (!ns_name.empty()) {
+    cc << "namespace " << ns_name << " {\n\n";
   }
 
-  os.PopIndent();
-  os << os.Indent() << "}\n"
-     << os.Indent() << "return num_generated;\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";
+  EmitConstructor();
+  for (ProgramProcedure proc : program.Procedures()) {
+    EmitProcedure(proc);
+  }
+  EmitQueries();
+
+  if (!ns_name.empty()) {
+    cc << "}  // namespace " << ns_name << "\n";
+  }
 }
 
 }  // namespace
 
-// Emits C++ code for the given program to `os`.
-void GenerateDatabaseCode(const Program &program, OutputStream &os) {
-  const auto module = program.ParsedModule();
-  const auto inlines = Inlines(module, Language::kCxx);
-
-  std::string file_name = "datalog";
-  std::string ns_name;
-  std::string macro_name;
-  if (const auto db_name = module.DatabaseName()) {
-    ns_name = db_name->NamespaceName(Language::kCxx);
-    file_name = db_name->FileName();
-    for (auto ch : ns_name) {
-      if (std::isalnum(ch)) {
-        macro_name += ch;
-      } else {
-        macro_name += '_';
-      }
-    }
-  } else {
-    macro_name = gClassName;
-  }
-
-  os << "/* Auto-generated file */\n\n"
-     << "#pragma once\n\n"
-     << "#define DRLOJEKYLL_DATABASE_CODE\n\n"
-     << "#include <drlojekyll/Runtime/Runtime.h>\n\n"
-     << "#include <algorithm>\n"
-     << "#include <cstdio>\n"
-     << "#include <cinttypes>\n"
-     << "#include <optional>\n"
-     << "#include <tuple>\n"
-     << "#include <unordered_map>\n"
-     << "#include <vector>\n\n";
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:prologue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  if (!ns_name.empty()) {
-    os << "namespace " << ns_name << " {\n";
-  }
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:prologue:namespace") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  // Declare these up here so that prologue code can specialize them.
-  DeclareFunctors(os, program, module, ns_name, inlines);
-  DeclareMessageLog(os, program, module, inlines);
-
-  if (!ns_name.empty()) {
-    os << "}  // namespace " << ns_name << "\n\n";
-  }
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:enums:prologue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  os << "#ifndef __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n"
-     << "#  define __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n";
-
-  for (ParsedEnumType type : module.EnumTypes()) {
-    os << "DRLOJEKYLL_MAKE_ENUM_SERIALIZER("
-       << TypeName(module, type.Type()) << ", "
-       << TypeName(module, type.UnderlyingType()) << ")\n";
-  }
-
-  os << "#endif  // __DRLOJEKYLL_SERIALIZER_CODE_" << macro_name << "\n\n";
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:enums:epilogue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  if (!ns_name.empty()) {
-    os << "namespace " << ns_name << " {\n";
-  }
-  // A program gets its own class
-  os << "template <typename StorageT, typename LogT, typename FunctorsT>\n";
-  os << "class " << gClassName << " {\n";
-  os.PushIndent();  // class
-
-  os << os.Indent() << "public:\n";
-  os.PushIndent();  // public:
-
-  os
-     << os.Indent() << "using TableT = typename StorageT::Table;\n"
-     << os.Indent() << "using IndexT = typename StorageT::Index;\n"
-     << os.Indent() << "using DiffTableT = typename StorageT::DifferentialTable;\n"
-     << os.Indent() << "using VectorT = typename StorageT::Vector;\n\n"
-     << os.Indent() << "StorageT &storage;\n"
-     << os.Indent() << "LogT &log;\n"
-     << os.Indent() << "FunctorsT &functors;\n"
-     << "\n";
-
-  for (DataTable table : program.Tables()) {
-    if (table.IsDifferential()) {
-      os << os.Indent() << "DiffTableT " << Table(os, table) << ";\n";
-    } else {
-      os << os.Indent() << "TableT " << Table(os, table) << ";\n";
-    }
-
-    for (DataIndex index : table.Indices()) {
-      os << os.Indent() << "IndexT " << Index(os, index) << ";\n";
-    }
-  }
-
-  for (auto global : program.GlobalVariables()) {
-    DefineGlobal(os, module, global);
-  }
-
-  os << "\n";
-
-  for (DataVariable constant : program.Constants()) {
-    DefineConstant(os, module, constant);
-  }
-
-  os << "\n"
-     << os.Indent() << "explicit " << gClassName
-     << "(StorageT &storage_, LogT &log_, FunctorsT &functors_)\n";
-  os.PushIndent();  // constructor
-  os << os.Indent() << ": storage(storage_),\n"
-     << os.Indent() << "  log(log_),\n"
-     << os.Indent() << "  functors(functors_)";
-
-  // Initialize the tables and indices.
-  for (DataTable table : program.Tables()) {
-    os << ",\n" << os.Indent() << "  " << Table(os, table)
-       << "(storage, " << table.Id() << ", ::hyde::rt::Shape<";
-    auto sep = "";
-    for (DataColumn col : table.Columns()) {
-      os << sep << TypeName(os, module, col.Type());
-      sep = ", ";
-    }
-    os << ">{})";
-
-    for (DataIndex index : table.Indices()) {
-      os << os.Indent() << ",\n" << os.Indent() << "  " << Index(os, index)
-         << "(storage, " << index.Id() << ", ::hyde::rt::Shape<";
-      sep = "";
-      for (DataColumn col : index.KeyColumns()) {
-        os << sep << TypeName(os, module, col.Type());
-        sep = ", ";
-      }
-      os << ">{}, ::hyde::rt::Shape<";
-      sep = "";
-      for (DataColumn col : index.ValueColumns()) {
-        os << sep << TypeName(os, module, col.Type());
-        sep = ", ";
-      }
-      os << ">{})";
-    }
-  }
-
-  // Initialize the global variables.
-  for (auto global : program.GlobalVariables()) {
-    if (!global.IsConstant()) {
-      os << ",\n"
-         << os.Indent() << "  " << Var(os, global)
-         << TypeValueOrDefault(module, global.Type(), global);
-    }
-  }
-
-  // Initialize the non-constexpr constants.
-  for (auto constant : program.Constants()) {
-    if (!CanInlineDefineConstant(module, constant)) {
-      os << ",\n"
-         << os.Indent() << "  " << Var(os, constant)
-         << TypeValueOrDefault(module, constant.Type(), constant);
-    }
-  }
-  os << " {\n";
-
-  // Invoke the init procedure. Always first
-  auto init_procedure = program.Procedures()[0];
-  assert(init_procedure.Kind() == ProcedureKind::kInitializer);
-  os << os.Indent() << Procedure(os, init_procedure) << "();\n";
-
-  os.PopIndent();  // constructor
-  os << os.Indent() << "}\n\n";
-
-
-  for (auto proc : program.Procedures()) {
-    if (proc.Kind() == ProcedureKind::kQueryMessageInjector) {
-      DefineProcedure(os, module, proc);
-    }
-  }
-
-  for (const auto &query_spec : program.Queries()) {
-    DefineQueryEntryPoint(os, module, query_spec);
-  }
-
-  for (auto proc : program.Procedures()) {
-    if (proc.Kind() == ProcedureKind::kMessageHandler) {
-      DefineProcedure(os, module, proc);
-    }
-  }
-
-//  os.PopIndent();
-//  os << os.Indent() << "private:\n";
-//  os.PushIndent();
-
-  //  for (auto table : program.Tables()) {
-  //    DeclareTable(os, module, table);
-  //  }
-
-  os << "\n"
-     << os.Indent() << "template <typename Printer>\n"
-     << os.Indent() << "void DumpSizes(Printer _print) const {\n";
-  os.PushIndent();
-
-  for (auto table : program.Tables()) {
-    os << os.Indent() << "_print(" << table.Id() << ", "
-       << Table(os, table) << ".Size());\n";
-  }
-
-  os.PopIndent();
-  os << os.Indent() << "}\n\n"
-     << os.Indent() << "void DumpStats(void) const {\n";
-  os.PushIndent();
-  os << os.Indent() << "if constexpr (true) {\n";
-  os.PushIndent();
-  os << os.Indent() << "return;  /* change to false to enable */\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n"
-     << os.Indent() << "static FILE *tables = nullptr;\n"
-     << os.Indent() << "if (!tables) {\n";
-  os.PushIndent();
-  os << os.Indent() << "tables = fopen(\"/tmp/tables.csv\", \"w\");\n"
-     << os.Indent() << "fprintf(tables, \"";
-
-  auto sep = "";
-  for (auto table : program.Tables()) {
-    os << sep << "table " << table.Id();
-    sep = ",";
-  }
-  os << "\\n\");\n";
-  os.PopIndent();
-  os << os.Indent() << "}\n";
-  os << os.Indent() << "fprintf(tables, \"";
-  sep = "";
-  for (auto table : program.Tables()) {
-    (void) table;
-    os << sep << "%\" PRIu64 \"";
-    sep = ",";
-  }
-  os << "\\n\"";
-  for (auto table : program.Tables()) {
-    os << ", " << Table(os, table) << ".Size()";
-  }
-  os << ");\n";
-
-  os.PopIndent();
-  os << os.Indent() << "}\n\n";
-
-  for (auto proc : program.Procedures()) {
-    if (proc.Kind() != ProcedureKind::kMessageHandler &&
-        proc.Kind() != ProcedureKind::kQueryMessageInjector) {
-      DefineProcedure(os, module, proc);
-    }
-  }
-
-  os.PopIndent();  // private:
-  os.PopIndent();  // class:
-  os << "};\n\n";
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:epilogue:namespace") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
-
-  if (!ns_name.empty()) {
-    os << "}  // namespace " << ns_name << "\n\n";
-  }
-
-  for (auto code : inlines) {
-    if (code.Stage() == "c++:database:epilogue") {
-      os << code.CodeToInline() << "\n\n";
-    }
-  }
+void GenerateDatabaseCode(const Program &program, OutputStream &os_h,
+                          OutputStream &os_cc, std::string_view header_name) {
+  Generator(program, os_h, os_cc, header_name).Run();
 }
 
 }  // namespace cxx

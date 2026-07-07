@@ -1,0 +1,109 @@
+# Dr. Lojekyll
+
+Datalog compiler ("hyde" C++ namespace). Compiles Datalog to an incremental,
+message-driven C++ database. Pipeline:
+
+    parse (lib/Lex, lib/Parse)
+      → data-flow IR        lib/DataFlow    Query::Build(module, log, optimize)
+      → control-flow IR     lib/ControlFlow Program::Build(query, first_id, optimize)
+      → C++ codegen         lib/CodeGen/CPlusPlus/Database.cpp
+      → runs against        lib/Runtime + include/drlojekyll/Runtime (no deps)
+
+`docs/RuntimeAndCodegen.md` describes the runtime and generated-code shape.
+CLI driver: `bin/drlojekyll/Main.cpp`.
+
+## Build
+
+```sh
+cmake --preset debug            # configure (Ninja, build/debug)
+cmake --build --preset debug    # build; binary at build/debug/bin/drlojekyll
+```
+
+Presets: `debug`, `release`. C++23. No third-party deps beyond `vendor/`.
+Coverage build (llvm-cov):
+
+```sh
+cmake -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DDRLOJEKYLL_ENABLE_TESTS=OFF \
+  -DCMAKE_CXX_FLAGS='-fprofile-instr-generate -fcoverage-mapping' \
+  -DCMAKE_EXE_LINKER_FLAGS='-fprofile-instr-generate'
+# run with LLVM_PROFILE_FILE=..., then xcrun llvm-profdata merge / llvm-cov report
+```
+
+## Test
+
+```sh
+cd build/debug && ctest --output-on-failure   # MiniDisassembler, PointsTo, Runtime
+```
+
+End-to-end tests compile a `.dr` file at build time via `compile_datalog()`
+(cmake/Compiler.cmake) and link a hand-written driver against the generated
+code + runtime (see `tests/MiniDisassembler`, `tests/PointsTo`).
+`tests/DrTest` is a dependency-free mini-GoogleTest (`TEST`, `ASSERT_*`).
+
+### Differential optimization testing
+
+The compiler has optimization toggles: `-disable-dataflow-opt` (skips
+`QueryImpl::Optimize`: CSE, canonicalization rounds, dead-flow elimination)
+and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
+flattening, no-op removal, procedure dedup).
+
+`tests/OptDiff/diffrun.sh <case.dr> <driver.cpp> <workdir>` (env: `DR=` path
+to compiler, `TIMEOUT=` seconds) compiles a case in all 4 mode combinations,
+builds each with its driver, runs, and byte-compares stdout against the fully
+optimized build. ~112 corner-case programs with drivers live in
+`tests/OptDiff/cases/` (`<name>.dr` + `<name>.main.cpp`).
+`tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with repros
+and the open-bug list (F9–F14 open as of July 2026).
+
+Manual compile of generated code (driver pattern in any `cases/*.main.cpp`):
+
+```sh
+build/debug/bin/drlojekyll foo.dr -cpp-out gen/          # emits datalog.h/.cpp
+clang++ -std=c++23 -I include -I gen driver.cpp gen/datalog.cpp \
+  lib/Runtime/Allocator.cpp -o case
+```
+
+Generated API: database name defaults to `datalog`, no namespace; messages are
+`db.<name>_<arity>(Vec<...>)`; queries are cursors `db.<name>_<bindings>()`
+(`b`/`f` per column) — always read the generated `datalog.h` for exact
+signatures before writing a driver.
+
+## Key internals
+
+- Data-flow IR: `lib/DataFlow/Query.h` (node classes: SELECT/TUPLE/JOIN/
+  MERGE/CMP/MAP/NEGATE/AGG/KVINDEX/INSERT). Per-node `Canonicalize` methods +
+  the driver in `lib/DataFlow/Optimize.cpp` (Simplify → Canonicalize fixpoint
+  → CSE; `OptimizationContext` flags in `lib/DataFlow/Optimize.h`). Every
+  optimization pass carries a doc comment: algorithm, pseudocode, ASCII
+  before/after diagram.
+- Control-flow IR: regions in `lib/ControlFlow/Program.h` (SERIES/PARALLEL/
+  INDUCTION/LET/TUPLECMP/CHANGETUPLE/...); built by `lib/ControlFlow/Build/`,
+  optimized by `lib/ControlFlow/Optimize.cpp` (per-region `OptimizeImpl`
+  overloads, same doc-comment convention).
+- Core invariants: no view is ever its own direct user (asserted in
+  `RelabelGroupIDs`); every inductive back-edge append must be dominated by a
+  state transition on the union's table (termination of generated fixpoints);
+  a source-less forwarding cycle is unsatisfiable, collected by dead-flow
+  elimination.
+- Union sinking (`do_sink` in `QueryImpl::Optimize`) is commented out —
+  `lib/DataFlow/Merge.cpp` sinking code is currently unreachable.
+
+## Known feature gaps (assert TODO in control-flow build)
+
+Aggregates, KV indices (mutable params), cross-products in differential
+removal paths, impure functors. Three corpus files exercise these gaps and
+fail the control-flow build in all modes: `data/examples/average_weight.dr`,
+`pairwise_average_weight.dr` (KV indices), `conditions_to_bools.dr`
+(cross-products in removal). Every other file under `data/` compiles in all
+4 modes.
+
+## Gotchas
+
+- macOS ships bash 3.2: no `declare -A` in scripts. zsh does not word-split
+  unquoted variables — use `${=var}` when a variable holds multiple CLI args.
+- Debug builds round-trip the parser and re-assert; crashes usually surface
+  as `Assertion failed` + SIGABRT (exit 134), stack overflow/null deref as
+  exit 139. `lldb -b -s <script-file> -- <cmd>` gets backtraces reliably;
+  `-o run -o bt` sometimes truncates.
+- clangd diagnostics in this repo are noise (it lacks include paths); trust
+  the real build only.

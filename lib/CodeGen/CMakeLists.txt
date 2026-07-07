@@ -6,12 +6,6 @@ set(CodeGen_PUBLIC_H
 
 set(CodeGen_SRCS
     "CPlusPlus/Database.cpp"
-    "CPlusPlus/Interface.cpp"
-    "CPlusPlus/Util.cpp"
-    "CPlusPlus/Util.h"
-    "Python/Database.cpp"
-    "Python/Util.cpp"
-    "Python/Util.h"
     "Util.cpp"
 )
 

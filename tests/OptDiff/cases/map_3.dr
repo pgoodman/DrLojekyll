@@ -1,0 +1,18 @@
+; MAP canonicalization: duplicated inputs and attached columns.
+; dup_bound: one column feeds both bound parameters (duplicate is muted).
+; dup_att: a carried (attached) column repeated in the head duplicates an
+; existing input/output pair.
+; drop_att: constant propagation (Z = 5) pins the carried column so its
+; attached output loses all readers and is dropped from the MAP.
+
+#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.).
+
+#message m(i32 X, i32 Z).
+
+#query dup_bound(free i32 Y, free i32 Z).
+#query dup_att(free i32 Y, free i32 Z1, free i32 Z2).
+#query drop_att(free i32 Y, free i32 Z).
+
+dup_bound(Y, Z) : m(X, Z), add_i32(X, X, Y).
+dup_att(Y, Z, Z) : m(X, Z), add_i32(X, 1, Y).
+drop_att(Y, Z) : m(X, Z), Z = 5, add_i32(X, 1, Y).

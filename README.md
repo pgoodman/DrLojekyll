@@ -1,7 +1,7 @@
-[![Continuous Integration](https://github.com/trailofbits/DrLojekyll/workflows/Continuous%20Integration/badge.svg?branch=master)](https://github.com/trailofbits/DrLojekyll/actions?query=workflow%3A%22Continuous+Integration%22+branch%3Amaster)
-[![Fuzz Testing](https://github.com/trailofbits/DrLojekyll/workflows/Fuzz%20Testing/badge.svg?branch=master)](https://github.com/trailofbits/DrLojekyll/actions?query=workflow%3A%22Fuzz+Testing%22+branch%3Amaster)
-
 # Dr. Lojekyll
+
+A fork of [trailofbits/DrLojekyll](https://github.com/trailofbits/DrLojekyll),
+with full upstream history.
 
 Dr. Lojekyll, pronounced Dr. Logical, is a Datalog compiler and execution
 engine. It is designed around a publish/subscribe model and operates
@@ -16,65 +16,34 @@ to operating on tuples.
 
 ## Quick Start
 
-Dr. Lojekyll can be built on macOS, Linux, or Windows, using CMake and a
-C++17-compliant toolchain. Dr. Lojekyll requires that you build using Microsoft
-vcpkg, and we recommend using [cxx-common](https://github.com/lifting-bits/cxx-common)
-in order to ensure that dependencies such as gRPC and FlatBuffers are at the
-correct versions.
-
-**Speeding up rebuilds:**
-
-macOS:
-
-```bash
-brew install ccache
-```
-
-Linux:
-
-```bash
-sudo apt install -y ccache
-```
+Dr. Lojekyll builds on macOS or Linux with CMake, Ninja, and a
+C++23-compliant toolchain. It has no third-party dependencies.
 
 **Cloning the source code:**
 ```bash
-git clone --recursive git@github.com:trailofbits/drlojekyll.git
+git clone git@github.com:pgoodman/DrLojekyll.git
 ```
 
-in case you have started from an existing repository:
-
+**Developer debug build:**
 ```bash
-git submodule update --init --recursive
-```
-
-**Developer debug build on Linux:**
-
-TODO
-
-**Developer debug build on macOS:**
-```bash
-$ cmake \                                          
+$ cmake -S . -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DDRLOJEKYLL_ENABLE_SANITIZERS=ON \
   -DCMAKE_INSTALL_PREFIX="$PWD"/install \
-  -DVCPKG_ROOT=/path/to/cxx-common/vcpkg-12-release \
-  -DVCPKG_TARGET_TRIPLET=x64-osx-rel \
-  -DCMAKE_C_COMPILER=`which clang` \
-  -DCMAKE_CXX_COMPILER=`which clang++` \
-  -DDRLOJEKYLL_ENABLE_TESTS=ON ~/Code/DrLojekyll
+  -DDRLOJEKYLL_ENABLE_INSTALL=ON \
+  -DDRLOJEKYLL_ENABLE_TESTS=ON
 $ cmake --build build
+$ ctest --test-dir build
 $ cmake --install build
 ```
 
-**Building using CMake Presets (MacOS or Linux):**
-```
-export VCPKG_ROOT=/path/to/cxx-common/vcpkg-12-release/vcpkg
-export INSTALL_DIR=/path/to/install
-scripts/build-preset.sh debug #or use 'release'
+**Building using CMake Presets:**
+```bash
+cmake --preset debug     # or 'release'
+cmake --build --preset debug
+ctest --preset debug
 ```
 
-
-See the [continuous integration](.github/workflows/ci.yml) for
+See the [continuous integration](.github/workflows/main.yml) for
 additional concrete examples of how this software is built.
 
 **Listing available CMake options:**

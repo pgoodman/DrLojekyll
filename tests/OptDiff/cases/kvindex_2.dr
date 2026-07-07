@@ -1,0 +1,11 @@
+; KVINDEX canonicalization: already-canonical fast path. Distinct
+; non-constant keys and a used value column: the KVINDEX shape is left
+; untouched and survives into control-flow building.
+
+#functor add_u32(bound u32 LHS, bound u32 RHS, free u32 Res).
+#message add_edge(u64 From, u64 To, u32 W).
+#local edge_weight(u64 From, u64 To, mutable(add_u32) W).
+#query get_weight(bound u64 From, bound u64 To, free u32 W).
+
+edge_weight(F, T, W) : add_edge(F, T, W).
+get_weight(F, T, W) : edge_weight(F, T, W).

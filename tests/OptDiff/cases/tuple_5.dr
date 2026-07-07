@@ -1,0 +1,13 @@
+; Perfect forwarding predicate (ForwardsAllInputsAsIs): the identity arm
+; a->b forwards all columns in order into b's UNION and can be substituted
+; by its source; b's swap arm makes the union a real induction.
+
+#message input(i32 A, i32 B).
+#local a(i32 A, i32 B).
+#local b(i32 A, i32 B).
+#query out(free i32 A, free i32 B).
+
+a(X, Y) : input(X, Y).
+b(X, Y) : a(X, Y).
+b(X, Y) : b(Y, X).
+out(X, Y) : b(X, Y).

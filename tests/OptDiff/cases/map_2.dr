@@ -1,0 +1,16 @@
+; MAP canonicalization: constant bound inputs.
+; const_out: every bound input is a literal, so the functor application has
+; no incoming view at all.
+; cond_out: the sole bound variable is pinned by an equality, so all inputs
+; resolve to constants and the MAP must retain a CONDition on the (dropped)
+; predecessor - it may only produce 8 when m actually contains 3.
+
+#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.).
+
+#message m(i32 X).
+
+#query const_out(free i32 Y).
+#query cond_out(free i32 Y).
+
+const_out(Y) : add_i32(1, 2, Y).
+cond_out(Y) : m(X), X = 3, add_i32(X, 5, Y).

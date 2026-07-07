@@ -1,0 +1,17 @@
+; CALL simplification: differential removal over an induction generates
+; bottom-up deleters whose checker CALLs carry empty true/false
+; continuations; those no-op branches are unlinked while the CALL itself is
+; kept for its return value. Removal of edges must retract exactly the
+; unreachable pairs in every mode.
+
+#message add_edge(i32 X, i32 Y) @differential.
+#local edge(i32 X, i32 Y).
+#local reach(i32 X, i32 Y).
+#query is_reach(bound i32 X, bound i32 Y).
+#query all_reach(free i32 X, free i32 Y).
+
+edge(X, Y) : add_edge(X, Y).
+reach(X, Y) : edge(X, Y).
+reach(X, Z) : reach(X, Y), edge(Y, Z).
+is_reach(X, Y) : reach(X, Y).
+all_reach(X, Y) : reach(X, Y).

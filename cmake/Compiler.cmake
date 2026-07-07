@@ -2,46 +2,50 @@
 
 function(compile_datalog)
   set(one_val_args LIBRARY_NAME DATABASE_NAME CXX_OUTPUT_DIR
-                   PY_OUTPUT_DIR DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
+                   DOT_OUTPUT_FILE DR_OUTPUT_FILE IR_OUTPUT_FILE
                    DRLOJEKYLL_CC DRLOJEKYLL_RT WORKING_DIRECTORY
                    FIRST_ID)
   set(multi_val_args SOURCES DEPENDS INCLUDE_DIRECTORIES MODULE_DIRECTORIES LIBRARIES)
   cmake_parse_arguments(DR "" "${one_val_args}" "${multi_val_args}" ${ARGN})
-  
+
   # Allow the caller to change the path of the Dr. Lojekyll compiler that
   # we will use.
-  if(TARGET drlojekyll)
-    message(STATUS "DrLojekyll: Using internal drlojekyll compiler")
-    set(DR_DRLOJEKYLL_CC drlojekyll)
-
-  else()
-    find_package(DrLojekyll CONFIG QUIET)
-    if(TARGET DrLojekyll::drlojekyll)
-      set(DR_DRLOJEKYLL_CC DrLojekyll::drlojekyll)
-      message(STATUS "DrLojekyll: Using local compiler from DrLojekyll installation")
+  if(NOT DR_DRLOJEKYLL_CC)
+    if(TARGET drlojekyll)
+      message(STATUS "DrLojekyll: Using internal drlojekyll compiler")
+      set(DR_DRLOJEKYLL_CC drlojekyll)
 
     else()
-      find_program(DR_DRLOJEKYLL_CC drlojekyll REQUIRED)
-      if(NOT DR_DRLOJEKYLL_CC)
-        message(FATAL_ERROR "DrLojekyll: No valid drlojekyll compiler found")
-      endif()
+      find_package(DrLojekyll CONFIG QUIET)
+      if(TARGET DrLojekyll::drlojekyll)
+        set(DR_DRLOJEKYLL_CC DrLojekyll::drlojekyll)
+        message(STATUS "DrLojekyll: Using local compiler from DrLojekyll installation")
 
-      message(STATUS "DrLojekyll: Using drlojekyll compiler found from the PATH env variable")
+      else()
+        find_program(DR_DRLOJEKYLL_CC drlojekyll REQUIRED)
+        if(NOT DR_DRLOJEKYLL_CC)
+          message(FATAL_ERROR "DrLojekyll: No valid drlojekyll compiler found")
+        endif()
+
+        message(STATUS "DrLojekyll: Using drlojekyll compiler found from the PATH env variable")
+      endif()
     endif()
   endif()
-  
+
   # Allow the caller to change the path of the Dr. Lojekyll runtime that
   # we will use.
-  if(TARGET Runtime)
-    set(DR_DRLOJEKYLL_RT DrLojekyll::Runtime)
+  if(NOT DR_DRLOJEKYLL_RT)
+    if(TARGET Runtime)
+      set(DR_DRLOJEKYLL_RT DrLojekyll::Runtime)
 
-  else()
-    find_package(DrLojekyll CONFIG REQUIRED)
-    set(DR_DRLOJEKYLL_RT DrLojekyll::Runtime)
+    else()
+      find_package(DrLojekyll CONFIG REQUIRED)
+      set(DR_DRLOJEKYLL_RT DrLojekyll::Runtime)
+    endif()
   endif()
 
   set(dr_args "${DR_DRLOJEKYLL_CC}")
-  
+
   # Database name. This influences file names. Otherwise the database name
   # is `datalog`. Database names can also be defined in the Datalog code itself.
   #
@@ -52,41 +56,27 @@ function(compile_datalog)
   if(NOT DR_DATABASE_NAME)
     set(DR_DATABASE_NAME "datalog")
   endif()
-  
+
   if(DR_MODULE_DIRECTORIES)
     foreach(module_dir ${DR_MODULE_DIRECTORIES})
       list(APPEND dr_args -M "${module_dir}")
     endforeach(module_dir)
   endif()
-  
+
   if(NOT DR_WORKING_DIRECTORY)
     set(DR_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
   endif()
 
-  # Output directory in which C++ code is placed.
+  # Output directory in which C++ code is placed: one header and one source
+  # file per database.
   if(DR_CXX_OUTPUT_DIR)
     list(APPEND dr_args -cpp-out "${DR_CXX_OUTPUT_DIR}")
-    
+
     set(dr_cxx_output_files
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.interface.h"
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h")
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.h"
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.cpp")
   else()
     set(dr_cxx_output_files "")
-  endif()
-
-  # Output directory in which Python code is placed.
-  if(DR_PY_OUTPUT_DIR)
-    list(APPEND dr_args -py-out "${DR_PY_OUTPUT_DIR}")
-    
-    set(dr_py_output_files
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/__init__.py"
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/${DR_DATABASE_NAME}_grpc_db.py"
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/InputMessage.py"
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/OutputMessage.py"
-      "${DR_PY_OUTPUT_DIR}/${DR_DATABASE_NAME}/Client.py")
-
-  else()
-    set(dr_py_output_files "")
   endif()
 
   # Debug output of the parsed representation as a single Dr. Lojekyll
@@ -108,7 +98,7 @@ function(compile_datalog)
     list(APPEND dr_args -ir-out "${DR_IR_OUTPUT_FILE}")
     list(APPEND dr_other_outputs "${DR_IR_OUTPUT_FILE}")
   endif(DR_IR_OUTPUT_FILE)
-  
+
   # For changing the codegen to start with a different ID than 0. Helps when
   # multiple auto-generated headers are included in the same spot.
   if(DR_FIRST_ID)
@@ -120,7 +110,7 @@ function(compile_datalog)
     message(FATAL_ERROR "compile_datalog function requires at least one SOURCES parameter")
   endif()
   list(APPEND dr_args ${DR_SOURCES})
-  
+
   foreach(source_file ${DR_SOURCES})
     if(EXISTS "${DR_WORKING_DIRECTORY}/${source_file}")
       list(APPEND absolute_sources "${DR_WORKING_DIRECTORY}/${source_file}")
@@ -128,12 +118,11 @@ function(compile_datalog)
       list(APPEND absolute_sources "${source_file}")
     endif()
   endforeach(source_file)
-  
+
 
   add_custom_command(
     OUTPUT
       ${dr_cxx_output_files}
-      ${dr_py_output_files}
       ${dr_other_outputs}
     COMMAND
       ${dr_args}
@@ -146,48 +135,47 @@ function(compile_datalog)
       ${absolute_sources}
       ${DR_DEPENDS})
 
-  # Allow ourselves to use the same `DATABASE_NAME` in different locations.  
-  string(MD5 target_hash "${DR_CXX_OUTPUT_DIR}/${DR_PY_OUTPUT_DIR}")
+  # Allow ourselves to use the same `DATABASE_NAME` in different locations.
+  string(MD5 target_hash "${DR_CXX_OUTPUT_DIR}")
   set(target_base "${DR_DATABASE_NAME}_${target_hash}")
 
   add_custom_target("${target_base}_outputs" DEPENDS
     ${dr_cxx_output_files}
-    ${dr_py_output_files}
     ${dr_other_outputs})
-  
+
   set(runtime_libs
     ${DR_DRLOJEKYLL_RT}
     ${DR_LIBRARIES}
   )
-  
+
   if(TARGET DrLojekyll::drlojekyll_sanitizers)
     list(APPEND runtime_libs DrLojekyll::drlojekyll_sanitizers)
   elseif(TARGET drlojekyll_sanitizers)
     list(APPEND runtime_libs drlojekyll_sanitizers)
   endif()
 
-  # Generate a library that we can use to link against the generated C++ code,
-  # e.g. to make custom instances of the database.
+  # Generate a static library from the generated C++ source, for linking
+  # custom instances of the database.
   if(DR_LIBRARY_NAME)
     if(NOT DR_CXX_OUTPUT_DIR)
       message(FATAL_ERROR "CXX_OUTPUT_DIR argument to compile_datalog is required when using LIBRARY_NAME")
     endif()
-    
-    add_library("${DR_LIBRARY_NAME}" INTERFACE
-      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.db.h")
-    
+
+    add_library("${DR_LIBRARY_NAME}" STATIC
+      "${DR_CXX_OUTPUT_DIR}/${DR_DATABASE_NAME}.cpp")
+
     add_dependencies("${DR_LIBRARY_NAME}"
       "${target_base}_outputs")
 
-    target_link_libraries("${DR_LIBRARY_NAME}" INTERFACE
+    target_link_libraries("${DR_LIBRARY_NAME}" PUBLIC
       ${runtime_libs})
 
     target_include_directories("${DR_LIBRARY_NAME}"
-      INTERFACE
+      PUBLIC
         $<BUILD_INTERFACE:${DR_CXX_OUTPUT_DIR}>
         $<BUILD_INTERFACE:${DR_WORKING_DIRECTORY}>
         ${DR_INCLUDE_DIRECTORIES})
-  
+
   endif()
-  
+
 endfunction(compile_datalog)

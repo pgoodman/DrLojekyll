@@ -503,9 +503,10 @@ void ExtractPrimaryProcedure(ProgramImpl *impl, PROC *entry_proc, Context &) {
   auto entry_par = impl->parallel_regions.Create(entry_seq);
   entry_seq->AddRegion(entry_par);
 
-  if (!entry_proc->input_vecs.Empty()) {
-    assert(!regions_to_extract.empty());
-  }
+  // NOTE: a message vector can be legitimately unused: when dataflow
+  // optimization proves that a message's received data can never flow
+  // anywhere, the RECEIVE stays as the message's external interface, and its
+  // vector is consumed by no region.
 
   for (auto region : regions_to_extract) {
     auto let = impl->operation_regions.CreateDerived<LET>(region->parent);

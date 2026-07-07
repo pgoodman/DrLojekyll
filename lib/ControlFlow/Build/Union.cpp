@@ -19,9 +19,24 @@ void BuildEagerUnionRegion(ProgramImpl *impl, QueryView pred_view,
       InTryInsert(impl, context, view, parent_, last_table_);
 
 #ifndef NDEBUG
+
+  // A column of a multi-predecessor MERGE may be a constant reference only
+  // when every predecessor supplies that same constant for the column. Every
+  // predecessor then inserts the identical value, so downstream reads that
+  // resolve the column to its constant observe the same data as reads of the
+  // materialized column. A constant reference fed by predecessors that could
+  // supply differing values would substitute one constant for all of them and
+  // produce wrong data.
   if (1u < view.Predecessors().size()) {
     for (auto col : view.Columns()) {
-      assert(!col.IsConstantRef());
+      if (col.IsConstantRef()) {
+        const auto const_col = col.AsConstantColumn();
+        for (auto pred : view.Predecessors()) {
+          const auto pred_col = pred.NthColumn(*(col.Index()));
+          assert(pred_col.IsConstantOrConstantRef());
+          assert(pred_col.AsConstantColumn() == const_col);
+        }
+      }
     }
   }
 #endif

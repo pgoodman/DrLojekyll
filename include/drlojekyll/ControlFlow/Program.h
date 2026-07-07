@@ -236,6 +236,12 @@ enum class VectorKind : unsigned {
   kInductionInputs,
   kInductionSwaps,
   kInductionOutputs,
+
+  // Rows of a differential inductive merge that are still in an unknown
+  // state once the induction's fixpoint has drained. They are re-proven with
+  // a top-down checker in the induction's output region, and the proven ones
+  // are re-seeded into the induction's input vector.
+  kInductionRechecks,
   kJoinPivots,
   kInductiveJoinPivots,
   kInductiveJoinPivotSwaps,
@@ -1146,8 +1152,14 @@ class ProgramQuery {
 // A program in its entirety.
 class Program {
  public:
-  // Build a program from a query.
-  static std::optional<Program> Build(const Query &query, unsigned first_id=0);
+  // Build a program from a query. Data-flow views whose kinds the control-flow
+  // builder does not support (aggregates, KV indices, impure functors,
+  // differential cross-products) are reported to `log` and yield
+  // `std::nullopt`. When `optimize` is `false`, the control-flow IR is built
+  // but region-level optimization (flattening, no-op removal, procedure
+  // deduplication) is skipped.
+  static std::optional<Program> Build(const Query &query, const ErrorLog &log,
+                                      unsigned first_id=0, bool optimize=true);
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;

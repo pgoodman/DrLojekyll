@@ -1,0 +1,16 @@
+; Corner cases: constant-pivot-guarded, constant-pivots-available-in-one-view,
+; input-already-identical-constant. Pivot X is the constant 1 on the t1 side
+; (needing no CMP guard there), t2 is guarded with CMP[X == 1] and survives
+; only as a COND setter, and the JOIN is replaced with a TUPLE over t1.
+
+#message add_b(i32 B).
+#message add_x(i32 X).
+
+#local t1(i32 X, i32 B).
+#local t2(i32 X).
+
+t1(1, B) : add_b(B).
+t2(X) : add_x(X).
+
+#query q(free i32 B).
+q(B) : t1(X, B), t2(X).

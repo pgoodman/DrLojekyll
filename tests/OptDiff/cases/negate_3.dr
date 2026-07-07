@@ -1,0 +1,18 @@
+; NEGATE canonicalization around constant and duplicate input columns:
+;  - out7 negates pair(A, 7): second input column is the constant 7;
+;  - outdup negates pair(A, A): duplicate column inside input_columns;
+;  - flag(1)'s negation has every input constant, so the SELECT over
+;    feed(1) must be kept alive through a CONDition on the NEGATE.
+#message feed(i32 A).
+#message pin(i32 A, i32 B).
+
+#local pair(i32 A, i32 B).
+pair(A, B) : pin(A, B).
+
+#query out7(free i32 A) : feed(A), !pair(A, 7).
+#query outdup(free i32 A) : feed(A), !pair(A, A).
+
+#local flag(i32 A).
+flag_cond : feed(C), C = 1, !pair(C, 7).
+flag(1) : flag_cond.
+#query outflag(free i32 A) : flag(A).

@@ -79,12 +79,73 @@ uint64_t QueryMapImpl::Hash(void) noexcept {
   return local_hash;
 }
 
-// Put this map into a canonical form, which will make comparisons and
-// replacements easier. Maps correspond to functors with inputs. Some of a
-// functor's inputs might be specified to belong to an `unordered` set, which
-// means that they can be re-ordered during canonicalization for the sake of
-// helping deduplicate common subexpressions. We also need to put the "attached"
-// outputs into the proper order.
+// Put this map into a canonical form, which makes comparisons and
+// replacements easier. Maps correspond to functors with inputs: the
+// `input_columns` feed the functor's `bound` parameters, the first
+// `functor.Arity()` output columns mirror the functor's parameters in
+// declaration order (both `bound` copies and `free` results), and the
+// `attached_columns` are extra columns copied through alongside each output
+// row. Canonicalization pulls inputs from beyond trivial forwarding TUPLEs
+// and single-source unconditional UNIONs, propagates unsatisfiability from
+// the incoming view, propagates constant inputs into constant-ref outputs,
+// deduplicates uses of outputs that repeat another output, drops unused
+// attached outputs (and their inputs), and, when a constant-valued or
+// duplicated output would otherwise flow to every user, interposes an
+// optimized TUPLE between this MAP and its users so only the needed data
+// propagates forward. This shrinks the MAP's width, exposes constants to
+// downstream passes, and makes structurally identical MAPs hash and compare
+// equal for CSE. Every `bound` input is always retained -- even when
+// constant or duplicated -- because the functor needs all of its arguments
+// at application time; that is why duplicate discoveries among the bound
+// inputs are muted before processing the attached columns.
+//
+//    canonicalize(MAP):
+//      if dead, unsat, or invalid:                     nothing to do
+//      if input+attached columns span multiple views:  mark invalid
+//      bypass trivial TUPLEs/UNIONs feeding input+attached columns
+//      if incoming view is unsatisfiable:              mark unsat; done
+//      for each (in_col, out_col) over bound params, then attached:
+//        record in_to_out; copy constants in->out; note unused,
+//        duplicated, and directly used outputs
+//      (duplicates among bound params are ignored: all must be kept)
+//      if nothing changed: done
+//      if some output is a guardable constant or a duplicate, and no
+//         user requires the raw MAP view itself:
+//        interpose optimized TUPLE; users now read from the TUPLE
+//      rebuild columns:
+//        keep all functor-parameter outputs
+//        drop unused attached outputs and their input columns
+//        resolve each remaining input to its constant when possible
+//      if the rebuilt inputs no longer reference the old incoming view:
+//        create/inherit a CONDition on it (keeps the row-presence
+//        dependency even though no columns flow from it anymore)
+//
+// Bypassing a trivial forwarding TUPLE (same for a 1-source UNION):
+//
+//        V                          V
+//        |                         /|
+//      TUPLE            =>    TUPLE |    (TUPLE dies later if unused)
+//        |                          |
+//       MAP                        MAP
+//
+// Guarding with an optimized TUPLE, for functor f(bound B, free F) with
+// attached columns [A, A'] fed by the same column A of V, and B fed the
+// constant 7:
+//
+//        V                           V
+//        |                           |
+//   MAP f [B F A A']            MAP f [B F A A']
+//      /       \         =>          |
+//   user1     user2             TUPLE [7 F A A]
+//                                  /       \
+//                               user1     user2
+//
+// Dropping the last reference to the predecessor, for a MAP whose only
+// input is resolved to the constant 3:
+//
+//        V                        V ---sets---.
+//        |                                    v
+//     MAP f(3)          =>     MAP f(3) if COND
 bool QueryMapImpl::Canonicalize(QueryImpl *query,
                                   const OptimizationContext &opt,
                                   const ErrorLog &) {

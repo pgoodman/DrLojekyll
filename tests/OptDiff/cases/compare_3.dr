@@ -1,0 +1,16 @@
+; CMP sinking through a MERGE (UNION) predecessor: a multi-clause local
+; feeding a comparison with both operands defined by the merge.
+
+#message a(i32 X, i32 Y).
+#message b(i32 X, i32 Y).
+#local t(i32 X, i32 Y).
+t(X, Y) : a(X, Y).
+t(X, Y) : b(X, Y).
+
+#query q_lt(free i32 X).
+q_lt(X) : t(X, Y), X < Y.
+
+; A second comparison over the same merge keeps the merge multi-user and
+; exercises replica creation for more than one sunk CMP.
+#query q_gt(free i32 X, free i32 Y).
+q_gt(X, Y) : t(X, Y), Y < X.

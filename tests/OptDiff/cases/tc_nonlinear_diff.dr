@@ -1,0 +1,15 @@
+; Non-linear transitive closure over a differential edge relation. A removal
+; cascade inside the induction transiently marks still-supported tc rows
+; unknown; a same-batch insertion must still derive joins against those rows
+; once they are re-proven (post-quiescence recheck and fixpoint re-entry).
+#message add_edge(u64 From, u64 To) @differential.
+#query reachable(free u64 From, free u64 To).
+#local tc(From, To).
+#local edge(From, To).
+
+edge(From, To) : add_edge(From, To).
+
+tc(From, To) : edge(From, To).
+tc(From, To) : tc(From, X), tc(X, To).
+
+reachable(From, To) : tc(From, To).

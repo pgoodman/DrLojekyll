@@ -1,0 +1,15 @@
+; CHECKTUPLE: all arms no-op -> whole check replaced by an empty LET and
+; reclaimed. Non-differential straight-line derivation where the checker
+; degenerates: message -> local -> published message. The keep/observed
+; side chain from the same input makes the program observable via a query.
+
+#message in_val(i32 A).
+#local mid(i32 A).
+#message out_val(i32 A).
+#local keep(i32 A).
+#query observed(free i32 A).
+
+mid(A) : in_val(A).
+out_val(A) : mid(A).
+keep(A) : in_val(A).
+observed(A) : keep(A).

@@ -1,0 +1,25 @@
+; Deepest-first no-op bubbling: a tower of chained equality comparisons over
+; one message's columns folds bottom-up, each enclosing region becoming a
+; no-op in the same sweep. Also a union of three messages into one local
+; creates nested PARALLELs that flatten, leaving detached regions that later
+; sweeps must skip.
+
+#message in(i32 A, i32 B, i32 C).
+#message m1(i32 A).
+#message m2(i32 A).
+#message m3(i32 A).
+
+#local t(i32 A).
+#local u(i32 A).
+
+#query outt(free i32 A).
+#query outu(free i32 A).
+
+t(A) : in(A, B, C), A = B, B = C, C = A.
+
+u(A) : m1(A).
+u(A) : m2(A).
+u(A) : m3(A).
+
+outt(A) : t(A).
+outu(A) : u(A).

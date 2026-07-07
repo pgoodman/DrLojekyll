@@ -43,10 +43,69 @@ uint64_t QueryCompareImpl::Hash(void) noexcept {
   return local_hash;
 }
 
-// Put this constraint into a canonical form, which will make comparisons and
-// replacements easier. If this constraint's operator is unordered, then we
-// sort the inputs to make comparisons trivial. We also need to put the
-// "trailing" outputs into the proper order.
+// Puts this comparison (CMP) node into a canonical form, which makes
+// structural comparisons and replacements easier. A CMP filters the rows of
+// its predecessor by comparing two input columns with `op`; an equality CMP
+// fuses the compared pair into a single output column (outputs are
+// `[eq, attached...]`), while an inequality CMP keeps both (outputs are
+// `[lhs, rhs, attached...]`), and all attached columns are copied through
+// unchanged. Canonicalization folds comparisons whose outcome is known at
+// compile time: a trivially-true CMP is replaced by a TUPLE that simply
+// forwards its inputs (deferring constant propagation to the TUPLE's own
+// canonicalizer), and a trivially-false CMP marks itself unsatisfiable so
+// that dead-code elimination can prune the dependent subgraph. It also
+// propagates constants through input/output column pairs, drops unused
+// attached outputs, and, when nothing else changes, tries to sink the CMP
+// through a preceding MERGE or NEGATE so that filtering happens closer to the
+// data sources. Constant folding of `=`/`!=` over two distinct constants
+// requires both to be "unique" constants (tags, or foreign constants declared
+// unique), since only then does node distinctness prove value distinctness.
+//
+//    if dead, unsatisfiable, or invalid:   nothing to do
+//    pull inputs through trivial forwarding TUPLEs
+//    if predecessor is unsatisfiable:      mark self unsatisfiable
+//    if op is '=':
+//      map both inputs to the single fused output; propagate constants
+//      if lhs and rhs are the same column: replace self w/ forwarding TUPLE
+//      if lhs, rhs distinct unique consts: mark self unsatisfiable
+//    else:
+//      map lhs -> out[0], rhs -> out[1]; propagate constants
+//      if lhs is rhs, or both are the same constant: mark unsatisfiable
+//      if op is '!=' and lhs, rhs are distinct unique constants:
+//        replace self with forwarding TUPLE
+//    propagate constants through the attached columns
+//    if nothing changed:  try sinking self through a MERGE or NEGATE
+//    else:
+//      possibly guard users with a TUPLE that re-derives constant or
+//        duplicated outputs, so this CMP can shed them
+//      rebuild output columns: fused '=' output, then only the attached
+//        columns that are used; resolve constant-ref inputs to constants
+//      if the rebuild dropped the last data edge to the predecessor:
+//        re-attach to it via a condition dependency
+//
+// Trivially satisfiable comparison, e.g. `A = A` over the same column:
+//
+//        VIEW                        VIEW
+//      A  X  Y                     A  X  Y
+//      |  |  |          ==>        |  |  |
+//     CMP(A = A)                   TUPLE
+//      A' X' Y'                    A' X' Y'
+//
+// Unsatisfiable comparison, e.g. `A < A`, `A != A`, or `1 = 2` over unique
+// constants:
+//
+//        VIEW
+//      A  X  Y          ==>     CMP marked UNSAT; its users are
+//      |  |  |                  pruned by later dead-code passes
+//     CMP(A < A)
+//
+// Unused attached output removal (`Y'` has no users):
+//
+//        VIEW                        VIEW
+//     A  B  X  Y                  A  B  X  Y
+//     |  |  |  |        ==>       |  |  |
+//     CMP(A < B)                  CMP(A < B)
+//     A' B' X' Y'                 A' B' X'
 bool QueryCompareImpl::Canonicalize(QueryImpl *query,
                                       const OptimizationContext &opt,
                                       const ErrorLog &log) {
@@ -277,7 +336,21 @@ bool QueryCompareImpl::Equals(EqualitySet &eq,
   return true;
 }
 
-// Try to sink this comparison through its predecessor.
+// Tries to sink this comparison through its predecessor, dispatching to the
+// MERGE- or NEGATE-specific rewrites below. Sinking pushes the filter closer
+// to the data sources, shrinking the volume of tuples that flow through the
+// predecessor and exposing further folding opportunities upstream. It only
+// applies when `can_sink` is set, when there is a single incoming view, and
+// when that view neither sets a condition nor is tested by a negation (both
+// of which pin the predecessor's output in place).
+//
+//    if not can_sink:                                 give up
+//    pred := incoming view of inputs + attached
+//    if no pred, pred sets a condition, or pred is
+//        used by a NEGATE:                            give up
+//    if pred is a MERGE:   sink through the MERGE
+//    if pred is a NEGATE:  sink through the NEGATE
+//    otherwise:            give up
 bool QueryCompareImpl::TrySink(QueryImpl *query) {
   if (!can_sink) {
     return false;
@@ -297,7 +370,32 @@ bool QueryCompareImpl::TrySink(QueryImpl *query) {
   }
 }
 
-// Try to sink this comparison through a MERGE node.
+// Sinks this comparison through a MERGE (UNION) node: the CMP is replicated
+// onto every merged view, and a fresh MERGE that unions the replicas replaces
+// this CMP. Filtering each union arm independently means tuples failing the
+// comparison never enter the union at all, and each replica sits directly on
+// a source view where it can fold further (e.g. against per-arm constants) or
+// merge with identical CMPs via CSE. Every input or attached column of this
+// CMP either originates in `merge` (and is remapped to the corresponding
+// column of each merged view) or is a constant (and is used as-is). Each
+// replica is marked `created_from_sinking` so that any unsatisfiable
+// comparison it later proves is not reported as a user error.
+//
+//    create lifted MERGE with this CMP's column shape
+//    for each view V merged by `merge`:
+//      create replica CMP(op) reading from V
+//      remap lhs/rhs/attached: column of `merge` -> column of V,
+//                              constant -> itself
+//      add replica to the lifted MERGE
+//    replace all uses of this CMP with the lifted MERGE
+//
+//      V1     V2                     V1        V2
+//       \     /                      |         |
+//        UNION          ==>       CMP(A<B)  CMP(A<B)
+//          |                          \       /
+//       CMP(A<B)                       UNION
+//          |                             |
+//        users                         users
 bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
 
   const auto num_cols = columns.Size();
@@ -385,7 +483,44 @@ bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
   return true;
 }
 
-// Try to sink this comparison through a NEGATION node.
+// Sinks this comparison through a NEGATE node by re-ordering the two
+// operations: a lowered CMP filters the negation's input data first, a lifted
+// NEGATE re-checks absence in the same negated view, and a lifted TUPLE on
+// top restores this CMP's exact output column order and shape for existing
+// users. This is sound because the negation only tests for the absence of a
+// tuple in `negated_view` and does not transform data, so filtering before or
+// after it yields the same rows; it is beneficial because rows failing the
+// comparison never reach the (expensive) absence check. The rewrite is
+// demand-driven: the lifted TUPLE demands columns from the lifted NEGATE,
+// which in turn demands columns from the lowered CMP, with column-translation
+// maps (CMP out -> CMP in, NEGATE out -> NEGATE in, ...) used to rewire each
+// demanded column back to the negation's original input or to a constant. If
+// any of the rebuilt nodes fails to remain directly connected to its intended
+// predecessor, the three new nodes are discarded, `can_sink` is cleared, and
+// the CMP is left untouched.
+//
+//    build column maps: cmp out->in, negate out->in, negate out->cmp out
+//    create lifted TUPLE mirroring this CMP's outputs
+//    create lifted NEGATE mirroring the negated view's columns
+//    create lowered CMP(op) whose lhs/rhs are the negation's inputs that
+//      feed this CMP (or constants)
+//    demand each lifted-TUPLE column from the lifted NEGATE, appending
+//      NEGATE outputs as needed
+//    demand each lifted-NEGATE input from the lowered CMP, appending CMP
+//      attached columns as needed
+//    wire lowered CMP's attached columns to the negation's original inputs
+//    if any connectivity check fails: delete new nodes, clear can_sink
+//    else: replace all uses of this CMP with the lifted TUPLE
+//
+//      PRED                            PRED
+//        |                               |
+//      NEGATE ---- NEG'D    ==>       CMP(A=B)
+//        |                               |
+//      CMP(A=B)                       NEGATE ---- NEG'D
+//        |                               |
+//      users                           TUPLE   (restores CMP's
+//                                        |      output order)
+//                                      users
 bool QueryCompareImpl::TrySinkThroughNegate(
     QueryImpl *query, NEGATION *negate) {
 

@@ -1,0 +1,15 @@
+; Dead-flow trivial cycle that only tests a condition: the self-cycle
+; on d forwards columns identically and additionally tests cond_res;
+; the tested condition is irrelevant to a self-subset.
+#message in(i32 A).
+#message cond_src(i32 A).
+#local one(i32 A).
+#local d(i32 A).
+#query out(free i32 A).
+
+cond_res : cond_src(_A).
+one(1).
+d(A) : d(A), cond_res.
+d(A) : one(A).
+d(A) : in(A).
+out(A) : d(A).

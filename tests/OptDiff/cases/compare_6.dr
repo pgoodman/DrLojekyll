@@ -1,0 +1,20 @@
+; CMP canonicalization with literal (non-unique) constant operands:
+; X = 1, Y = 2, X != Y must not be folded (literals are not unique
+; constants); X < Y over two propagated literals keeps a condition
+; dependency on the source; X > 10 sinks through the merge with a
+; constant comparison operand.
+
+#message in(i32 X, i32 Y).
+#message b(i32 X, i32 Y).
+#local src(i32 X, i32 Y).
+src(X, Y) : in(X, Y).
+src(X, Y) : b(X, Y).
+
+#query q_ne(free i32 X, free i32 Y).
+q_ne(X, Y) : src(X, Y), X = 1, Y = 2, X != Y.
+
+#query q_lt(free i32 X).
+q_lt(X) : src(X, Y), X = 1, Y = 2, X < Y.
+
+#query q_gt(free i32 X, free i32 Y).
+q_gt(X, Y) : src(X, Y), X > 10.

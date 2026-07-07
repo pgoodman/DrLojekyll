@@ -1,0 +1,23 @@
+; Unsatisfiable incoming view propagates into the reading TUPLE.
+; Two unsat shapes feed `out`:
+;   - `impossible` joins facts with conflicting constants (1 vs 2), which
+;     constant propagation marks unsat, and the TUPLE reading it follows;
+;   - `also_impossible` constrains one variable to two different constants.
+; Only the `possible` arm may ever produce rows.
+
+#message input(i32 X).
+#local bar(i32 A).
+#local baz(i32 A).
+#local impossible(i32 A).
+#local also_impossible(i32 X).
+#local possible(i32 X).
+#query out(free i32 X).
+
+bar(1).
+baz(2).
+impossible(A) : bar(A), baz(A).
+also_impossible(X) : input(X), X = 1, X = 2.
+possible(X) : input(X), X = 3.
+out(X) : impossible(X).
+out(X) : also_impossible(X).
+out(X) : possible(X).

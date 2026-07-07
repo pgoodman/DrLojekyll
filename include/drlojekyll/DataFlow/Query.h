@@ -944,9 +944,11 @@ class QueryKVIndex : public Node<QueryKVIndex, QueryKVIndexImpl> {
 // A query.
 class Query {
  public:
-  // Build and return a new query.
+  // Build and return a new query. When `optimize` is `false`, the data flow
+  // graph is built and canonicalized, but the aggressive whole-graph
+  // optimization pass (CSE, union sinking, dead flow elimination) is skipped.
   static std::optional<Query> Build(const ParsedModule &module,
-                                    const ErrorLog &log);
+                                    const ErrorLog &log, bool optimize = true);
 
   ~Query(void);
 

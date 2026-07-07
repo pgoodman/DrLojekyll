@@ -1,0 +1,13 @@
+; Conditional predecessor TUPLE blocks forwarding: gated's TUPLE tests
+; the is_logged_in condition, so the TUPLE for `out` must not hop past it.
+
+#message log_in(i32 UserId).
+#message add_user(i32 UserId).
+#local user(i32 UserId).
+#local gated(i32 UserId).
+#query out(free i32 UserId).
+
+user(ID) : add_user(ID).
+is_logged_in : log_in(ID), user(ID).
+gated(ID) : user(ID), is_logged_in.
+out(ID) : gated(ID).

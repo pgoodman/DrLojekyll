@@ -1,0 +1,11 @@
+; KVINDEX canonicalization: unsatisfiable predecessor. The body binds
+; F to both 1 and 2, so the incoming view is unsat and the KVINDEX is
+; marked unsatisfiable; the query must always be empty.
+
+#functor add_u32(bound u32 LHS, bound u32 RHS, free u32 Res).
+#message add_edge(u64 From, u64 To, u32 W).
+#local edge_count(u64 From, mutable(add_u32) Count).
+#query get_count(bound u64 From, free u32 Count).
+
+edge_count(F, W) : add_edge(F, _, W), F = 1, F = 2.
+get_count(F, C) : edge_count(F, C).

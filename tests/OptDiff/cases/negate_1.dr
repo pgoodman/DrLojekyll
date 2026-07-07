@@ -1,0 +1,12 @@
+; NEGATE canonicalization: inputs pulled from beyond a trivial forwarding
+; TUPLE (copy) so the NEGATE reads feed's RECV directly.
+#message feed(i32 A, i32 B).
+#message unsee(i32 A).
+
+#local copy(i32 A, i32 B).
+#local seen(i32 A).
+
+copy(A, B) : feed(A, B).
+seen(A) : unsee(A).
+
+#query out(free i32 A, free i32 B) : copy(A, B), !seen(A).

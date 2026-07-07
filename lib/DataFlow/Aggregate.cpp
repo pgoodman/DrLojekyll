@@ -79,6 +79,82 @@ unsigned QueryAggregateImpl::Depth(void) noexcept {
 
 // Put this aggregate into a canonical form, which will make comparisons and
 // replacements easier.
+//
+// An AGGREGATE partitions its input rows by the values of its group-by
+// columns (plus the `bound` configuration columns of the aggregating
+// functor), and summarizes the aggregated columns within each partition.
+// Canonicalization shrinks the group-by column list by dropping entries
+// whose presence cannot influence the partitioning: a group-by input that
+// is a literal constant holds the same value in every row, and a group-by
+// input that repeats an earlier group-by input is fully determined by that
+// earlier copy. Removing either kind leaves the set of groups, and thus
+// every summary value, unchanged, so the rewrite is sound. It is beneficial
+// because it lowers the node's arity (less state to store and compare at
+// runtime) and because the canonical shape lets `Hash`/`Equals` recognize
+// structurally identical aggregates so that CSE can merge them. The pass
+// also propagates constant-ness from group-by inputs to the corresponding
+// outputs, and propagates unsatisfiability from predecessor views. Because
+// direct users such as MERGEs are sensitive to column order and arity, the
+// aggregate is first guarded with a TUPLE that reproduces its original
+// column list; users are redirected to the TUPLE, and only then do the
+// aggregate's own columns shrink.
+//
+//   if dead, unsatisfiable, or invalid: mark canonical; return
+//   if group-by/config inputs and aggregated inputs disagree on their
+//       source view: mark invalid; return
+//   if the (single) predecessor view is unsatisfiable:
+//       mark this AGGREGATE unsatisfiable; return
+//   for each (in, out) pair over the group-by columns:
+//       propagate constant-ness from in to out
+//       if in is a literal constant, or repeats an earlier group-by input:
+//           if the aggregate is used directly and not yet guarded:
+//               guard it with an arity-preserving TUPLE
+//           redirect users of out to the constant (or the earlier
+//               input's output column)
+//           mark the pair for removal
+//   if nothing was marked: return
+//   rebuild the column lists: keep one output per distinct non-constant
+//       group-by input; keep configuration and summary columns unchanged
+//   re-check that all input columns share one source view; else mark
+//       invalid
+//
+// Removing a duplicated group-by column (G appears twice) when the
+// aggregate feeds a MERGE:
+//
+//   Before:                          After:
+//
+//         V                                V
+//        /|\                              /|\
+//       G G A                            G ? A
+//     +-----------+                  +-----------+
+//     | AGG       |                  | AGG       |
+//     | group=G,G |                  | group=G   |
+//     | agg=A     |                  | agg=A     |
+//     +-----------+                  +-----------+
+//     out: G0 G1 S                   out: G0 S
+//         |                              | |
+//         |                          +-----------+
+//         |                          | TUPLE     |
+//         |                          +-----------+
+//         |                          out: G0 G0 S
+//         v                              v
+//       MERGE                          MERGE
+//
+// A literal-constant group-by input is dropped the same way, except that
+// users of its output column are redirected to the constant itself:
+//
+//   Before:                          After:
+//
+//       V   CONST(7)                     V
+//        \ /   \                         |\
+//        G|     A                        G A
+//     +-----------+                  +-----------+
+//     | AGG       |                  | AGG       |
+//     | group=G,7 |                  | group=G   |
+//     | agg=A     |                  | agg=A     |
+//     +-----------+                  +-----------+
+//     out: G0 C1 S                   out: G0 S
+//                                    (users of C1 now read CONST(7))
 bool QueryAggregateImpl::Canonicalize(QueryImpl *query,
                                         const OptimizationContext &opt,
                                         const ErrorLog &) {

@@ -268,6 +268,24 @@ static QueryViewImpl *BuildPredicate(
   return PromoteOnlyUniqueColumns(query, view);
 }
 
+// Key identifying the constant column associated with `literal` in
+// `ClauseContext::spelling_to_col`.
+//
+// The type and spelling of a constant are a reasonable way of finding the
+// unique constants in a clause body. There are some obvious missed things,
+// e.g. `1` and `0x1` are treated differently, but that's OK.
+static std::string ConstantColumnKey(QueryImpl *query, ParsedLiteral literal) {
+  std::stringstream ss;
+  ss << literal.Type().Spelling(query->module) << ':';
+  if (literal.IsConstant()) {
+    ss << static_cast<unsigned>(literal.Type().Kind()) << ':'
+       << literal.Literal().IdentifierId();
+  } else {
+    ss << *literal.Spelling(Language::kUnknown);
+  }
+  return ss.str();
+}
+
 // Go over all inequality comparisons in the clause body and try to apply as
 // many as possible to the `view_ref`, replacing it each time. We apply this
 // to the filtered initial views, as well as the final views before pushing
@@ -411,14 +429,20 @@ static QueryViewImpl *GuardViewWithFilter(
     QueryImpl *query, ParsedClause clause, ClauseContext &context,
     QueryViewImpl *view) {
 
-  // Now, compare the remaining columns against constants.
+  // Now, compare the remaining columns against constants. Each assignment
+  // contributes a comparison against its own constant column, so a variable
+  // that is required to equal two distinct constants ends up guarded by both
+  // comparisons, and the view produces nothing.
   for (auto g = 0u, num_groups = clause.NumGroups(); g < num_groups; ++g) {
     for (ParsedAssignment assign : clause.Assignments(g)) {
       const auto lhs_var = assign.LHS();
 
       if (QueryColumnImpl *col = FindColVarInView(context, view, lhs_var)) {
-        auto const_id = VarId(context, lhs_var);
-        auto const_col = context.col_id_to_constant[const_id];
+        const auto const_id = VarId(context, lhs_var);
+        const auto const_col_it = context.spelling_to_col.find(
+            ConstantColumnKey(query, assign.RHS()));
+        assert(const_col_it != context.spelling_to_col.end());
+        QueryColumnImpl *const const_col = const_col_it->second;
 
         // Don't both comparing the constant against itself.
         if (col == const_col) {
@@ -433,6 +457,7 @@ static QueryViewImpl *GuardViewWithFilter(
         }
         assert(const_id == col->id);
         assert(const_col->id == col->id);
+        (void) const_id;
 
         QueryCompareImpl *cmp = query->compares.Create(
             ComparisonOperator::kEqual);
@@ -475,7 +500,7 @@ static QueryViewImpl *AllConstantsView(
   for (const auto &[col, vc] : context.const_to_vc) {
     (void) vc;
     (void) tuple->columns.Create(col->var, col->type, tuple, col->id,
-                                 col_index);
+                                 col_index++);
     tuple->input_columns.AddUse(col);
   }
 
@@ -483,7 +508,12 @@ static QueryViewImpl *AllConstantsView(
   tuple->producer = "ALL-CONSTS";
 #endif
 
-  auto view = GuardViewWithFilter(query, clause, context, tuple);
+  // Two distinct constants bound to the same variable set produce tuple
+  // columns that share an ID; promoting unique columns guards them with an
+  // equality comparison between the two constants, so the view produces
+  // nothing. Guarding requires a view with unique column IDs.
+  auto view = GuardViewWithFilter(query, clause, context,
+                                  PromoteOnlyUniqueColumns(query, tuple));
   return PromoteOnlyUniqueColumns(query, view);
 }
 
@@ -1513,19 +1543,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     for (auto assign : clause.Assignments(g)) {
       const auto var = assign.LHS();
       const auto literal = assign.RHS();
-
-      // The type and spelling of a constant are a reasonable way of finding the
-      // unique constants in a clause body. There are some obvious missed things,
-      // e.g. `1` and `0x1` are treated differently, but that's OK.
-      std::stringstream ss;
-      ss << literal.Type().Spelling(query->module) << ':';
-      if (literal.IsConstant()) {
-        ss << static_cast<unsigned>(literal.Type().Kind()) << ':'
-           << literal.Literal().IdentifierId();
-      } else {
-        ss << *literal.Spelling(Language::kUnknown);
-      }
-      const auto key = ss.str();
+      const auto key = ConstantColumnKey(query, literal);
 
       auto vc = VarSet(context, var);
       if (!vc) {
@@ -1579,6 +1597,23 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   for (auto &vc : context.vars) {
     if (vc) {
       vc->id = vc->FindAs<VarColumn>()->id;
+    }
+  }
+
+  // Fixup all constant column IDs, and the constant bound to each variable
+  // set, so that they match the canonical IDs of the variable sets.
+  for (auto g = 0u; g < num_groups; ++g) {
+    for (auto assign : clause.Assignments(g)) {
+      VarColumn *const vc = VarSet(context, assign.LHS());
+      if (!vc) {
+        continue;
+      }
+      const auto const_col_it = context.spelling_to_col.find(
+          ConstantColumnKey(query, assign.RHS()));
+      assert(const_col_it != context.spelling_to_col.end());
+      QueryColumnImpl *const const_col = const_col_it->second;
+      const_col->id = vc->id;
+      context.col_id_to_constant[vc->id] = const_col;
     }
   }
 
@@ -2008,8 +2043,21 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
                                             col_index);
           ++col_index;
         }
+      // Zero-arity clause head (a condition definition). Build a pass-through
+      // tuple that forwards every column of `clause_head`, without
+      // substituting `clause_head`'s uses: when the body is a bare predicate,
+      // `clause_head` is the SELECT held in `QueryIOImpl::receives` /
+      // `QueryRelationImpl::selects`, and those lists must contain only
+      // SELECT nodes for `QueryImpl::ConnectInsertsToSelects` to work.
       } else {
-        cond_guard = clause_head->GuardWithTuple(query, true);
+        cond_guard = query->tuples.Create();
+        cond_guard->color = context.color;
+        for (QueryColumnImpl *col : clause_head->columns) {
+          cond_guard->input_columns.AddUse(col);
+          QueryColumnImpl *out_col = cond_guard->columns.Create(
+              col->var, col->type, cond_guard, col->id, col_index++);
+          out_col->CopyConstantFrom(col);
+        }
       }
 
       AddConditionsToInsert(query, clause, cond_guard);
@@ -2304,7 +2352,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 }  // namespace
 
 std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
-                                  const ErrorLog &log) {
+                                  const ErrorLog &log, bool optimize) {
 
   std::shared_ptr<QueryImpl> impl(new QueryImpl(module));
 
@@ -2370,12 +2418,14 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   check_conds();
 
   try {
-    impl->Optimize(log);
-    if (num_errors != log.Size()) {
-      return std::nullopt;
-    }
+    if (optimize) {
+      impl->Optimize(log);
+      if (num_errors != log.Size()) {
+        return std::nullopt;
+      }
 
-    check_conds();
+      check_conds();
+    }
 
     impl->ConvertConstantInputsToTuples();
     impl->RemoveUnusedViews();

@@ -1,0 +1,20 @@
+; Orphaned / degenerate inductions: dead_loop is purely self-recursive with
+; no base and no consumer, so its surrounding regions die during optimization
+; and the INDUCTION is left detached (early-out guard). direct_only is
+; self-recursive with a consumer but can never hold tuples, exercising the
+; no-op output-region clearing.
+
+#message input(i32 A).
+
+#local dead_loop(i32 A).
+#local direct_only(i32 A).
+
+#query output(free i32 A).
+#query passthru(free i32 A).
+
+dead_loop(A) : dead_loop(A).
+
+direct_only(A) : direct_only(A).
+output(A) : direct_only(A).
+
+passthru(A) : input(A).

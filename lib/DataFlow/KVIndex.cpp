@@ -90,9 +90,58 @@ bool QueryKVIndexImpl::Equals(EqualitySet &eq,
   return true;
 }
 
-// Put the KV index into a canonical form. The only real internal optimization
-// that will happen is constant propagation of keys, but NOT values (as we can't
-// predict how the merge functors will affect them).
+// Put the KV index into a canonical form.
+//
+// A KVINDEX groups its inputs by key columns (`input_columns`) and folds
+// concurrent proposals for its value columns (`attached_columns`) through
+// per-column merge functors (`merge_functors`, from `mutable(...)`-typed
+// parameters). Canonicalization performs constant propagation and duplicate
+// elimination on the KEY columns only: a constant key contributes nothing to
+// the grouping arity, and a repeated key column is redundant with its first
+// occurrence, so both can be dropped, shrinking the index's key width and
+// exposing further downstream simplification (CSE, tuple elimination).
+// Value columns are never subjected to constant propagation or removal,
+// because the merge functor combines an old and a proposed value in a way
+// the optimizer cannot predict; eliminating or constant-folding a value
+// column would sever its association with its merge functor and change the
+// program's meaning. Soundness is preserved by (a) forwarding constants and
+// duplicate keys to users via column replacement, (b) guarding the view with
+// a TUPLE when it is used directly (e.g. by a UNION/MERGE), so the user
+// still observes the original column arity and order, and (c) replacing the
+// entire index with a plain TUPLE when no value column is used, since an
+// unobserved merged value makes the index equivalent to pass-through of its
+// keys.
+//
+//   Pseudocode:
+//     if dead/unsat/invalid or inputs mismatch: bail out
+//     if incoming view is unsat: mark this view unsat; done
+//     for each (key in, key out): propagate constants across the pair;
+//       flag non-canonical if key is constant or a duplicate input
+//     if no value output column is used:
+//       replace whole KVINDEX with TUPLE(keys..., values...); done
+//     if any key is constant/duplicate:
+//       if used directly: guard with TUPLE to preserve shape
+//       drop constant keys (users take the constant) and duplicate
+//         keys (users take the surviving copy); rebuild columns
+//     keep every value column as-is (no constant copy across them)
+//
+//   Before (K2 bound to constant `0`, K3 duplicates K1, value V used):
+//
+//        PRED                            PRED
+//     K1  0  K1  V                    K1   V
+//      |  |   |  |                     |   |
+//     KVINDEX[K1 K2 K3 | V:f]   =>   KVINDEX[K1 | V:f]
+//      |  |   |  |                     |   |
+//     ... uses of K2 -> 0, K3 -> K1, others forwarded
+//
+//   Before (no value column used downstream):
+//
+//        PRED                           PRED
+//     K1  K2  V                       K1  K2  V
+//      |   |  |                        |   |  |
+//     KVINDEX[K1 K2 | V:f]     =>     TUPLE[K1 K2 V]
+//      |   |                           |   |
+//     users of keys                   users of keys
 bool QueryKVIndexImpl::Canonicalize(QueryImpl *query,
                                       const OptimizationContext &opt,
                                       const ErrorLog &) {

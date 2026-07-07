@@ -10,85 +10,38 @@ on:
       - '*'
 
 jobs:
-  posix:
+  build:
     runs-on: ${{ matrix.os }}
 
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-11]
-        build_type: [debug, release]
-        llvm: [13]
+        os: [ubuntu-24.04, macos-14]
+        build_type: [Debug, Release]
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
 
-    - name: Generate the cache key
-      id: cache_key
-      run: echo ::set-output name=VALUE::build_${{ matrix.os }}_type-${{ matrix.build_type }}
+    - name: Install Ninja (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y ninja-build
 
-    - name: Update the cache (ccache)
-      uses: actions/cache@v1.0.3
-      with:
-        path: ccache
-        key: ${{ steps.cache_key.outputs.VALUE }}_ccache
+    - name: Install Ninja (macOS)
+      if: runner.os == 'macOS'
+      run: brew install ninja
 
-    - name: Update the cache (git submodules)
-      uses: actions/cache@v1.0.3
-      with:
-        path: .git/modules
-        key: ${{ steps.cache_key.outputs.VALUE }}_gitsubmodules
-
-    - name: Create the build folders
-      run: mkdir -p ccache ../install downloads
-
-    - name: Synchronize the submodules
-      run: git submodule sync --recursive
-
-    - name: Update the submodules
-      run: git submodule update --init --recursive
-
-    - name: Install system dependencies (Ubuntu)
-      if: ${{ contains(matrix.os, 'ubuntu') }}
+    - name: Configure
       run: |
-        sudo apt update
+        cmake -S . -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DDRLOJEKYLL_ENABLE_TESTS=ON \
+          -DDRLOJEKYLL_ENABLE_INSTALL=ON \
+          -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install"
 
-        sudo apt-get install -y \
-          ccache \
-          cmake \
-          ninja-build
+    - name: Build
+      run: cmake --build build
 
-    - name: Install system dependencies (macOS)
-      if: ${{ contains(matrix.os, 'macos') }}
-      run: |
-        brew install \
-          ccache \
-          ninja
+    - name: Test
+      run: ctest --test-dir build --output-on-failure
 
-    - name: Set cxx-common pakage name
-      id: cxxname
-      shell: bash
-      run: |
-        XCODE=""
-        if [[ "$OSTYPE" == "darwin"* ]]; then XCODE="_xcode-13.0"; fi
-        echo ::set-output name=CXX_COMMON_NAME::vcpkg_${{ matrix.os }}_llvm-${{ matrix.llvm }}${XCODE}_amd64
-
-    - name: Fetch latest cxx-common
-      id: cxxdir
-      run: |
-        URL="https://github.com/lifting-bits/cxx-common/releases/latest/download/${URL_PART}.tar.xz"
-        GITHUB_LIBS="cxx-common.tar.xz"
-        pushd "downloads"
-        curl -o "${GITHUB_LIBS}" -L "${URL}"
-        tar -xJf "${GITHUB_LIBS}"
-        echo ::set-output name=CXX_COMMON_DIR::$(pwd)/${URL_PART}
-      env:
-        URL_PART: ${{ steps.cxxname.outputs.CXX_COMMON_NAME }}
-
-    - name: Configure & build
-      run: |
-        export CCACHE_DIR="$(realpath ccache)"
-        export INSTALL_DIR=$(pwd)/../install
-        scripts/build-preset.sh ${{ matrix.build_type }}
-      env:
-        VCPKG_ROOT: ${{ steps.cxxdir.outputs.CXX_COMMON_DIR }} 
-
+    - name: Install
+      run: cmake --install build

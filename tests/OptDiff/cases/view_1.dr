@@ -1,0 +1,12 @@
+; Guard-tuple insertion: the JOIN over a/b feeds the UNION for `t`
+; directly (IsUsedDirectly), so GuardWithTuple must interpose a
+; pass-through TUPLE before the join can canonicalize its columns.
+
+#message a(i32 X, i32 Y).
+#message b(i32 X, i32 Y).
+#local t(i32 X, i32 Y).
+#query q(free i32 X, free i32 Y).
+
+t(X, Y) : a(X, Y), b(Y, X).
+t(X, Y) : b(X, Y).
+q(X, Y) : t(X, Y).

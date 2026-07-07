@@ -1,0 +1,20 @@
+; PullDataFromBeyondTrivialTuples: the CMP reading copy2 retargets its
+; input uses across the chain of pure-copy TUPLEs copy2 -> copy1 -> in,
+; leaving the bypassed tuples dead. The `gated` tuple tests a positive
+; zero-arity condition, so pulling must stop there or the filter is lost.
+
+#message in(i32 X).
+#message log_in(i32 U).
+#local copy1(i32 X).
+#local copy2(i32 X).
+#local gated(i32 X).
+#query q_chain(free i32 X).
+#query q_gated(free i32 X).
+
+copy1(X) : in(X).
+copy2(X) : copy1(X).
+q_chain(A) : copy2(A), A != 0.
+
+enabled : log_in(_).
+gated(X) : in(X), enabled.
+q_gated(A) : gated(A), A != 0.

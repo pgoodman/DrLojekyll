@@ -1,0 +1,21 @@
+; Corner cases: join-used-directly-blocks-proxying (the JOIN of m1 and m2
+; flows as a whole view into the MERGE for u, so its unused B column cannot
+; be proxied away) and single-joined-view-becomes-tuple (the self-join of p
+; with itself dedups to a single joined view and collapses to a TUPLE).
+
+#message m1(i32 A, i32 B).
+#message m2(i32 A).
+#message m3(i32 A, i32 B).
+
+#local u(i32 A, i32 B).
+u(A, B) : m1(A, B), m2(A).
+u(A, B) : m3(A, B).
+
+#query q(free i32 A).
+q(A) : u(A, _).
+
+#local p(i32 A).
+p(A) : m2(A).
+
+#query qs(free i32 A).
+qs(A) : p(A), p(A).

@@ -49,6 +49,63 @@ uint64_t QueryNegateImpl::Hash(void) noexcept {
   return local_hash;
 }
 
+// Canonicalize a NEGATE view. A NEGATE forwards a tuple made of
+// `input_columns` (checked for absence against `negated_view`) plus
+// carried-along `attached_columns`, if and only if no matching tuple is
+// present in `negated_view`. Canonicalization tightens the node's inputs
+// and outputs without changing which tuples flow through it: inputs are
+// re-routed to read from beyond trivially-conditioned forwarding TUPLEs
+// and single-source UNIONs, constants are propagated into the output
+// columns, unused attached columns are dropped, and constant or duplicate
+// outputs are factored into a guarding TUPLE so downstream MERGEs still
+// see the expected column arity while the NEGATE itself shrinks. This
+// reduces data volume, exposes constants to later passes, and normalizes
+// structure so that equivalent NEGATEs can be deduplicated by CSE. Two
+// degenerate shapes fold away entirely: an unsatisfiable predecessor makes
+// the NEGATE unsatisfiable, and an unsatisfiable `negated_view` makes the
+// absence check vacuously true, so the NEGATE is replaced by a TUPLE that
+// forwards its inputs.
+//
+//    if is_dead or is_unsat or invalid: mark canonical; done
+//    pull input/attached columns from beyond trivial TUPLEs/UNIONs
+//    if predecessor is unsat: mark self unsat; done
+//    if negated_view is unsat:
+//      replace self with a TUPLE forwarding input+attached columns; done
+//    for each (input, output) column pair:
+//      propagate constants, record in_to_out, discover unused columns,
+//      duplicate inputs, and guardable constant outputs
+//      (duplicates among `input_columns` are always kept: they must stay
+//       positionally aligned, one per column of `negated_view`)
+//    if a constant/duplicate output is guardable and every user is a MERGE:
+//      substitute all users with an optimized guard TUPLE that forwards
+//      constants directly and collapses duplicate columns
+//    rebuild the column lists: keep every input column (resolved to a
+//      constant where possible); keep only the used attached columns
+//    if the rebuilt inputs no longer reference the old predecessor:
+//      gate self on a CONDition set by that predecessor
+//
+// Negation of an unsatisfiable view (absence always holds):
+//
+//    PRED            VIEW (unsat)           PRED
+//     |in,att           |                    |in,att
+//     +--> NEGATE <-----+        ==>       TUPLE
+//            |                               |
+//          users                           users
+//
+// Guarding a constant attached column (b is bound to constant 1 and is
+// only consumed through a MERGE; the NEGATE drops b, and the guard TUPLE
+// re-supplies it straight from the constant):
+//
+//    PRED[a b]        REL[x]            PRED[a b]        REL[x]
+//     |a   |b(=1)       |                |a                |
+//     v    v            |                v                 |
+//    NEGATE[a, b] <-----+     ==>      NEGATE[a] <---------+
+//       |a,b                              |a     1
+//       v                                 v      v
+//     MERGE                            TUPLE[a, b=1]
+//                                         |a,b
+//                                         v
+//                                       MERGE
 bool QueryNegateImpl::Canonicalize(QueryImpl *query,
                                      const OptimizationContext &opt,
                                      const ErrorLog &) {

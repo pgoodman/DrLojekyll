@@ -1,0 +1,28 @@
+; NEGATEs whose only users are MERGEs:
+;  - res: plain negation clause merged with a positive clause;
+;  - res2: constant attached output column (B fixed to 1) feeding a MERGE,
+;    which triggers the guardable-constant-output optimized guard TUPLE;
+;  - res3: same column duplicated between the negation input and the
+;    pass-through output list, users are MERGEs.
+#message feed(i32 A, i32 B).
+#message other(i32 A, i32 B).
+#message unsee(i32 A).
+
+#local seen(i32 A).
+seen(A) : unsee(A).
+
+#local res(i32 A, i32 B).
+res(A, B) : feed(A, B), !seen(A).
+res(A, B) : other(A, B).
+
+#local res2(i32 A, i32 B).
+res2(A, 1) : feed(A, _), !seen(A).
+res2(A, B) : other(A, B).
+
+#local res3(i32 A, i32 B).
+res3(A, A) : feed(A, _), !seen(A).
+res3(A, B) : other(A, B).
+
+#query qres(free i32 A, free i32 B) : res(A, B).
+#query qres2(free i32 A, free i32 B) : res2(A, B).
+#query qres3(free i32 A, free i32 B) : res3(A, B).

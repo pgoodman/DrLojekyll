@@ -1,0 +1,13 @@
+; TUPLECMP simplification, constant join pivot: bar contributes the constant
+; 1 and baz is a union of the constant fact 1 and message-fed rows. The join
+; pivot compares the constant against the union column; the compare over the
+; RED... constant arm must fold while message rows are compared at runtime.
+
+#message m(i32 A).
+#local bar(i32 A).
+#local baz(i32 A).
+#query foo(free i32 A).
+bar(1).
+baz(1).
+baz(A) : m(A).
+foo(A) : bar(A), baz(A).

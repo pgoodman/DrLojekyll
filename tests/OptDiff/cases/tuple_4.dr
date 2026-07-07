@@ -1,0 +1,16 @@
+; Duplicated input column redirects downstream users (pair forwards the
+; same input column to both outputs) and unused output column removal
+; (t's B column reaches no user and is dropped from the TUPLE).
+
+#message input(i32 X).
+#message input2(i32 A, i32 B).
+#local pair(i32 A, i32 B).
+#local t(i32 A, i32 B).
+#query out(free i32 A, free i32 B).
+#query out2(free i32 A).
+
+pair(X, X) : input(X).
+out(A, B) : pair(A, B).
+
+t(A, B) : input2(A, B).
+out2(A) : t(A, _).

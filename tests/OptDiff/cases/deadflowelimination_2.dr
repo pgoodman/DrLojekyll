@@ -1,0 +1,15 @@
+; Dead-flow: JOIN liveness is conjunctive (one dead input kills the join),
+; while all-constant INSERTs are unconditionally live.
+#message input(i32 A).
+#local live(i32 A).
+#local dead_rel(i32 A).
+#local seed(i32 A, i32 B).
+#query out_join(free i32 A).
+#query out_seed(free i32 A, free i32 B).
+
+seed(1, 2).
+seed(3, 4).
+live(A) : input(A).
+dead_rel(A) : dead_rel(A).
+out_join(A) : live(A), dead_rel(A).
+out_seed(A, B) : seed(A, B).

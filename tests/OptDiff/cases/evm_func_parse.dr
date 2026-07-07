@@ -1,0 +1,86 @@
+; This example can parse EVM function type declarations. Adapted to plain
+; integer types so it compiles standalone: Token = u32, Lexeme = u16,
+; ASTNode = u64 (AST nodes are encoded as (left_tok << 40) | (right_tok << 16)
+; | kind by the driver-defined functors).
+
+#query type_name(free u64 BaseType).
+
+#functor left_corner(bound u64 Node, free u32 LeftCorner) @range(.).
+#functor right_corner(bound u64 Node, free u32 RightCorner) @range(.).
+#message next_token(u32 Tok, u32 NextTok).
+#functor lexeme_of_token(bound u32 Tok, free u16 L) @range(.).
+#functor start_function_type(bound u32 FuncTok, bound u32 LParen, free u64 Header) @range(.).
+#functor add_function_type_param(bound u64 Header, bound u64 ParamType, free u64 ExtendedHeader) @range(.).
+#functor finish_function_type_params(bound u64 Header, bound u32 RParen, free u64 FinishedHeader) @range(.).
+
+
+#message other_type(u64 Node).
+
+
+type_name(OtherType) : other_type(OtherType).
+
+#local type_name_use(u32 StartToken, u64 Type).
+type_name_use(StartToken, Type)
+    : type_name(Type)
+    , left_corner(Type, StartToken).
+
+
+#local function_head(u64 HeaderNode, u32 NextTok).
+function_head(HeaderNode, NextTok)
+    : next_token(Function, LParen)
+    , lexeme_of_token(Function, 4)
+    , lexeme_of_token(LParen, 1)
+    , next_token(LParen, NextTok)
+    , start_function_type(Function, LParen, HeaderNode).
+
+; If we see something half unexpected, then inject in a closing parenthesis
+; to model being done with the parameter list.
+#local fixed_function_head(u64 HeaderNode, u32 LParen, u32 RParen, u32 NotRParen).
+fixed_function_head(FinishedHeaderNode, LParen, 999999, NotRParen)
+    : function_head(HeaderNode, NotRParen)
+    , lexeme_of_token(NotRParen, NotRParenLexeme)
+    , NotRParenLexeme != 2
+    , NotRParenLexeme != 3
+    , !type_name_use(NotRParen, _)
+    , finish_function_type_params(HeaderNode, 999999, FinishedHeaderNode)
+    , right_corner(HeaderNode, LParen).
+
+#local function_type_param_delimiter(u16 L).
+function_type_param_delimiter(3).
+function_type_param_delimiter(2).
+
+; Base case for a parameter list, i.e. it is a function head, followed by a type.
+#local function_head_with_param_type(u64 Node, u32 NextTok).
+function_head_with_param_type(HeaderNodeWithParam, NextTok)
+    : function_head(HeaderNode, FirstTokOfParamType)
+    , type_name_use(FirstTokOfParamType, ParamType)
+    , right_corner(ParamType, LastTokOfParamType)
+    , next_token(LastTokOfParamType, NextTok)
+    , lexeme_of_token(NextTok, NextLexeme)
+    , function_type_param_delimiter(NextLexeme)
+    , add_function_type_param(HeaderNode, ParamType, HeaderNodeWithParam).
+
+#local modified_function_type(u64 HeaderNode, u32 NextTok).
+
+; The next base case for a modified function type is one that is based on a function type head that has
+; been fixed up, i.e. by injecting in a closing right parenthesis.
+modified_function_type(HeaderNode, NextTok)
+    : fixed_function_head(HeaderNode, _, _, NextTok).
+
+
+; If we get to the end of the parameter list, i.e. we find a `)`, then we can
+; have established the base case for modifiers.
+modified_function_type(FinishedHeaderNode, NextTok)
+    : function_head_with_param_type(HeaderNode, RParen)
+    , lexeme_of_token(RParen, 2)
+    , finish_function_type_params(HeaderNode, RParen, FinishedHeaderNode)
+    , next_token(RParen, NextTok).
+
+
+
+; A modified function type followed by something that's not the `returns` keyword
+; is a finished function type.
+type_name(FunctionType)
+    : modified_function_type(FunctionType, NextToken)
+    , lexeme_of_token(NextToken, NextLexeme)
+    , NextLexeme != 7.

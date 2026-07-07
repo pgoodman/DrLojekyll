@@ -38,8 +38,69 @@ uint64_t QueryTupleImpl::Hash(void) noexcept {
 
 // Put this tuple into a canonical form, which will make comparisons and
 // replacements easier. Because comparisons are mostly pointer-based, the
-// canonical form of this tuple is one where all input columns are sorted,
-// deduplicated, and where all output columns are guaranteed to be used.
+// canonical form of a TUPLE is one that reads its data from as far up the
+// dataflow as possible (hopping over trivially forwarding TUPLEs and
+// single-source UNIONs), whose output columns are marked as constant
+// references whenever the corresponding inputs are constant, whose duplicated
+// output columns have all downstream users redirected onto one representative
+// column, and where every remaining output column is guaranteed to be used.
+// This is beneficial because shrunken, deduplicated tuples are more likely to
+// hash/compare as structurally equal (enabling CSE in the optimizer driver)
+// and unused dataflow upstream becomes deletable. It is sound because a TUPLE
+// only forwards values: a column that provably carries a constant, duplicates
+// a sibling column, or reaches no user can be rewritten or dropped without
+// changing the multiset of tuples produced.
+//
+//   if locked, unsatisfiable, dead, or invalid: bail out
+//   incoming = PullDataFromBeyondTrivialTuples(input_columns)
+//   if incoming is unsatisfiable: mark self unsatisfiable; done
+//   for each (in_col -> out_col) pair:
+//     if in_col is a constant or constant ref:
+//       mark out_col as a constant ref
+//     if in_col repeats an earlier input column:
+//       redirect direct users of out_col to the earlier out col
+//     record whether out_col is unused
+//   if nothing was discovered: done
+//   rebuild the tuple:
+//     keep only used output columns
+//     resolve each kept input column to its constant, if any
+//   if the rebuilt tuple no longer reads from `incoming`:
+//     make `incoming` set a CONDition tested by this tuple, so
+//     outputs stay predicated on `incoming` producing data
+//   if no output columns remain:
+//     delete self when unused, unconditional, or guarded only by
+//     trivial positive conditions; otherwise restore the old
+//     columns and lock the tuple against future canonicalization
+//
+// Constant propagation, duplicate redirection, unused-column removal:
+//
+//   Before:                           After:
+//
+//     VIEW V[a, b]    CONST 1           VIEW V[a, b]    CONST 1
+//      |a  |b  |a      |                 |a              |
+//     TUPLE [w=a, x=b, y=1, z=a]        TUPLE [w=a, y=1]
+//      |w        |y   |z                 |w    |y
+//     (x unused)                        (z's users now read w)
+//
+// Forwarding elimination (hopping over an unconditional TUPLE):
+//
+//   Before:                           After:
+//
+//     VIEW V[a, b]                      VIEW V[a, b]
+//      |                                 |
+//     TUPLE T1[a, b]                    TUPLE T2[b, a]
+//      |
+//     TUPLE T2[b, a]                    (T1 deleted once unused)
+//
+// Data dependence converted to control dependence when the last
+// non-constant input is dropped:
+//
+//   Before:                           After:
+//
+//     VIEW V[a]    CONST 1              VIEW V[a] --sets COND--+
+//      |a           |                                          |
+//     TUPLE [x=a, y=1]                  TUPLE [y=1] --tests COND
+//     (x unused)
 bool QueryTupleImpl::Canonicalize(QueryImpl *query,
                                     const OptimizationContext &opt,
                                     const ErrorLog &) {

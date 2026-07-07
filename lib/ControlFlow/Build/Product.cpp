@@ -164,8 +164,24 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 
     auto &vec = product_vector[pred_table];
     if (!vec) {
-      vec =
-          proc->VectorFor(impl, VectorKind::kProductInput, pred_view.Columns());
+      if (needs_inductive_cycle_vec) {
+
+        // Inductive predecessors accumulate into the induction's add vector
+        // (via `AppendToInductionInputVectors`); `BuildInductiveSwaps` swaps
+        // that into the swap vector at the top of each fixpoint round,
+        // immediately before this TABLEPRODUCT executes. Cross the swap
+        // vector: it holds the round's newly derived inductive-side tuples.
+        // For non-inductive predecessors, `GetOrInitInduction` aliases
+        // `view_to_swap_vec[pred]` to the persistent `kProductInput` add
+        // vector, so this lookup is correct for every predecessor of an
+        // induction-straddling PRODUCT.
+        const auto it = induction->view_to_swap_vec.find(pred_view);
+        assert(it != induction->view_to_swap_vec.end() && it->second);
+        vec = it->second;
+      } else {
+        vec = proc->VectorFor(impl, VectorKind::kProductInput,
+                              pred_view.Columns());
+      }
     }
 
     product->tables.AddUse(pred_table);

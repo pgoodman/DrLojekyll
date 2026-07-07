@@ -1,0 +1,17 @@
+; A UNION operand that tests a condition aborts the whole sinking phase:
+; the clause `p(X) : ma(X), enabled.` tests the zero-arity condition
+; `enabled`, so only flattening/dedup canonicalization may run.
+
+#message ma(i32 X).
+#message mb(i32 X).
+#message me(i32 E).
+
+#local p(i32 X).
+#query q(free i32 X).
+
+enabled : me(1).
+
+p(X) : ma(X), enabled.
+p(X) : mb(X).
+
+q(X) : p(X).

@@ -1,0 +1,19 @@
+; GENERATOR simplification: `dead` has no consumers, so the per-result body
+; of its add_i32 application becomes a no-op and the pure GENERATOR is
+; deleted outright. The `q` application stays live, and the top-down checker
+; for the bound query `lookup` re-applies add_i32 with the empty branch as
+; the absent path; when that branch does nothing it is pruned but the result
+; branch must keep working.
+
+#functor add_i32(bound i32 L, bound i32 R, free i32 S) @range(.).
+
+#message m(i32 A).
+#local dead(i32 S).
+#local q(i32 A, i32 S).
+#query lookup(bound i32 A, bound i32 S).
+#query getq(bound i32 A, free i32 S).
+
+dead(S) : m(A), add_i32(A, 1, S).
+q(A, S) : m(A), add_i32(A, 1, S).
+lookup(A, S) : q(A, S).
+getq(A, S) : q(A, S).

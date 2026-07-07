@@ -1,0 +1,17 @@
+; SERIES return truncation + LET placeholders: a bound query over
+; differential data generates a top-down checker procedure built from
+; RETURN-true/RETURN-false sequences; two differential sources give the
+; checker multiple all-paths-return sub-regions before the fallback
+; RETURN (indirect-return truncation), and check bodies that collapse to
+; no-ops leave empty placeholder LETs.
+
+#message a(i32 X) @differential.
+#message b(i32 X) @differential.
+#local t(i32 X).
+#query chk(bound i32 X).
+#query all(free i32 X).
+
+t(X) : a(X).
+t(X) : b(X).
+chk(X) : t(X).
+all(X) : t(X).

@@ -1,0 +1,36 @@
+; Union/JOIN interactions:
+;  - `j` unions two structurally identical JOINs (differing only in one
+;    input relation), the shape the join-sinking rewrite targets;
+;  - `k` adds a constant-fed non-pivot output column (K = 7), which
+;    aborts the join-sinking attempt on the not_found path;
+;  - `xp` unions two pivot-free cross-products, which are passed over
+;    when selecting join-sinking candidates.
+
+#message a2(i32 X, i32 Y).
+#message b2(i32 X, i32 Y).
+#message c2(i32 Y, i32 Z).
+#message e1(i32 X).
+#message f1(i32 Y).
+#message g1(i32 X).
+#message h1(i32 Y).
+
+#local j(i32 X, i32 Z).
+#local k(i32 X, i32 K).
+#local xp(i32 X, i32 Y).
+
+#query q_j(free i32 X, free i32 Z).
+#query q_k(free i32 X, free i32 K).
+#query q_xp(free i32 X, free i32 Y).
+
+j(X, Z) : a2(X, Y), c2(Y, Z).
+j(X, Z) : b2(X, Y), c2(Y, Z).
+
+k(X, K) : a2(X, Y), c2(Y, _), K = 7.
+k(X, K) : b2(X, Y), c2(Y, _), K = 7.
+
+xp(X, Y) @product : e1(X), f1(Y).
+xp(X, Y) @product : g1(X), h1(Y).
+
+q_j(X, Z) : j(X, Z).
+q_k(X, K) : k(X, K).
+q_xp(X, Y) : xp(X, Y).

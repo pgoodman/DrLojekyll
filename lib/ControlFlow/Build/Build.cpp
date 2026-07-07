@@ -3,6 +3,7 @@
 #include "Build.h"
 
 #include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <algorithm>
 #include <sstream>
@@ -33,17 +34,14 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
                           Context &context) {
 
   query.ForEachView([&](QueryView view) {
+    // Every predecessor of a deletion-receiving view needs persistent
+    // storage: the view's top-down checker re-proves a tuple by recursively
+    // checking each predecessor, and that per-predecessor check needs the
+    // predecessor's own support recorded. E.g. for a union, a tuple removed
+    // from one branch may still be supported by a sibling branch, and only
+    // the sibling's table can witness that.
     if (view.CanReceiveDeletions()) {
       for (auto pred : view.Predecessors()) {
-        if (pred.CanProduceDeletions()) {
-          if (view.InductionGroupId().has_value()) {
-            (void) TABLE::GetOrCreate(impl, context, pred);
-          }
-        } else {
-          (void) TABLE::GetOrCreate(impl, context, pred);
-        }
-      }
-      for (auto pred : view.NonInductivePredecessors()) {
         (void) TABLE::GetOrCreate(impl, context, pred);
       }
     }
@@ -300,15 +298,15 @@ static CALL *InCondionalTests(ProgramImpl *impl, QueryView view,
       parent = test;
     }
 
-    // Innermost test for positive conditions.
-    if (!pos_conds.empty()) {
+    // Innermost tests for positive conditions. Every positive condition must
+    // be non-zero, so each one gets its own test: a zero count fails the
+    // check, and a non-zero count falls through to the next test.
+    for (auto cond : pos_conds) {
       TUPLECMP *const test = impl->operation_regions.CreateDerived<TUPLECMP>(
           parent, ComparisonOperator::kEqual);
 
-      for (auto cond : pos_conds) {
-        test->lhs_vars.AddUse(ConditionVariable(impl, cond));
-        test->rhs_vars.AddUse(impl->zero);
-      }
+      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+      test->rhs_vars.AddUse(impl->zero);
 
       test->body.Emplace(test, BuildStateCheckCaseReturnFalse(impl, test));
 
@@ -852,9 +850,8 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
   // if statement.
   const auto pos_conds = view.PositiveConditions();
   const auto neg_conds = view.NegativeConditions();
-  const auto proc_body = proc->body.get();
 
-  // Innermost test for negative conditions.
+  // Innermost test for negative conditions: all of them must be zero.
   if (!neg_conds.empty()) {
     auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
         proc, ComparisonOperator::kEqual);
@@ -864,24 +861,26 @@ static void BuildTopDownChecker(ProgramImpl *impl, Context &context,
       test->rhs_vars.AddUse(impl->zero);
     }
 
+    REGION *const wrapped_body = proc->body.get();
     proc->body.Emplace(proc, test);
-    proc_body->parent = test;
-    test->body.Emplace(test, proc_body);
+    wrapped_body->parent = test;
+    test->body.Emplace(test, wrapped_body);
   }
 
-  // Outermost test for positive conditions.
-  if (!pos_conds.empty()) {
+  // Outermost tests for positive conditions. Every positive condition must
+  // be non-zero, so each one gets its own test, and only a non-zero count
+  // proceeds into the wrapped body.
+  for (auto cond : pos_conds) {
     auto test = impl->operation_regions.CreateDerived<TUPLECMP>(
         proc, ComparisonOperator::kEqual);
 
-    for (auto cond : pos_conds) {
-      test->lhs_vars.AddUse(ConditionVariable(impl, cond));
-      test->rhs_vars.AddUse(impl->zero);
-    }
+    test->lhs_vars.AddUse(ConditionVariable(impl, cond));
+    test->rhs_vars.AddUse(impl->zero);
 
+    REGION *const wrapped_body = proc->body.get();
     proc->body.Emplace(proc, test);
-    proc_body->parent = test;
-    test->false_body.Emplace(test, proc_body);
+    wrapped_body->parent = test;
+    test->false_body.Emplace(test, wrapped_body);
   }
 
   if (!EndsWithReturn(proc)) {
@@ -1098,6 +1097,59 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
                              forcer_proc);
 }
 
+
+// Add an entry point record for a query none of whose derivations survived
+// dataflow optimization: every flow into it was proven to never produce data,
+// so there is no INSERT view and no data model for it. The query is still
+// part of the program's external interface, so it scans a fresh table that
+// nothing ever writes to.
+static void BuildEmptyQueryEntryPointImpl(ProgramImpl *impl,
+                                          ParsedDeclaration decl,
+                                          TABLE *table) {
+  const auto query = ParsedQuery::From(decl);
+
+  std::vector<unsigned> col_indices;
+  for (auto param : decl.Parameters()) {
+    if (param.Binding() == ParameterBinding::kBound) {
+      col_indices.push_back(param.Index());
+    }
+  }
+
+  std::optional<DataIndex> scanned_index;
+  if (!col_indices.empty()) {
+    if (const auto index =
+            table->GetOrCreateIndex(impl, std::move(col_indices))) {
+      scanned_index.emplace(DataIndex(index));
+    }
+  }
+
+  impl->queries.emplace_back(query, DataTable(table), scanned_index,
+                             std::nullopt, std::nullopt);
+}
+
+// Add entry point records, over a shared always-empty table, for each unique
+// binding pattern of a query declaration with no backing INSERT view.
+static void BuildEmptyQueryEntryPoint(ProgramImpl *impl,
+                                      ParsedDeclaration decl) {
+  TABLE *const table = impl->tables.Create(impl->next_id++);
+  std::vector<unsigned> offsets;
+  unsigned col_index = 0;
+  for (auto param : decl.Parameters()) {
+    offsets.push_back(col_index++);
+    (void) table->columns.Create(impl->next_id++, param.Type(), table);
+  }
+  (void) table->GetOrCreateIndex(impl, std::move(offsets));
+
+  std::unordered_set<std::string> seen_variants;
+  for (auto redecl : decl.UniqueRedeclarations()) {
+    std::string binding(redecl.BindingPattern());
+    if (seen_variants.count(binding)) {
+      continue;
+    }
+    seen_variants.insert(std::move(binding));
+    BuildEmptyQueryEntryPointImpl(impl, redecl, table);
+  }
+}
 
 // Add entry point records for each query to the program.
 static void BuildQueryEntryPoint(ProgramImpl *impl, Context &context,
@@ -2252,7 +2304,40 @@ WorkItem::~WorkItem(void) {}
 
 // Build a program from a query.
 std::optional<Program> Program::Build(const ::hyde::Query &query,
-                                      unsigned first_id) {
+                                      const ErrorLog &log, unsigned first_id,
+                                      bool optimize) {
+
+  // Reject data-flow view kinds that the control-flow builder does not yet
+  // support. Each region-dispatch switch below asserts on these kinds; this
+  // pre-pass dominates those asserts (they remain as internal-invariant
+  // backstops) and turns the feature gaps into user-facing diagnostics.
+  const auto num_errors = log.Size();
+  for (auto agg : query.Aggregates()) {
+    log.Append(agg.Functor().SpellingRange())
+        << "Aggregating functors are not yet supported";
+  }
+  for (auto kv : query.KVIndices()) {
+    log.Append(kv.NthValueMergeFunctor(0).SpellingRange())
+        << "Relations with mutable-attributed parameters are not yet "
+           "supported";
+  }
+  for (auto map : query.Maps()) {
+    if (!map.Functor().IsPure()) {
+      log.Append(map.Functor().SpellingRange())
+          << "Impure functors are not yet supported";
+    }
+  }
+  for (auto join : query.Joins()) {
+    if (!join.NumPivotColumns() && QueryView(join).CanReceiveDeletions()) {
+      log.Append()
+          << "Cross-products over differential (deletable) data are not yet "
+             "supported";
+    }
+  }
+  if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
+
   auto impl = std::make_shared<ProgramImpl>(query, first_id);
   const auto program = impl.get();
 
@@ -2310,6 +2395,24 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     }
   }
 
+  // A query declaration all of whose derivations were proven to never
+  // produce data has no INSERT view, and therefore got no entry point above.
+  // It is still part of the program's external interface, so it gets an
+  // entry point over an always-empty table.
+  std::unordered_set<uint64_t> queries_with_entry_points;
+  for (const ProgramQuery &spec : impl->queries) {
+    queries_with_entry_points.insert(spec.query.Id());
+  }
+  for (class ParsedModule sub_module :
+       ParsedModuleIterator(query.ParsedModule())) {
+    for (ParsedQuery parsed_query : sub_module.Queries()) {
+      if (!queries_with_entry_points.count(parsed_query.Id())) {
+        queries_with_entry_points.insert(parsed_query.Id());
+        BuildEmptyQueryEntryPoint(program, ParsedDeclaration(parsed_query));
+      }
+    }
+  }
+
   // Build top-down provers and the bottom-up removers (bottom-up removers are
   // separate procedures when using the `IRFormat::kRecursive`; when using
   // `IRFormat::kIterative`, the bottom-up removers are iterative and in-line
@@ -2326,12 +2429,16 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   }
 
   FixupContainingProcedure(impl.get());
-  impl->Optimize();
+  if (optimize) {
+    impl->Optimize();
+  }
 
   ExtractPrimaryProcedure(impl.get(), entry_proc, context);
 
   FixupContainingProcedure(impl.get());
-  impl->Optimize();
+  if (optimize) {
+    impl->Optimize();
+  }
 
   // Assign defining regions to each variable.
   //

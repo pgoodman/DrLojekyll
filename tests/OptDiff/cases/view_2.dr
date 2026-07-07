@@ -1,0 +1,21 @@
+; Column-level canonicalization: a duplicated input column (dupc(X, X))
+; is CSE'd to one output, a constant input column (constp(X, 1))
+; propagates the constant to downstream views, and an unused
+; constant-ref output (unusedc's second column read as `_`) becomes a
+; guardable constant output whose column drops from the view.
+
+#message in(i32 X).
+#local dupc(i32 A, i32 B).
+#local constp(i32 A, i32 B).
+#local unusedc(i32 A, i32 B).
+#query q_dup(free i32 A, free i32 B).
+#query q_const(free i32 A, free i32 B).
+#query q_unused(free i32 A).
+
+dupc(X, X) : in(X).
+constp(X, 1) : in(X).
+unusedc(X, 7) : in(X).
+
+q_dup(A, B) : dupc(A, B), A != 0.
+q_const(A, B) : constp(A, B).
+q_unused(A) : unusedc(A, _).

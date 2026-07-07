@@ -1,0 +1,22 @@
+; Degenerate JOIN: a self-join of t with itself over identical columns must
+; collapse to a forwarding TUPLE (second JOIN sweep). Also a chain of
+; comparisons feeding each other, the shape that churns the canonicalize
+; fixpoint's 8-entry hash history.
+
+#message add(u64 A, u64 B).
+#local t(u64 A, u64 B).
+#query out(free u64 A, free u64 B).
+
+t(A, B) : add(A, B).
+out(A, B) : t(A, B), t(A, B).
+
+#message add_entry(i32 A, i32 B, i32 C).
+#message add_entry2(i32 A).
+#local entry3(i32 A, i32 B, i32 C).
+#local entry2(i32 A, i32 B).
+#query entry1(free i32 A, free i32 B).
+
+entry3(A, B, C) : add_entry(A, B, C).
+entry2(A, B) : entry3(A, B, C), B < C.
+entry1(A, B) : entry2(A, B), A < B.
+entry1(A, A) : add_entry2(A).

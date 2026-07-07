@@ -1,11 +1,5 @@
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
-if(NOT DEFINED VCPKG_ROOT)
-  message(FATAL_ERROR "Must build with VCPKG")
-endif()
-
-include(cmake/vcpkg_helper.cmake)
-
 cmake_minimum_required(VERSION 3.17)
 project(DrLojekyll LANGUAGES C CXX)
 
@@ -21,16 +15,12 @@ endif()
 
 defineWarningSilencerTarget()
 
-if(DRLOJEKYLL_ENABLE_VENDORED_LIBRARIES)
-  add_subdirectory("vendor" EXCLUDE_FROM_ALL)
-endif()
-
 # --------------------------------------------
 # build-time options -------------------------
 # --------------------------------------------
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -107,6 +97,10 @@ target_include_directories(settings_public INTERFACE
     $<INSTALL_INTERFACE:include>
 )
 
+# Consumers of the installed package (and of generated code) compile the
+# runtime headers, which require C++23.
+target_compile_features(settings_public INTERFACE cxx_std_23)
+
 target_compile_options(settings_private INTERFACE ${CXX_WARNING_OPTIONS})
 
 if(WARNINGS_AS_ERRORS)
@@ -159,9 +153,6 @@ endif(DRLOJEKYLL_ENABLE_INSTALL)
 # targets ------------------------------------
 # --------------------------------------------
 
-# Test: remove me!
-find_package(absl REQUIRED CONFIG)
-
 add_subdirectory(lib)
 add_subdirectory(bin)
 
@@ -170,5 +161,6 @@ if(DRLOJEKYLL_ENABLE_LIBFUZZER)
 endif(DRLOJEKYLL_ENABLE_LIBFUZZER)
 
 if(DRLOJEKYLL_ENABLE_TESTS)
+  enable_testing()
   add_subdirectory(tests)
 endif(DRLOJEKYLL_ENABLE_TESTS)

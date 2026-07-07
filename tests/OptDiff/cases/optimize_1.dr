@@ -1,0 +1,20 @@
+; CSE bucketing with dataflow cycles: two structurally identical inductive
+; transitive closures must be proven equal and merged, plus an entirely
+; unconsumed local whose pipeline must vanish (RemoveUnusedViews cascade).
+
+#message add_edge(u64 From, u64 To).
+#local tc1(u64 From, u64 To).
+#local tc2(u64 From, u64 To).
+#local unused(u64 X).
+#query out(free u64 From, free u64 To).
+
+tc1(A, B) : add_edge(A, B).
+tc1(A, C) : tc1(A, B), add_edge(B, C).
+
+tc2(A, B) : add_edge(A, B).
+tc2(A, C) : tc2(A, B), add_edge(B, C).
+
+unused(A) : add_edge(A, _).
+
+out(A, B) : tc1(A, B).
+out(A, B) : tc2(A, B).

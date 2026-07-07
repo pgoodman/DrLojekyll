@@ -1,0 +1,22 @@
+; INDUCTION whose parent is not a SERIES: one message fans out to two
+; independent inductions that execute alongside each other under a PARALLEL,
+; so init-region hoisting is skipped and only no-op clearing applies.
+
+#message input(i32 A).
+#message e1(i32 A, i32 B).
+#message e2(i32 A, i32 B).
+
+#local l1(i32 A).
+#local l2(i32 A).
+
+#query q1(free i32 A).
+#query q2(free i32 A).
+
+l1(A) : input(A).
+l1(B) : l1(A), e1(A, B).
+
+l2(A) : input(A).
+l2(B) : l2(A), e2(A, B).
+
+q1(A) : l1(A).
+q2(A) : l2(A).

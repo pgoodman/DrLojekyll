@@ -1,0 +1,17 @@
+; TUPLECMP simplification, non-equality assert path: both sides of A < B
+; become the same value (constant 1 from a fact, and a fused X/X column from
+; the message clause), so every pair is dropped as trivially equal. A
+; zero-pair kLessThan compare is vacuously false and must be replaced by its
+; false_body; p stays empty in every mode.
+
+#message m(i32 X).
+
+#local bar(i32 A, i32 B).
+bar(1, 1).
+bar(X, X) : m(X).
+
+#query p(free i32 A).
+p(A) : bar(A, B), A < B.
+
+#query all_bar(free i32 A, free i32 B).
+all_bar(A, B) : bar(A, B).

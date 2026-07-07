@@ -1,0 +1,13 @@
+; Unused attached column dropped during the NEGATE rebuild: B flows through
+; mid's NEGATE as an attached column but is never read downstream, so the
+; rebuilt NEGATE drops it.
+#message feed(i32 A, i32 B).
+#message unsee(i32 A).
+
+#local seen(i32 A).
+seen(A) : unsee(A).
+
+#local mid(i32 A, i32 B).
+mid(A, B) : feed(A, B), !seen(A).
+
+#query out(free i32 A) : mid(A, _).

@@ -5,6 +5,7 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 
@@ -214,8 +215,44 @@ void QueryViewImpl::OrderConditions(void) {
 }
 
 // Record the mapping between `in_col` and `out_col` into `this->in_to_out`,
-// do constant propagation, and possibly to replacements. Sets
-// `is_canonical = false;` if anything is changed or should be changed.
+// do constant propagation, and de-duplicate repeated input columns. This is
+// the per-column workhorse invoked by node-specific `Canonicalize`
+// implementations as they walk their (input, output) column pairs in order.
+// It performs two rewrites directly -- marking an output column as a
+// constant reference when its input is constant, and redirecting all uses
+// of an output column whose input repeats onto the output of the first
+// occurrence (column-level CSE) -- and accumulates discovery bits in `has`
+// that tell the caller which structural rewrites (dropping unused columns,
+// guarding constant outputs behind a tuple) are worth performing next.
+// Sets `is_canonical = false` if anything is changed or should be changed.
+//
+//    (prev, added) = in_to_out.emplace(in_col, out_col)
+//    if in_col is constant/const-ref and out_col is not a const-ref:
+//      out_col.CopyConstantFrom(in_col)          // constant propagation
+//      has.non_local_changes = true
+//    if out_col is used ignoring MERGEs: has.directly_used_column = true
+//    if out_col is unused:
+//      has.unused_column = true
+//      if is_attached: is_canonical = false      // droppable pass-through
+//      if out_col is a const-ref: has.guardable_constant_output = true
+//    if not added:                               // in_col seen before
+//      replace all uses of out_col with prev's out_col
+//      has.duplicated_input_column = true
+//
+//  Constant propagation:            Duplicate input de-duplication:
+//
+//    V[a=7]                           V[a]
+//     |                                |  \
+//    MAP(in: a -> out: x)             CMP(in: a, a -> out: x, y)
+//     |                                |         \
+//    users(x)                         users(x)   users(y)
+//        ==>                              ==>
+//    V[a=7]                           V[a]
+//     |                                |  \
+//    MAP(in: a -> out: x=7)           CMP(in: a, a -> out: x, y)
+//     |                                |
+//    users(x) see constant 7          users(x + former users of y);
+//                                     y unused -> removal candidate
 QueryViewImpl::Discoveries
 QueryViewImpl::CanonicalizeColumn(
     const OptimizationContext &, QueryColumnImpl *in_col,
@@ -265,7 +302,33 @@ QueryViewImpl::CanonicalizeColumn(
 
 // Canonicalizes an input/output column pair. Returns `true` in the first
 // element if non-local changes are made, and `true` in the second element
-// if the column pair can be removed.
+// if the column pair can be removed. Constant-ness flows from the input to
+// the output: an output fed by a constant (or by a column proven to hold a
+// constant) becomes a constant reference, so every downstream user of the
+// output observes the constant without evaluating this view. When the input
+// is itself a constant reference and the output already carries the
+// constant, a non-local change is reported if `opt` permits replacing
+// inputs with constants, signalling the caller to substitute the input use
+// with the constant itself and thereby sever a dataflow edge. A pair whose
+// output is unused is flagged as removable when `opt` allows unused-column
+// removal.
+//
+//    non_local = false
+//    if in_col is a literal constant and out_col is not a const-ref:
+//      out_col.CopyConstantFrom(in_col); non_local = true
+//    elif in_col is a const-ref:
+//      if out_col is not a const-ref:
+//        out_col.CopyConstantFrom(in_col); non_local = true
+//      elif opt.can_replace_inputs_with_constants:
+//        non_local = true                 // caller swaps in the constant
+//    removable = opt.can_remove_unused_columns and out_col unused
+//    return {non_local, removable}
+//
+//    V[a=7]                            V[a=7]
+//     |                       ==>       |
+//    TUPLE(in: a -> out: x)            TUPLE(in: a -> out: x=7)
+//     |                                 |
+//    users(x)                          users(x) see constant 7
 std::pair<bool, bool> QueryViewImpl::CanonicalizeColumnPair(
     QueryColumnImpl *in_col, QueryColumnImpl *out_col,
     const OptimizationContext &opt) noexcept {
@@ -470,7 +533,10 @@ void QueryViewImpl::DropTestedConditions(void) {
 #endif
 }
 
-// Converts this node to not set any conditions.
+// Converts this node to not set any conditions. When this was the last
+// setter, the condition is unconditionally satisfied (the caller has proven
+// that the setter's data is always present), so every test of the condition
+// is dropped.
 void QueryViewImpl::DropSetConditions(void) {
   auto cond = sets_condition.get();
   if (!cond) {
@@ -497,6 +563,52 @@ void QueryViewImpl::DropSetConditions(void) {
   cond->negative_users.Clear();
 }
 
+// Stops this (dying) node from setting any conditions. When this was the
+// last setter, the condition's reference count can never become non-zero:
+// positive testers can never produce data and are deleted (cascading through
+// `PrepareToDelete`), and negative tests are vacuously true and are removed.
+void QueryViewImpl::DropSetConditionsOfDeadView(void) {
+  QueryConditionImpl *const cond = sets_condition.get();
+  if (!cond) {
+    return;
+  }
+
+  const auto is_this_view = [this](QueryViewImpl *v) { return v == this; };
+  sets_condition.Clear();
+  cond->setters.RemoveIf(is_this_view);
+
+  if (!cond->setters.Empty()) {
+    return;
+  }
+
+  // Deleting a tester mutates the condition's user lists, so snapshot the
+  // testers and disconnect the condition first.
+  std::vector<QueryViewImpl *> positive_testers;
+  std::vector<QueryViewImpl *> negative_testers;
+  for (QueryViewImpl *tester : cond->positive_users) {
+    if (tester) {
+      positive_testers.push_back(tester);
+    }
+  }
+  for (QueryViewImpl *tester : cond->negative_users) {
+    if (tester) {
+      negative_testers.push_back(tester);
+    }
+  }
+  cond->positive_users.Clear();
+  cond->negative_users.Clear();
+
+  const auto is_cond = [cond](COND *c) { return c == cond; };
+  for (QueryViewImpl *tester : negative_testers) {
+    tester->negative_conditions.RemoveIf(is_cond);
+    tester->is_canonical = false;
+  }
+  for (QueryViewImpl *tester : positive_testers) {
+    tester->positive_conditions.RemoveIf(is_cond);
+    tester->PrepareToDelete();
+  }
+}
+
 // Prepare to delete this node. This tries to drop all dependencies and
 // unlink this node from the dataflow graph. It returns `true` if successful
 // and `false` if it has already been performed.
@@ -515,7 +627,7 @@ bool QueryViewImpl::PrepareToDelete(void) {
   const auto is_this_view = [this](QueryViewImpl *v) { return v == this; };
 
   DropTestedConditions();
-  DropSetConditions();
+  DropSetConditionsOfDeadView();
 
   if (auto merge = AsMerge(); merge) {
     merge->merged_views.Clear();
@@ -560,6 +672,43 @@ bool QueryViewImpl::PrepareToDelete(void) {
 
   } else if (auto negate = AsNegate(); negate) {
     negate->negated_view.Clear();
+  }
+
+  // Data can never flow out of a deleted view. A non-MERGE view reading this
+  // view's columns can therefore never receive data, and dies with it. A
+  // MERGE merely loses this view as one of its sources, and dies only when
+  // this view was the last one. View-level users other than MERGEs (a NEGATE
+  // holding this as its negated view, a SELECT holding an INSERT into its
+  // relation) do not consume this view's data and are left alone.
+  std::vector<QueryViewImpl *> column_users;
+  for (QueryColumnImpl *col : columns) {
+    col->ForEachUse<QueryViewImpl>([&](QueryViewImpl *user, COL *) {
+      column_users.push_back(user);
+    });
+  }
+
+  std::vector<QueryMergeImpl *> merge_users;
+  ForEachUse<QueryViewImpl>([&](QueryViewImpl *user, QueryViewImpl *) {
+    if (auto merge = user->AsMerge()) {
+      merge_users.push_back(merge);
+    }
+  });
+
+  for (QueryMergeImpl *merge : merge_users) {
+    if (merge == this || merge->is_dead) {
+      continue;
+    }
+    merge->merged_views.RemoveIf(is_this_view);
+    merge->is_canonical = false;
+    if (merge->merged_views.Empty()) {
+      merge->PrepareToDelete();
+    }
+  }
+
+  for (QueryViewImpl *user : column_users) {
+    if (user != this && !user->is_dead && !user->AsMerge()) {
+      user->PrepareToDelete();
+    }
   }
 
   return true;
@@ -812,12 +961,31 @@ bool QueryViewImpl::AllColumnsAreUsed(void) const noexcept {
   return true;
 }
 
-// Returns `true` if we had to "guard" this view with a tuple so that we
-// can put it into canonical form.
+// Insert a pass-through TUPLE between `this` and its users, and return that
+// tuple, or `nullptr` when no guard is needed. A view that is used directly
+// -- as an operand of a UNION (MERGE), or as the setter of a CONDition --
+// exposes its exact column arity and ordering to those users, so its own
+// canonicalization must not re-order, de-duplicate, or drop columns. The
+// guard tuple absorbs that external interface: every direct use (including
+// the set condition, group IDs, and differential flags) moves onto the
+// tuple, which forwards each column of `this` in order, leaving `this` free
+// to restructure its columns beneath a stable facade. With `force`, a guard
+// is inserted even when `this` is not directly used, which callers use to
+// isolate a view before attaching new conditions to it.
 //
-// If this view is used by a merge then we're not allowed to re-order the
-// columns. Instead, what we can do is create a tuple that will maintain
-// the ordering, and the canonicalize the join order below that tuple.
+//    if not force and not IsUsedDirectly(): return nullptr
+//    tuple = new TUPLE with one output per column of this, constants copied
+//    SubstituteAllUsesWith(tuple)   // users, set COND, group ids move over
+//    tuple.input_columns = this->columns
+//    return tuple
+//
+//   before:                          after:
+//
+//    JOIN(out: A, B, C)               JOIN(out: A, B, C)  <- may now
+//      |          \                     |               reorder/drop cols
+//    UNION      sets COND             TUPLE(in: A,B,C -> out: A,B,C)
+//                                       |          \
+//                                     UNION      sets COND
 QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query,
                                               bool force) {
 
@@ -857,19 +1025,58 @@ QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query,
   return tuple;
 }
 
-// This is like an "optimized" form of `GuardWithTuple`, that also knows
-// about attached columns. It tries to propagate constants, remove duplicates
-// (via `in_to_out`) and maintains a backward reference to `this` if it drops
-// all references.
+// Insert a guard TUPLE between `this` and its users that forwards each
+// output column from its best available source: constant outputs feed the
+// tuple from the constant itself, and non-constant outputs route through
+// `in_to_out`, so repeated inputs collapse onto a single column (covering
+// both `input_columns` and the attached columns starting at
+// `first_attached_col`). All uses of `this` move onto the tuple. The tuple
+// preserves the externally visible column shape while letting downstream
+// users consume constants and de-duplicated columns directly. If the tuple
+// ends up reading no column of `this` at all -- everything constant or
+// forwarded -- then the dataflow no longer records that the tuple's output
+// presence depends on `this` holding data, so the tuple gains a positive
+// CONDition set by `this` (`CreateDependencyOnView`); the condition is
+// skipped when `this` is a TUPLE with all-constant inputs and no control
+// dependency, whose output presence is unconditional anyway.
 //
-// NOTE(pag): `incoming_view` is there to tell is if `this` ever even had any
+// NOTE(pag): `incoming_view` is there to tell us if `this` ever even had any
 //            dependencies. This is really only relevant to TUPLEs, and so
 //            it's permissible for things like MAPs, NEGATEs, etc. to pass
 //            in `this` for `incoming_view`, to force a non-NULL.
 //
 // NOTE(pag): This assumes `in_to_out` is filled up, and operates on
 //            `input_columns` and `attached_columns` to find the best version
-//            of a column from `in_to_out`.
+//            of a column from `in_to_out`. MAP output columns are forwarded
+//            positionally rather than through `in_to_out`: `bound`- and
+//            `free`-attributed functor parameters interleave, so there is
+//            no alignment between a MAP's input and output columns.
+//
+//    tuple = new TUPLE mirroring this->columns
+//    SubstituteAllUsesWith(tuple)
+//    for i, col in this->columns:
+//      if col is a constant ref:   tuple.inputs += the constant
+//      elif this is a MAP:         tuple.inputs += col
+//      elif i < first_attached:    tuple.inputs += in_to_out[input[i]]
+//      else:                       tuple.inputs += in_to_out[attached[...]]
+//    if GetIncomingView(tuple.inputs) != this and this may filter data:
+//      tuple.CreateDependencyOnView(this)     // COND refcount on this
+//
+//   before:                          after:
+//
+//    V                                V
+//    |                                |
+//    CMP(out: X, Y=7, X)              CMP(out: X, Y, Z)
+//      |         \                     |
+//    UNION      users                 TUPLE(in: X, 7, X ->
+//                                           out: X', Y'=7, Z')
+//                                       |         \
+//                                     UNION      users
+//
+//   all-forwarded case (tuple reads nothing from `this`):
+//
+//    V ---sets COND c---.
+//                     TUPLE[tests +c](in: consts...) --> users
 QueryTupleImpl *
 QueryViewImpl::GuardWithOptimizedTuple(QueryImpl *query,
                                        unsigned first_attached_col,
@@ -961,6 +1168,36 @@ QueryViewImpl::GuardWithOptimizedTuple(QueryImpl *query,
 
 // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
 // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
+// This materializes a constraint between two columns as an explicit CMP
+// node fed by `this`, then restores the original column interface with a
+// pass-through TUPLE, which is returned so that the caller can redirect
+// existing users of `this` onto it. For `kEqual` the CMP fuses both inputs
+// into a single output column -- downstream, the two columns are provably
+// one value -- and the trailing TUPLE re-emits that fused column in both
+// original positions. All other columns of `this` ride along as attached
+// columns of the CMP. For symmetric operators (equal/not-equal) with only
+// the right operand constant, the operands swap so the constant sits on
+// the left. `in_to_out` is rebuilt to map each original column of `this`
+// to its corresponding CMP output.
+//
+//    if op in {=, !=} and rhs is constant and lhs is not: swap operands
+//    cmp = CMP(op; in: lhs, rhs; attached: remaining columns of this)
+//      kEqual: one fused output for lhs and rhs
+//      else:   separate outputs for lhs and rhs
+//    in_to_out = original column -> cmp output column
+//    tuple = TUPLE re-emitting this->columns' order from cmp outputs
+//    return tuple
+//
+//   before:                          after (op is A = B):
+//
+//    VIEW(out: A, B, C)               VIEW(out: A, B, C)
+//      |                                |
+//    users                             CMP A=B (in: A, B; attached: C
+//                                                -> out: AB, C)
+//                                        |
+//                                      TUPLE(out: AB, AB, C)
+//                                        |
+//                                      users (moved here by caller)
 QueryTupleImpl *
 QueryViewImpl::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
                                    QueryColumnImpl *lhs_col,
@@ -1067,19 +1304,63 @@ bool QueryViewImpl::ColumnsEq(EqualitySet &eq,
 
 // If `cols1:cols2` pull their data from a tuple, and if that tuple is
 // unconditional, or if its conditions are trivial, then update `cols1:cols2`
-// to point at the source of the data of those tuples.
+// to point at the source of the data of those tuples. This retargets the
+// input use lists of `this` through arbitrarily long chains of forwarding
+// TUPLEs (and, via `PullDataFromBeyondTrivialUnions`, single-source UNIONs)
+// so that `this` reads directly from the ultimate producer. Skipping a
+// forwarding view is sound only when that view cannot filter data, i.e. it
+// tests no negative conditions and only trivial positive ones. Constant
+// columns in the lists pass through unchanged. Shortening the dependency
+// chains reduces dataflow depth, and bypassed tuples that lose their last
+// user become dead and are removed later.
 //
 // Takes in the `incoming_view` pulled from by `cols1:cols2` and returns the
-// updated `incoming_view`.
+// updated `incoming_view`. Recursion stops when the incoming view stops
+// changing, which is the fixpoint reached by self-recursive dataflows.
 //
 // NOTE(pag): This updates `is_canonical = false` if it changes anything.
+//
+//    if incoming_view is null, or is `this`, or may filter: return as-is
+//    if incoming_view is not a TUPLE:
+//      return PullDataFromBeyondTrivialUnions(incoming_view, cols1, cols2)
+//    for col in cols1 and cols2:
+//      if col.view == tuple: col = tuple.input_columns[col.Index()]
+//      else:                 keep col (a constant)
+//    recurse on GetIncomingView(cols1, cols2)
+//
+//   before:                          after:
+//
+//    SELECT(out: s0, s1)              SELECT(out: s0, s1)
+//      |                                |
+//    TUPLE(out: t0, t1)  <- trivial     |   TUPLE (unused -> dead)
+//      |                                |
+//    this(in: t0, c, t1)              this(in: s0, c, s1)
 QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuples(
     QueryViewImpl *incoming_view, UseList<QueryColumnImpl> &cols1,
     UseList<QueryColumnImpl> &cols2) {
+  std::vector<QueryViewImpl *> visited;
+  return PullDataFromBeyondTrivialTuplesImpl(visited, incoming_view, cols1,
+                                             cols2);
+}
+
+QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuplesImpl(
+    std::vector<QueryViewImpl *> &visited, QueryViewImpl *incoming_view,
+    UseList<QueryColumnImpl> &cols1, UseList<QueryColumnImpl> &cols2) {
 
   if (!incoming_view || this == incoming_view) {
     return incoming_view;
   }
+
+  // The chase has come back around a forwarding cycle (one with no external
+  // data source, e.g. the dataflow of mutually forwarding clauses); the
+  // incoming view repeating is the cycle analogue of the incoming view no
+  // longer changing, so stop here and let dead-flow elimination collect the
+  // source-less cycle.
+  if (std::find(visited.begin(), visited.end(), incoming_view) !=
+      visited.end()) {
+    return incoming_view;
+  }
+  visited.push_back(incoming_view);
 
   if (!incoming_view->negative_conditions.Empty()) {
     return incoming_view;
@@ -1093,7 +1374,8 @@ QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuples(
 
   const auto tuple = incoming_view->AsTuple();
   if (!tuple) {
-    return PullDataFromBeyondTrivialUnions(incoming_view, cols1, cols2);
+    return PullDataFromBeyondTrivialUnions(visited, incoming_view, cols1,
+                                           cols2);
   }
 
   UseList<QueryColumnImpl> new_cols1(this);
@@ -1117,23 +1399,61 @@ QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuples(
     }
   }
 
+  // If this hop would leave `this` reading its own output columns then the
+  // forwarding chain is a cycle with no external data source (e.g. the
+  // dataflow of `p(A) : p(A).`). A view must never be its own user, so stop
+  // the chase one hop early and keep reading through the last forwarding
+  // tuple; dead-flow elimination is responsible for collecting the
+  // source-less cycle.
+  if (GetIncomingView(new_cols1, new_cols2) == this) {
+    return incoming_view;
+  }
+
   is_canonical = false;
 
   cols1.Swap(new_cols1);
   cols2.Swap(new_cols2);
 
-  // See `recursion.dr`.
+  // Recursion stops at the fixpoint of a self-recursive dataflow.
   const auto next_incoming_view = GetIncomingView(cols1, cols2);
   if (next_incoming_view == incoming_view) {
     return next_incoming_view;
   }
 
-  return PullDataFromBeyondTrivialTuples(next_incoming_view, cols1, cols2);
+  return PullDataFromBeyondTrivialTuplesImpl(visited, next_incoming_view,
+                                             cols1, cols2);
 }
 
+// Companion to `PullDataFromBeyondTrivialTuples` for UNIONs (MERGEs): when
+// `maybe_merge` is a trivially conditional UNION whose merged views reduce
+// to exactly one distinct real data source, retarget `cols1:cols2` to read
+// that source's columns directly, bypassing the UNION. Merged entries that
+// are `this` (a direct recursion back through the reader), the merge
+// itself, or repeats of the already-chosen source do not count as extra
+// sources; if a second distinct source exists, the UNION genuinely merges
+// data and cannot be skipped. A UNION testing negative or non-trivial
+// positive conditions may filter, so it is also kept. After the rewrite,
+// tuple-skipping resumes from the discovered source.
+//
+//    if maybe_merge is not a UNION, or may filter: return as-is
+//    source = unique view in merged_views excluding {this, merge, dups}
+//    if no source, or more than one: return as-is
+//    for col in cols1 and cols2:
+//      if col.view == merge: col = source.columns[col.Index()]
+//      else:                 keep col (a constant)
+//    is_canonical = false
+//    return PullDataFromBeyondTrivialTuples(source, cols1, cols2)
+//
+//   before:                          after:
+//
+//    V(out: v0, v1)                   V(out: v0, v1)
+//      |                                |
+//    UNION(V, this)(out: u0, u1)        |   UNION (may become dead)
+//      |                                |
+//    this(in: u0, u1)                 this(in: v0, v1)
 QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialUnions(
-    QueryViewImpl *maybe_merge, UseList<QueryColumnImpl> &cols1,
-    UseList<QueryColumnImpl> &cols2) {
+    std::vector<QueryViewImpl *> &visited, QueryViewImpl *maybe_merge,
+    UseList<QueryColumnImpl> &cols1, UseList<QueryColumnImpl> &cols2) {
 
   QueryMergeImpl *const merge = maybe_merge->AsMerge();
   if (!merge) {
@@ -1197,10 +1517,24 @@ QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialUnions(
   cols1.Swap(new_cols1);
   cols2.Swap(new_cols2);
 
-  return PullDataFromBeyondTrivialTuples(incoming_view, cols1, cols2);
+  return PullDataFromBeyondTrivialTuplesImpl(visited, incoming_view, cols1,
+                                             cols2);
 }
 
-// Figure out what the incoming view to `cols1` is.
+// Figure out what the incoming view to `cols1` is: the view producing the
+// first non-constant column, or `nullptr` when every column is a constant.
+// Canonicalizers use this to discover the unique predecessor that a use
+// list reads from; a well-formed use list references at most one
+// non-constant view (`CheckIncomingViewsMatch` asserts this), so the first
+// non-constant column determines it. A `nullptr` result means the view
+// consumes only constants and has no dataflow dependency.
+//
+//    for col in cols1:
+//      if col is not a constant: return col.view
+//    return nullptr
+//
+//    V(out: a, b)   c = constant
+//    [c, a, b] -> V        [c, c] -> nullptr
 QueryViewImpl *QueryViewImpl::GetIncomingView(
     const UseList<QueryColumnImpl> &cols1) {
   for (QueryColumnImpl *col : cols1) {
@@ -1211,7 +1545,16 @@ QueryViewImpl *QueryViewImpl::GetIncomingView(
   return nullptr;
 }
 
-// Figure out what the incoming view to `cols1` and/or `cols2` is.
+// Figure out what the incoming view to `cols1` and/or `cols2` is: the view
+// producing the first non-constant column across both lists (`cols1`
+// checked first), or `nullptr` when every column in both lists is a
+// constant. This is the two-list form used by views with both
+// `input_columns` and `attached_columns`; both lists draw from the same
+// single predecessor.
+//
+//    for col in cols1 then cols2:
+//      if col is not a constant: return col.view
+//    return nullptr
 QueryViewImpl *QueryViewImpl::GetIncomingView(
     const UseList<QueryColumnImpl> &cols1,
     const UseList<QueryColumnImpl> &cols2) {
@@ -1233,11 +1576,19 @@ QueryViewImpl *QueryViewImpl::GetIncomingView(
 // depends directly on a condition, or that it depends on something that
 // may be present or may be absent (e.g. the output of a `JOIN`).
 //
-// Conditional in this case means: if data comes into `view`, then does data
-// *always* come out of `view`? If the answer is "no" then it is conditional,
-// otherwise it isn't. The relevant thing here is CONDitions, which are
-// implemented as reference counts on some QueryViewImpl. If that view will
-// always have data, then we say that the view isn't conditional.
+// Conditional in this case means: does `view` always have data after
+// initialization? Unconditional views derive purely from constants, which
+// are inserted at init time. Callers rely on this: `IsTrivial` treats a
+// condition with only unconditional setters as always satisfied, and drops
+// tests of it. The relevant thing here is CONDitions, which are implemented
+// as reference counts on some QueryViewImpl. If that view will always have
+// data, then we say that the view isn't conditional.
+//
+// A view whose evaluation is in progress when it is queried again depends
+// on itself through a cycle. A cycle contributes no data of its own, so it
+// cannot prove that data is always present; the in-progress entry is
+// therefore pessimistically `true` (conditional), and every path that
+// proves unconditionality stores `false` explicitly.
 bool QueryViewImpl::IsConditional(
     QueryViewImpl *view,
     std::unordered_map<QueryViewImpl *, bool> &conditional_views) {
@@ -1247,7 +1598,14 @@ bool QueryViewImpl::IsConditional(
   }
 
   auto &is_cond = conditional_views[view];
-  is_cond = false;  // Sets a base case.
+  is_cond = true;  // Pessimistic answer for cyclic re-entry.
+
+  // An unsatisfiable or dead view never has data, so it certainly does not
+  // always have data.
+  if (view->is_unsat || view->is_dead) {
+    is_cond = true;
+    return true;
+  }
 
   if (!view->negative_conditions.Empty()) {
     is_cond = true;
@@ -1289,12 +1647,19 @@ bool QueryViewImpl::IsConditional(
     }
 
   } else if (QueryMergeImpl *merge = view->AsMerge()) {
+
+    // A MERGE with no merged views never has data.
+    if (merge->merged_views.Empty()) {
+      is_cond = true;
+      return true;
+    }
     for (QueryViewImpl *merged_view : merge->merged_views) {
       if (IsConditional(merged_view, conditional_views)) {
         is_cond = true;
         return true;
       }
     }
+    is_cond = false;
     return false;
 
   } else if (QuerySelectImpl *sel = view->AsSelect()) {
@@ -1303,6 +1668,7 @@ bool QueryViewImpl::IsConditional(
         is_cond = true;
         return true;
       } else {
+        is_cond = false;
         return false;
       }
     } else if (QueryRelationImpl *rel = sel->relation.get()) {
@@ -1314,6 +1680,7 @@ bool QueryViewImpl::IsConditional(
       }
     }
 
+    is_cond = false;
     return false;
 
   } else if (view->AsTuple() || view->AsInsert()) {
@@ -1359,7 +1726,31 @@ QueryViewImpl *QueryViewImpl::OnlyUser(void) const noexcept {
   return fail ? nullptr : only_user;
 }
 
-// Create or inherit a condition created on `view`.
+// Create or inherit a condition created on `view`, making the output
+// presence of `this` conditional on `view` holding data. CONDitions act as
+// reference counts on a view's contents: by testing one as a positive
+// condition, `this` produces output only while `view` has at least one
+// derivation. This preserves soundness when an optimization (e.g.
+// `GuardWithOptimizedTuple`) removes the last column-level dataflow edge
+// from `view` into `this` -- the data dependency is re-expressed as a
+// control dependency. If `view` already sets a condition and is its sole
+// setter, that condition is reused; if the condition has other setters,
+// testing it would admit data whenever *any* setter holds, which is looser
+// than depending on `view` itself, so `view` is first guarded with a
+// forced tuple (the shared set-condition migrates to the guard) and a
+// fresh condition is created on `view`. Trivially true conditions are not
+// tested.
+//
+//    if view sets cond and view is its only setter: reuse cond
+//    else:
+//      if view sets a shared cond: view.GuardWithTuple(force)
+//      cond = new COND; view sets cond
+//    if cond is nontrivial: this tests +cond
+//
+//   before:                          after:
+//
+//    view      this                   view ---sets COND c
+//    (no dataflow edge)               this[tests +c]
 void QueryViewImpl::CreateDependencyOnView(QueryImpl *query,
                                            QueryViewImpl *view) {
   assert(this != view);

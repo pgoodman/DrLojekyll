@@ -1,0 +1,10 @@
+; SELECT canonicalization: a RECEIVE whose payload columns are all
+; wildcards still sets a zero-arity CONDition, so the dead-source
+; elimination must keep it alive (sets_condition guard). The query
+; result depends on whether the `on` condition ever fires.
+#message enable(u32 X).
+#message ping(i32 Y).
+#query is_on(free i32 Y).
+
+on : enable(_).
+is_on(Y) : on, ping(Y).

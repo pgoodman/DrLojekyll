@@ -1,0 +1,12 @@
+; Dropping the last non-constant input creates a CONDition dependency:
+; indirect's TUPLE keeps only the constant 1 but must still test a
+; condition set by the `something` view, so proof(1) appears only after
+; a something message arrives.
+
+#message something(i32 X).
+#local indirect(i32 X).
+#query proof(free i32 X).
+
+has_something : something(_).
+indirect(1) : has_something.
+proof(A) : indirect(A).

@@ -1,0 +1,18 @@
+; INSERT canonicalization: the JOIN of two disjoint constant facts is
+; unsatisfiable, so the INSERT feeding q_dead is marked unsat and deleted
+; (and stays deleted on later fixpoint rounds). q_live keeps a satisfiable
+; INSERT fed by a message joined against a constant fact.
+
+#message m(i32 A, i32 B).
+
+#local bar(i32 A, i32 B).
+#local baz(i32 A, i32 B).
+
+#query q_dead(free i32 A, free i32 B).
+#query q_live(free i32 A, free i32 B).
+
+bar(1, 2).
+baz(3, 4).
+
+q_dead(A, B) : bar(A, B), baz(A, B).
+q_live(A, B) : m(A, B), bar(A, B).

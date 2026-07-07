@@ -1,0 +1,21 @@
+; PARALLEL corner cases: a message fanning out to several independent
+; consumers builds nested parallels (flattened into the parent); t and u
+; are exact structural duplicates (full-depth CSE keeps one); dead feeds a
+; never-queried local, so its branch is a no-op child whose removal
+; triggers recursive re-optimization; v differs (guarded), so the union at
+; q keeps distinct contributors.
+
+#message in(i32 A).
+#local t(i32 A).
+#local u(i32 A).
+#local v(i32 A).
+#local dead(i32 A).
+#query q(free i32 A).
+
+t(A) : in(A).
+u(A) : in(A).
+v(A) : in(A), A != 100.
+dead(A) : in(A).
+q(A) : t(A).
+q(A) : u(A).
+q(A) : v(A).

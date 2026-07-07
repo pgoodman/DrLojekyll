@@ -1,0 +1,21 @@
+; PullDataFromBeyondTrivialUnions: `d` is a UNION whose only non-self
+; operand is the tuple over `input` (the self-recursive clause d(A):d(A)
+; is filtered out), so readers can bypass the merge entirely. `e` unions
+; two genuinely distinct message sources, so its readers must keep
+; pulling from the MERGE.
+
+#message input(i32 A).
+#message m1(i32 A).
+#message m2(i32 A).
+#local d(i32 A).
+#local e(i32 A).
+#query out_self(free i32 A).
+#query out_two(free i32 A).
+
+d(A) : d(A).
+d(A) : input(A).
+out_self(A) : d(A).
+
+e(A) : m1(A).
+e(A) : m2(A).
+out_two(A) : e(A), A != 0.

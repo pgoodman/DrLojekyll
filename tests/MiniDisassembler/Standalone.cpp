@@ -1,72 +1,61 @@
 // Copyright 2021, Trail of Bits. All rights reserved.
 
-#include <gtest/gtest.h>
+#include <DrTest.h>
 
 #include <algorithm>
-#include <vector>
-#include <iomanip>
+#include <cstdint>
 #include <iostream>
-#include <set>
-#include <cstdio>
-#include <cinttypes>
+#include <vector>
 
-#include <drlojekyll/Runtime/StdRuntime.h>
-#include "mini_disassembler.db.h"  // Auto-generated.
+#include "mini_disassembler.h"  // Auto-generated.
 
-template <typename DB>
-void dump(DB &db) {
+using namespace mini_disassembler;
+
+namespace {
+
+void Dump(Database &db) {
   std::cout << "Dump:\n";
-
-  for (auto func_ea = 0; func_ea < 50; func_ea++) {
-    db.function_instructions_bf(func_ea, [] (uint64_t func_ea_, uint64_t inst_ea) {
-      std::cout << "  FuncEA=" << func_ea_ << " InstEA=" << inst_ea << "\n";
-      return true;
-    });
+  for (uint64_t func_ea = 0; func_ea < 50; func_ea++) {
+    auto cursor = db.function_instructions_bf(func_ea);
+    for (uint64_t inst_ea = 0; cursor.next(inst_ea);) {
+      std::cout << "  FuncEA=" << func_ea << " InstEA=" << inst_ea << "\n";
+    }
   }
-
   std::cout << "\n";
 }
 
-template <typename DB>
-size_t NumFunctionInstructions(DB &db, uint64_t func_ea) {
+size_t NumFunctionInstructions(Database &db, uint64_t func_ea) {
   std::vector<uint64_t> eas;
-  db.function_instructions_bf(func_ea, [&eas] (uint64_t, uint64_t inst_ea) {
+  auto cursor = db.function_instructions_bf(func_ea);
+  for (uint64_t inst_ea = 0; cursor.next(inst_ea);) {
     eas.push_back(inst_ea);
-    return true;
-  });
+  }
   std::sort(eas.begin(), eas.end());
-  auto it = std::unique(eas.begin(), eas.end());
+  const auto it = std::unique(eas.begin(), eas.end());
   eas.erase(it, eas.end());
   return eas.size();
 }
 
-using DatabaseStorage = hyde::rt::StdStorage;
-using DatabaseFunctors = mini_disassembler::DatabaseFunctors<DatabaseStorage>;
-using DatabaseLog = mini_disassembler::DatabaseLog<DatabaseStorage>;
-using Database = mini_disassembler::Database<DatabaseStorage, DatabaseLog, DatabaseFunctors>;
+}  // namespace
 
-template <typename... Args>
-using Vector = hyde::rt::Vector<DatabaseStorage, Args...>;
-
-// A simple Google Test example
 TEST(MiniDisassembler, DifferentialUpdatesWork) {
+  const auto allocator = hyde::rt::MallocAllocator();
 
   DatabaseFunctors functors;
   DatabaseLog log;
-  DatabaseStorage storage;
-  Database db(storage, log, functors);
+  Database db(allocator, log, functors);
 
   // Start with a few instructions, with no control-flow between them.
-  Vector<uint64_t> instructions(storage, 0);
-  instructions.Add(10);
-  instructions.Add(11);
-  instructions.Add(12);
-  instructions.Add(13);
-  instructions.Add(14);
-  instructions.Add(15);
+  hyde::rt::Vec<instruction_input> instructions(allocator);
+  instructions.Add({10});
+  instructions.Add({11});
+  instructions.Add({12});
+  instructions.Add({13});
+  instructions.Add({14});
+  instructions.Add({15});
   db.instruction_1(std::move(instructions));
 
-  dump(db);
+  Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 1u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 1u);
@@ -77,16 +66,15 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
 
   // Now we add the fall-through edges, and 10 is the only instruction with
   // no predecessor, so its the function head.
-  Vector<uint64_t, uint64_t, mini_disassembler::EdgeType> transfers(storage, 0);
-
-  transfers.Add(10, 11, mini_disassembler::EdgeType::FALL_THROUGH);
-  transfers.Add(11, 12, mini_disassembler::EdgeType::FALL_THROUGH);
-  transfers.Add(12, 13, mini_disassembler::EdgeType::FALL_THROUGH);
-  transfers.Add(13, 14, mini_disassembler::EdgeType::FALL_THROUGH);
-  transfers.Add(14, 15, mini_disassembler::EdgeType::FALL_THROUGH);
+  hyde::rt::Vec<raw_transfer_input> transfers(allocator);
+  transfers.Add({10, 11, EdgeType::FALL_THROUGH});
+  transfers.Add({11, 12, EdgeType::FALL_THROUGH});
+  transfers.Add({12, 13, EdgeType::FALL_THROUGH});
+  transfers.Add({13, 14, EdgeType::FALL_THROUGH});
+  transfers.Add({14, 15, EdgeType::FALL_THROUGH});
   db.raw_transfer_3(std::move(transfers));
 
-  dump(db);
+  Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 6u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
@@ -98,11 +86,11 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // Now add the instruction 9. It will show up as a function head, because
   // it has no predecessors. The rest will stay the same because there is
   // no changes to control-flow.
-  Vector<uint64_t> instructions2(storage, 0);
-  instructions2.Add(9);
+  hyde::rt::Vec<instruction_input> instructions2(allocator);
+  instructions2.Add({9});
   db.instruction_1(std::move(instructions2));
 
-  dump(db);
+  Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 1u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 6u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
@@ -111,14 +99,14 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   ASSERT_EQ(NumFunctionInstructions(db, 14), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 15), 0u);
 
-  // Now add a fall-through between 9 and 10. 10 now has a successor, so it's
-  // not a function head anymore, so all of the function instructions transfer
-  // over to function 9.
-  Vector<uint64_t, uint64_t, mini_disassembler::EdgeType> transfers2(storage, 0);
-  transfers2.Add(9, 10, mini_disassembler::EdgeType::FALL_THROUGH);
+  // Now add a fall-through between 9 and 10. 10 now has a predecessor, so
+  // it's not a function head anymore, so all of the function instructions
+  // transfer over to function 9.
+  hyde::rt::Vec<raw_transfer_input> transfers2(allocator);
+  transfers2.Add({9, 10, EdgeType::FALL_THROUGH});
   db.raw_transfer_3(std::move(transfers2));
 
-  dump(db);
+  Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 7u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
@@ -130,11 +118,11 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // Now add a function call between 10 and 14. That makes 14 look like
   // a function head, and so now that 14 is a function head, it's no longer
   // part of function 9.
-  Vector<uint64_t, uint64_t, mini_disassembler::EdgeType> transfers3(storage, 0);
-  transfers3.Add(10, 14, mini_disassembler::EdgeType::CALL);
+  hyde::rt::Vec<raw_transfer_input> transfers3(allocator);
+  transfers3.Add({10, 14, EdgeType::CALL});
   db.raw_transfer_3(std::move(transfers3));
 
-  dump(db);
+  Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 5u);
   ASSERT_EQ(NumFunctionInstructions(db, 10), 0u);
   ASSERT_EQ(NumFunctionInstructions(db, 11), 0u);
@@ -143,4 +131,3 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   ASSERT_EQ(NumFunctionInstructions(db, 14), 2u);
   ASSERT_EQ(NumFunctionInstructions(db, 15), 0u);
 }
-

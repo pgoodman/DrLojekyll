@@ -1,0 +1,22 @@
+; F12 regression: @product inside a recursive cycle.
+; t --> p (product with s) --> back into t. p straddles the induction:
+; predecessor t is inductive, predecessor s is not.
+
+#message m1(i32 A).
+#message m2(i32 B).
+
+#local t(i32 A).
+#local s(i32 B).
+#local p(i32 A, i32 B).
+
+#query q_t(free i32 A).
+#query q_p(free i32 A, free i32 B).
+
+t(A) : m1(A).
+s(B) : m2(B).
+
+p(A, B) @product : t(A), s(B).
+t(B) : p(_, B).
+
+q_t(A) : t(A).
+q_p(A, B) : p(A, B).

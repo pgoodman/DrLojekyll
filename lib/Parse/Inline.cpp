@@ -8,8 +8,6 @@ namespace hyde {
 namespace {
 
 static const std::unordered_set<std::string> kValidStages{
-  "c++:database:descriptors:prologue",
-  "c++:database:descriptors:epilogue",
   "c++:database:functors:prologue",
   "c++:database:functors:definition:prologue",
   "c++:database:functors:definition:epilogue",
@@ -24,12 +22,6 @@ static const std::unordered_set<std::string> kValidStages{
   "c++:database:prologue:namespace",
   "c++:database:epilogue:namespace",
   "c++:database:epilogue",
-  "c++:interface:prologue",
-  "c++:interface:prologue:namespace",
-  "c++:interface:epilogue:namespace",
-  "c++:interface:epilogue",
-  "python:database:prologue",
-  "python:database:epilogue",
 };
 
 }  // namespace

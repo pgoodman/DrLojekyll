@@ -1,0 +1,31 @@
+; CMP sinking guards around negation: a merged local that is also used by
+; a negation must block sinking through the merge, and a comparison over
+; the outputs of a NEGATE predecessor exercises TrySinkThroughNegate.
+
+#message a(i32 X, i32 Y).
+#message b(i32 X, i32 Y).
+#message c(i32 X).
+#local t(i32 X, i32 Y).
+t(X, Y) : a(X, Y).
+t(X, Y) : b(X, Y).
+
+; Unary projection of t used under negation.
+#local tx(i32 X).
+tx(X) : t(X, _).
+
+; Comparison over the union: sinking must be blocked because tx (fed by t)
+; participates in a negation elsewhere.
+#query q(free i32 X).
+q(X) : t(X, Y), X < Y.
+
+#query r(free i32 X).
+r(X) : c(X), !tx(X).
+
+; Comparison downstream of a NEGATE.
+#message in(i32 X, i32 Y).
+#message bad(i32 X).
+#local badl(i32 X).
+badl(X) : bad(X).
+
+#query s(free i32 X, free i32 Y).
+s(X, Y) : in(X, Y), !badl(X), X < Y.

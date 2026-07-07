@@ -1,0 +1,29 @@
+; Nested UNION flattening: the child UNION for `inner` is exclusively
+; used by the UNION for `outer`, so its operands are spliced into the
+; parent.  Also exercises look-through of exclusively-owned forwarding
+; TUPLE operands, and the unused-output-column merge guard: `proj`'s
+; second column is never used downstream, so each operand is routed
+; through a projecting MERGE-GUARD tuple.
+
+#message m1(i32 X, i32 Y).
+#message m2(i32 X, i32 Y).
+#message m3(i32 X, i32 Y).
+
+#local inner(i32 X, i32 Y) @inline.
+#local outer(i32 X, i32 Y).
+#local proj(i32 X, i32 Y) @inline.
+
+#query q_outer(free i32 X, free i32 Y).
+#query q_proj(free i32 X).
+
+inner(X, Y) : m1(X, Y).
+inner(X, Y) : m2(X, Y).
+
+outer(X, Y) : inner(X, Y).
+outer(X, Y) : m3(X, Y).
+
+proj(X, Y) : m1(X, Y).
+proj(X, Y) : m2(Y, X).
+
+q_outer(X, Y) : outer(X, Y).
+q_proj(X) : proj(X, _).

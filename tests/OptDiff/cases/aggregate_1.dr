@@ -1,0 +1,15 @@
+; AGGREGATE canonicalization: literal-constant group-by column.
+; The group-by column B is bound to the literal 1, so canonicalization
+; should drop it from the grouping key and forward the constant.
+#functor count_i32(aggregate i32 Val, summary i32 Count).
+#message pair(i32 X, i32 Y).
+#local grouped(i32 A, i32 B, i32 N).
+#query get_grouped(free i32 A, free i32 B, free i32 N).
+
+grouped(A, B, N)
+  : count_i32(Y, N)
+    over (i32 A, i32 B, i32 Y) {
+      pair(A, Y), B = 1
+    }.
+
+get_grouped(A, B, N) : grouped(A, B, N).

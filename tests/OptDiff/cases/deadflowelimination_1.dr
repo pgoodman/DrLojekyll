@@ -1,0 +1,13 @@
+; Dead-flow: underivable self-recursive relation (no base case) and
+; MERGE arm pruning: d merges a live message-fed arm with a ghost arm.
+#message in(i32 A).
+#local ghost(i32 A).
+#local d(i32 A).
+#query out_d(free i32 A).
+#query out_ghost(free i32 A).
+
+ghost(A) : ghost(A).
+d(A) : in(A).
+d(A) : ghost(A).
+out_d(A) : d(A).
+out_ghost(A) : ghost(A).

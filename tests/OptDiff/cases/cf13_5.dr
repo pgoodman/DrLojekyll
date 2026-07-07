@@ -1,0 +1,14 @@
+; LET corner cases: column permutation between a message and a local
+; creates renaming LETs whose bindings are propagated and whose node is
+; replaced by its body; the unused permuted local produces a LET whose
+; body is cleared first (bindings but no body), left empty for dead-region
+; removal.
+
+#message in(i32 A, i32 B).
+#local t(i32 A, i32 B).
+#local dead(i32 B, i32 A).
+#query q(free i32 A, free i32 B).
+
+t(B, A) : in(A, B).
+dead(B, A) : in(A, B).
+q(A, B) : t(A, B).

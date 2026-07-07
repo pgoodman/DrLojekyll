@@ -1,0 +1,15 @@
+; Corner case: repeated-input-columns. One input column (t2's B) feeds two
+; different JOIN output columns; the JOIN is rebuilt with unique columns and
+; a TUPLE above restores the original arity/order.
+
+#message m1(i32 A).
+#message m2(i32 A, i32 B).
+
+#local t1(i32 A).
+#local t2(i32 A, i32 B).
+
+t1(A) : m1(A).
+t2(A, B) : m2(A, B).
+
+#query q(free i32 A, free i32 B, free i32 C).
+q(A, B, B) : t1(A), t2(A, B).

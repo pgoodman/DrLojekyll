@@ -1,0 +1,13 @@
+; CHANGETUPLE with @differential removal: failure continuations arise from
+; the bottom-up removal path; some collapse to no-ops and are pruned, while
+; the join keeps both success and failure arms live (they must be distinct
+; regions per the pass assert).
+
+#message add_edge(u32 From, u32 To) @differential.
+#local edge(u32 From, u32 To).
+#local sym(u32 From, u32 To).
+#query symmetric(free u32 From, free u32 To).
+
+edge(F, T) : add_edge(F, T).
+sym(F, T) : edge(F, T), edge(T, F).
+symmetric(F, T) : sym(F, T).

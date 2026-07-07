@@ -1,0 +1,16 @@
+; INSERT canonicalization: q_const's INSERT has all-constant input columns
+; (GetIncomingView is null, so the pull and unsat checks are no-ops), and
+; q_join's INSERT reads a single well-formed incoming view, exercising the
+; passing path of the incoming-view consistency check.
+
+#message m(i32 A).
+
+#local one(i32 A, i32 B).
+
+#query q_const(free i32 A, free i32 B).
+#query q_join(free i32 A).
+
+one(1, 2).
+
+q_const(A, B) : one(A, B).
+q_join(A) : m(A), one(A, _).

@@ -1,0 +1,13 @@
+; SELECT Equals for relation PUSHes: the base and recursive reads of the
+; inductive `path` relation (and the two reads of `edge`) have the same
+; declaration but overlapping insert sets, so they must NOT be merged;
+; fusing them would conflate distinct derivation paths of the induction.
+#message base(i32 A, i32 B).
+#local edge(i32 A, i32 B).
+#local path(i32 A, i32 B).
+#query reach(bound i32 A, free i32 B).
+
+edge(A, B) : base(A, B).
+path(A, B) : edge(A, B).
+path(A, C) : path(A, B), edge(B, C).
+reach(A, B) : path(A, B).

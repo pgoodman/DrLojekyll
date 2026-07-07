@@ -1,0 +1,10 @@
+; Dead-flow: a recursive clause that permutes columns is not a trivial
+; cycle (positional column-index check fails) and is semantically
+; meaningful: it symmetrizes the relation.
+#message in(i32 A, i32 B).
+#local d(i32 A, i32 B).
+#query out(free i32 A, free i32 B).
+
+d(A, B) : in(A, B).
+d(A, B) : d(B, A).
+out(A, B) : d(A, B).

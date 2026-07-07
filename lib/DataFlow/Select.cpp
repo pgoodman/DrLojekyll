@@ -135,16 +135,43 @@ unsigned QuerySelectImpl::Depth(void) noexcept {
 // Put this view into a canonical form. Returns `true` if changes were made
 // beyond the scope of this view.
 //
-// NOTE(pag): We have a kind of manual/duplicate version of VIEW::IsUsed here
-//            because the actual RELATION or STREAM nodes might be holding
-//            references to this VIEW, and thus make it look used when it's
-//            not.
+// A SELECT is a dataflow source: it pushes rows out of a RELATION (PUSH),
+// receives tuples of an input message (RECEIVE), or yields a constant
+// (CONST). Canonicalizing a SELECT is dead-source elimination: when no
+// downstream view consumes any of its columns, the node is detached from the
+// query and marked dead, so no receive/scan machinery is ever generated for
+// data that cannot flow anywhere. The owning RELATION or IO stream always
+// holds a reference back to the SELECT, which makes the generic
+// `VIEW::IsUsed` test report every SELECT as used; this pass therefore runs
+// its own usage scan, first over the output columns and then over the actual
+// VIEW-to-VIEW use edges (`average_weight.dr` produces an orphaned SELECT
+// that only this scan detects). A SELECT that sets a zero-argument CONDition
+// is kept as-is, because condition testers depend on it without consuming
+// any of its columns. The sole remaining RECEIVE of a message is also kept
+// as-is: the message is part of the program's external interface, and its
+// handler must exist even when optimization proves that the received data
+// can never flow anywhere (the handler simply discards it).
 //
-// TODO(pag): This really shouldn't be needed. We probably have a bug in
-//            `connect` or something like that. If we disable this function
-//            then there's an orphaned SELECT in `average_weight.dr`. This
-//            is because the RELation or IO holds onto a use of the SELECT
-//            and so the SELECT always looks used.
+//     if dead or sets a CONDition:           keep as-is
+//     if any output column has a user:       already canonical
+//     if any VIEW uses this SELECT:          already canonical
+//     // only the RELATION/IO back-references remain
+//     if this is the sole RECEIVE of its message: keep as-is
+//     detach from the query and mark dead    (non-local change)
+//
+// Unused source elimination (`A`, `B` have no users):
+//
+//     RECEIVE msg              (node deleted, unless it is the last
+//       A  B          ==>       RECEIVE of `msg`, which stays as the
+//     (no users)                message's interface)
+//
+// Condition-setting SELECT (kept although no column is used):
+//
+//     RECEIVE msg              RECEIVE msg
+//       A  B                     A  B
+//     sets COND c     ==>      sets COND c        (unchanged)
+//         :                        :
+//     testers of c             testers of c
 bool QuerySelectImpl::Canonicalize(QueryImpl *query,
                                      const OptimizationContext &opt,
                                      const ErrorLog &err) {
@@ -170,16 +197,11 @@ bool QuerySelectImpl::Canonicalize(QueryImpl *query,
 
   if (!is_really_used) {
 
-    // We're dropping a `RECEIVE` on a message. This could be a sign of a bug,
-    // or of a condition not being satisfiable higher up.
+    // The last `RECEIVE` of a message is the message's interface with the
+    // outside world; it stays even when its data is proven to flow nowhere.
     if (stream) {
       if (auto io = stream->AsIO(); io && io->receives.Size() == 1u) {
-        auto predicate = *pred;
-        auto decl = ParsedDeclaration::Of(predicate);
-        auto clause = ParsedClause::Containing(predicate);
-        err.Append(clause.SpellingRange(), predicate.SpellingRange())
-            << "Last receive of message '" << decl.Name() << '/' << decl.Arity()
-            << "' is unused";
+        return false;
       }
     }
 

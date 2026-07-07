@@ -1,0 +1,20 @@
+; SELECT dead-source elimination, silent-deletion paths:
+;  - `dead` is never read, so the RECEIVE of `add` in its clause is
+;    deleted silently (add/1 has other live receives, no diagnostic);
+;  - `sink` is never read, so its INSERT dies and the orphaned PUSH
+;    out of the `mid` relation is silently removed while `mid` stays
+;    live through the query.
+; The live data through `live` and `mid` must be unaffected.
+#message add(i32 X).
+#local dead(i32 X).
+#local live(i32 X).
+#local mid(i32 X).
+#local sink(i32 X).
+#query get(free i32 X).
+
+live(X) : add(X).
+dead(X) : add(X).
+mid(X) : add(X).
+sink(X) : mid(X).
+get(X) : live(X).
+get(X) : mid(X).

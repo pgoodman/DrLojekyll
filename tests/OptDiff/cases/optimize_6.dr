@@ -1,0 +1,24 @@
+; Differential re-tracking after CSE: e1/e2 are duplicates fed by a
+; @differential message; merging them changes which views receive deletions,
+; so deletion capability must be recomputed between CSE rounds. Also an
+; unsatisfiable clause body (B = 1 via one(B), then B = 2) whose whole flow
+; must be eliminated as dead.
+
+#message add_edge(u64 From, u64 To) @differential.
+#local e1(u64 From, u64 To).
+#local e2(u64 From, u64 To).
+#query out(free u64 From, free u64 To).
+
+e1(A, B) : add_edge(A, B).
+e2(A, B) : add_edge(A, B).
+out(A, B) : e1(A, B).
+out(A, B) : e2(A, B).
+
+#message input(i32 A).
+#local impossible(i32 A, i32 B).
+#local one(i32 A).
+#query dead_out(free i32 A).
+
+one(1).
+impossible(1, B) : input(B), one(B), B = 2.
+dead_out(A) : impossible(A, _).

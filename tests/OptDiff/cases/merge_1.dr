@@ -1,0 +1,37 @@
+; UNION canonicalization basics: duplicate clauses dedupe to a
+; single-operand UNION (which is eliminated), a directly self-recursive
+; clause makes a UNION merge itself (operand filtered out), and joins of
+; disjoint constant facts make every operand unsatisfiable so the whole
+; UNION is marked unsat.
+
+#message m(i32 X).
+
+#local dup(i32 X).
+#local selfr(i32 X).
+#local unsat(i32 X).
+#local one(i32 X).
+#local two(i32 X).
+#local three(i32 X).
+#local four(i32 X).
+
+#query q_dup(free i32 X).
+#query q_self(free i32 X).
+#query q_unsat(free i32 X).
+
+dup(X) : m(X).
+dup(X) : m(X).
+
+selfr(X) : m(X).
+selfr(X) : selfr(X).
+
+one(1).
+two(2).
+three(3).
+four(4).
+
+unsat(X) : m(X), one(X), two(X).
+unsat(X) : m(X), three(X), four(X).
+
+q_dup(X) : dup(X).
+q_self(X) : selfr(X).
+q_unsat(X) : unsat(X).

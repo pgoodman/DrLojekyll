@@ -1,0 +1,11 @@
+; SELECT canonicalization two-tier usage test: each RECEIVE's columns
+; feed only a UNION/MERGE, so IsUsedIgnoreMerges() fails per column but
+; the ForEachUse<VIEW> scan finds the MERGE and keeps the RECEIVEs.
+#message a(i32 X).
+#message b(i32 X).
+#local u(i32 X).
+#query get_u(free i32 X).
+
+u(X) : a(X).
+u(X) : b(X).
+get_u(X) : u(X).

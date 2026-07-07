@@ -1,0 +1,19 @@
+; Corner cases: unused-input-columns-proxied (B and C never enter the JOIN's
+; outputs, so t1 and t2 are proxied by narrowing TUPLEs before the join) and
+; empty-out-to-in (dead_join is never read by any query, so all of its JOIN's
+; outputs die and the JOIN canonicalizes with an empty out_to_in map).
+
+#message m1(i32 A, i32 B).
+#message m2(i32 A, i32 C).
+
+#local t1(i32 A, i32 B).
+#local t2(i32 A, i32 C).
+
+t1(A, B) : m1(A, B).
+t2(A, C) : m2(A, C).
+
+#local dead_join(i32 A).
+dead_join(A) : t1(A, _), t2(A, _).
+
+#query q(free i32 A).
+q(A) : t1(A, _), t2(A, _).

@@ -1,0 +1,31 @@
+; CMP folding over unique foreign constants: equality of two distinct
+; unique constants is unsatisfiable, disequality of two distinct unique
+; constants is trivially true, and disequality of the same constant node
+; on both sides is unsatisfiable.
+
+#foreign Tok ```int```.
+#constant Tok TOK_A ```1``` @unique.
+#constant Tok TOK_B ```2``` @unique.
+
+#message tin(Tok X, Tok Y).
+#local tsrc(Tok X, Tok Y).
+tsrc(X, Y) : tin(X, Y).
+
+; X = TOK_A then X = TOK_B: equality over two distinct unique constants,
+; must be marked unsatisfiable; query stays empty forever.
+#query q_unsat_eq(free Tok X).
+q_unsat_eq(X) : tsrc(X, _), X = TOK_A, X = TOK_B.
+
+; X != Y over the two distinct unique constants: trivially true, the CMP
+; is replaced by a forwarding TUPLE.
+#query q_ne_true(free Tok X, free Tok Y).
+q_ne_true(X, Y) : tsrc(X, Y), X = TOK_A, Y = TOK_B, X != Y.
+
+; Same unique constant on both sides of != (constants propagated in from a
+; separate local clause so only dataflow sees the contradiction):
+; unsatisfiable.
+#local ta(Tok X, Tok Y).
+ta(X, Y) : tsrc(X, Y), X = TOK_A, Y = TOK_A.
+
+#query q_same_ne(free Tok X).
+q_same_ne(X) : ta(X, Y), X != Y.

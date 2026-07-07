@@ -1402,7 +1402,10 @@ const bool ProgramTableProductRegionImpl::MergeEqual(
 uint64_t ProgramTableScanRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (table->id + 17u);
-  hash ^= RotateRight64(hash, 15) * (index->id + 13u);
+
+  // A scan is not obligated to go through an index; a full-table scan mixes
+  // in a constant where an index scan mixes in the index identity.
+  hash ^= RotateRight64(hash, 15) * (index ? index->id + 13u : 11u);
   if (depth == 0) {
     return hash;
   }

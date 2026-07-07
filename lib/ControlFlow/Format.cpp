@@ -107,6 +107,7 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kInductionInputs: os << "$induction_in"; break;
     case VectorKind::kInductionSwaps: os << "$induction_swap"; break;
     case VectorKind::kInductionOutputs: os << "$induction_out"; break;
+    case VectorKind::kInductionRechecks: os << "$induction_recheck"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kInductiveJoinPivots: os << "$induction_pivots"; break;
     case VectorKind::kInductiveJoinPivotSwaps:

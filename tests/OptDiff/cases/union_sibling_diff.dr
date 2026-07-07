@@ -1,0 +1,10 @@
+; A tuple flowing into a union from one differential branch must survive the
+; removal of that branch's support while a sibling branch still supports it.
+#message a(u64 X) @differential.
+#message b(u64 X) @differential.
+#query out(free u64 X).
+#local t(X).
+
+t(X) : a(X).
+t(X) : b(X).
+out(X) : t(X).

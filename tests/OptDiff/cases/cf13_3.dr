@@ -1,0 +1,17 @@
+; PARALLEL depth-0 MergeEqual: two clauses over the same source begin with
+; the same comparison (A = 1) but diverge afterwards (v also requires
+; B != 3), producing same-rooted TUPLECMP children with different bodies
+; that must be merged into one root with a nested PARALLEL of bodies.
+
+#message in(i32 A, i32 B).
+#local t(i32 A, i32 B).
+#local u(i32 B).
+#local v(i32 B).
+#query q1(free i32 B).
+#query q2(free i32 B).
+
+t(A, B) : in(A, B).
+u(B) : t(A, B), A = 1.
+v(B) : t(A, B), A = 1, B != 3.
+q1(B) : u(B).
+q2(B) : v(B).

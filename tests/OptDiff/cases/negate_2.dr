@@ -1,0 +1,19 @@
+; NEGATE canonicalization with unsatisfiable views:
+;  - never/dead is a JOIN of conflicting constants, so it is provably empty;
+;  - out_all negates an unsat view (NEGATE folds to a forwarding TUPLE);
+;  - out_dead has an unsat predecessor (NEGATE marked unsatisfiable).
+#message feed(i32 A).
+
+#local b(i32 A).
+#local c(i32 A).
+b(1).
+c(2).
+
+#local never(i32 A).
+never(A) : b(A), c(A).
+
+#local seen(i32 A).
+seen(A) : feed(A).
+
+#query out_all(free i32 A) : feed(A), !never(A).
+#query out_dead(free i32 A) : never(A), !seen(A).
