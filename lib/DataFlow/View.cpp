@@ -1032,18 +1032,14 @@ QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query,
 // both `input_columns` and the attached columns starting at
 // `first_attached_col`). All uses of `this` move onto the tuple. The tuple
 // preserves the externally visible column shape while letting downstream
-// users consume constants and de-duplicated columns directly. If the tuple
-// ends up reading no column of `this` at all -- everything constant or
-// forwarded -- then the dataflow no longer records that the tuple's output
-// presence depends on `this` holding data, so the tuple gains a positive
-// CONDition set by `this` (`CreateDependencyOnView`); the condition is
-// skipped when `this` is a TUPLE with all-constant inputs and no control
-// dependency, whose output presence is unconditional anyway.
-//
-// NOTE(pag): `incoming_view` is there to tell us if `this` ever even had any
-//            dependencies. This is really only relevant to TUPLEs, and so
-//            it's permissible for things like MAPs, NEGATEs, etc. to pass
-//            in `this` for `incoming_view`, to force a non-NULL.
+// users consume constants and de-duplicated columns directly. The
+// keep-last-edge rule applies: the tuple must keep at least one input
+// column produced by `this`, because that column edge is what expresses
+// the tuple's presence dependency on `this` holding data. When every
+// output would otherwise feed from a constant, one representative
+// position reads its (constant-valued) source column of `this` instead of
+// the constant; the tuple's corresponding output column still carries the
+// constant, so downstream constant propagation is unaffected.
 //
 // NOTE(pag): This assumes `in_to_out` is filled up, and operates on
 //            `input_columns` and `attached_columns` to find the best version
@@ -1054,13 +1050,13 @@ QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query,
 //
 //    tuple = new TUPLE mirroring this->columns
 //    SubstituteAllUsesWith(tuple)
+//    keep_rep = every column of this is a constant or constant ref
 //    for i, col in this->columns:
-//      if col is a constant ref:   tuple.inputs += the constant
+//      if col is a constant ref and not (keep_rep and i == 0):
+//                                  tuple.inputs += the constant
 //      elif this is a MAP:         tuple.inputs += col
 //      elif i < first_attached:    tuple.inputs += in_to_out[input[i]]
 //      else:                       tuple.inputs += in_to_out[attached[...]]
-//    if GetIncomingView(tuple.inputs) != this and this may filter data:
-//      tuple.CreateDependencyOnView(this)     // COND refcount on this
 //
 //   before:                          after:
 //
@@ -1073,14 +1069,16 @@ QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query,
 //                                       |         \
 //                                     UNION      users
 //
-//   all-forwarded case (tuple reads nothing from `this`):
+//   all-constant case (position 0 keeps the edge to `this`):
 //
-//    V ---sets COND c---.
-//                     TUPLE[tests +c](in: consts...) --> users
+//    V(out: X=1, Y=2)                 V(out: X=1, Y=2)
+//      |                               |X       CONST 2
+//    users                            TUPLE(in: X, 2 -> out: X'=1, Y'=2)
+//                                       |
+//                                     users
 QueryTupleImpl *
 QueryViewImpl::GuardWithOptimizedTuple(QueryImpl *query,
-                                       unsigned first_attached_col,
-                                       QueryViewImpl *incoming_view) {
+                                       unsigned first_attached_col) {
 
   QueryTupleImpl *tuple = query->tuples.Create();
   tuple->color = color;
@@ -1106,9 +1104,23 @@ QueryViewImpl::GuardWithOptimizedTuple(QueryImpl *query,
   SubstituteAllUsesWith(tuple);
   const auto is_map = !!this->AsMap();
 
+  // The keep-last-edge rule: if every column of `this` resolved to a
+  // constant, the guard tuple would read nothing from `this` and its
+  // presence dependency on `this` would vanish, so one representative
+  // position (the first) reads its source column of `this` instead of the
+  // constant.
+  auto keep_representative = true;
+  for (auto i = 0u; i < num_cols; ++i) {
+    if (!columns[i]->AsConstant()) {
+      keep_representative = false;
+      break;
+    }
+  }
+
   for (auto i = 0u; i < num_cols; ++i) {
     QueryColumnImpl *const col = columns[i];
-    if (auto const_col = col->AsConstant(); const_col) {
+    if (auto const_col = col->AsConstant();
+        const_col && !(keep_representative && !i)) {
       tuple->input_columns.AddUse(const_col);
 
 
@@ -1134,34 +1146,7 @@ QueryViewImpl::GuardWithOptimizedTuple(QueryImpl *query,
     }
   }
 
-  // We've made our tuple; if it has dropped all references to us then make
-  // it conditional on our refcount.
-  //
-  // We only do this if we `this` actually depended on any incoming views in
-  // the first place, and if they themselves were conditional.
-  if (QueryViewImpl::GetIncomingView(tuple->input_columns) != this) {
-
-    // Figure out if it's even reasonable to create a dependency.
-    if (auto this_tuple = this->AsTuple();
-        this_tuple && !this_tuple->IntroducesControlDependency()) {
-
-      auto all_const = true;
-      for (auto in_col : this_tuple->input_columns) {
-        if (!in_col->IsConstant()) {
-          all_const = false;
-          break;
-        }
-      }
-
-      // It's not worth introducing a condition variable against an
-      // unconditional, all constant input tuple.
-      if (all_const) {
-        return tuple;
-      }
-    }
-
-    tuple->CreateDependencyOnView(query, this);
-  }
+  assert(QueryViewImpl::GetIncomingView(tuple->input_columns) == this);
 
   return tuple;
 }
@@ -1314,6 +1299,12 @@ bool QueryViewImpl::ColumnsEq(EqualitySet &eq,
 // chains reduces dataflow depth, and bypassed tuples that lose their last
 // user become dead and are removed later.
 //
+// The keep-last-edge rule bounds the chase: when every retargeted column
+// resolves to a constant while the hopped-over tuple itself still reads
+// from a predecessor, the hop would sever the last column edge expressing
+// that the rows' presence depends on that predecessor holding data, so the
+// chase stops at the tuple instead.
+//
 // Takes in the `incoming_view` pulled from by `cols1:cols2` and returns the
 // updated `incoming_view`. Recursion stops when the incoming view stops
 // changing, which is the fixpoint reached by self-recursive dataflows.
@@ -1326,6 +1317,8 @@ bool QueryViewImpl::ColumnsEq(EqualitySet &eq,
 //    for col in cols1 and cols2:
 //      if col.view == tuple: col = tuple.input_columns[col.Index()]
 //      else:                 keep col (a constant)
+//    if new cols are all constants and tuple has an incoming view:
+//      return tuple                        // keep-last-edge: do not sever
 //    recurse on GetIncomingView(cols1, cols2)
 //
 //   before:                          after:
@@ -1378,24 +1371,26 @@ QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuplesImpl(
                                            cols2);
   }
 
-  UseList<QueryColumnImpl> new_cols1(this);
-  UseList<QueryColumnImpl> new_cols2(this);
-
-  for (auto col : cols1) {
-    if (col->view == tuple) {
-      new_cols1.AddUse(tuple->input_columns[col->Index()]);
-    } else {
-      assert(col->IsConstant());
-      new_cols1.AddUse(col);
+  // Pre-compute the view the hop would leave `this` reading from: the view
+  // of the first retargeted column that is not a constant. This runs before
+  // any use list is materialized so that the stop cases below cost nothing.
+  QueryViewImpl *hopped_view = nullptr;
+  const UseList<QueryColumnImpl> *col_lists[] = {&cols1, &cols2};
+  for (const auto *col_list : col_lists) {
+    for (QueryColumnImpl *col : *col_list) {
+      QueryColumnImpl *new_col = col;
+      if (col->view == tuple) {
+        new_col = tuple->input_columns[col->Index()];
+      } else {
+        assert(col->IsConstant());
+      }
+      if (!new_col->IsConstant()) {
+        hopped_view = new_col->view;
+        break;
+      }
     }
-  }
-
-  for (auto col : cols2) {
-    if (col->view == tuple) {
-      new_cols2.AddUse(tuple->input_columns[col->Index()]);
-    } else {
-      assert(col->IsConstant());
-      new_cols2.AddUse(col);
+    if (hopped_view) {
+      break;
     }
   }
 
@@ -1405,8 +1400,37 @@ QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuplesImpl(
   // the chase one hop early and keep reading through the last forwarding
   // tuple; dead-flow elimination is responsible for collecting the
   // source-less cycle.
-  if (GetIncomingView(new_cols1, new_cols2) == this) {
+  if (hopped_view == this) {
     return incoming_view;
+  }
+
+  // The keep-last-edge rule: if every retargeted column is a constant while
+  // the tuple itself reads from a predecessor, then the hop would sever the
+  // last column edge expressing that the rows' presence depends on that
+  // predecessor holding data (e.g. the tuple's only non-constant input is a
+  // retained representative witness that `this` does not read). Stop the
+  // chase at the tuple.
+  if (!hopped_view && GetIncomingView(tuple->input_columns)) {
+    return incoming_view;
+  }
+
+  UseList<QueryColumnImpl> new_cols1(this);
+  UseList<QueryColumnImpl> new_cols2(this);
+
+  for (auto col : cols1) {
+    if (col->view == tuple) {
+      new_cols1.AddUse(tuple->input_columns[col->Index()]);
+    } else {
+      new_cols1.AddUse(col);
+    }
+  }
+
+  for (auto col : cols2) {
+    if (col->view == tuple) {
+      new_cols2.AddUse(tuple->input_columns[col->Index()]);
+    } else {
+      new_cols2.AddUse(col);
+    }
   }
 
   is_canonical = false;
@@ -1751,68 +1775,6 @@ QueryViewImpl *QueryViewImpl::OnlyUser(void) const noexcept {
   });
 
   return fail ? nullptr : only_user;
-}
-
-// Create or inherit a condition created on `view`, making the output
-// presence of `this` conditional on `view` holding data. CONDitions act as
-// reference counts on a view's contents: by testing one as a positive
-// condition, `this` produces output only while `view` has at least one
-// derivation. This preserves soundness when an optimization (e.g.
-// `GuardWithOptimizedTuple`) removes the last column-level dataflow edge
-// from `view` into `this` -- the data dependency is re-expressed as a
-// control dependency. If `view` already sets a condition and is its sole
-// setter, that condition is reused; if the condition has other setters,
-// testing it would admit data whenever *any* setter holds, which is looser
-// than depending on `view` itself, so `view` is first guarded with a
-// forced tuple (the shared set-condition migrates to the guard) and a
-// fresh condition is created on `view`. Trivially true conditions are not
-// tested.
-//
-//    if view sets cond and view is its only setter: reuse cond
-//    else:
-//      if view sets a shared cond: view.GuardWithTuple(force)
-//      cond = new COND; view sets cond
-//    if cond is nontrivial: this tests +cond
-//
-//   before:                          after:
-//
-//    view      this                   view ---sets COND c
-//    (no dataflow edge)               this[tests +c]
-void QueryViewImpl::CreateDependencyOnView(QueryImpl *query,
-                                           QueryViewImpl *view) {
-  assert(this != view);
-  QueryConditionImpl *condition = nullptr;
-  if (QueryConditionImpl *incoming_cond = view->sets_condition.get()) {
-
-    // It's safe to inherit the condition of `view`.
-    if (incoming_cond->setters.Size() == 1u) {
-      condition = incoming_cond;
-
-    // It's not safe to inherit the condition of `view`; it looks like it's
-    // set by someone else as well, so inheriting it might result in us testing
-    // a looser condition. We'll force a guard tuple, and the set condition on
-    // `view` will transfer there; then we'll set a new condition on `view`.
-    } else {
-      (void) view->GuardWithTuple(query, true);
-    }
-  }
-
-  // Invent a new condition for `incoming_view`.
-  if (!condition) {
-    condition = query->conditions.Create();
-
-    assert(!view->sets_condition);
-    view->sets_condition.Emplace(view, condition);
-    condition->setters.AddUse(view);
-  }
-
-  if (!condition->IsTrivial()) {
-    positive_conditions.AddUse(condition);
-    condition->positive_users.AddUse(this);
-  }
-
-  assert(condition->UsersAreConsistent());
-  assert(condition->SettersAreConsistent());
 }
 
 // Check that all non-constant views in `cols1` match.

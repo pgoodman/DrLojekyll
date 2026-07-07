@@ -80,8 +80,10 @@ uint64_t QueryCompareImpl::Hash(void) noexcept {
 //        duplicated outputs, so this CMP can shed them
 //      rebuild output columns: fused '=' output, then only the attached
 //        columns that are used; resolve constant-ref inputs to constants
-//      if the rebuild dropped the last data edge to the predecessor:
-//        re-attach to it via a condition dependency
+//      keep-last-edge rule: if the rebuilt lists would drop the last data
+//        edge to the predecessor, one representative column keeps reading
+//        from it raw (an input operand when possible, else an attached
+//        column retained even though its output is unused)
 //
 // Trivially satisfiable comparison, e.g. `A = A` over the same column:
 //
@@ -235,7 +237,7 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
   // only propagate forward the needed data.
   if (has.guardable_constant_output || has.duplicated_input_column) {
     if (!IsUsedDirectly() && !(OnlyUser() && has.directly_used_column)) {
-      GuardWithOptimizedTuple(query, first_attached_col, incoming_view);
+      GuardWithOptimizedTuple(query, first_attached_col);
       has.non_local_changes = true;
     }
   }
@@ -243,6 +245,79 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
   DefList<COL> new_columns(this);
   UseList<COL> new_input_columns(this);
   UseList<COL> new_attached_columns(this);
+
+  // The keep-last-edge rule: resolving the operands to constants and
+  // dropping unused attached columns must not sever the final column edge
+  // to `incoming_view`, because that edge is what expresses this CMP's
+  // presence dependency on its predecessor. When no surviving column would
+  // read from `incoming_view`, one representative keeps reading from it
+  // raw: an input operand when one comes from `incoming_view`, else an
+  // attached column that is retained even though its output is unused. An
+  // unused CMP produces rows for nobody, so it has no presence to preserve
+  // and keeps nothing.
+  const auto is_used = IsUsed();
+  const auto num_attached_cols = attached_columns.Size();
+  auto keep_input_index = 2u;
+  auto keep_attached_index = num_attached_cols;
+  if (incoming_view && is_used) {
+    auto retains_edge = false;
+    for (auto k = 0u; k < 2u && !retains_edge; ++k) {
+      const auto in_col = input_columns[k];
+      retains_edge =
+          !in_col->IsConstantOrConstantRef() && in_col->view == incoming_view;
+    }
+    for (auto j = 0u; j < num_attached_cols && !retains_edge; ++j) {
+      const auto in_col = attached_columns[j];
+      retains_edge = columns[first_attached_col + j]->IsUsed() &&
+                     !in_col->IsConstantOrConstantRef() &&
+                     in_col->view == incoming_view;
+    }
+    if (!retains_edge) {
+      for (auto k = 0u; k < 2u; ++k) {
+        const auto in_col = input_columns[k];
+        if (!in_col->IsConstant() && in_col->view == incoming_view) {
+          keep_input_index = k;
+          break;
+        }
+      }
+      for (auto j = 0u;
+           keep_input_index == 2u && j < num_attached_cols; ++j) {
+        const auto in_col = attached_columns[j];
+        if (!in_col->IsConstant() && in_col->view == incoming_view) {
+          keep_attached_index = j;
+          break;
+        }
+      }
+      assert(keep_input_index < 2u || keep_attached_index < num_attached_cols);
+    }
+  }
+
+  // Fixpoint check: the rebuild below drops unused attached columns and
+  // resolves constant-ref inputs to constants. When the keep-last-edge
+  // representative is the only unused attached column and every other
+  // input is already fully resolved, the rebuild is an identity rewrite,
+  // so the CMP is already in its final shape and the rebuild is skipped.
+  auto rebuild_changes_shape = false;
+  for (auto k = 0u; k < 2u && !rebuild_changes_shape; ++k) {
+    rebuild_changes_shape =
+        k != keep_input_index &&
+        input_columns[k]->TryResolveToConstant() != input_columns[k];
+  }
+  for (auto j = 0u; j < num_attached_cols && !rebuild_changes_shape; ++j) {
+    if (columns[first_attached_col + j]->IsUsed() ||
+        j == keep_attached_index) {
+      rebuild_changes_shape =
+          j != keep_attached_index &&
+          attached_columns[j]->TryResolveToConstant() != attached_columns[j];
+    } else {
+      rebuild_changes_shape = true;  // This attached column gets dropped.
+    }
+  }
+  if (!rebuild_changes_shape) {
+    hash = 0;
+    is_canonical = true;
+    return has.non_local_changes;
+  }
 
   COL *new_lhs_out = nullptr;
   COL *new_rhs_out = nullptr;
@@ -264,30 +339,34 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
     columns[1]->ReplaceAllUsesWith(new_rhs_out);
   }
 
-  new_input_columns.AddUse(input_columns[0]->TryResolveToConstant());
-  new_input_columns.AddUse(input_columns[1]->TryResolveToConstant());
+  new_input_columns.AddUse(keep_input_index == 0u
+                               ? input_columns[0]
+                               : input_columns[0]->TryResolveToConstant());
+  new_input_columns.AddUse(keep_input_index == 1u
+                               ? input_columns[1]
+                               : input_columns[1]->TryResolveToConstant());
 
-  // Now bring in the attached columns, and only those that we need.
+  // Now bring in the attached columns: those that are used, plus the
+  // keep-last-edge representative.
   for (auto j = first_attached_col, i = 0u; j < num_cols; ++j, ++i) {
     const auto col = columns[j];
-    if (col->IsUsed()) {
+    if (col->IsUsed() || i == keep_attached_index) {
       const auto new_col = new_columns.Create(col->var, col->type, this,
                                               col->id, new_columns.Size());
       col->ReplaceAllUsesWith(new_col);
-      new_attached_columns.AddUse(attached_columns[i]->TryResolveToConstant());
+      new_attached_columns.AddUse(
+          i == keep_attached_index
+              ? attached_columns[i]
+              : attached_columns[i]->TryResolveToConstant());
 
     } else {
       has.non_local_changes = true;
     }
   }
 
-  // We dropped a reference to our predecessor; maintain it via a condition.
-  const auto new_incoming_view =
-      GetIncomingView(new_input_columns, new_attached_columns);
-  if (incoming_view != new_incoming_view) {
-    CreateDependencyOnView(query, incoming_view);
-    has.non_local_changes = true;
-  }
+  assert(!incoming_view || !is_used ||
+         RetainsEdgeTo(incoming_view, new_input_columns,
+                       new_attached_columns));
 
   columns.Swap(new_columns);
   input_columns.Swap(new_input_columns);

@@ -15,36 +15,41 @@ static bool IsTrivialCycle(TUPLE *tuple);
 // all-constant input set is represented by a `nullptr` incoming view, which
 // is pre-inserted into the tainted set). Taint then propagates forward to a
 // fixpoint, with each node kind imposing its own liveness rule: pass-through
-// nodes (TUPLE, INSERT, CMP, MAP, KVINDEX) are tainted when their incoming
-// view is tainted; a MERGE is tainted when ANY merged view is live and
-// tainted; a JOIN only when ALL joined views are live and tainted; a NEGATE
-// only when BOTH its input predecessor AND its negated view are tainted; an
+// nodes (TUPLE, INSERT, CMP, MAP, KVINDEX, NEGATE) are tainted when their
+// incoming view is tainted; a MERGE is tainted when ANY merged view is live
+// and tainted; a JOIN only when ALL joined views are live and tainted; an
 // AGG when its aggregated-column source (or failing that, its
 // group-by/config source) is tainted, or when all of its inputs are
 // constant; and a SELECT over a relation is tainted when any live INSERT
-// into that relation is tainted. The sweep unlinks untainted views, prunes
-// untainted predecessors out of surviving MERGEs, and deletes TUPLEs that
-// form trivial self-cycles through a MERGE (see `IsTrivialCycle`). Finally,
-// any condition variable left with no setters is resolved to a fixpoint:
-// negative tests of it are vacuously true and are dropped, while positive
-// testers are unsatisfiable and are deleted (which may in turn strip the
-// setters of further conditions). This is beneficial because underivable
-// recursive cycles (e.g. a relation defined only in terms of itself) keep
-// themselves alive under pure use-count reclamation; taint from the input
-// boundary is what proves such cycles can never produce data, so removing
-// them is sound.
+// into that relation is tainted. After the fixpoint, empty-relation folding
+// applies: a NEGATE whose negated view is untainted (it can never hold
+// data, and the sweep is about to delete it) has a vacuously true absence
+// check, so it is replaced by a TUPLE forwarding its input and attached
+// columns; the TUPLE inherits the predecessor's taint. The sweep unlinks
+// untainted views, prunes untainted predecessors out of surviving MERGEs,
+// and deletes TUPLEs that form trivial self-cycles through a MERGE (see
+// `IsTrivialCycle`). Finally, any condition variable left with no setters
+// is resolved to a fixpoint: negative tests of it are vacuously true and
+// are dropped, while positive testers are unsatisfiable and are deleted
+// (which may in turn strip the setters of further conditions). This is
+// beneficial because underivable recursive cycles (e.g. a relation defined
+// only in terms of itself) keep themselves alive under pure use-count
+// reclamation; taint from the input boundary is what proves such cycles can
+// never produce data, so removing them is sound.
 //
 //    tainted = {message RECEIVEs, stream SELECTs, nullptr /* constants */}
 //    repeat until no change:
 //      SELECT(rel):  tainted if any live INSERT into rel is tainted
-//      TUPLE/INSERT/CMP/MAP/KVINDEX v:
+//      TUPLE/INSERT/CMP/MAP/KVINDEX/NEGATE v:
 //                    tainted if GetIncomingView(v) in tainted
 //      AGG:          tainted if aggregated-source tainted, else if
 //                    group/config source tainted, else if all-constant
 //      MERGE:        tainted if any live merged view tainted
-//      NEGATE:       tainted if input view tainted AND negated view tainted
 //      JOIN:         tainted if every joined view is live and tainted
 //      INSERT with all-constant inputs: tainted
+//    for NEGATE n with untainted negated view:   // empty-relation folding
+//      replace n with a TUPLE forwarding n's input+attached columns
+//      TUPLE tainted iff n's predecessor tainted
 //    for v in views:                       // sweep
 //      if v not tainted:        v.PrepareToDelete()
 //      else if v is MERGE:      remove untainted merged views
@@ -190,15 +195,15 @@ bool QueryImpl::EliminateDeadFlows(void) {
       }
     }
 
+    // A NEGATE forwards its predecessor's rows (filtered by the absence
+    // check), so its liveness follows the predecessor alone: an untainted
+    // negated view only makes the check vacuously true (handled by the
+    // empty-relation folding after the fixpoint), it never blocks data.
     for (NEGATION *view : negations) {
       if (should_check_view(view)) {
-        auto pred_view =
-            VIEW::GetIncomingView(view->input_columns, view->attached_columns);
-        if (derived_from_input.count(view->negated_view.get()) &&
-            derived_from_input.count(pred_view)) {
-          changed = true;
-          derived_from_input.insert(view);
-        }
+        check_incoming_view(
+            view,
+            VIEW::GetIncomingView(view->input_columns, view->attached_columns));
       }
     }
 
@@ -224,6 +229,48 @@ bool QueryImpl::EliminateDeadFlows(void) {
           !VIEW::GetIncomingView(view->input_columns)) {
         derived_from_input.insert(view);  // All inputs are constants.
       }
+    }
+  }
+
+  // Empty-relation folding: an untainted negated view can never hold data
+  // (the sweep below deletes it), so the absence check of any NEGATE over
+  // it is vacuously true and the NEGATE forwards its predecessor's rows
+  // unconditionally. Fold each such NEGATE into a TUPLE forwarding its
+  // input and attached columns; the TUPLE inherits the predecessor's taint
+  // and joins the sweep's worklist, and the now-unused NEGATE is reclaimed
+  // by `RemoveUnusedViews`.
+  //
+  //    PRED           VIEW (untainted)        PRED
+  //     |in,att          |                     |in,att
+  //     +--> NEGATE <----+          ==>       TUPLE
+  //            |                                |
+  //          users                            users
+  for (NEGATION *negate : negations) {
+    if (negate->is_dead || negate->is_unsat ||
+        derived_from_input.count(negate->negated_view.get())) {
+      continue;
+    }
+
+    const auto first_attached_col = negate->input_columns.Size();
+    TUPLE *tuple = this->tuples.Create();
+    auto col_index = 0u;
+    for (auto col : negate->columns) {
+      tuple->columns.Create(col->var, col->type, tuple, col->id, col_index);
+
+      if (col_index < first_attached_col) {
+        tuple->input_columns.AddUse(negate->input_columns[col_index]);
+      } else {
+        tuple->input_columns.AddUse(
+            negate->attached_columns[col_index - first_attached_col]);
+      }
+
+      ++col_index;
+    }
+
+    negate->ReplaceAllUsesWith(tuple);
+    views.push_back(tuple);
+    if (derived_from_input.count(negate)) {
+      derived_from_input.insert(tuple);
     }
   }
 

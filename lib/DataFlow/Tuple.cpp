@@ -64,10 +64,12 @@ uint64_t QueryTupleImpl::Hash(void) noexcept {
 //   rebuild the tuple:
 //     keep only used output columns
 //     resolve each kept input column to its constant, if any
-//   if the rebuilt tuple no longer reads from `incoming`:
-//     make `incoming` set a CONDition tested by this tuple, so
-//     outputs stay predicated on `incoming` producing data
-//   if no output columns remain:
+//     keep-last-edge rule: if the rebuilt tuple would no longer read
+//       any column of `incoming`, keep one representative column that
+//       reads from `incoming` (raw, not resolved to a constant), even
+//       if its output is otherwise unused, so the tuple's presence
+//       dependency on `incoming` stays expressed as a column edge
+//   if no output columns remain (possible only with no incoming view):
 //     delete self when unused, unconditional, or guarded only by
 //     trivial positive conditions; otherwise restore the old
 //     columns and lock the tuple against future canonicalization
@@ -92,16 +94,17 @@ uint64_t QueryTupleImpl::Hash(void) noexcept {
 //      |
 //     TUPLE T2[b, a]                    (T1 deleted once unused)
 //
-// Data dependence converted to control dependence when the last
-// non-constant input is dropped:
+// Keep-last-edge: `x` is unused, but dropping it would sever the final
+// column edge to V, so it is kept as the representative witness that the
+// tuple's rows exist only while V holds data:
 //
 //   Before:                           After:
 //
-//     VIEW V[a]    CONST 1              VIEW V[a] --sets COND--+
-//      |a           |                                          |
-//     TUPLE [x=a, y=1]                  TUPLE [y=1] --tests COND
-//     (x unused)
-bool QueryTupleImpl::Canonicalize(QueryImpl *query,
+//     VIEW V[a]    CONST 1              VIEW V[a]    CONST 1
+//      |a           |                    |a           |
+//     TUPLE [x=a, y=1]                  TUPLE [x=a, y=1]
+//     (x unused)                        (x unused, kept)
+bool QueryTupleImpl::Canonicalize(QueryImpl *,
                                     const OptimizationContext &opt,
                                     const ErrorLog &) {
 
@@ -156,26 +159,86 @@ bool QueryTupleImpl::Canonicalize(QueryImpl *query,
   DefList<COL> new_columns(this);
   UseList<COL> new_input_columns(this);
 
+  // The keep-last-edge rule: dropping unused output columns and resolving
+  // constant-ref inputs to their constants must not sever the final column
+  // edge to `incoming_view`, because that edge is what expresses this
+  // tuple's presence dependency on its predecessor. When no used,
+  // unresolvable input from `incoming_view` would survive the rebuild, one
+  // representative column keeps reading from `incoming_view` raw (a used
+  // constant-ref column when one exists, else an otherwise-unused column).
+  // An unused tuple produces rows for nobody, so it has no presence to
+  // preserve: it keeps nothing, drops all of its columns, and deletes
+  // itself below.
+  const auto is_used = IsUsed();
+  auto keep_index = num_cols;
+  if (incoming_view && is_used) {
+    auto retains_edge = false;
+    for (i = 0u; i < num_cols; ++i) {
+      const auto in_col = input_columns[i];
+      if (columns[i]->IsUsed() && !in_col->IsConstantOrConstantRef() &&
+          in_col->view == incoming_view) {
+        retains_edge = true;
+        break;
+      }
+    }
+    if (!retains_edge) {
+      for (i = 0u; i < num_cols; ++i) {
+        const auto in_col = input_columns[i];
+        if (columns[i]->IsUsed() && !in_col->IsConstant() &&
+            in_col->view == incoming_view) {
+          keep_index = i;  // Used constant-ref column; kept raw.
+          break;
+        }
+      }
+      for (i = 0u; keep_index == num_cols && i < num_cols; ++i) {
+        const auto in_col = input_columns[i];
+        if (!in_col->IsConstant() && in_col->view == incoming_view) {
+          keep_index = i;  // Unused column, kept as the representative.
+          break;
+        }
+      }
+      assert(keep_index < num_cols);
+    }
+  }
+
+  // Fixpoint check: the rebuild below drops unused output columns and
+  // resolves constant-ref inputs to constants. When the keep-last-edge
+  // representative is the only unused column and every other input is
+  // already fully resolved, the rebuild is an identity rewrite, so the
+  // tuple is already in its final shape and the (expensive) rebuild is
+  // skipped.
+  auto rebuild_changes_shape = false;
+  for (i = 0u; i < num_cols && !rebuild_changes_shape; ++i) {
+    if (columns[i]->IsUsed() || i == keep_index) {
+      rebuild_changes_shape =
+          i != keep_index &&
+          input_columns[i]->TryResolveToConstant() != input_columns[i];
+    } else {
+      rebuild_changes_shape = true;  // This column gets dropped.
+    }
+  }
+  if (!rebuild_changes_shape) {
+    hash = 0;
+    is_canonical = true;
+    return has.non_local_changes;
+  }
+
   for (i = 0; i < num_cols; ++i) {
     const auto old_col = columns[i];
-    if (old_col->IsUsed()) {
+    if (old_col->IsUsed() || i == keep_index) {
       const auto new_col =
           new_columns.Create(old_col->var, old_col->type, this, old_col->id, i);
       old_col->ReplaceAllUsesWith(new_col);
-      new_input_columns.AddUse(input_columns[i]->TryResolveToConstant());
+      new_input_columns.AddUse(i == keep_index
+                                   ? input_columns[i]
+                                   : input_columns[i]->TryResolveToConstant());
     } else {
       has.non_local_changes = true;
     }
   }
 
-  // We dropped a reference to our predecessor; maintain it via a condition.
-  if (incoming_view) {
-    const auto new_incoming_view = GetIncomingView(new_input_columns);
-    if (incoming_view != new_incoming_view) {
-      CreateDependencyOnView(query, incoming_view);
-      has.non_local_changes = true;
-    }
-  }
+  assert(!incoming_view || !is_used ||
+         RetainsEdgeTo(incoming_view, new_input_columns, new_input_columns));
 
   columns.Swap(new_columns);
   input_columns.Swap(new_input_columns);

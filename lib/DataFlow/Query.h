@@ -376,18 +376,12 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   QueryTupleImpl *GuardWithTuple(QueryImpl *query, bool force = false);
 
   // This is like an "optimized" form of `GuardWithTuple`, that also knows
-  // about attached columns. It tries to propagate constants, and maintains
-  // a backward reference to `this` if it drops all references.
-  //
-  // NOTE(pag): `incoming_view` is there to tell is if `this` ever even had any
-  //            dependencies. This is really only relevant to TUPLEs, and so
-  //            it's permissible for things like MAPs, NEGATEs, etc. to pass
-  //            in `this` for `incoming_view`, to force a non-NULL.
+  // about attached columns. It tries to propagate constants, and keeps at
+  // least one input-column edge back to `this` (the keep-last-edge rule).
   //
   // NOTE(pag): This assumes `in_to_out` is filled up!!
   QueryTupleImpl *GuardWithOptimizedTuple(QueryImpl *query,
-                                            unsigned first_attached_col,
-                                            QueryViewImpl *incoming_view);
+                                            unsigned first_attached_col);
 
   // Proxy this node with a comparison of `lhs_col` and `rhs_col`, where
   // `lhs_col` and `rhs_col` either belong to `this->columns` or are constants.
@@ -705,9 +699,6 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // Returns a pointer to the only user of this node, or nullptr if there are
   // zero users, or more than one users.
   QueryViewImpl *OnlyUser(void) const noexcept;
-
-  // Create or inherit a condition created on `view`.
-  void CreateDependencyOnView(QueryImpl *query, QueryViewImpl *view);
 
  protected:
   // Utilities for depth calculation.

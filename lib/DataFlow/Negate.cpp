@@ -81,8 +81,11 @@ uint64_t QueryNegateImpl::Hash(void) noexcept {
 //      constants directly and collapses duplicate columns
 //    rebuild the column lists: keep every input column (resolved to a
 //      constant where possible); keep only the used attached columns
-//    if the rebuilt inputs no longer reference the old predecessor:
-//      gate self on a CONDition set by that predecessor
+//    keep-last-edge rule: if the rebuilt lists would no longer reference
+//      the predecessor, one representative column keeps reading from it
+//      raw (an input column when possible, else an attached column
+//      retained even though its output is unused), so this NEGATE's
+//      presence dependency on the predecessor stays a column edge
 //
 // Negation of an unsatisfiable view (absence always holds):
 //
@@ -184,7 +187,7 @@ bool QueryNegateImpl::Canonicalize(QueryImpl *query,
   // only propagate forward the needed data.
   if (has.guardable_constant_output || has.duplicated_input_column) {
     if (!IsUsedDirectly() && !(OnlyUser() && has.directly_used_column)) {
-      GuardWithOptimizedTuple(query, first_attached_col, incoming_view);
+      GuardWithOptimizedTuple(query, first_attached_col);
       has.non_local_changes = true;
     }
   }
@@ -193,33 +196,109 @@ bool QueryNegateImpl::Canonicalize(QueryImpl *query,
   UseList<COL> new_input_columns(this);
   UseList<COL> new_attached_columns(this);
 
+  // The keep-last-edge rule: resolving inputs to constants and dropping
+  // unused attached columns must not sever the final column edge to
+  // `incoming_view`, because that edge is what expresses this NEGATE's
+  // presence dependency on its predecessor. When no surviving column would
+  // read from `incoming_view`, one representative keeps reading from it
+  // raw: an input column when one comes from `incoming_view`, else an
+  // attached column that is retained even though its output is unused. An
+  // unused NEGATE produces rows for nobody, so it has no presence to
+  // preserve and keeps nothing.
+  const auto is_used = IsUsed();
+  const auto num_attached_cols = attached_columns.Size();
+  auto keep_input_index = first_attached_col;
+  auto keep_attached_index = num_attached_cols;
+  if (incoming_view && is_used) {
+    auto retains_edge = false;
+    for (auto j = 0u; j < first_attached_col && !retains_edge; ++j) {
+      const auto in_col = input_columns[j];
+      retains_edge =
+          !in_col->IsConstantOrConstantRef() && in_col->view == incoming_view;
+    }
+    for (auto j = 0u; j < num_attached_cols && !retains_edge; ++j) {
+      const auto in_col = attached_columns[j];
+      retains_edge = columns[first_attached_col + j]->IsUsed() &&
+                     !in_col->IsConstantOrConstantRef() &&
+                     in_col->view == incoming_view;
+    }
+    if (!retains_edge) {
+      for (auto j = 0u; j < first_attached_col; ++j) {
+        const auto in_col = input_columns[j];
+        if (!in_col->IsConstant() && in_col->view == incoming_view) {
+          keep_input_index = j;
+          break;
+        }
+      }
+      for (auto j = 0u; keep_input_index == first_attached_col &&
+                        j < num_attached_cols; ++j) {
+        const auto in_col = attached_columns[j];
+        if (!in_col->IsConstant() && in_col->view == incoming_view) {
+          keep_attached_index = j;
+          break;
+        }
+      }
+      assert(keep_input_index < first_attached_col ||
+             keep_attached_index < num_attached_cols);
+    }
+  }
+
+  // Fixpoint check: the rebuild below drops unused attached columns and
+  // resolves constant-ref inputs to constants. When the keep-last-edge
+  // representative is the only unused attached column and every other
+  // input is already fully resolved, the rebuild is an identity rewrite,
+  // so the NEGATE is already in its final shape and the rebuild is
+  // skipped.
+  auto rebuild_changes_shape = false;
+  for (auto j = 0u; j < first_attached_col && !rebuild_changes_shape; ++j) {
+    rebuild_changes_shape =
+        j != keep_input_index &&
+        input_columns[j]->TryResolveToConstant() != input_columns[j];
+  }
+  for (auto j = 0u; j < num_attached_cols && !rebuild_changes_shape; ++j) {
+    if (columns[first_attached_col + j]->IsUsed() ||
+        j == keep_attached_index) {
+      rebuild_changes_shape =
+          j != keep_attached_index &&
+          attached_columns[j]->TryResolveToConstant() != attached_columns[j];
+    } else {
+      rebuild_changes_shape = true;  // This attached column gets dropped.
+    }
+  }
+  if (!rebuild_changes_shape) {
+    hash = 0;
+    is_canonical = true;
+    return has.non_local_changes;
+  }
+
   for (i = 0; i < first_attached_col; ++i) {
     const auto old_col = columns[i];
     const auto new_col =
         new_columns.Create(old_col->var, old_col->type, this, old_col->id, i);
     old_col->ReplaceAllUsesWith(new_col);
-    new_input_columns.AddUse(input_columns[i]->TryResolveToConstant());
+    new_input_columns.AddUse(i == keep_input_index
+                                 ? input_columns[i]
+                                 : input_columns[i]->TryResolveToConstant());
   }
 
   for (auto j = 0u; i < num_cols; ++i, ++j) {
     const auto old_col = columns[i];
-    if (old_col->IsUsed()) {
+    if (old_col->IsUsed() || j == keep_attached_index) {
       const auto new_col = new_columns.Create(old_col->var, old_col->type, this,
                                               old_col->id, new_columns.Size());
       old_col->ReplaceAllUsesWith(new_col);
-      new_attached_columns.AddUse(attached_columns[j]->TryResolveToConstant());
+      new_attached_columns.AddUse(
+          j == keep_attached_index
+              ? attached_columns[j]
+              : attached_columns[j]->TryResolveToConstant());
     } else {
       has.non_local_changes = true;
     }
   }
 
-  // We dropped a reference to our predecessor; maintain it via a condition.
-  const auto new_incoming_view =
-      GetIncomingView(new_input_columns, new_attached_columns);
-  if (incoming_view != new_incoming_view) {
-    CreateDependencyOnView(query, incoming_view);
-    has.non_local_changes = true;
-  }
+  assert(!incoming_view || !is_used ||
+         RetainsEdgeTo(incoming_view, new_input_columns,
+                       new_attached_columns));
 
   columns.Swap(new_columns);
   input_columns.Swap(new_input_columns);

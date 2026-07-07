@@ -316,9 +316,13 @@ relation-preserving rewrites; the shared repertoire (see each node's
   UNIONs (`PullDataFromBeyondTrivialTuples`); flatten and deduplicate
   MERGE operands; fold trivially true/false CMPs; convert single-view
   JOINs to TUPLEs; propagate `is_unsat`.
-- *Condition compensation*: when a rebuild drops the last data edge to a
-  predecessor, keep the row-presence dependency by making the predecessor
-  set a condition the view tests (`CreateDependencyOnView`).
+- *Keep-last-edge rule*: a rebuild never severs the final input-column
+  edge from a used view to its predecessor. When constant propagation or
+  unused-column removal would drop the last such edge, one representative
+  column keeps reading from the predecessor raw (even if its output is
+  otherwise unused), so the row-presence dependency stays expressed as a
+  column edge; `PullDataFromBeyondTrivialTuples` likewise stops a hop
+  that would retarget every column to a constant.
 
 `OptimizationContext` (`lib/DataFlow/Optimize.h`) carries the switches:
 `can_replace_inputs_with_constants`, `can_remove_unused_columns`,

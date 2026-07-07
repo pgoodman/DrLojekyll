@@ -116,9 +116,11 @@ uint64_t QueryMapImpl::Hash(void) noexcept {
 //        keep all functor-parameter outputs
 //        drop unused attached outputs and their input columns
 //        resolve each remaining input to its constant when possible
-//      if the rebuilt inputs no longer reference the old incoming view:
-//        create/inherit a CONDition on it (keeps the row-presence
-//        dependency even though no columns flow from it anymore)
+//        keep-last-edge rule: if the rebuilt lists would no longer
+//          reference the incoming view, one representative column keeps
+//          reading from it raw (a bound-parameter input when possible,
+//          else an attached column retained though its output is unused),
+//          so the MAP's row-presence dependency stays a column edge
 //
 // Bypassing a trivial forwarding TUPLE (same for a 1-source UNION):
 //
@@ -140,12 +142,13 @@ uint64_t QueryMapImpl::Hash(void) noexcept {
 //                                  /       \
 //                               user1     user2
 //
-// Dropping the last reference to the predecessor, for a MAP whose only
-// input is resolved to the constant 3:
+// Keep-last-edge, for a MAP whose only input is a constant-ref (=3) column
+// of V: the input keeps reading V's column raw instead of resolving to the
+// constant, so the MAP still fires only for rows of V:
 //
-//        V                        V ---sets---.
-//        |                                    v
-//     MAP f(3)          =>     MAP f(3) if COND
+//        V[a=3]                   V[a=3]
+//        |a                       |a
+//     MAP f(a)          =>     MAP f(a)   (a stays; not folded to 3)
 bool QueryMapImpl::Canonicalize(QueryImpl *query,
                                   const OptimizationContext &opt,
                                   const ErrorLog &) {
@@ -212,7 +215,7 @@ bool QueryMapImpl::Canonicalize(QueryImpl *query,
   // only propagate forward the needed data.
   if (has.guardable_constant_output || has.duplicated_input_column) {
     if (!IsUsedDirectly() && !(OnlyUser() && has.directly_used_column)) {
-      GuardWithOptimizedTuple(query, first_attached_col, incoming_view);
+      GuardWithOptimizedTuple(query, first_attached_col);
       has.non_local_changes = true;
     }
   }
@@ -220,6 +223,81 @@ bool QueryMapImpl::Canonicalize(QueryImpl *query,
   DefList<COL> new_columns(this);
   UseList<COL> new_input_columns(this);
   UseList<COL> new_attached_columns(this);
+
+  // The keep-last-edge rule: resolving inputs to constants and dropping
+  // unused attached columns must not sever the final column edge to
+  // `incoming_view`, because that edge is what expresses this MAP's
+  // row-presence dependency on its predecessor. When no surviving column
+  // would read from `incoming_view`, one representative keeps reading from
+  // it raw: a bound-parameter input when one comes from `incoming_view`,
+  // else an attached column that is retained even though its output is
+  // unused. An unused MAP produces rows for nobody, so it has no presence
+  // to preserve and keeps nothing.
+  const auto is_used = IsUsed();
+  const auto num_input_cols = input_columns.Size();
+  const auto num_attached_cols = attached_columns.Size();
+  auto keep_input_index = num_input_cols;
+  auto keep_attached_index = num_attached_cols;
+  if (incoming_view && is_used) {
+    auto retains_edge = false;
+    for (auto j = 0u; j < num_input_cols && !retains_edge; ++j) {
+      const auto in_col = input_columns[j];
+      retains_edge =
+          !in_col->IsConstantOrConstantRef() && in_col->view == incoming_view;
+    }
+    for (auto j = 0u; j < num_attached_cols && !retains_edge; ++j) {
+      const auto in_col = attached_columns[j];
+      retains_edge = columns[first_attached_col + j]->IsUsed() &&
+                     !in_col->IsConstantOrConstantRef() &&
+                     in_col->view == incoming_view;
+    }
+    if (!retains_edge) {
+      for (auto j = 0u; j < num_input_cols; ++j) {
+        const auto in_col = input_columns[j];
+        if (!in_col->IsConstant() && in_col->view == incoming_view) {
+          keep_input_index = j;
+          break;
+        }
+      }
+      for (auto j = 0u; keep_input_index == num_input_cols &&
+                        j < num_attached_cols; ++j) {
+        const auto in_col = attached_columns[j];
+        if (!in_col->IsConstant() && in_col->view == incoming_view) {
+          keep_attached_index = j;
+          break;
+        }
+      }
+      assert(keep_input_index < num_input_cols ||
+             keep_attached_index < num_attached_cols);
+    }
+  }
+
+  // Fixpoint check: the rebuild below drops unused attached columns and
+  // resolves constant-ref inputs to constants. When the keep-last-edge
+  // representative is the only unused attached column and every other
+  // input is already fully resolved, the rebuild is an identity rewrite,
+  // so the MAP is already in its final shape and the rebuild is skipped.
+  auto rebuild_changes_shape = false;
+  for (auto j = 0u; j < num_input_cols && !rebuild_changes_shape; ++j) {
+    rebuild_changes_shape =
+        j != keep_input_index &&
+        input_columns[j]->TryResolveToConstant() != input_columns[j];
+  }
+  for (auto j = 0u; j < num_attached_cols && !rebuild_changes_shape; ++j) {
+    if (columns[first_attached_col + j]->IsUsed() ||
+        j == keep_attached_index) {
+      rebuild_changes_shape =
+          j != keep_attached_index &&
+          attached_columns[j]->TryResolveToConstant() != attached_columns[j];
+    } else {
+      rebuild_changes_shape = true;  // This attached column gets dropped.
+    }
+  }
+  if (!rebuild_changes_shape) {
+    hash = 0;
+    is_canonical = true;
+    return has.non_local_changes;
+  }
 
   i = 0u;
   for (auto j = 0u; i < arity; ++i) {
@@ -230,30 +308,32 @@ bool QueryMapImpl::Canonicalize(QueryImpl *query,
 
     // It's an input column.
     if (functor.NthParameter(i).Binding() != ParameterBinding::kFree) {
-      new_input_columns.AddUse(input_columns[j++]->TryResolveToConstant());
+      new_input_columns.AddUse(
+          j == keep_input_index ? input_columns[j]
+                                : input_columns[j]->TryResolveToConstant());
+      ++j;
     }
   }
 
   assert(arity <= i);
   for (auto j = 0u; i < num_cols; ++i, ++j) {
     const auto old_col = columns[i];
-    if (old_col->IsUsed()) {
+    if (old_col->IsUsed() || j == keep_attached_index) {
       const auto new_col = new_columns.Create(old_col->var, old_col->type, this,
                                               old_col->id, new_columns.Size());
       old_col->ReplaceAllUsesWith(new_col);
-      new_attached_columns.AddUse(attached_columns[j]->TryResolveToConstant());
+      new_attached_columns.AddUse(
+          j == keep_attached_index
+              ? attached_columns[j]
+              : attached_columns[j]->TryResolveToConstant());
     } else {
       has.non_local_changes = true;
     }
   }
 
-  // We dropped a reference to our predecessor; maintain it via a condition.
-  const auto new_incoming_view =
-      GetIncomingView(new_input_columns, new_attached_columns);
-  if (incoming_view != new_incoming_view) {
-    CreateDependencyOnView(query, incoming_view);
-    has.non_local_changes = true;
-  }
+  assert(!incoming_view || !is_used ||
+         RetainsEdgeTo(incoming_view, new_input_columns,
+                       new_attached_columns));
 
   columns.Swap(new_columns);
   input_columns.Swap(new_input_columns);
