@@ -1,0 +1,31 @@
+; Condition gate flip-flop under @differential retraction: retracting the
+; last supporting row of condition `c` closes the gate mid-flow, so every
+; downstream derivation through the positive test must retract and the
+; negative test must re-derive; re-adding support reopens the gate and the
+; positive derivations must come back. Several flip cycles run, with item
+; data arriving both while the gate is open and while it is closed, plus a
+; partial support retraction (two supporting rows, drop one: `c` must stay
+; true) and a same-batch swap (retract one supporting row and add another in
+; a single differential message: `c` must never observably flip).
+;
+; `item` is @differential too, so item rows are retracted while the gate is
+; open (gated row must retract with it) and while it is closed (ungated row
+; must retract), and a retracted item must not resurrect through later gate
+; flips.
+
+#message support(i32 S) @differential.
+#message item(i32 X) @differential.
+
+#local backing(i32 S).
+#local stored(i32 X).
+
+#query gated(free i32 X).
+#query ungated(free i32 X).
+
+backing(S) : support(S).
+stored(X) : item(X).
+
+c : backing(_).
+
+gated(X) : stored(X), c.
+ungated(X) : stored(X), !c.

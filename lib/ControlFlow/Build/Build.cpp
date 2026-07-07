@@ -1785,8 +1785,13 @@ static void EvaluateConditionAndNotify(ProgramImpl *impl, QueryView view,
 
   OP *succ_parent = scan;
 
-  // We might need to double check that the tuple is actually present.
-  if (view.CanReceiveDeletions()) {
+  // When this flip pushes additions through `view`, re-prove each scanned
+  // row top-down first: stale rows must not be re-derived. No such gate is
+  // possible when ripping data back: `view`'s checker tests the very
+  // condition that just flipped against it, so it would reject every row
+  // and the removal would never run; the per-successor state transitions
+  // (present -> unknown, then top-down recheck) filter instead.
+  if (for_add && view.CanReceiveDeletions()) {
     const auto [call_parent, check_call] = CallTopDownChecker(
         impl, context, succ_parent, view, selected_cols, view, nullptr);
 
