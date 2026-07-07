@@ -1,0 +1,27 @@
+; Condition tested in a DEEPER induction than the cycle that sets it.
+; Two chained inductions (cf. two_inductions.dr): reach1 is the outer
+; cycle; the condition `gate` is derived from reach1's output (so its
+; setter sits alongside the outer cycle), and the inner induction
+; reach2's recursive rule tests `gate`. The driver exercises three
+; arrival orders of the gate relative to the inner induction's data:
+; inner data before the gate opens (stalls, then unleashes), the
+; gate-opening tuple in the same batch as fresh outer-cycle data, and
+; inner data after the gate is already open.
+
+#message base(i32 A).
+#message edge1(i32 A, i32 B).
+#message edge2(i32 A, i32 B).
+#message marker(i32 M).
+
+#local reach1(i32 A).
+reach1(A) : base(A).
+reach1(B) : reach1(A), edge1(A, B).
+
+gate : reach1(M), marker(M).
+
+#local reach2(i32 A).
+reach2(A) : reach1(A).
+reach2(B) : reach2(A), edge2(A, B), gate.
+
+#query out(bound i32 A).
+out(A) : reach2(A).

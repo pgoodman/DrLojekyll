@@ -1,0 +1,41 @@
+; Condition set and positively tested inside one recursive cycle: the base
+; clause seeds t from m, the recursive clause extends t along step edges but
+; only while the zero-arity condition c holds, and c is set by any seed
+; message. Three identical relation families (t1/t2/t3) let one driver run
+; deliver the seed in three arrival orders relative to the m/step data --
+; interleaved with the data, before all data, and after all data -- and the
+; per-family dumps must be byte-identical: once the gate is open, the
+; fixpoint must reach the same closure no matter when it opened.
+
+#message m1(i32 X).
+#message step1(i32 X, i32 Y).
+#message seed1(i32 X).
+#local t1(i32 X).
+#query t1_out(free i32 X).
+
+t1(X) : m1(X).
+t1(Y) : t1(X), step1(X,Y), c1.
+c1 : seed1(_).
+t1_out(X) : t1(X).
+
+#message m2(i32 X).
+#message step2(i32 X, i32 Y).
+#message seed2(i32 X).
+#local t2(i32 X).
+#query t2_out(free i32 X).
+
+t2(X) : m2(X).
+t2(Y) : t2(X), step2(X,Y), c2.
+c2 : seed2(_).
+t2_out(X) : t2(X).
+
+#message m3(i32 X).
+#message step3(i32 X, i32 Y).
+#message seed3(i32 X).
+#local t3(i32 X).
+#query t3_out(free i32 X).
+
+t3(X) : m3(X).
+t3(Y) : t3(X), step3(X,Y), c3.
+c3 : seed3(_).
+t3_out(X) : t3(X).

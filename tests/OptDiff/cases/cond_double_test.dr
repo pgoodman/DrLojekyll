@@ -1,0 +1,17 @@
+; One clause body tests the same zero-arity condition twice; a control
+; clause over the same relation tests it once. The two queries must always
+; hold identical rows: the duplicate test is pure CSE fodder and must not
+; change gating semantics (never-set c => both empty; set c => both track r).
+
+#message feed_r(i32 X).
+#message set_c(i32 V).
+#local r(i32 X).
+#query q_double(free i32 X).
+#query p_single(free i32 X).
+
+r(X) : feed_r(X).
+
+c : set_c(_).
+
+q_double(X) : r(X), c, c.
+p_single(X) : r(X), c.

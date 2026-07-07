@@ -1,0 +1,34 @@
+; Both polarities of condition tests (the F8 shape):
+;  - pos_neg tests c1 positively AND c2 negatively in one body;
+;  - both_pos tests c1 AND c2 positively in one body: conjunction, not
+;    disjunction, of the two counters;
+;  - mixed tests c1 positively in one body and !c1 in another body of the
+;    same predicate, so the negative test must survive alongside a positive
+;    test of the same condition elsewhere.
+
+#message set_c1(i32 X) @differential.
+#message set_c2(i32 X) @differential.
+#message add_r(i32 X).
+#message add_s(i32 X).
+
+#local c1_support(i32 X).
+#local c2_support(i32 X).
+#local r(i32 X).
+#local s(i32 X).
+
+#query pos_neg(free i32 X).
+#query both_pos(free i32 X).
+#query mixed(free i32 X).
+
+c1_support(X) : set_c1(X).
+c2_support(X) : set_c2(X).
+r(X) : add_r(X).
+s(X) : add_s(X).
+
+c1 : c1_support(_).
+c2 : c2_support(_).
+
+pos_neg(X) : r(X), c1, !c2.
+both_pos(X) : r(X), c1, c2.
+mixed(X) : r(X), c1.
+mixed(X) : s(X), !c1.

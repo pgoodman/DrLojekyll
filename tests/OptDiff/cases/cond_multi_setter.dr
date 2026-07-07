@@ -1,0 +1,23 @@
+; Two setter clauses for one condition: `c` holds while EITHER setter has
+; support. Retracting one setter's support while the other still holds must
+; keep `c` true (and downstream derivations intact); only when the last
+; setter's support goes away does `c` flip false and downstream retract.
+
+#message add_a(i32 X) @differential.
+#message add_b(i32 X) @differential.
+#message add_item(i32 X).
+
+#local a(i32 X).
+#local b(i32 X).
+#local item(i32 X).
+
+#query gated(bound i32 X).
+
+a(X) : add_a(X).
+b(X) : add_b(X).
+item(X) : add_item(X).
+
+c : a(_).
+c : b(_).
+
+gated(X) : c, item(X).
