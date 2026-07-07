@@ -23,6 +23,11 @@ Questions to answer:
 
 ## 2. Bottom-up re-proving of unknown tuples (stack-safe differential recheck)
 
+Direction chosen: the Backward/Forward algorithm (see prior art below) is the
+starting point — draft a proposal + plan (UnitConditions.md-style) on its own
+branch once the unit-conditions refactor lands, since B/F restructures the
+same top-down checker / unknown-recheck machinery that refactor unifies.
+
 Differential removal marks tuples present→unknown and re-proves them with
 recursive top-down checker procedures. The recursion is essentially unbounded
 on deep derivation chains and has blown the stack in prior real use-cases.
