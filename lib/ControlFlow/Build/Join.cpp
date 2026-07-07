@@ -1085,10 +1085,14 @@ REGION *BuildTopDownJoinChecker(ProgramImpl *impl, Context &context,
   } else {
     std::vector<std::pair<double, QueryView>> pred_view_scores;
 
-    // Calculate a "coverage" score for each predecessor view, and collect
-    // all of the scored views in `pred_view_scores`.
-    for (const auto &[pred_view, col_vars] : pred_col_vars) {
-      const auto num_vars_available = double(col_vars.size());
+    // Calculate a "coverage" score for each joined view: the fraction of its
+    // columns for which we already have variables. Every joined view is
+    // scored, including those contributing no known columns (score zero) —
+    // each joined view has a backing table (the data model persists all of
+    // a JOIN's predecessors), so even a zero-score view can be recovered by
+    // a full scan with an empty bound prefix.
+    for (auto pred_view : join_view.JoinedViews()) {
+      const auto num_vars_available = double(pred_col_vars[pred_view].size());
       const auto num_needed_vars = double(pred_view.Columns().size());
       const auto score = num_vars_available / num_needed_vars;
       pred_view_scores.emplace_back(score, pred_view);
@@ -1101,7 +1105,6 @@ REGION *BuildTopDownJoinChecker(ProgramImpl *impl, Context &context,
 
     // Make sure we event have a best scoring view.
     assert(!pred_view_scores.empty());
-    assert(0.0 < pred_view_scores.back().first);
 
     const QueryView best_pred_view = pred_view_scores.back().second;
     const auto &pivot_out_in = pivot_map[best_pred_view];

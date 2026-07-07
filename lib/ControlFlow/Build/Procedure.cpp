@@ -288,39 +288,62 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
       available_cols.emplace_back(col, col);
     }
 
-    const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-    TABLE *const table = model->table;
+    // A row in the output vector may have been retracted since it was
+    // appended (removers append candidate retractions too), so each row is
+    // re-proven by a top-down checker: proven rows publish as additions,
+    // disproven rows publish as removals.
+    if (view.CanReceiveDeletions()) {
+      const auto model = impl->view_to_model[view]->FindAs<DataModel>();
+      TABLE *const table = model->table;
 
-    // Call the top-down checker.
-    PROC *const checker_proc = GetOrCreateTopDownChecker(
-        impl, context, view.Predecessors()[0], available_cols, table);
+      // Call the top-down checker.
+      PROC *const checker_proc = GetOrCreateTopDownChecker(
+          impl, context, view.Predecessors()[0], available_cols, table);
 
-    // Now call the checker procedure. Unlike in normal checkers, we're doing
-    // a check on `false`.
-    CALL *const check = impl->operation_regions.CreateDerived<CALL>(
-        impl->next_id++, iter, checker_proc);
-    iter->body.Emplace(iter, check);
+      // Now call the checker procedure. Unlike in normal checkers, we're
+      // doing a check on `false`.
+      CALL *const check = impl->operation_regions.CreateDerived<CALL>(
+          impl->next_id++, iter, checker_proc);
+      iter->body.Emplace(iter, check);
 
-    for (auto var : iter->defined_vars) {
-      check->arg_vars.AddUse(var);
-    }
+      for (auto var : iter->defined_vars) {
+        check->arg_vars.AddUse(var);
+      }
 
-    // Now make the publishers for removal / insertion.
+      // Now make the publishers for removal / insertion.
 
-    PUBLISH *const publish_add = impl->operation_regions.CreateDerived<PUBLISH>(
-        check, message, impl->next_id++,
-        ProgramOperation::kPublishMessage);
-    check->body.Emplace(check, publish_add);
+      PUBLISH *const publish_add =
+          impl->operation_regions.CreateDerived<PUBLISH>(
+              check, message, impl->next_id++,
+              ProgramOperation::kPublishMessage);
+      check->body.Emplace(check, publish_add);
 
-    PUBLISH *const publish_removal =
-        impl->operation_regions.CreateDerived<PUBLISH>(
-            check, message, impl->next_id++,
-            ProgramOperation::kPublishMessageRemoval);
-    check->false_body.Emplace(check, publish_removal);
+      PUBLISH *const publish_removal =
+          impl->operation_regions.CreateDerived<PUBLISH>(
+              check, message, impl->next_id++,
+              ProgramOperation::kPublishMessageRemoval);
+      check->false_body.Emplace(check, publish_removal);
 
-    for (auto var : iter->defined_vars) {
-      publish_add->arg_vars.AddUse(var);
-      publish_removal->arg_vars.AddUse(var);
+      for (auto var : iter->defined_vars) {
+        publish_add->arg_vars.AddUse(var);
+        publish_removal->arg_vars.AddUse(var);
+      }
+
+    // No flow into this transmit can produce deletions, so every vector row
+    // is a fresh derivation from this epoch's eager insertion path and no
+    // remover exists to retract it: publish each row as an addition, with
+    // no re-proving checker (whose recursion would need persisted state
+    // this monotone flow never creates).
+    } else {
+      PUBLISH *const publish_add =
+          impl->operation_regions.CreateDerived<PUBLISH>(
+              iter, message, impl->next_id++,
+              ProgramOperation::kPublishMessage);
+      iter->body.Emplace(iter, publish_add);
+
+      for (auto var : iter->defined_vars) {
+        publish_add->arg_vars.AddUse(var);
+      }
     }
 
     // Finally, clear the vector; we're done.
