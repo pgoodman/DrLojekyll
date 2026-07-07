@@ -1,0 +1,9 @@
+-- round0
+result:
+all_likes: 1
+-- round1
+result:
+all_likes: 1 3 4
+-- round2
+result: 2
+all_likes: 1 2 3 4

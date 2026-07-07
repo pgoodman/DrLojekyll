@@ -1,0 +1,13 @@
+deterministic: (2,1) (2,3) (3,1) (4,1) (4,3)
+seed 1 OK
+seed 2 OK
+seed 3 OK
+seed 4 OK
+seed 5 OK
+seed 6 OK
+seed 7 OK
+seed 8 OK
+seed 9 OK
+seed 10 OK
+seed 11 OK
+seed 12 OK

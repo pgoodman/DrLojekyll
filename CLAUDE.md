@@ -40,20 +40,31 @@ End-to-end tests compile a `.dr` file at build time via `compile_datalog()`
 code + runtime (see `tests/MiniDisassembler`, `tests/PointsTo`).
 `tests/DrTest` is a dependency-free mini-GoogleTest (`TEST`, `ASSERT_*`).
 
-### Differential optimization testing
+### Golden-master optimization testing
 
 The compiler has optimization toggles: `-disable-dataflow-opt` (skips
 `QueryImpl::Optimize`: CSE, canonicalization rounds, dead-flow elimination)
 and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
-`tests/OptDiff/diffrun.sh <case.dr> <driver.cpp> <workdir>` (env: `DR=` path
-to compiler, `TIMEOUT=` seconds) compiles a case in all 4 mode combinations,
-builds each with its driver, runs, and byte-compares stdout against the fully
-optimized build. ~112 corner-case programs with drivers live in
-`tests/OptDiff/cases/` (`<name>.dr` + `<name>.main.cpp`).
-`tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with repros
-and the open-bug list (F9–F14 open as of July 2026).
+The suite is golden-master-based: each case in `tests/OptDiff/cases/`
+(`<name>.dr` + `<name>.main.cpp`, ~128 corner-case programs) has one
+committed expected output in `tests/OptDiff/goldens/<name>.stdout`, and the
+4 optimization modes are just execution variants — EVERY mode's stdout is
+byte-compared against the same golden (cross-mode agreement is implied).
+
+- One case: `tests/OptDiff/diffrun.sh <case.dr> <driver.cpp> <workdir>`
+  (env: `DR=` compiler path, `TIMEOUT=` seconds).
+- Full suite: `DR=build/debug/bin/drlojekyll tests/OptDiff/runall.sh
+  <workroot> [jobs] [name-filter-regex]` — must end `SUITE: PASS`.
+  Expected-diagnostic cases (aggregate_1, kvindex_1–4) are encoded in
+  runall.sh.
+- Blessing: goldens change ONLY via explicit
+  `runall.sh --bless <workroot> [filter]` after reviewing a run's outputs —
+  never automatically on failure, and never to make a red case green.
+
+`tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with
+repros (F1–F15 all fixed as of July 2026).
 
 Manual compile of generated code (driver pattern in any `cases/*.main.cpp`):
 

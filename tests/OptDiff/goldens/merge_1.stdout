@@ -1,0 +1,9 @@
+dup:
+self:
+unsat:
+dup: 1 2 3
+self: 1 2 3
+unsat:
+dup: 1 2 3 4
+self: 1 2 3 4
+unsat:

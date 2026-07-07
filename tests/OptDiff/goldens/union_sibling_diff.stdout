@@ -1,0 +1,5 @@
+after a{1,2} b{1,3}: 1 2 3
+after rem a(1): 1 2 3
+after rem b(1): 2 3
+after re-add a(1): 1 2 3
+after rem a(2): 1 3

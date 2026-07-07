@@ -1,28 +1,61 @@
 #!/bin/bash
-# Full OptDiff suite runner: every case in cases/ through diffrun.sh, in
-# parallel, with per-case verdict lines and a final summary.
+# Full golden-master suite runner: every case in cases/ through diffrun.sh,
+# in parallel, with per-case verdict lines and a final summary. Every mode's
+# stdout is byte-compared against the case's committed golden in goldens/.
 #
 # Usage: runall.sh <workroot> [jobs] [name-filter-regex]
+#        runall.sh --bless <workroot> [name-filter-regex]
 #
 # Environment:
-#   DR       path to the drlojekyll compiler         (required)
+#   DR       path to the drlojekyll compiler         (required, except --bless)
 #   CXX      C++ compiler                            (default: clang++)
 #   TIMEOUT  per-stage timeout in seconds            (default: 120)
 #
 # Case expectations:
 #   aggregate_1, kvindex_2/3/4 — the compiler must exit 1 with a rendered
 #     diagnostic (no assert/crash) in all 4 modes.
-#   kvindex_1 — compiles and runs byte-identically under opt/nocf; exits 1
-#     with a rendered diagnostic under nodf/none (KVINDEX->TUPLE elimination
-#     is a dataflow optimization).
+#   kvindex_1 — runs under opt/nocf, each matching goldens/kvindex_1.stdout;
+#     exits 1 with a rendered diagnostic under nodf/none (KVINDEX->TUPLE
+#     elimination is a dataflow optimization).
 #   every other case — diffrun.sh must pass: all 4 modes compile, build,
-#     run, and produce byte-identical stdout.
+#     run, and match goldens/<case>.stdout.
+#
+# Blessing: goldens are updated ONLY by an explicit --bless invocation, after
+# reviewing the outputs of a run — never automatically on failure. --bless
+# copies each case's opt-mode stdout out of <workroot> into goldens/.
 #
 # Prints "SUITE: PASS (<n> cases)" and exits 0 iff every case meets its
 # expectation; otherwise prints the failing verdict lines and exits 1.
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+
+# ---- bless mode: promote opt-mode outputs from a workroot into goldens/ ----
+if [ "${1:-}" = "--bless" ]; then
+  WORKROOT=${2:?usage: runall.sh --bless <workroot> [name-filter-regex]}
+  FILTER=${3:-.}
+  mkdir -p "$HERE/goldens"
+  n=0
+  for d in "$WORKROOT"/*/; do
+    name=$(basename "$d")
+    echo "$name" | grep -qE "$FILTER" || continue
+    src="$d$name.opt/stdout"
+    if [ -f "$src" ]; then
+      cp "$src" "$HERE/goldens/$name.stdout"
+      echo "blessed $name"
+      n=$((n + 1))
+    fi
+  done
+  # kvindex_1 runs outside diffrun.sh, so its workdir layout is flat.
+  if [ -f "$WORKROOT/kvindex_1.opt/stdout" ] \
+      && echo kvindex_1 | grep -qE "$FILTER"; then
+    cp "$WORKROOT/kvindex_1.opt/stdout" "$HERE/goldens/kvindex_1.stdout"
+    echo "blessed kvindex_1"
+    n=$((n + 1))
+  fi
+  echo "BLESS: $n golden(s) updated"
+  exit 0
+fi
 
 : "${DR:?set DR to the drlojekyll compiler path}"
 case $DR in /*) ;; *) DR=$(pwd)/$DR ;; esac
@@ -61,7 +94,7 @@ if [ "${1:-}" = "--one" ]; then
     return 0
   }
 
-  compile_build_run() {  # $1=mode; exit 1 on any stage failure
+  run_vs_golden() {  # $1=mode; compile, build, run, compare against golden
     out="$WORKROOT/$NAME.$1"
     mkdir -p "$out"
     # shellcheck disable=SC2046
@@ -80,6 +113,14 @@ if [ "${1:-}" = "--one" ]; then
       echo "$NAME $1 RUN-FAIL"
       return 1
     fi
+    if [ ! -f "$HERE/goldens/$NAME.stdout" ]; then
+      echo "$NAME $1 GOLDEN-MISSING"
+      return 1
+    fi
+    if ! cmp -s "$HERE/goldens/$NAME.stdout" "$out/stdout"; then
+      echo "$NAME $1 GOLDEN-DIVERGE"
+      return 1
+    fi
     return 0
   }
 
@@ -91,12 +132,8 @@ if [ "${1:-}" = "--one" ]; then
       echo "$NAME all-modes-diagnostic OK"
       ;;
     kvindex_1)
-      compile_build_run opt || exit 1
-      compile_build_run nocf || exit 1
-      if ! cmp -s "$WORKROOT/$NAME.opt/stdout" "$WORKROOT/$NAME.nocf/stdout"; then
-        echo "$NAME nocf DIVERGE"
-        exit 1
-      fi
+      run_vs_golden opt || exit 1
+      run_vs_golden nocf || exit 1
       expect_diagnostic nodf || exit 1
       expect_diagnostic none || exit 1
       echo "$NAME modesplit OK"
@@ -126,9 +163,9 @@ fi
 xargs -P "$JOBS" -I{} "$HERE/runall.sh" --one {} "$WORKROOT" \
     < "$WORKROOT/caselist" > "$WORKROOT/verdicts" 2>&1
 
-if grep -qE 'FAIL|DIVERGE|EXPECT-ERROR' "$WORKROOT/verdicts"; then
+if grep -qE 'FAIL|DIVERGE|EXPECT-ERROR|MISSING' "$WORKROOT/verdicts"; then
   echo "SUITE: FAIL"
-  grep -E 'FAIL|DIVERGE|EXPECT-ERROR' "$WORKROOT/verdicts"
+  grep -E 'FAIL|DIVERGE|EXPECT-ERROR|MISSING' "$WORKROOT/verdicts"
   exit 1
 fi
 echo "SUITE: PASS ($(wc -l < "$WORKROOT/caselist" | tr -d ' ') cases)"

@@ -1,0 +1,12 @@
+-- round0
+dup_bound:
+dup_att:
+drop_att:
+-- round1
+dup_bound: (4,5) (6,7)
+dup_att: (3,5,5) (4,7,7)
+drop_att: (3,5)
+-- round2
+dup_bound: (4,5) (4,9) (6,7) (20,5)
+dup_att: (3,5,5) (3,9,9) (4,7,7) (11,5,5)
+drop_att: (3,5) (11,5)

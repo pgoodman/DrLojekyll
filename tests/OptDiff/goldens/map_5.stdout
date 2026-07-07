@@ -1,0 +1,12 @@
+-- round0
+evens:
+odds:
+merged:
+-- round1
+evens: 2 4
+odds: 3
+merged: 9 10 11
+-- round2
+evens: 2 4
+odds: 3
+merged: 9 10 11 100

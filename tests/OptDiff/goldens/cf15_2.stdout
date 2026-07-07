@@ -1,0 +1,9 @@
+-- round0
+p:
+all_bar: (1,1)
+-- round1
+p:
+all_bar: (1,1) (5,5)
+-- round2
+p:
+all_bar: (1,1) (2,2) (5,5) (7,7)

@@ -1,0 +1,9 @@
+-- round0
+out_bad:
+out_ok:
+-- round1
+out_bad:
+out_ok: 1 2 5
+-- round2
+out_bad:
+out_ok: 1 2 5 7

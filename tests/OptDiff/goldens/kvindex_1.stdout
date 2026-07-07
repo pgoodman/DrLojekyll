@@ -1,0 +1,15 @@
+has_edge(1):
+has_edge(2):
+has_edge(3):
+has_edge(4):
+--
+has_edge(1): 10 11
+has_edge(2): 20
+has_edge(3):
+has_edge(4):
+--
+has_edge(1): 10 11
+has_edge(2): 20 21
+has_edge(3): 30
+has_edge(4):
+--

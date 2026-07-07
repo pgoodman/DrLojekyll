@@ -1,11 +1,12 @@
 #!/bin/bash
-# Differential test runner for Dr. Lojekyll optimization passes.
+# Golden-master test runner for Dr. Lojekyll optimization passes.
 #
 # For one Datalog case, compiles the program in four optimization modes
 # (opt = default, nodf = -disable-dataflow-opt, nocf = -disable-controlflow-opt,
 # none = both disabled), builds the generated C++ against the runtime with the
-# case's driver, runs each binary, and compares every mode's output against
-# the fully optimized build.
+# case's driver, runs each binary, and byte-compares EVERY mode's stdout
+# against the case's committed golden master (goldens/<case>.stdout).
+# Mode agreement is implied: all four modes must equal the same golden.
 #
 # Usage: diffrun.sh <case.dr> <driver.cpp> <workdir>
 #
@@ -15,9 +16,11 @@
 #   TIMEOUT  per-stage timeout in seconds            (default: 60)
 #
 # Exit status 0 iff every mode compiles, generates buildable C++, runs
-# cleanly, and produces byte-identical output to the optimized build.
-# Verdict lines are printed to stdout, one per mode:
-#   <case> <mode> OK | DR-FAIL(<code>) | CXX-FAIL | RUN-FAIL(<code>) | DIVERGE
+# cleanly, and matches the golden. Verdict lines, one per mode:
+#   <case> <mode> OK | DR-FAIL(<code>) | CXX-FAIL | RUN-FAIL(<code>)
+#          | GOLDEN-DIVERGE | GOLDEN-MISSING
+# A missing golden is a failure: after reviewing a new case's output, bless
+# it deliberately with  runall.sh --bless <workroot> <case-name>.
 
 set -u
 
@@ -28,8 +31,10 @@ WORK=$3
 : "${DR:?set DR to the drlojekyll compiler path}"
 CXX=${CXX:-clang++}
 TIMEOUT=${TIMEOUT:-60}
-REPO_ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO_ROOT=$(cd "$HERE/../.." && pwd)
 NAME=$(basename "$CASE_DR" .dr)
+GOLDEN="$HERE/goldens/$NAME.stdout"
 
 mkdir -p "$WORK"
 status=0
@@ -71,12 +76,13 @@ for mode in opt nodf nocf none; do
     continue
   fi
 
-  if [[ $mode == opt ]]; then
-    echo "$NAME opt OK"
-  elif cmp -s "$WORK/$NAME.opt/stdout" "$out/stdout"; then
+  if [[ ! -f $GOLDEN ]]; then
+    echo "$NAME $mode GOLDEN-MISSING"
+    status=1
+  elif cmp -s "$GOLDEN" "$out/stdout"; then
     echo "$NAME $mode OK"
   else
-    echo "$NAME $mode DIVERGE"
+    echo "$NAME $mode GOLDEN-DIVERGE"
     status=1
   fi
 done

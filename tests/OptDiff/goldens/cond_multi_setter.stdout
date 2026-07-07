@@ -1,0 +1,7 @@
+start gated:
+items-only gated:
+a-set gated: 1 2 3
+a+b-set gated: 1 2 3
+a-retracted gated: 1 2 3
+b-retracted gated:
+a-reset gated: 1 2 3

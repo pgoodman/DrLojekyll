@@ -1,0 +1,16 @@
+getp(1): 10 11
+getq(1): 10 11
+getp(2): 20
+getq(2): 20
+getp(3):
+getq(3):
+qa: 1 10
+qb: 1 10
+getp(1): 10 11
+getq(1): 10 11
+getp(2): 20 21
+getq(2): 20 21
+getp(3): 30
+getq(3): 30
+qa: 1 9 10
+qb: 1 9 10
