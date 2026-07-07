@@ -46,8 +46,7 @@ static void ForEachSuccessorOf(VIEW *view, T cb) {
   (void) found;
 }
 
-// Return the set of all views that contribute data to `view`. This includes
-// things like conditions.
+// Return the set of all views that contribute data to `view`.
 static std::set<VIEW *> TransitivePredecessorsOf(VIEW *output) {
   std::set<VIEW *> dependencies;
   std::vector<VIEW *> frontier;

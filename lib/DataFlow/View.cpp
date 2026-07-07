@@ -620,16 +620,15 @@ bool QueryViewImpl::AllColumnsAreUsed(void) const noexcept {
   return true;
 }
 // Insert a pass-through TUPLE between `this` and its users, and return that
-// tuple, or `nullptr` when no guard is needed. A view that is used directly
-// -- as an operand of a UNION (MERGE) -- exposes its exact column arity and
-// ordering to those users, so its own canonicalization must not re-order,
-// de-duplicate, or drop columns. The guard tuple absorbs that external
-// interface: every direct use (including group IDs and differential flags)
-// moves onto the tuple, which forwards each column of `this` in order,
-// leaving `this` free to restructure its columns beneath a stable facade.
-// With `force`, a guard is inserted even when `this` is not directly used.
+// tuple. A view that is used directly -- as an operand of a UNION (MERGE) --
+// exposes its exact column arity and ordering to those users, so its own
+// canonicalization must not re-order, de-duplicate, or drop columns. The
+// guard tuple absorbs that external interface: every direct use (including
+// group IDs and differential flags) moves onto the tuple, which forwards
+// each column of `this` in order, leaving `this` free to restructure its
+// columns beneath a stable facade. Callers invoke this when the view is
+// used directly and its column shape is about to change.
 //
-//    if not force and not IsUsedDirectly(): return nullptr
 //    tuple = new TUPLE with one output per column of this, constants copied
 //    SubstituteAllUsesWith(tuple)   // users, group ids move over
 //    tuple.input_columns = this->columns
@@ -642,12 +641,7 @@ bool QueryViewImpl::AllColumnsAreUsed(void) const noexcept {
 //    UNION                            TUPLE(in: A,B,C -> out: A,B,C)
 //                                       |
 //                                     UNION
-QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query,
-                                              bool force) {
-
-  if (!force && !IsUsedDirectly()) {
-    return nullptr;
-  }
+QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query) {
 
   const auto tuple = query->tuples.Create();
   tuple->color = color;

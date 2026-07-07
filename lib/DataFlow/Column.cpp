@@ -127,7 +127,7 @@ bool QueryColumnImpl::IsUniqueConstant(void) const noexcept {
 }
 
 // Returns `true` if this column is being used directly, or indirectly via
-// a usage of the view (e.g. by a merge, a join, a condition, a negation, etc.)
+// a usage of the view (e.g. by a merge, a join, a negation, etc.)
 //
 // NOTE(pag): Even if the column doesn't look used, it might be used indirectly
 //            via a merge, and thus we want to capture this.

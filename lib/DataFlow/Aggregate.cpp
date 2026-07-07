@@ -215,7 +215,7 @@ bool QueryAggregateImpl::Canonicalize(QueryImpl *query,
     // affect control dependencies, so we can remove it too.
     if (in_col_is_const || prev_out_col) {
       if (is_used_in_merge && !guard_tuple) {
-        guard_tuple = GuardWithTuple(query, true /* force */);
+        guard_tuple = GuardWithTuple(query);
         non_local_changes = true;
       }
 

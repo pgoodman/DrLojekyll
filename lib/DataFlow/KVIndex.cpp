@@ -267,7 +267,7 @@ bool QueryKVIndexImpl::Canonicalize(QueryImpl *query,
     if (in_col_is_const || prev_out_col) {
       if (is_used_in_merge && !guard_tuple) {
         non_local_changes = true;
-        guard_tuple = GuardWithTuple(query, true);
+        guard_tuple = GuardWithTuple(query);
       }
 
       if (in_col_is_const) {

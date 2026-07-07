@@ -299,9 +299,11 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // Returns `true` if all output columns are used.
   bool AllColumnsAreUsed(void) const noexcept;
 
-  // Returns `true` if we had to "guard" this view with a tuple so that we
-  // can put it into canonical form.
-  QueryTupleImpl *GuardWithTuple(QueryImpl *query, bool force = false);
+  // Interpose a pass-through TUPLE between `this` and its users, so that
+  // canonicalization of `this` can restructure its columns behind a stable
+  // facade. Callers invoke this when the view is used directly (e.g. as a
+  // MERGE operand) and its column shape is about to change.
+  QueryTupleImpl *GuardWithTuple(QueryImpl *query);
 
   // This is like an "optimized" form of `GuardWithTuple`, that also knows
   // about attached columns. It tries to propagate constants, and keeps at
@@ -907,9 +909,9 @@ class QueryCompareImpl : public QueryViewImpl {
   // Spelling range of the comparison that produced this. May not be valid.
   DisplayRange spelling_range;
 
-  // If we created this merge from sinking / predicate pushdown, then we
-  // make discover some unsatisfiable conditions, which we don't want to
-  // report as errors.
+  // If we created this comparison from sinking / predicate pushdown, then
+  // we may discover it is unsatisfiable, which we don't want to report as
+  // an error.
   bool created_from_sinking{false};
 
   // Can this node be sunk?

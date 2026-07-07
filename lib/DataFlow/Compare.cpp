@@ -167,7 +167,6 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
         tuple->input_columns.AddUse(attached_columns[i - 1u]);
       }
 
-      // NOTE(pag): This will transfer/fixup conditions.
       this->ReplaceAllUsesWith(tuple);
       return true;
 
@@ -213,7 +212,6 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
         tuple->input_columns.AddUse(attached_columns[i - 2u]);
       }
 
-      // NOTE(pag): This will transfer/fixup conditions.
       this->ReplaceAllUsesWith(tuple);
       return true;
     }

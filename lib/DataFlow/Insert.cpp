@@ -65,8 +65,7 @@ uint64_t QueryInsertImpl::Hash(void) noexcept {
 // as a column edge, but they are not stored. Its canonical form reads its
 // inputs from as far up the dataflow as possible: the pass hops the input
 // and attached columns over trivially forwarding TUPLEs and single-source
-// UNIONs, so long as each hopped-over node is unconditional or guarded only
-// by trivial positive conditions. This is beneficial because it makes the
+// UNIONs. This is beneficial because it makes the
 // intervening forwarding nodes dead (hence deletable) and makes structurally
 // identical INSERTs more likely to hash/compare as equal, enabling CSE in
 // the optimizer driver. It is sound because a TUPLE only forwards values and

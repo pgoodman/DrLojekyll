@@ -69,10 +69,8 @@ uint64_t QueryTupleImpl::Hash(void) noexcept {
 //       reads from `incoming` (raw, not resolved to a constant), even
 //       if its output is otherwise unused, so the tuple's presence
 //       dependency on `incoming` stays expressed as a column edge
-//   if no output columns remain (possible only with no incoming view):
-//     delete self when unused, unconditional, or guarded only by
-//     trivial positive conditions; otherwise restore the old
-//     columns and lock the tuple against future canonicalization
+//   if no output columns remain (possible only with no incoming view,
+//     e.g. an all-constant tuple whose outputs are all unused): delete self
 //
 // Constant propagation, duplicate redirection, unused-column removal:
 //
