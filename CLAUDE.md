@@ -95,18 +95,26 @@ signatures before writing a driver.
   `RelabelGroupIDs`); every inductive back-edge append must be dominated by a
   state transition on the union's table (termination of generated fixpoints);
   a source-less forwarding cycle is unsatisfiable, collected by dead-flow
-  elimination.
+  elimination; `QueryImpl` owns no conditions — zero-arity predicates desugar
+  in `BuildClause` into unit relations (1 bool column, `is_condition`, sole
+  possible row `(true)`) and every inter-view dependency is a column edge;
+  canonicalization never severs the last input-column edge to an incoming
+  view (keep-last-edge rule); a JOIN pivot whose non-user side is a unit
+  relation is never removed, and CSE never folds a unit SELECT into a
+  non-unit one; a unit relation contains at most the row `(true)` — only the
+  desugarer creates its INSERTs, and they insert only the token; zero-pivot
+  JOINs appear only under `@product`.
 - Union sinking (`do_sink` in `QueryImpl::Optimize`) is commented out —
   `lib/DataFlow/Merge.cpp` sinking code is currently unreachable.
 
-## Known feature gaps (assert TODO in control-flow build)
+## Known feature gaps (clean diagnostics from the control-flow build)
 
-Aggregates, KV indices (mutable params), cross-products in differential
-removal paths, impure functors. Three corpus files exercise these gaps and
-fail the control-flow build in all modes: `data/examples/average_weight.dr`,
-`pairwise_average_weight.dr` (KV indices), `conditions_to_bools.dr`
-(cross-products in removal). Every other file under `data/` compiles in all
-4 modes.
+Aggregates, KV indices (mutable params), cross-products over differential
+(deletable) data, impure functors. Three corpus files exercise these gaps
+and fail the control-flow build in all modes: `data/examples/average_weight.dr`,
+`pairwise_average_weight.dr` (KV indices), `conditions_to_bools.dr` (an
+explicit `@product` join of two deletable locals). Every other file under
+`data/` compiles in all 4 modes.
 
 ## Gotchas
 

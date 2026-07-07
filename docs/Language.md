@@ -295,6 +295,19 @@ Body conjuncts, separated by commas:
   q(A) : e(A), is_enabled.
   ```
 
+  Conditions are pure sugar for *unit relations*: the compiler desugars each
+  condition into a 1-column `bool` relation whose only possible row is
+  `(true)`. Proving the condition inserts the row; a positive test joins
+  against it; a negative test (`!is_enabled`) is an ordinary negation. There
+  is no other condition machinery, so conditions compose with recursion and
+  `@differential` retraction exactly like any relation.
+
+  Relatedly, every conjunct group of a clause body must share at least one
+  variable with the clause head (transitively). A group that shares none is
+  a style error -- "should be factored out into a zero-argument predicate"
+  -- prompting exactly this sugar: name the group as a condition and test
+  the condition instead.
+
 - **`@barrier`** splits the body into join groups (must be followed by a
   comma).
 - **`@first msg(A, ...)`** (query clause bodies only) sends the message

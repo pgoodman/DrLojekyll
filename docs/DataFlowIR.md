@@ -12,7 +12,7 @@ control-flow IR. The public, immutable-facade API lives in
 `QueryTuple`, ...); the mutable implementation classes live in
 `lib/DataFlow/Query.h` (`QueryImpl`, `QueryViewImpl`, `QueryColumnImpl`, ...).
 The implementation file also defines the short aliases used throughout the
-pass code: `VIEW`, `COL`, `COND`, `TUPLE`, `JOIN`, `MERGE`, `CMP`, `MAP`,
+pass code: `VIEW`, `COL`, `TUPLE`, `JOIN`, `MERGE`, `CMP`, `MAP`,
 `AGG`, `KVINDEX`, `SELECT`, `INSERT`, `NEGATION`, `REL`, `IO`, `CONST`, `TAG`.
 
 The IR models each Datalog program as a dataflow graph. Data enters through
@@ -26,7 +26,7 @@ column-level uses: a view's `input_columns` (and `attached_columns`) are
 owns all nodes in per-kind `DefList`s (`selects`, `tuples`, `joins`,
 `merges`, `maps`, `compares`, `negations`, `kv_indices`, `aggregates`,
 `inserts`) plus the non-view entities: `relations`, `ios`, `constants`,
-`tags`, and `conditions`.
+and `tags`.
 
 ## The column model
 
@@ -101,7 +101,7 @@ role:
 | `QueryMergeImpl` | `MERGE` | `UNION` | Union of same-arity views |
 | `QueryCompareImpl` | `CMP` | `COMPARE eq/gt/lt/neq` | Filter by comparing two columns |
 | `QueryNegateImpl` | `NEGATION` | `AND-NOT`, `AND-NEVER` | Absence check against another view |
-| `QueryInsertImpl` | `INSERT` | `INSERT`, `INCREMENT`, `MATERIALIZE`, `TRANSMIT` | Sink into a relation, condition, query, or message |
+| `QueryInsertImpl` | `INSERT` | `INSERT`, `MATERIALIZE`, `TRANSMIT` | Sink into a relation, query, or message |
 
 **SELECT** (`QuerySelectImpl`) sources tuples and has no `input_columns`.
 It reads either a `stream` (`QueryIOImpl` message input, printed `RECEIVE`;
@@ -117,9 +117,8 @@ TUPLEs are the IR's only pure forwarding views, and the normalization
 passes lean on that: guard tuples isolate a view's external interface
 (`GuardWithTuple` / `GuardWithOptimizedTuple` in `lib/DataFlow/View.cpp`),
 `QueryImpl::ConvertConstantInputsToTuples` makes TUPLE the only view kind
-whose inputs may all be constants, `ExtractConditionsToTuples` moves tested
-conditions onto TUPLEs, and `ProxyInsertsWithTuples` puts a TUPLE before
-every INSERT so input column indices line up positionally downstream.
+whose inputs may all be constants, and `ProxyInsertsWithTuples` puts a TUPLE
+before every INSERT so input column indices line up positionally downstream.
 
 **KVINDEX** (`QueryKVIndexImpl`) treats `input_columns` as keys and
 `attached_columns` as values; `merge_functors` (one `ParsedFunctor` per
@@ -168,27 +167,45 @@ ones (`AND-NOT`).
 **INSERT** (`QueryInsertImpl`) is a sink: it has `input_columns` but *no
 output columns* (asserted in `GuardWithTuple`). It targets either a
 `relation` or a `stream`, and prints as `MATERIALIZE` (query),
-`TRANSMIT` (message publication), `INSERT` (ordinary relation), or
-`INCREMENT` (zero-arity declaration, i.e. a condition setter).
+`TRANSMIT` (message publication), or `INSERT` (relation). Its
+`attached_columns` are read-only *witness* edges: columns read from the
+incoming view to keep the INSERT's presence dependency on it expressed as
+a column edge, but not stored (unit-relation setters use this).
 
-## Conditions (zero-arity predicates)
+## Unit relations (zero-arity conditions)
 
-`QueryConditionImpl` (`COND`) models a zero-argument predicate: either a
-user-defined `ParsedExport` (`declaration` is set) or an anonymous condition
-invented by optimization, e.g. when canonicalization drops a view's last
-data edge to a predecessor and must keep the "predecessor holds data"
-dependency as control. A condition tracks `setters` (views that produce it;
-a zero-arity INSERT is an `INCREMENT` setter) and `positive_users` /
-`negative_users` -- all weak lists. On the view side,
-`positive_conditions` / `negative_conditions` are the conditions a view
-tests: its tuples flow only if every positive condition holds and no
-negative one does, and `sets_condition` (a `WeakUseRef`) is the condition
-the view sets. Testing a condition wraps a view in the dump with a `COND`
-cell listing the tested predicates (`!` prefix for negative), linked to the
-condition node with purple edges. `QueryImpl::ShrinkConditions` collapses
-chains of constant-input TUPLEs that each set a condition tested by the
-next; `ExtractConditionsToTuples` then confines tested conditions to TUPLE
-nodes for the control-flow builder.
+A zero-arity predicate (a "condition") has no IR node kind of its own: the
+dataflow builder desugars every condition `c` into an ordinary **unit
+relation** `⊥c` -- a 1-column, `bool`-typed `QueryRelationImpl` with
+`is_condition` set, whose only possible row is `(true)`. The parser keeps
+the zero-arity surface syntax (it auto-exports zero-arity clause heads);
+`BuildClause` (`lib/DataFlow/Build.cpp`) performs the desugaring, so the
+AST round-trips unchanged. The stored token is the column of a
+compiler-synthesized boolean `true` constant stream (`QueryImpl::true_col`,
+a literal-less CONST; printed **TRUE** in dumps). Per clause shape:
+
+- *Defining clause* `c : body.` builds the body normally, then INSERTs the
+  token into `⊥c`. The INSERT stores only the token (`input_columns`); the
+  body's presence rides a read-only witness column -- one representative
+  body column in `attached_columns`.
+- *Positive test* `head(..) : r(X), c.` extends the user's view with a
+  constant `true` column and equi-joins it against a SELECT of `⊥c` --
+  one pivot, never a cross-product. The SELECT's column is deliberately
+  not marked constant, so the pivot survives canonicalization and keeps
+  expressing the presence dependency on `⊥c`.
+- *Negative test* `head(..) : r(X), !c.` is an ordinary NEGATE whose
+  matched column is the token and whose `attached_columns` carry the
+  user's columns.
+
+Each distinct condition is tested once per polarity per clause (set
+semantics). Because setting is an INSERT and testing is a JOIN or NEGATE,
+no other pass knows about conditions: CSE, canonicalization, dead-flow
+elimination, differential tracking, and induction analysis treat unit
+relations like any other relation. Invariants: a unit relation contains at
+most the row `(true)` (only the desugarer creates its INSERTs, and they
+insert only the token), and a zero-pivot JOIN appears only under
+`@product`. The control-flow build lowers unit-joins and unit-negations to
+`CHECKTUPLE` existence gates (see `docs/ControlFlowIR.md`).
 
 ## Def-use machinery
 
@@ -200,18 +217,18 @@ Everything sits on `include/drlojekyll/Util/DefUse.h`:
   (`User::gNextTimestamp`) let views invalidate cached hashes and depths
   when operands change.
 - `UseList<T>` is an owning list of uses held by one `User` (e.g.
-  `input_columns`, `merged_views`, `positive_conditions`);
+  `input_columns`, `merged_views`);
   `WeakUseList<T>` / `WeakUseRef<T>` are non-owning variants whose entries
   are nulled when the def dies -- used for references that must not keep
   nodes alive (`joined_views` -- a JOIN's strong uses are the columns in
-  `out_to_in` -- plus `predecessors`, `successors`, condition user/setter
-  lists, `sets_condition`, and `QuerySelectImpl::inserts`).
+  `out_to_in` -- plus `predecessors`, `successors`, and
+  `QuerySelectImpl::inserts`).
 - `DefList<T>` owns the nodes themselves (`QueryImpl::tuples` etc.);
   `RemoveUnused()` reclaims defs with no uses.
 
 Views are both `Def<QueryViewImpl>` (usable as whole nodes, e.g. by a
-MERGE) and `User` (they use columns and conditions). A view `IsUsed()` if
-its columns are read, it is used as a node, or it sets a condition.
+MERGE) and `User` (they use columns and other views). A view `IsUsed()` if
+its columns are read or it is used as a node.
 
 Core invariants:
 
@@ -219,7 +236,7 @@ Core invariants:
   `RelabelGroupIDs`). CSE additionally refuses merges that would create
   one (`DirectlyUsesColumnsOf` checks in `lib/DataFlow/Optimize.cpp`).
 - **TUPLEs are the only forwarding views**, and normalization funnels
-  structure through them (guards, condition carriers, INSERT proxies).
+  structure through them (guards, INSERT proxies).
 - **Unsatisfiable views** (`is_unsat`) provably produce no tuples --
   e.g. a CMP of two distinct unique constants, or a UNION whose operands
   are all unsatisfiable. `MarkAsUnsatisfiable` propagates the property so
@@ -234,15 +251,17 @@ all-constant input set reports a null incoming view, which is pre-seeded).
 Taint propagates forward to a fixpoint with per-kind rules: TUPLE, INSERT,
 CMP, MAP, and KVINDEX are tainted when their incoming view is; a MERGE when
 *any* live operand is; a JOIN only when *all* joined views are; a NEGATE
-only when both its predecessor *and* its negated view are; a relation
-SELECT when any live INSERT into the relation is. The sweep unlinks
+when its predecessor is (an untainted negated view never blocks data -- it
+only makes the absence check vacuously true); a relation SELECT when any
+live INSERT into the relation is. The sweep unlinks
 untainted views, prunes untainted operands out of surviving MERGEs, and
 deletes TUPLEs forming trivial self-cycles through a MERGE
 (`IsTrivialCycle`: the TUPLE's only user is the MERGE that feeds it and it
 forwards columns 1:1, so it routes a subset of the MERGE's data back into
-the MERGE). Finally, conditions left with no setters resolve to a
-fixpoint: negative tests of them are vacuously true and are dropped, while
-positive testers are unsatisfiable and are deleted.
+the MERGE). Finally, *empty-relation folding*: a NEGATE whose negated view
+is untainted (the sweep deletes that view) forwards its predecessor's rows
+unconditionally, so the NEGATE is folded into a forwarding TUPLE that
+inherits the predecessor's taint.
 
 This is what collects **source-less forwarding cycles**: a recursive
 clause set whose only "sources" are its own outputs (e.g. a relation
@@ -259,7 +278,7 @@ visited set so walks around such cycles terminate.
 `ConnectInsertsToSelects`; `Optimize` (only when `optimize` is true -- the
 `-disable-dataflow-opt` CLI flag turns it off); then the normalization tail
 consumed by the control-flow builder: `ConvertConstantInputsToTuples`,
-`ExtractConditionsToTuples`, `ProxyInsertsWithTuples`, `LinkViews`
+`ProxyInsertsWithTuples`, `LinkViews`
 (fills the public `predecessors`/`successors`), `IdentifyInductions`,
 `FinalizeDepths`, `FinalizeColumnIDs`, `TrackDifferentialUpdates`,
 `TrackConstAfterInit`, the forwards/backwards column taint analyses, and
@@ -284,7 +303,6 @@ global passes because each exposes work for the others:
       Canonicalize(top-down, +can_remove_unused_columns,
                    +can_replace_inputs_with_constants)
       do_sink()
-      if ShrinkConditions(): Canonicalize(same opts)
       RemoveUnusedViews()
     do_cse(); RemoveUnusedViews()
 
@@ -391,7 +409,8 @@ v4317912640:p1 -> v4317907376:c1;
 Line by line:
 
 - `t...` nodes are non-view entities: the `RELATION out` table (one cell
-  per declared parameter) and the `I/O in` message. The edge
+  per declared parameter; unit relations are annotated `(unit)`) and the
+  `I/O in` message. The edge
   `t(out) -> v(MATERIALIZE)` links the relation to its INSERT; the edge
   `v(RECEIVE) -> t(in)` links the receive to its message.
 - Each `v...` node is a view. The first cell stacks annotations: `TABLE n`
@@ -412,4 +431,4 @@ Line by line:
   `c0 -> c3`, `c1 -> c4` read the TUPLE's two outputs.
 - On a JOIN, pivot output cells span the pivot's input columns and are
   color-filled; a UNION has plain (portless) edges to each merged view;
-  condition and differential (deletion-carrying) edges print in purple.
+  differential (deletion-carrying) edges print in purple.

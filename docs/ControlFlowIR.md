@@ -24,10 +24,9 @@ A `Program` owns:
   the builder unions views into *data models* (equivalence classes of views
   that can share storage). `DataIndex` maps key columns to value columns.
 - **Constants and global variables** (`DataVariable`) — every variable has a
-  `VariableRole` (`kConstant`, `kConditionRefCount`, `kInitGuard`,
-  `kJoinPivot`, `kScanOutput`, `kFunctorOutput`, `kMessageOutput`, ...).
-  Condition ref-counts and init guards are globals; everything else is defined
-  by a region.
+  `VariableRole` (`kConstant`, `kInitGuard`, `kJoinPivot`, `kScanOutput`,
+  `kFunctorOutput`, `kMessageOutput`, ...). The init guard is a global;
+  everything else is defined by a region.
 - **Procedures** (`ProgramProcedure`) — every procedure returns `true` or
   `false`, takes vector and variable parameters, and owns locally defined
   vectors.
@@ -45,7 +44,6 @@ A `Program` owns:
 | `kPrimaryDataFlowFunc` | `^flow:` | Takes the induction vectors collected by the entry function and executes the rest of the dataflow (fixpoints, joins, publishing). |
 | `kMessageHandler` | `^receive:` | One per received `#message`; wraps a vector of tuples and calls the entry function. |
 | `kTupleFinder` | `^find:` | Top-down checker: given a tuple, returns `true` if it is (re-)provable; converts unprovable *unknown* states into *absent*. |
-| `kConditionTester` | `^test:` | Tests condition variables (`@cond` ref counts); returns `true` iff all are satisfied. |
 | `kQueryMessageInjector` | `^inject:` | Forcing function for a query: internally sends a message given the query's `bound` parameters. |
 
 ### Vectors (`DataVector`, `VectorKind`)
@@ -153,10 +151,12 @@ the macro aliases used in `lib/ControlFlow/`).
   (`ParsedFunctor`) to `InputVariables()`, binding `OutputVariables()`;
   `BodyIfResults()` runs per generated tuple (or on filter success),
   `BodyIfEmpty()` runs when zero tuples are generated (functor negation).
-- `ProgramTestAndSetRegion` (TESTANDSET) — atomic `(A += D) == C` /
-  `(A -= D) == C` on a global accumulator; used for condition (`@cond`)
-  reference counts and init guards. The body executes only if the comparison
-  holds. Printed `@A += @D` (with `if (...)` when the result is tested).
+- `ProgramTestAndSetRegion` (TESTANDSET) — run-once guard on a global
+  accumulator: `(A += 1) == 1`. Its sole producer is the entry procedure's
+  init guard (`VariableRole::kInitGuard`), which makes the
+  constant-initialization flows run exactly once. The body executes only on
+  the first increment. Printed `if (@A += 1) == 1` (or `@A += 1` when the
+  body was optimized away).
 - `ProgramWorkerIdRegion` (WORKERID) — hashes `HashedVariables()` into a
   16-bit `WorkerId()` used to shard vector appends. Printed
   `hash {...} into @N`.
@@ -165,9 +165,7 @@ the macro aliases used in `lib/ControlFlow/`).
 
 - `ProgramCallRegion` (CALL) — calls another procedure with variable and
   vector arguments; dispatches on the boolean result to `BodyIfTrue()` /
-  `BodyIfFalse()`. Condition tests on views compile to CALLs of
-  `kConditionTester` procedures; re-proving compiles to CALLs of tuple
-  finders.
+  `BodyIfFalse()`. Re-proving compiles to CALLs of tuple finders.
 - `ProgramReturnRegion` (RETURN) — `return-true` / `return-false`.
 - `ProgramPublishRegion` (PUBLISH) — emits a `#message` with
   `VariableArguments()`; `IsRemoval()` marks the retraction variant of a
@@ -179,8 +177,8 @@ the macro aliases used in `lib/ControlFlow/`).
 
 1. **Data model** (`BuildDataModel`, `FillDataModel`): views are unioned into
    storage equivalence classes; tables are created ahead-of-time for
-   everything that must be persisted — join inputs, negated views, condition
-   participants, views that can receive deletions, inductive merges. Doing
+   everything that must be persisted — join inputs, negated views, views
+   that can receive deletions, inductive merges. Doing
    this up front prevents two successors from independently inventing state
    transitions on the same table that would make each other unsatisfiable.
 2. **Bottom-up insertion paths**: `BuildEntryProcedure` starts a *work-list
@@ -195,6 +193,19 @@ the macro aliases used in `lib/ControlFlow/`).
    before the inductions they feed, and induction finalization at one depth
    precedes induction continuation at the next (`Build.h` documents the
    ordering). `CompleteProcedure` drains the work list.
+
+   *Unit gates*: a joined or negated view backed by a unit (condition) table
+   never multiplies cardinality — its only possible row is `(true)` — so it
+   is not lowered as a scan source. Join lowering (`Build/Join.cpp`) excludes
+   unit sides from the emitted TABLEJOIN's scan arms and instead wraps the
+   join body (or the sole successor body, when no scanned side remains) in a
+   CHECKTUPLE existence test of the unit table; negation lowering
+   (`Build/Negate.cpp`) gates on the same CHECKTUPLE — present means the
+   negation fails, absent means it holds, and unknown calls the negated
+   view's top-down checker to settle it. Top-down join checkers likewise
+   test the CHECKTUPLE instead of recursing into a checker arm for the unit
+   side, and a unit side contributes no removal scan: removal is driven by
+   the unit table's own state transition.
 3. **Per-message I/O procedures** (`BuildIOProcedure`) and the initializer
    (`BuildInitProcedure`), plus one `BuildQueryEntryPoint` per `#query`
    insert.
@@ -324,45 +335,45 @@ Corpus files exercising these: `data/examples/average_weight.dr`,
 excerpted:
 
 ```
-proc ^flow:52($induction_in:20<u32,u32>, $induction_pivots:23<u32>)
-  vector-define $induction_swap:21<u32,u32>
+proc ^flow:51($induction_in:19<u32,u32>, $induction_pivots:22<u32>)
+  vector-define $induction_swap:20<u32,u32>
   ...
   seq
-    @14 += @1                       ; TESTANDSET on the init-guard global
+    @13 += 1                        ; TESTANDSET on the init-guard global
     ; set 0 depth 1                 ; region comment: induction set/depth
     induction
       empty-init                    ; Initializer() was optimized away
-      fixpoint-loop testing $induction_in:20<u32,u32>, $induction_pivots:23<u32>
+      fixpoint-loop testing $induction_in:19<u32,u32>, $induction_pivots:22<u32>
         par                         ; one arm per inductive view
           seq                       ; arm 1: the UNION's cycle
-            vector-clear $induction_swap:21<u32,u32>
-            vector-unique $induction_in:20<u32,u32>
-            vector-swap $induction_in:20<u32,u32>, $induction_swap:21<u32,u32>
-            vector-loop {@From:28, @To:29} over $induction_swap:21<u32,u32>
+            vector-clear $induction_swap:20<u32,u32>
+            vector-unique $induction_in:19<u32,u32>
+            vector-swap $induction_in:19<u32,u32>, $induction_swap:20<u32,u32>
+            vector-loop {@From:27, @To:28} over $induction_swap:20<u32,u32>
               par
-                vector-append {@From:28, @To:29} into $induction_out:22<u32,u32>
-                hash {@To:29} into @36          ; WORKERID over the pivot
-                  vector-append {@To:29} into $induction_pivots:23<u32> of-worker @36
+                vector-append {@From:27, @To:28} into $induction_out:21<u32,u32>
+                hash {@To:28} into @35          ; WORKERID over the pivot
+                  vector-append {@To:28} into $induction_pivots:22<u32> of-worker @35
           seq                       ; arm 2: the inductive JOIN's cycle
             ...
             join-tables             ; TABLEJOIN driven by the pivot vector
-              vector-loop {@X:39} over $induction_pivots_swap:24<u32>
-              select {%col:6 as @From:44, %col:7 as @X:42} from %table:5[u32,u32]
-                  using %index:40[_,u32] where %col:7 = @X:39
-              select {%col:10 as @X:43, %col:11 as @To:45} from %table:9[u32,u32]
-                  using %index:41[u32,_] where %col:10 = @X:39
-                if-compare {@X:39, @X:39} = {@X:42, @X:43}   ; re-check scan results
+              vector-loop {@X:38} over $induction_pivots_swap:23<u32>
+              select {%col:5 as @From:43, %col:6 as @X:41} from %table:4[u32,u32]
+                  using %index:39[_,u32] where %col:6 = @X:38
+              select {%col:9 as @X:42, %col:10 as @To:44} from %table:8[u32,u32]
+                  using %index:40[u32,_] where %col:9 = @X:38
+                if-compare {@X:38, @X:38} = {@X:41, @X:42}   ; re-check scan results
                   if-true
-                    change-tuple {@From:44, @To:45} in %table:5[u32,u32]
+                    change-tuple {@From:43, @To:44} in %table:4[u32,u32]
                         from absent to present   ; the dominating state transition
                       if-transitioned            ; only NEW tuples...
-                        hash {@From:44, @To:45} into @37
-                          vector-append {@From:44, @To:45}    ; ...feed the back edge
-                              into $induction_in:20<u32,u32> of-worker @37
+                        hash {@From:43, @To:44} into @36
+                          vector-append {@From:43, @To:44}    ; ...feed the back edge
+                              into $induction_in:19<u32,u32> of-worker @36
       output
         seq
           par
-            vector-clear $induction_in:20<u32,u32>
+            vector-clear $induction_in:19<u32,u32>
             ...
     return-true
 ```
@@ -370,7 +381,7 @@ proc ^flow:52($induction_in:20<u32,u32>, $induction_pivots:23<u32>)
 Notation: `@N` are variables (`@Name:N` when a Datalog name is known), `$name:N<types>`
 are vectors, `%table:N[types]` / `%index:N[...]` / `%col:N` are storage, `^name:N`
 are procedures, `;` starts a comment, and nesting depth is region containment.
-The `_` positions in an index type (`%index:40[_,u32]`) mark non-key columns.
+The `_` positions in an index type (`%index:39[_,u32]`) mark non-key columns.
 Note the invariant in the join arm: the `vector-append` on the induction input
 vector sits under `if-transitioned` of a `change-tuple ... from absent to
 present` on the union's table — the state transition dominates the back-edge

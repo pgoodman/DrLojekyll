@@ -134,9 +134,12 @@ deriving from `Node<..., ...Impl>`: `QuerySelect` (relation/stream sources),
 `QueryTuple` (projection/forwarding), `QueryJoin`, `QueryMerge` (union),
 `QueryCompare`, `QueryMap` (functor application), `QueryNegate`,
 `QueryAggregate`, `QueryKVIndex`, and `QueryInsert` (sinks into relations or
-published messages). Views produce `QueryColumn`s; zero-argument predicates
-become `QueryCondition`s that guard views. `QueryIO` nodes represent message
-endpoints. The private node classes live in `lib/DataFlow/Query.h`.
+published messages). Views produce `QueryColumn`s; zero-arity predicates
+(conditions) desugar into ordinary *unit relations* -- 1-column `bool`
+relations whose only possible row is `(true)`, flagged
+`QueryRelation::IsCondition` -- set by INSERTs and tested by joins and
+negations. `QueryIO` nodes represent message endpoints. The private node
+classes live in `lib/DataFlow/Query.h`.
 
 `Query::Build` (`lib/DataFlow/Build.cpp`) translates each `ParsedClause` into
 a sub-graph (`BuildClause`), merges multi-clause predicates with `QueryMerge`,
@@ -144,7 +147,7 @@ then runs a fixed post-pass sequence: simplification and canonicalization,
 linking inserts to selects, and — when `optimize` is true —
 `QueryImpl::Optimize` (`lib/DataFlow/Optimize.cpp`), which interleaves CSE
 over structurally equal views, a canonicalization fixpoint driven by
-`OptimizationContext` flags, condition shrinking, and dead-flow elimination.
+`OptimizationContext` flags, and dead-flow elimination.
 Whether optimized or not, `Build` finishes by identifying inductive cycles
 (`IdentifyInductions`; exposed as `QueryView::InductionGroupId`/
 `InductionDepth`), finalizing view depths and column IDs, tracking which flows
