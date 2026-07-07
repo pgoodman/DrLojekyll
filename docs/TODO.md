@@ -152,3 +152,51 @@ Candidate applications here, roughly in order of value-per-effort:
 
 Related: item 3's dual-number semi-naive trick is the same
 differentiate/integrate idea in miniature.
+
+## 5. 'Slow' functions as request/response message joins
+
+Interfacing with a slow external system (an external database, an SMT
+solver, a network service) is painful as an inline functor call: the
+generated program blocks mid-fixpoint on every invocation. Reframe the slow
+call as a server setup, using the message machinery we already have as the
+async boundary:
+
+    // conceptually, for a slow f demanded as  head(..) : body(X..), Y = f(X..).
+    !f_request(X..)   : body(X..).          // outgoing message: the demand set
+    head(..)          : body(X..), f_response(X.., Y).   // join on the reply
+    // an external server consumes f_request, computes at leisure, and
+    // publishes f_response(args.., result) back as an ordinary message
+
+The program never blocks: the fixpoint quiesces with requests outstanding,
+and when response batches arrive the incremental engine derives the
+downstream consequences exactly as it would for any late-arriving message.
+Deduplication and memoization fall out for free (the request relation is a
+set; a persistent response relation is a memo table), and @differential
+responses model external answers that change over time.
+
+Design questions:
+- Demand transformation: deriving the request relation from the bindings the
+  rule bodies actually demand is the classic magic-sets / demand pattern —
+  which binding patterns do we support, and is the request relation per
+  (functor, binding pattern)?
+- This subsumes the impure-functor feature gap: impurity becomes explicit
+  (responses are just messages that may arrive, change, or be retracted),
+  and slow-vs-fast becomes a functor annotation choosing inline call vs
+  request/response desugaring.
+- Functional dependencies: is f_response constrained one-row-per-request
+  (functor semantics), or do multi-row responses generalize slow functors
+  into external relations (probably yes, and it is the more useful form)?
+- Retraction: when body support for a request disappears, is the request
+  message retracted, and are memoized responses garbage-collected or kept?
+- Failure/timeout: absence of a response is indistinguishable from slowness
+  (CALM-style); do we need explicit error/timeout response columns?
+- Quiescence/termination: "the round is complete" now requires
+  request/response accounting across the boundary (Dijkstra–Scholten-style
+  termination detection) if callers need a consistent-as-of signal.
+- Recursion through the boundary: a slow call whose response feeds a rule
+  that generates new requests turns the fixpoint into a distributed loop
+  across the external server — semantics and rate control.
+
+Related: item 1 (an external system behaves like a sub-database keyed by the
+request args); item 4 (Feldera handles the same need with async operators
+over the same signed-update algebra).
