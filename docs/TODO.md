@@ -23,10 +23,28 @@ Questions to answer:
 
 ## 2. Bottom-up re-proving of unknown tuples (stack-safe differential recheck)
 
-Direction chosen: the Backward/Forward algorithm (see prior art below) is the
-starting point — draft a proposal + plan (UnitConditions.md-style) on its own
-branch once the unit-conditions refactor lands, since B/F restructures the
-same top-down checker / unknown-recheck machinery that refactor unifies.
+Direction: draft a proposal + plan (UnitConditions.md-style) on its own
+branch once the unit-conditions refactor lands, since this restructures the
+same top-down checker / unknown-recheck machinery that refactor unifies. The
+plan's central decision is B/F (min bookkeeping, keeps re-proof) versus the
+dual-program / signed-weight pole (item 4), judged with **parallelization as
+a first-class criterion**:
+
+The tri-state representation (absent/unknown/present) is itself what makes
+the current system resistant to parallelization. `unknown` is control state,
+not data: correctness depends on ordering — mark unknown, let the removal
+cascade quiesce, only then recheck and replay (calling checkers mid-cascade
+is unsound; the induction recheck/replay machinery exists to enforce exactly
+this barrier). Those quiesce points are global serialization barriers, and
+top-down checkers read shared mutable table state while cascades are in
+flight. A dual program eliminates the tri-state: retraction is a derived
+fact of the dual (equivalently, a weight −1 tuple), tuple state is binary,
+and updates combine by addition — a commutative monoid fold, safe to apply
+out of order and in parallel, with consolidation instead of quiescence.
+Residual serialization is then only the stratum/fixpoint-round frontier
+structure, not per-retraction barriers. B/F, by contrast, still interleaves
+backward-chaining proof checks against the shared materialization, so it
+inherits much of the ordering problem even though it fixes the stack.
 
 Differential removal marks tuples present→unknown and re-proves them with
 recursive top-down checker procedures. The recursion is essentially unbounded
@@ -91,3 +109,46 @@ themselves. Ideas to evaluate against our IR:
   item 2.
 - Delta computation with anti-join (NOT EXISTS) rather than set-difference.
 - Their SQL codegen strategy as a benchmark/alternative backend shape.
+
+## 4. DBSP as theory, oracle, and audit tool for the differential machinery
+
+Budiu, Chajed, McSherry, Ryzhyk & Tannen, "DBSP: Automatic Incremental
+View-Maintenance for Rich Query Languages", VLDB 2023
+(https://docs.feldera.com/assets/files/vldb23-1bfe30b29f95168c8e1f427fccfc6da2.pdf);
+implemented in Feldera and the `dbsp` Rust crate. Streams + Z-sets (signed
+multiplicities) + delay/integrate/differentiate operators; the theorem
+Q^Δ = D ∘ Q^lifted ∘ I mechanically incrementalizes any query built from its
+operator algebra, with per-operator rewrite rules (e.g. the bilinear rule for
+join) and nested streams for incremental fixpoints. It is the algebraic
+foundation under differential dataflow (item 2's prior art).
+
+Candidate applications here, roughly in order of value-per-effort:
+
+- **Audit blueprint for the hand-built removal paths.** Every hand-written
+  differential mechanism in the control-flow build (pivoted-join remover,
+  negate re-add, induction post-quiescence recheck/replay, products in
+  inductions) is a hand-derivation of what DBSP derives mechanically. Check
+  each against the corresponding operator's incrementalization rule
+  (join: Δ(a⋈b) = Δa⋈b + a⋈Δb + Δa⋈Δb; distinct: threshold on integrated
+  weight; fixpoints: nested delay). Any deviation is a candidate bug — the
+  F9–F14 ledger shows hand-derivation is exactly where bugs live.
+- **Independent oracle for the golden suite.** A small reference DBSP
+  interpreter over the dataflow IR (Z-sets, lifted operators, nested streams
+  for inductions) would give an executable semantics independent of the
+  compiler's own backend. Goldens could then be cross-checked against a
+  reference evaluation rather than only pinning the compiler against its own
+  past output.
+- **The other pole of item 2.** Z-set weights dissolve the recheck problem:
+  retraction is a weight −1 tuple through the same bottom-up operators — no
+  unknown state, no top-down checkers, no stack. The price is DBSP's cost
+  model: integrated per-operator state (weights for intermediate results,
+  distinct-threshold state). Item 2's design space is exactly
+  bookkeeping-vs-reproof; DBSP is the max-bookkeeping/zero-reproof end,
+  B/F the min-bookkeeping end. Any B/F proposal should argue its position
+  on that spectrum against the DBSP alternative.
+- **Alternative backend for differential testing.** Compile the dataflow IR
+  to the `dbsp` crate and diff outputs against the generated C++ database on
+  the whole case corpus.
+
+Related: item 3's dual-number semi-naive trick is the same
+differentiate/integrate idea in miniature.
