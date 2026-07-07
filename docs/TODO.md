@@ -213,3 +213,46 @@ Design questions:
 Related: item 1 (an external system behaves like a sub-database keyed by the
 request args); item 4 (Feldera handles the same need with async operators
 over the same signed-update algebra).
+
+## 6. Record data types (flyweight storage, pointer-like access)
+
+Structured record types for column values — roughly JSON-shaped in syntax,
+both for type declarations and for literals arriving in messages — that
+compile to C++ records. The implementation discipline matters more than the
+syntax: use the flyweight pattern as in the Carbon compiler toolchain
+(Chandler Carruth et al. — dense integral IDs into typed, canonicalizing
+value stores; see Carbon's SemIR design docs and Carruth's data-oriented
+compiler-design talks), keeping a hard distinction between STORAGE and
+ACCESS:
+
+- Storage is integral/columnar: a record-typed column stores only a dense
+  ID (u32/u64) into a per-record-type store; the store itself is columnar
+  (one vector per field, not one heap object per record). Stores intern /
+  canonicalize on construction, so ID equality IS value equality.
+- Access is pointer-like: codegen emits cheap value-type handles (store +
+  ID) with field accessors, so user code (functors, drivers, query
+  consumers) reads them as if they held real pointers to structs; nested
+  record fields are IDs into other stores, dereferenced through the same
+  handle discipline.
+
+Why this fits: relations, join pivots, table indexes, and the differential
+machinery never see anything but integral values — records join, hash, and
+dedup at integer speed, and tuple storage stays flat. Interning makes
+record-valued join keys as cheap as scalar ones.
+
+Design questions:
+- Message boundary: ingress deserializes JSON-shaped literals by structural
+  interning into the stores; what does egress publish — expanded structures
+  or IDs plus store pages? (Ties to item 1: a sub-database instance likely
+  owns or shares stores; store ownership must be settled there too.)
+- Lifetime: interned values are append-only/immortal per store (arena
+  semantics — differential retraction of tuples never frees record
+  storage). Is that acceptable long-run, or does it need epoch compaction?
+- Equality/ordering: interning gives identity equality; do we need
+  structural ordering (for indexes/range scans) and how is it defined over
+  nested records?
+- Pattern matching in clause bodies (destructuring a record column into
+  variables) vs accessor functors — surface design.
+- Foreign-type interop: today's opaque foreign types (e.g. ASTNode as u64)
+  are the degenerate single-field case; records generalize them without
+  losing the integral-column property.
