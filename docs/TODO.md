@@ -179,10 +179,24 @@ Design questions:
   rule bodies actually demand is the classic magic-sets / demand pattern —
   which binding patterns do we support, and is the request relation per
   (functor, binding pattern)?
+- Surface design: an `@slow` (or `@async`) annotation on the functor
+  declaration, e.g.
+
+      #functor smt_check(bound Formula F, free Result R) @slow.
+
+  Uses in clause bodies stay ordinary functor applications, and the parse
+  representation is untouched (print→parse→print fixpoint safe). The
+  request/response shape is reified ONLY in the dataflow IR: where the
+  builder would emit a MAP node for a plain functor, an `@slow` declaration
+  instead emits the demand set as an outgoing message (request) and models
+  the result as a JOIN against the incoming response message — i.e. the
+  message-based structure exists at the IR level and below, nowhere in the
+  surface language (same philosophy as unit conditions: desugar in the
+  builder, never the parser).
 - This subsumes the impure-functor feature gap: impurity becomes explicit
   (responses are just messages that may arrive, change, or be retracted),
-  and slow-vs-fast becomes a functor annotation choosing inline call vs
-  request/response desugaring.
+  and slow-vs-fast is exactly the presence of the annotation choosing
+  inline call vs request/response desugaring.
 - Functional dependencies: is f_response constrained one-row-per-request
   (functor semantics), or do multi-row responses generalize slow functors
   into external relations (probably yes, and it is the more useful form)?
