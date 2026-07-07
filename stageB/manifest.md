@@ -49,4 +49,4 @@ Working checklist against UnitConditions.plan.md B2 table plus the B1/B3 work.
 - [x] ctest 3/3
 - [x] all 6 Stage 0 cond_* cases + 17 legacy condition sentinels 4-mode green
 - [x] deletion grep zero hits in lib include bin
-- [ ] full suite SUITE: PASS
+- [x] full suite SUITE: PASS (128 cases, run in 8 name-filtered chunks: 9+17+13+18+25+12+9+25)
