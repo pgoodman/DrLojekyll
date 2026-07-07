@@ -72,8 +72,6 @@ bool QueryKVIndexImpl::Equals(EqualitySet &eq,
 
   const auto that = that_->AsKVIndex();
   if (!that || columns.Size() != that->columns.Size() ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions ||
       !MergeFunctorsEq(merge_functors, that->merge_functors) ||
       InsertSetsOverlap(this, that)) {
     return false;

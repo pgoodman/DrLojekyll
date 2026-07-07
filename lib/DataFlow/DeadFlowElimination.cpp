@@ -28,10 +28,7 @@ static bool IsTrivialCycle(TUPLE *tuple);
 // columns; the TUPLE inherits the predecessor's taint. The sweep unlinks
 // untainted views, prunes untainted predecessors out of surviving MERGEs,
 // and deletes TUPLEs that form trivial self-cycles through a MERGE (see
-// `IsTrivialCycle`). Finally, any condition variable left with no setters
-// is resolved to a fixpoint: negative tests of it are vacuously true and
-// are dropped, while positive testers are unsatisfiable and are deleted
-// (which may in turn strip the setters of further conditions). This is
+// `IsTrivialCycle`). This is
 // beneficial because underivable recursive cycles (e.g. a relation defined
 // only in terms of itself) keep themselves alive under pure use-count
 // reclamation; taint from the input boundary is what proves such cycles can
@@ -54,10 +51,6 @@ static bool IsTrivialCycle(TUPLE *tuple);
 //      if v not tainted:        v.PrepareToDelete()
 //      else if v is MERGE:      remove untainted merged views
 //      else if IsTrivialCycle(v as TUPLE): v.PrepareToDelete()
-//    repeat until no change:               // dead conditions
-//      for cond with no setters:
-//        drop cond from negative testers   // !cond is vacuously true
-//        PrepareToDelete each positive tester  // cond is unsatisfiable
 //    return RemoveUnusedViews()
 //
 // Before:                                After:
@@ -283,8 +276,7 @@ bool QueryImpl::EliminateDeadFlows(void) {
     }
   }
 
-  // Deleting an untainted view (or, through the dead-condition cascade in
-  // `PrepareToDelete`, a tainted one) may leave dead views inside surviving
+  // Deleting an untainted view may leave dead views inside surviving
   // MERGEs, so the merged-view lists are pruned after the whole sweep.
   for (auto view : views) {
     if (auto merge = view->AsMerge(); merge && !merge->is_dead) {
@@ -294,62 +286,19 @@ bool QueryImpl::EliminateDeadFlows(void) {
     }
   }
 
-  for (auto changed = true; changed;) {
-    changed = false;
-    for (auto cond : conditions) {
-      if (!cond->setters.Empty()) {
-        continue;
-      }
-
-      // Negated uses of this (now dead) condition are fine, and so we can
-      // remove the condition entirely.
-      for (auto user_view : cond->negative_users) {
-        if (user_view) {
-          user_view->negative_conditions.RemoveIf(
-              [=](COND *c) { return c == cond; });
-        }
-      }
-
-      // Positive uses of the condition are unsatisfiable, and so we should
-      // kill all positive users.
-      for (auto user_view : cond->positive_users) {
-        if (user_view && !user_view->is_dead) {
-          user_view->PrepareToDelete();
-          changed = true;
-        }
-      }
-
-      cond->negative_users.Clear();
-      cond->positive_users.Clear();
-    }
-  }
-
   return RemoveUnusedViews();
 }
 
 // Eliminate trivial cycles on unions. A TUPLE is a trivial cycle when its
 // only user is the very view that feeds it, and it forwards that view's
-// columns in identical positional order. Such a TUPLE only routes a
-// (possibly condition-restricted) subset of a MERGE's data straight back
-// into that same MERGE, which contributes no new records; deleting it breaks
-// the cyclic dependency without changing the fixpoint. Condition variables
-// complicate this: if the TUPLE sets a condition, that side effect is real
-// even though the data flow is a no-op. When the TUPLE sets a condition and
-// also tests conditions (i.e. it introduces a control dependency), it is
-// kept alive but unlinked from the MERGE's merged views, so the cycle is
-// broken while its condition-setting behavior is preserved. When it sets a
-// condition unconditionally, that condition-setting is transferred onto the
-// incoming view and the TUPLE is deleted. When it merely tests conditions,
-// the tests are irrelevant to a self-subset and the TUPLE is deleted.
+// columns in identical positional order. Such a TUPLE only routes a subset
+// of a MERGE's data straight back into that same MERGE, which contributes
+// no new records; deleting it breaks the cyclic dependency without changing
+// the fixpoint.
 //
 //    if tuple's only user == tuple's incoming view V,
-//       and columns map 1:1 by index:
-//      if tuple sets a condition and tests conditions:
-//        remove tuple from V.merged_views; keep tuple   -> false
-//      else if tuple sets a condition:
-//        transfer condition-setting to V; delete tuple  -> true
-//      else if V is a MERGE:
-//        delete tuple                                   -> true
+//       and columns map 1:1 by index, and V is a MERGE:
+//      delete tuple                                     -> true
 //    otherwise                                          -> false
 //
 // Before:                          After:
@@ -382,27 +331,9 @@ bool IsTrivialCycle(TUPLE *tuple) {
       }
     }
 
-    // This TUPLE operates on a restriction of the set of nodes in the MERGE.
-    // If the conditions are satisfied, then we set a separate condition, and
-    // contribute back the record to the MERGE. Contributing back the data to
-    // the MERGE is a no-op; however, setting the condition is not. Thus, we
-    // can break the cyclic dependency between the TUPLE and the MERGE whilst
-    // maintaining the TUPLE and its condition setting behavior.
-    if (tuple->sets_condition && tuple->IntroducesControlDependency()) {
-      if (auto merge = incoming_view->AsMerge(); merge) {
-        merge->merged_views.RemoveIf([=](VIEW *v) { return v == tuple; });
-      }
-
-      return false;
-
-    } else if (tuple->sets_condition) {
-      tuple->TransferSetConditionTo(incoming_view);
-      return true;
-
-    // This TUPLE may or may not test any conditions. Any conditions tested are
-    // irrelevant because they just send a subset of the MERGE's own data data
-    // back into itself, which is a no-op.
-    } else if (incoming_view->AsMerge()) {
+    // Contributing a subset of the MERGE's own data back to the MERGE is a
+    // no-op, so the cycle-forming TUPLE is deleted.
+    if (incoming_view->AsMerge()) {
       return true;
     }
   }

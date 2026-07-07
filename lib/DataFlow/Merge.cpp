@@ -50,8 +50,7 @@ unsigned QueryMergeImpl::Depth(void) noexcept {
   if (depth) {
     return depth;
   }
-  auto estimate = EstimateDepth(positive_conditions, 1u);
-  estimate = EstimateDepth(negative_conditions, estimate);
+  auto estimate = 1u;
   for (auto merged_view : merged_views) {
     estimate = std::max(estimate, merged_view->depth);
   }
@@ -62,9 +61,6 @@ unsigned QueryMergeImpl::Depth(void) noexcept {
   for (auto merged_view : merged_views) {
     real = std::max(real, merged_view->Depth());
   }
-
-  real = GetDepth(positive_conditions, real);
-  real = GetDepth(negative_conditions, real);
 
   depth = real + 1u;
 
@@ -80,7 +76,7 @@ unsigned QueryMergeImpl::Depth(void) noexcept {
 // the data sources, where merged operands can share downstream operators.
 //
 //    if this view is dead or unsatisfiable: done
-//    if there is exactly one operand and no conditions are tested/set:
+//    if there is exactly one operand:
 //      replace this UNION with the operand (looking through a perfectly
 //      forwarding TUPLE if there is one)
 //    worklist-flatten the operand list:
@@ -88,20 +84,19 @@ unsigned QueryMergeImpl::Depth(void) noexcept {
 //      drop UNSATisfiable operands
 //      drop duplicate operands
 //      look through exclusively-owned, perfectly-forwarding TUPLEs
-//      splice in the operands of exclusively-owned, condition-free
-//        child UNIONs
+//      splice in the operands of exclusively-owned child UNIONs
 //    if no operands remain:  mark this UNION as unsatisfiable
 //    if one operand remains: replace this UNION with a forwarding TUPLE
 //    if an output column is unused and removal is permitted:
 //      route each operand through a guard TUPLE that projects only the
 //      used columns, and shrink this UNION to those columns
 //    if opt.can_sink_unions:
-//      group operands by node kind; for kinds with two or more operands
-//      (none of which test or set conditions), invoke the matching
+//      group operands by node kind; for kinds with two or more operands,
+//      invoke the matching
 //      SinkThroughTuples / SinkThroughMaps / SinkThroughNegations /
 //      SinkThroughJoins rewrite
 //
-// Flattening (UNION-1 has no other users and tests/sets no conditions):
+// Flattening (UNION-1 has no other users):
 //
 //      A   B  UNSAT                  A  B  C  D
 //       \  |  /                       \ \ / /
@@ -155,14 +150,12 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
   }
 
   // Try to eliminate this UNION.
-  if (work_list.size() == 1u  && !sets_condition &&
-      positive_conditions.Empty() && negative_conditions.Empty()) {
+  if (work_list.size() == 1u) {
     VIEW *replacement_view = work_list[0];
     merged_views.Clear();
 
     if (TUPLE *tuple = work_list[0]->AsTuple()) {
       VIEW *tuple_source = VIEW::GetIncomingView(tuple->input_columns);
-      // NOTE(pag): `ForwardsAllInputsAsIs` checks conditions.
       if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
         tuple->is_canonical = false;
         replacement_view = tuple_source;
@@ -225,7 +218,6 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
         continue;
       }
 
-      // NOTE(pag): `ForwardsAllInputsAsIs` checks conditions.
       if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
         non_local_changes = true;
         is_canonical = false;
@@ -235,13 +227,10 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
         unique_merged_views.push_back(tuple);
       }
 
-    // If we've found a merge, and it is only used by us, and if it doesn't
-    // set or test conditions, then we can flatten this merge into our merge.
-    // Otherwise, we can't, as we'd risk breaking inductive cycles.
-    } else if (auto merge = view->AsMerge();
-               merge && !merge->sets_condition &&
-               merge->positive_conditions.Empty() &&
-               merge->negative_conditions.Empty() && merge->OnlyUser()) {
+    // If we've found a merge, and it is only used by us, then we can flatten
+    // this merge into our merge. Otherwise, we can't, as we'd risk breaking
+    // inductive cycles.
+    } else if (auto merge = view->AsMerge(); merge && merge->OnlyUser()) {
 
       is_canonical = false;
       non_local_changes = true;
@@ -362,13 +351,6 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
     bool has_opportunity = false;
 
     for (auto merged_view : merged_views) {
-
-      // Don't even try to sink through conditions.
-      if (merged_view->positive_conditions.Size() ||
-          merged_view->negative_conditions.Size() ||
-          !!merged_view->sets_condition) {
-        goto done;
-      }
 
       auto &similar_views = grouped_views[merged_view->KindName()];
       if (!similar_views.empty()) {
@@ -661,9 +643,7 @@ static TUPLE *MakeSameShapedTuple(QueryImpl *impl, MAP *map) {
     tuple->input_columns.AddUse(col);
   }
 
-  map->CopyTestedConditionsTo(tuple);
   map->CopyDifferentialAndGroupIdsTo(tuple);
-  assert(!map->sets_condition);
 
   return tuple;
 }
@@ -679,9 +659,8 @@ static TUPLE *MakeSameShapedTuple(QueryImpl *impl, MAP *map) {
 // profitable: the functor application is shared, no tag columns are needed,
 // and the sunken UNION composes with further sinking below it. Each original
 // MAP's bound and attached input columns are re-materialized through a fresh
-// TUPLE — which also carries the MAP's tested conditions and its
-// differential/group IDs — so that constant inputs can safely flow into the
-// sunken UNION.
+// TUPLE — which also carries the MAP's differential/group IDs — so that
+// constant inputs can safely flow into the sunken UNION.
 //
 //    find the first non-null MAP M0
 //    for each later non-null MAP Mn applying the same functor with the
@@ -880,10 +859,6 @@ static TUPLE *MakeSameShapedTuple(QueryImpl *impl, NEGATION *negation) {
       pred_view = in_col->view;
     }
   }
-
-  assert(!negation->sets_condition);
-  assert(negation->positive_conditions.Empty());
-  assert(negation->negative_conditions.Empty());
 
   if (pred_view) {
     pred_view->CopyDifferentialAndGroupIdsTo(tuple);
@@ -1290,7 +1265,7 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
 // sunken UNIONs of the corresponding joined views, using a constant tag
 // column as an extra pivot so that rows originating from different source
 // JOINs never cross-join with each other. Candidate JOINs must have at least
-// one pivot, test/set no conditions, and agree with the first candidate on
+// one pivot and agree with the first candidate on
 // pivot count, number of joined views, per-position joined-view shapes and
 // column types, and the exact output-to-input column ordering. The payoff is
 // that N JOINs collapse into one JOIN whose inputs are UNIONs, sharing the
@@ -1412,9 +1387,7 @@ bool QueryMergeImpl::SinkThroughJoins(
     }
 
     const auto join = inout_view->AsJoin();
-    if (!join->num_pivots || join->sets_condition ||
-        !join->positive_conditions.Empty() ||
-        !join->negative_conditions.Empty()) {
+    if (!join->num_pivots) {
       if (!first_join) {
         ++first_join_index;
       }
@@ -1697,8 +1670,6 @@ bool QueryMergeImpl::Equals(EqualitySet &eq,
   const auto num_views = merged_views.Size();
   if (!that || columns.Size() != that->columns.Size() ||
       num_views != that->merged_views.Size() ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions ||
       InsertSetsOverlap(this, that)) {
     return false;
   }

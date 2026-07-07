@@ -28,11 +28,7 @@ const char *QueryInsertImpl::KindName(void) const noexcept {
     return "TRANSMIT";
 
   } else {
-    if (declaration.Arity()) {
-      return "INSERT";
-    } else {
-      return "INCREMENT";
-    }
+    return "INSERT";
   }
 }
 
@@ -61,9 +57,9 @@ uint64_t QueryInsertImpl::Hash(void) noexcept {
 }
 
 // Put this INSERT into a canonical form. An INSERT is a data sink: it writes
-// its input columns into a relation (INSERT), a message stream (TRANSMIT), a
-// query result (MATERIALIZE), or increments a zero-arity CONDition
-// (INCREMENT), and produces no output columns of its own. Its
+// its input columns into a relation (INSERT), a message stream (TRANSMIT),
+// or a query result (MATERIALIZE), and produces no output columns of its
+// own. Its
 // `attached_columns` are read-only witness edges: they are read from the
 // incoming view to keep this INSERT's dataflow dependency on it expressed
 // as a column edge, but they are not stored. Its canonical form reads its
@@ -229,13 +225,14 @@ bool QueryInsertImpl::Equals(EqualitySet &eq, VIEW *that_) noexcept {
   }
 
   const auto that = that_->AsInsert();
+
+  // NOTE(pag): Declaration (context) equality, not `Id()` equality: the
+  //           `Id()`s of name-less auto-declared zero-arity exports collide.
   if (!that || can_produce_deletions != that->can_produce_deletions ||
-      declaration.Id() != that->declaration.Id() ||
+      declaration != that->declaration ||
       columns.Size() != that->columns.Size() ||
       input_columns.Size() != that->input_columns.Size() ||
-      attached_columns.Size() != that->attached_columns.Size() ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions) {
+      attached_columns.Size() != that->attached_columns.Size()) {
     return false;
   }
 

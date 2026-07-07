@@ -209,7 +209,6 @@ class DataVariableImpl final : public Def<DataVariableImpl> {
 
   std::optional<QueryConstant> query_const;
   std::optional<QueryColumn> query_column;
-  std::optional<QueryCondition> query_cond;
   std::optional<ParsedParameter> parsed_param;
 };
 
@@ -494,8 +493,8 @@ enum class ProgramOperation {
   // Computes a worker ID by hashing a bunch of variables.
   kWorkerId,
 
-  // Used to test reference count variables associated with `QueryCondition`
-  // nodes in the data flow.
+  // Used to test-and-update the init-guard variable that ensures the
+  // initialization flow runs exactly once.
   kTestAndAdd,
   kTestAndSub,
 
@@ -1663,9 +1662,6 @@ class ProgramImpl : public User {
 
   // Maps constants to their global variables.
   std::unordered_map<QueryConstant, VAR *> const_to_var;
-
-  // Maps query conditions to the reference counts associated with them.
-  std::unordered_map<QueryCondition, VAR *> cond_ref_counts;
 
   // Maps views whose outputs are all constants or constant references to
   // condition variables that tracker whether or not we need to actually re-

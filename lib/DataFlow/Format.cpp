@@ -32,22 +32,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
      << "bgcolor=\"#f0f4f7\";\n"
      << "node [shape=none margin=0 nojustify=false labeljust=l font=courier];\n";
 
-  auto link_conds = [&](auto view_) {
-    auto view = QueryView::From(view_);
-    auto do_cond = [&](const char *port, QueryCondition cond) {
-      os << "v" << view.UniqueId() << ":cc" << port << cond.UniqueId()
-         << " -> c" << cond.UniqueId() << "  [color=purple];\n";
-    };
-    for (auto cond : view.PositiveConditions()) {
-      assert(view.CanProduceDeletions());
-      do_cond("p", cond);
-    }
-    for (auto cond : view.NegativeConditions()) {
-      assert(view.CanProduceDeletions());
-      do_cond("n", cond);
-    }
-  };
-
   auto do_table = [&](int row_span, QueryView view) {
     std::optional<unsigned> induction_id = view.InductionGroupId();
     std::optional<unsigned> induction_depth = view.InductionDepth();
@@ -66,47 +50,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << sep << "EQ SET " << view.EquivalenceSetId() << "</TD>";
   };
 
-  auto do_conds = [&](int row_span, auto view_) -> int {
-    auto view = QueryView::From(view_);
-    const auto pos_conds = view.PositiveConditions();
-    const auto neg_conds = view.NegativeConditions();
-    if (pos_conds.empty() && neg_conds.empty()) {
-      return 0;
-    }
-
-    auto do_cond = [&](const char *prefix, const char *port,
-                       QueryCondition cond) {
-      os << "<TD rowspan=\"" << row_span << "\" port=\"cc" << port
-         << cond.UniqueId() << "\">" << prefix;
-      if (auto maybe_pred = cond.Predicate(); maybe_pred) {
-        ParsedDeclaration decl(*maybe_pred);
-        os << ParsedDeclarationName(decl);
-
-      } else {
-        os << cond.UniqueId();
-      }
-      os << "</TD>";
-    };
-
-    auto i = 1;
-    os << "<TD rowspan=\"" << row_span << "\">COND</TD>";
-    for (auto cond : pos_conds) {
-      do_cond("", "p", cond);
-      ++i;
-    }
-    for (auto cond : neg_conds) {
-      do_cond("!", "n", cond);
-      ++i;
-    }
-
-    return i;
-  };
-
   auto do_const = [&](QueryConstant const_col) {
     if (const_col.IsTag()) {
       os << "<B>TAG-" << QueryTag::From(const_col).Value() << "</B>";
+    } else if (auto lit = const_col.Literal(); lit) {
+      os << "<B>" << *lit << "</B>";
     } else {
-      os << "<B>" << *(const_col.Literal()) << "</B>";
+      os << "<B>TRUE</B>";  // The unit-relation token.
     }
   };
 
@@ -138,16 +88,20 @@ OutputStream &operator<<(OutputStream &os, Query query) {
   for (auto relation : query.Relations()) {
     const auto decl = relation.Declaration();
     const auto arity = decl.Arity();
-    if (!arity) {
-      continue;  // This relation will be modeled by a CONDition.
-    }
     os << "t" << relation.UniqueId() << " [ label=<" << kBeginTable
        << "<TD>RELATION ";
+
+    if (relation.IsCondition()) {
+      os << "(unit) ";
+    }
 
     os << ParsedDeclarationName(decl) << "</TD>";
     for (auto i = 0u; i < arity; ++i) {
       auto param = decl.NthParameter(i);
       os << "<TD port=\"p" << i << "\">" << param.Name() << "</TD>";
+    }
+    if (relation.IsCondition()) {
+      os << "<TD port=\"p0\">true</TD>";
     }
 
     os << kEndTable << ">];\n";
@@ -214,33 +168,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "</TD>" << kEndTable << ">];\n";
   }
 
-  for (auto cond : query.Conditions()) {
-
-    os << "c" << cond.UniqueId() << " [label=<" << kBeginTable
-       << "<TD port=\"p0\">";
-    if (auto maybe_pred = cond.Predicate(); maybe_pred) {
-      ParsedDeclaration decl(*maybe_pred);
-      os << ParsedDeclarationName(decl);
-    } else {
-      os << cond.UniqueId();
-    }
-    os << "</TD>";
-    if (DEBUG(1 +) 0) {
-      os << "</TR><TR><TD>depth=" << cond.Depth() << "</TD>";
-    }
-    os << kEndTable << ">];\n";
-
-    for (auto view : cond.Setters()) {
-      os << "c" << cond.UniqueId() << " -> v" << view.UniqueId()
-         << " [color=purple];\n";
-    }
-  }
-
   for (auto select : query.Selects()) {
     os << "v" << select.UniqueId() << " [" << do_color(select) << "label=<"
        << kBeginTable;
     do_table(2, select);
-    do_conds(2, select);
     os << "<TD>" << QueryView(select).KindName() << "</TD>";
 
     auto i = 0u;
@@ -254,14 +185,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     os << kEndTable << ">];\n";
 
-    link_conds(select);
   }
 
   for (auto constraint : query.Compares()) {
     os << "v" << constraint.UniqueId() << " [" << do_color(constraint)
        << "label=<" << kBeginTable;
     do_table(2, constraint);
-    do_conds(2, constraint);
 
     const auto out_copied_cols = constraint.CopiedColumns();
     const auto in_copied_cols = constraint.InputCopiedColumns();
@@ -327,14 +256,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
-    link_conds(constraint);
   }
 
   for (auto kv : query.KVIndices()) {
     os << "v" << kv.UniqueId() << " [" << do_color(kv) << "label=<"
        << kBeginTable;
     do_table(2, kv);
-    do_conds(2, kv);
     os << "<TD rowspan=\"2\">KEYS</TD>";
     for (auto col : kv.KeyColumns()) {
       os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
@@ -372,14 +299,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << "v" << kv.UniqueId() << ":g" << (i++) << " -> v" << view.UniqueId()
          << ":c" << col.Id() << color << ";\n";
     }
-    link_conds(kv);
   }
 
   for (auto join : query.Joins()) {
     os << "v" << join.UniqueId() << " [" << do_color(join) << "label=<"
        << kBeginTable;
     do_table(2, join);
-    do_conds(2, join);
 
     //    auto num_pivot_inputs = 0u;
     //    auto num_pivots = join.NumPivotSets();
@@ -457,14 +382,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       j++;
     }
 
-    link_conds(join);
   }
 
   for (auto map : query.Maps()) {
     os << "v" << map.UniqueId() << " [" << do_color(map) << "label=<"
        << kBeginTable;
     do_table(2, map);
-    do_conds(2, map);
 
     auto num_copied = map.NumCopiedColumns();
     if (num_copied) {
@@ -532,14 +455,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << ":c" << col.Id() << color << ";\n";
     }
 
-    link_conds(map);
   }
 
   for (auto agg : query.Aggregates()) {
     os << "v" << agg.UniqueId() << " [" << do_color(agg) << "label=<"
        << kBeginTable;
     do_table(3, agg);
-    do_conds(3, agg);
     os << "<TD rowspan=\"3\">" << QueryView(agg).KindName() << ' '
        << ParsedDeclarationName(agg.Functor()) << "</TD>";
     for (auto col : agg.Columns()) {
@@ -599,14 +520,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << ":c" << col.Id() << color << ";\n";
     }
 
-    link_conds(agg);
   }
 
   for (auto neg : query.Negations()) {
     os << "v" << neg.UniqueId() << " [" << do_color(neg) << "label=<"
        << kBeginTable;
     do_table(2, neg);
-    do_conds(2, neg);
 
     auto num_group = neg.NumCopiedColumns();
     if (num_group) {
@@ -659,7 +578,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "v" << neg.UniqueId() << " -> v" << neg.NegatedView().UniqueId()
        << color << ";\n";
 
-    link_conds(neg);
   }
 
   for (auto insert : query.Inserts()) {
@@ -667,7 +585,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     os << "v" << insert.UniqueId() << " [" << do_color(insert) << "label=<"
        << kBeginTable;
     do_table(2, insert);
-    do_conds(2, insert);
     os << "<TD>" << QueryView(insert).KindName() << ' '
        << ParsedDeclarationName(decl) << "</TD>";
 
@@ -704,14 +621,12 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << "v" << view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
-    link_conds(insert);
   }
 
   for (auto view : query.Tuples()) {
     os << "v" << view.UniqueId() << " [" << do_color(view) << "label=<"
        << kBeginTable;
     do_table(2, view);
-    do_conds(2, view);
     os << "<TD rowspan=\"2\">" << QueryView(view).KindName() << "</TD>";
     for (auto col : view.Columns()) {
       os << "<TD port=\"c" << col.Id() << "\">" << do_col(col) << "</TD>";
@@ -739,7 +654,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << input_view.UniqueId() << ":c" << col.Id() << color << ";\n";
     }
 
-    link_conds(view);
   }
 
   for (auto merge : query.Merges()) {
@@ -747,7 +661,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
        << kBeginTable;
     do_table(2, merge);
     auto num_cols = 1;
-    num_cols += do_conds(2, merge);
     os << "<TD rowspan=\"2\">" << QueryView(merge).KindName() << "</TD>";
     for (auto col : merge.Columns()) {
       ++num_cols;
@@ -787,7 +700,6 @@ OutputStream &operator<<(OutputStream &os, Query query) {
          << ";\n";
     }
 
-    link_conds(merge);
   }
 
   os << "}\n";

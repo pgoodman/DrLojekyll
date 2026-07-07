@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     'stageB/smoke/booleans_diff/booleans_diff.nocf/case'
+relocations:     []
+...

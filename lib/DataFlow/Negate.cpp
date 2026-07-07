@@ -323,9 +323,7 @@ bool QueryNegateImpl::Equals(EqualitySet &eq, VIEW *that_) noexcept {
 
   const auto that = that_->AsNegate();
   if (!that || can_produce_deletions != that->can_produce_deletions ||
-      is_never != that->is_never || columns.Size() != that->columns.Size() ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions) {
+      is_never != that->is_never || columns.Size() != that->columns.Size()) {
     return false;
   }
 
@@ -347,14 +345,10 @@ unsigned QueryNegateImpl::Depth(void) noexcept {
 
   auto estimate = EstimateDepth(input_columns, 1u);
   estimate = EstimateDepth(attached_columns, depth);
-  estimate = EstimateDepth(positive_conditions, depth);
-  estimate = EstimateDepth(negative_conditions, depth);
   depth = estimate + 1u;
 
   auto real = GetDepth(input_columns, negated_view->Depth());
   real = GetDepth(attached_columns, real);
-  real = GetDepth(positive_conditions, real);
-  real = GetDepth(negative_conditions, real);
   depth = real + 1u;
 
   return depth;

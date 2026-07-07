@@ -80,7 +80,13 @@ uint64_t QuerySelectImpl::Hash(void) noexcept {
       hash ^= hash_ror * (const_tag->val + 1ull);
 
     } else if (auto const_stream = stream->AsConstant()) {
-      if (const_stream->literal->IsConstant()) {
+      if (!const_stream->literal) {
+
+        // The literal-less boolean `true` token of unit (condition)
+        // relations; there is exactly one such stream per query.
+        hash ^= hash_ror * 0x7472756574727565ull;  // "truetrue"
+
+      } else if (const_stream->literal->IsConstant()) {
         hash ^= hash_ror * const_stream->literal->Literal().IdentifierId();
       } else {
         hash ^= hash_ror *
@@ -113,13 +119,9 @@ unsigned QuerySelectImpl::Depth(void) noexcept {
   }
 
   auto estimate = EstimateDepth(input_columns, 0u);
-  estimate = EstimateDepth(positive_conditions, estimate);
-  estimate = EstimateDepth(negative_conditions, estimate);
   depth = estimate + 1u;  // Base case if there are cycles.
 
   auto real = GetDepth(input_columns, 0u);
-  real = GetDepth(positive_conditions, real);
-  real = GetDepth(negative_conditions, real);
 
   if (relation) {
     for (auto insert : relation->inserts) {
@@ -145,14 +147,12 @@ unsigned QuerySelectImpl::Depth(void) noexcept {
 // `VIEW::IsUsed` test report every SELECT as used; this pass therefore runs
 // its own usage scan, first over the output columns and then over the actual
 // VIEW-to-VIEW use edges (`average_weight.dr` produces an orphaned SELECT
-// that only this scan detects). A SELECT that sets a zero-argument CONDition
-// is kept as-is, because condition testers depend on it without consuming
-// any of its columns. The sole remaining RECEIVE of a message is also kept
-// as-is: the message is part of the program's external interface, and its
-// handler must exist even when optimization proves that the received data
-// can never flow anywhere (the handler simply discards it).
+// that only this scan detects). The sole remaining RECEIVE of a message is
+// kept as-is: the message is part of the program's external interface, and
+// its handler must exist even when optimization proves that the received
+// data can never flow anywhere (the handler simply discards it).
 //
-//     if dead or sets a CONDition:           keep as-is
+//     if dead:                               keep as-is
 //     if any output column has a user:       already canonical
 //     if any VIEW uses this SELECT:          already canonical
 //     // only the RELATION/IO back-references remain
@@ -164,25 +164,12 @@ unsigned QuerySelectImpl::Depth(void) noexcept {
 //     RECEIVE msg              (node deleted, unless it is the last
 //       A  B          ==>       RECEIVE of `msg`, which stays as the
 //     (no users)                message's interface)
-//
-// Condition-setting SELECT (kept although no column is used):
-//
-//     RECEIVE msg              RECEIVE msg
-//       A  B                     A  B
-//     sets COND c     ==>      sets COND c        (unchanged)
-//         :                        :
-//     testers of c             testers of c
 bool QuerySelectImpl::Canonicalize(QueryImpl *query,
                                      const OptimizationContext &opt,
                                      const ErrorLog &err) {
 
-  if (is_dead || sets_condition) {
+  if (is_dead) {
     return false;
-  }
-
-  if (sets_condition && 0u < (sets_condition->positive_users.Size() +
-                              sets_condition->negative_users.Size())) {
-    return true;
   }
 
   for (auto col : columns) {
@@ -219,8 +206,6 @@ bool QuerySelectImpl::Equals(EqualitySet &eq,
   const auto that = that_->AsSelect();
   if (!that || can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions ||
       columns.Size() != that->columns.Size() ||
       input_columns.Size() != that->input_columns.Size()) {
     return false;
@@ -240,8 +225,11 @@ bool QuerySelectImpl::Equals(EqualitySet &eq,
     }
 
   } else if (relation) {
-    if (!that->relation ||
-        relation->declaration.Id() != that->relation->declaration.Id()) {
+
+    // NOTE(pag): Pointer identity: there is exactly one relation node per
+    //            declaration context, and the `Id()`s of name-less
+    //            auto-declared zero-arity exports collide.
+    if (relation.get() != that->relation.get()) {
       return false;
     }
   }

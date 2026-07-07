@@ -271,10 +271,6 @@ bool QueryImpl::RemoveUnusedViews(void) {
 
   std::vector<VIEW *> views;
 
-  conditions.RemoveIf([](COND *cond) {
-    return cond->positive_users.Empty() && cond->negative_users.Empty();
-  });
-
   ForEachViewInReverseDepthOrder([&](VIEW *view) { views.push_back(view); });
 
   for (auto changed = true; changed;) {
@@ -420,10 +416,6 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
     for (auto c : v->columns) {
       assert(c->view == v);
     }
-    for (auto cond : conditions) {
-      assert(cond->UsersAreConsistent());
-      assert(cond->SettersAreConsistent());
-    }
   };
 #else
 #  define check_consistency(v)
@@ -494,185 +486,8 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
   RemoveUnusedViews();
 }
 
-// Shrink the graph of zero-argument CONDitions. Chains of constant-input
-// TUPLEs, each conditioned on the next condition in the chain, add spurious
-// control dependencies; this pass deletes unnecessary condition-setting
-// edges and forwards condition users across trivial links, leaving a more
-// minimal condition structure. It works over the conditions in depth order,
-// to a fixpoint. A setter that is not itself conditional -- all of its data
-// is unconditionally present, per `VIEW::IsConditional` -- stops setting its
-// condition, because that setter makes the condition unconditionally
-// satisfied. When a condition COND0 has exactly one setter, and that setter
-// is a TUPLE with all-constant inputs tested on exactly one positive
-// condition COND1 (and no negative conditions), every positive and negative
-// user of COND0 is rewired to test COND1 directly, and the TUPLE stops
-// setting COND0. Conditions left with no setters are removed at the end.
-//
-//    sort conditions by depth; repeat until no change:
-//      for each condition C with setters:
-//        if any setter S has !IsConditional(S):
-//          S.DropSetConditions()
-//        else if C has one setter S, S is an all-constant TUPLE
-//             with one positive condition C1 and no negatives:
-//          retarget every user of C to test C1
-//          S.DropSetConditions()
-//    remove conditions that no longer have setters
-//
-//  Before:                           After:
-//
-//    CMP                               CMP
-//     '--sets--> COND1                  '--sets--> COND1
-//                  | (tests)                         | (tests)
-//    TUPLE(consts)-'                   TUPLE[user]---'
-//     '--sets--> COND0
-//                  | (tests)
-//    TUPLE[user]---'
-bool QueryImpl::ShrinkConditions(void) {
-  std::vector<COND *> conds;
-  ForEachView([&](VIEW *view) { view->depth = 0; });
-
-  for (COND *cond : conditions) {
-    conds.push_back(cond);
-  }
-
-  std::sort(conds.begin(), conds.end(), +[](COND *a, COND *b) {
-    return QueryCondition(a).Depth() < QueryCondition(b).Depth();
-  });
-
-  std::unordered_map<VIEW *, bool> conditional_views;
-  std::vector<VIEW *> setters;
-
-  for (auto changed = true; changed; ) {
-
-    changed = false;
-    conditional_views.clear();
-
-    for (COND *cond : conds) {
-
-      assert(!cond->is_dead);
-      if (cond->setters.Empty()) {
-        continue;
-      }
-
-      assert(cond->UsersAreConsistent());
-      assert(cond->SettersAreConsistent());
-
-      setters.clear();
-      for (auto setter : cond->setters) {
-        setters.push_back(setter);
-      }
-
-      if (1u < setters.size()) {
-        for (VIEW *setter : setters) {
-
-          // This setter of this condition is not needed.
-          if (!VIEW::IsConditional(setter, conditional_views)) {
-            setter->DropSetConditions();
-            changed = true;
-          }
-        }
-      } else {
-        VIEW *setter = setters[0];
-        if (!VIEW::IsConditional(setter, conditional_views)) {
-          setter->DropSetConditions();
-          changed = true;
-
-        // This is an annoying but common problem:
-        //
-        //          COND0
-        //           |
-        //      TUPLE 1 testing COND1
-        //                        |
-        //                     COMPARE
-        //
-        // What we'd like to do is identify if we can replace COND0 with COND1.
-        } else if (setter->positive_conditions.Size() == 1u &&
-                   setter->negative_conditions.Empty()) {
-
-          COND *tested_condition = setter->positive_conditions[0];
-          if (tested_condition == cond) {
-            assert(false);  // Cycle?
-            continue;
-          }
-
-          TUPLE *tuple = setter->AsTuple();
-          if (!tuple) {
-            continue;
-          }
-
-          // All inputs to this tuple are constant.
-          if (!VIEW::GetIncomingView(tuple->input_columns)) {
-
-            std::vector<VIEW *> users;
-            for (auto user : cond->positive_users) {
-              users.push_back(user);
-            }
-            for (auto user : cond->negative_users) {
-              users.push_back(user);
-            }
-            for (auto user : users) {
-              auto removed = false;
-              user->positive_conditions.RemoveIf(
-                  [&](COND *c) {
-                    if (c == cond) {
-                      removed = true;
-                      return true;
-                    } else {
-                      return false;
-                    }
-                  });
-
-              if (removed) {
-                tested_condition->positive_users.AddUse(user);
-                user->positive_conditions.AddUse(tested_condition);
-              }
-
-              removed = false;
-              user->negative_conditions.RemoveIf(
-                  [&](COND *c) {
-                    if (c == cond) {
-                      removed = true;
-                      return true;
-                    } else {
-                      return false;
-                    }
-                  });
-
-              if (removed) {
-                tested_condition->negative_users.AddUse(user);
-                user->negative_conditions.AddUse(tested_condition);
-              }
-            }
-
-            cond->positive_users.Clear();
-            cond->negative_users.Clear();
-            setter->DropSetConditions();
-
-            assert(cond->UsersAreConsistent());
-            assert(cond->SettersAreConsistent());
-
-            assert(tested_condition->UsersAreConsistent());
-            assert(tested_condition->SettersAreConsistent());
-            changed = true;
-          }
-        }
-      }
-
-      assert(cond->UsersAreConsistent());
-      assert(cond->SettersAreConsistent());
-    }
-  }
-
-  ForEachView([&](VIEW *view) {
-    view->depth = 0;
-    view->OrderConditions();
-  });
-
-  return conditions.RemoveIf([](COND *cond) { return cond->setters.Empty(); });
-}
-
 // Top-level dataflow optimization driver. It interleaves three global
-// passes -- CSE, canonicalization, and condition/dead-flow cleanup --
+// passes -- CSE, canonicalization, and dead-flow cleanup --
 // because each exposes work for the others: CSE merges duplicate subgraphs,
 // which gives UNIONs duplicate inputs for canonicalization to fold;
 // canonicalization normalizes node shapes, which makes more views
@@ -685,7 +500,7 @@ bool QueryImpl::ShrinkConditions(void) {
 // first conservative bottom-up canonicalization, up to max-INSERT-depth
 // rounds of aggressive top-down canonicalization run, with unused-column
 // removal and constant-input replacement enabled, each followed by
-// condition shrinking and taint-based dead-flow elimination; the loop
+// taint-based dead-flow elimination; the loop
 // continues while dead flows keep disappearing. A final CSE round and
 // unused-view removal finish the pipeline.
 //
@@ -700,7 +515,6 @@ bool QueryImpl::ShrinkConditions(void) {
 //      Canonicalize(top-down, +remove unused columns,
 //                   +replace constant inputs)
 //      do_sink()
-//      if ShrinkConditions(): Canonicalize(same opts)
 //      RemoveUnusedViews()
 //    do_cse(); RemoveUnusedViews()
 //
@@ -773,10 +587,6 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     opt.bottom_up = false;
     Canonicalize(opt, log);
     do_sink();
-
-    if (ShrinkConditions()) {
-      Canonicalize(opt, log);
-    }
 
     RemoveUnusedViews();
     changed = EliminateDeadFlows();

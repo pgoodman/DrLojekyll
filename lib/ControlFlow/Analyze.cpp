@@ -779,7 +779,6 @@ void AnalysisContext::ConvertToCheckRecord(
         impl->next_id++, VariableRole::kRecordElement);
     out_var->defining_region = record;
     out_var->query_column = in_var->query_column;
-    out_var->query_cond = in_var->query_cond;
     out_var->query_const = in_var->query_const;
 
     // Replace all uses of each variable used as input to the check-state
@@ -908,7 +907,6 @@ void AnalysisContext::ConvertToChangeRecord(
         impl->next_id++, VariableRole::kRecordElement);
     out_var->defining_region = record;
     out_var->query_column = in_var->query_column;
-    out_var->query_cond = in_var->query_cond;
     out_var->query_const = in_var->query_const;
 
     // Replace all uses of each variable used as input to the check-state

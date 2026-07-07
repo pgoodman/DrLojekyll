@@ -48,8 +48,6 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
     }
   }
 
-  view->TransferSetConditionTo(proxy);
-  view->TransferTestedConditionsTo(proxy);
   return proxy;
 }
 
@@ -342,8 +340,10 @@ void QueryImpl::LinkViews(bool recursive) {
     assert(view->attached_columns.Empty());
 
     for (auto incoming_view : view->inserts) {
-      view->predecessors.AddUse(incoming_view);
-      incoming_view->successors.AddUse(view);
+      if (incoming_view && !incoming_view->is_dead) {
+        view->predecessors.AddUse(incoming_view);
+        incoming_view->successors.AddUse(view);
+      }
     }
   }
 

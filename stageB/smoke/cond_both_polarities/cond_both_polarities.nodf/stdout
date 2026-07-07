@@ -1,0 +1,36 @@
+-- empty, c1=0 c2=0
+pos_neg:
+both_pos:
+mixed:
+-- data, c1=0 c2=0
+pos_neg:
+both_pos:
+mixed: 10 11
+-- c1=1 c2=0
+pos_neg:
+both_pos: 1 2
+mixed: 1 2
+-- more r, c1=1 c2=0
+pos_neg:
+both_pos: 1 2 3
+mixed: 1 2 3
+-- c1=1 c2=1
+pos_neg:
+both_pos: 1 2 3
+mixed: 1 2 3
+-- c1=0 c2=1
+pos_neg:
+both_pos: 1 2 3
+mixed: 1 2 3
+-- c1=0 c2=0
+pos_neg:
+both_pos:
+mixed: 10 11
+-- reopen c1, c1=1 c2=0
+pos_neg:
+both_pos: 1 2 3
+mixed: 1 2 3
+-- final, c1=0 c2=0
+pos_neg:
+both_pos:
+mixed: 10 11 12

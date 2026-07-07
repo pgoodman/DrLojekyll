@@ -370,9 +370,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     //            ought to have been redundant, but not erroneous.
     if (TUPLE *tuple = view->AsTuple()) {
       VIEW *tuple_source = VIEW::GetIncomingView(tuple->input_columns);
-      if (tuple->ForwardsAllInputsAsIs(tuple_source) &&
-          !tuple->sets_condition && tuple->positive_conditions.Empty() &&
-          tuple->negative_conditions.Empty()) {
+      if (tuple->ForwardsAllInputsAsIs(tuple_source)) {
         continue;
       }
     }
@@ -391,15 +389,7 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
       col->ReplaceAllUsesWith(union_col);
     }
 
-    // We don't want to replace the weak uses of `this` in any condition's
-    // `positive_users`, `negative_users`, or `setters`.
-    view->VIEW::ReplaceUsesWithIf<User>(new_union, [=](User *user, VIEW *) {
-      // We'll let all conditions continue to use `view`.
-      //
-      // NOTE(pag): CONDitions are not allowed to be cyclic.
-      // TODO(pag): Make sure CONDitions are never cyclic.
-      return !dynamic_cast<COND *>(user);
-    });
+    view->Def<VIEW>::ReplaceAllUsesWith(new_union);
 
     view->CopyDifferentialAndGroupIdsTo(new_union);
 

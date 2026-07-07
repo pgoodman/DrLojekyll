@@ -363,8 +363,6 @@ bool QueryMapImpl::Equals(EqualitySet &eq, QueryViewImpl *that_) noexcept {
       functor.Id() != that->functor.Id() ||
       (ParsedDeclaration(functor).BindingPattern() !=
        ParsedDeclaration(that->functor).BindingPattern()) ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions ||
       InsertSetsOverlap(this, that)) {
     return false;
   }

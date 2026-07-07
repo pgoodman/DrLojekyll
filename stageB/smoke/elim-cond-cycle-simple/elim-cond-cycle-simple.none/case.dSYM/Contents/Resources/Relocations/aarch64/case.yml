@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     'stageB/smoke/elim-cond-cycle-simple/elim-cond-cycle-simple.none/case'
+relocations:     []
+...

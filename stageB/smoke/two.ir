@@ -1,0 +1,111 @@
+const u64 @0 = 0
+
+const u64 @1 = 1
+
+const bool @2 = false
+
+const bool @3 = true
+
+global u64 @27
+
+create %table:5[bool]
+  bool	%col:6
+
+  %index:7[bool] on %col:6
+
+create %table:8[bool,i32]
+  bool	%col:9
+  i32	%col:10	; X
+
+  %index:11[bool,i32] on %col:9, %col:10
+
+create %table:12[bool]
+  bool	%col:13
+
+  %index:14[bool] on %col:13
+
+create %table:15[bool,i32]
+  bool	%col:16
+  i32	%col:17	; X
+
+  %index:18[bool,i32] on %col:16, %col:17
+
+create %table:19[i32]
+  i32	%col:20	; X
+
+  %index:21[i32] on %col:20
+
+create %table:22[i32,bool]
+  i32	%col:23	; X
+  bool	%col:24
+
+  %index:25[i32,bool] on %col:23, %col:24
+  %index:40[_,bool] on %col:24
+
+init proc ^init:4()
+  vector-define $empty:60<i32>
+  vector-define $empty:61<i32>
+  vector-define $empty:62<i32>
+  seq
+    call ^entry:26($empty:60<i32>, $empty:61<i32>, $empty:62<i32>)
+    return-false
+
+proc ^entry:26($param:28<i32>, $param:32<i32>, $param:35<i32>)
+  vector-define $pivots:31<bool>
+  seq
+    par
+      vector-loop {@X:30} over $param:28<i32>
+        change-tuple {@3, @X:30} in %table:8[bool,i32] from absent to present
+          if-transitioned
+            change-tuple {@3} in %table:5[bool] from absent to present
+              if-transitioned
+                vector-append {@3} into $pivots:31<bool>
+      vector-loop {@X:34} over $param:32<i32>
+        change-tuple {@3, @X:34} in %table:15[bool,i32] from absent to present
+          if-transitioned
+            change-tuple {@3} in %table:12[bool] from absent to present
+      vector-loop {@X:37} over $param:35<i32>
+        change-tuple {@X:37, @3} in %table:22[i32,bool] from absent to present
+          if-transitioned
+            vector-append {@3} into $pivots:31<bool>
+    vector-clear $param:28<i32>
+    vector-clear $param:32<i32>
+    vector-clear $param:35<i32>
+    call ^flow:63($pivots:31<bool>)
+    return-false
+
+proc ^receive:set_c1/1:44($param:45<i32>)
+  vector-define $empty:47<i32>
+  vector-define $empty:48<i32>
+  seq
+    call ^entry:26($param:45<i32>, $empty:47<i32>, $empty:48<i32>)
+    return-true
+
+proc ^receive:set_c2/1:49($param:50<i32>)
+  vector-define $empty:52<i32>
+  vector-define $empty:53<i32>
+  seq
+    call ^entry:26($empty:52<i32>, $param:50<i32>, $empty:53<i32>)
+    return-true
+
+proc ^receive:add_r/1:54($param:55<i32>)
+  vector-define $empty:57<i32>
+  vector-define $empty:58<i32>
+  seq
+    call ^entry:26($empty:57<i32>, $empty:58<i32>, $param:55<i32>)
+    return-true
+
+proc ^flow:63($pivots:31<bool>)
+  seq
+    @27 += @1
+    vector-unique $pivots:31<bool>
+    join-tables
+      vector-loop {@39} over $pivots:31<bool>
+      select {%col:6 as @42} from %table:5[bool] using %index:7[bool] where %col:6 = @39
+      select {%col:23 as @X:43, %col:24 as @41} from %table:22[i32,bool] using %index:40[_,bool] where %col:24 = @39
+        if-compare {@39, @39} = {@41, @42}
+          if-true
+            change-tuple {@X:43} in %table:19[i32] from absent to present
+    vector-clear $pivots:31<bool>
+    return-true
+

@@ -743,6 +743,10 @@ void BuildEagerJoinRegion(ProgramImpl *impl, QueryView pred_view,
 void CreateBottomUpJoinRemover(ProgramImpl *impl, Context &context,
                                QueryView from_view, QueryJoin join_view,
                                OP *root, TABLE *already_checked_) {
+
+  // A zero-pivot JOIN (cross-product) must never reach the pivoted removal
+  // path, and a unit (condition) relation must never appear in a product at
+  // all: condition tests are desugared as one-pivot equi-joins.
   assert(join_view.NumPivotColumns());
 
   const QueryView view(join_view);

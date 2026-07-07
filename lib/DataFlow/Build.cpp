@@ -596,6 +596,16 @@ static bool CreateProduct(
     ClauseContext &context, std::vector<QueryViewImpl *> &views,
     const ErrorLog &log) {
 
+#ifndef NDEBUG
+  // Zero-arity condition tests are desugared into one-pivot equi-joins
+  // against unit relations and must never fall through to the product path.
+  for (QueryViewImpl *view : views) {
+    if (QuerySelectImpl *sel = view->AsSelect()) {
+      assert(!sel->relation || !sel->relation->is_condition);
+    }
+  }
+#endif
+
   if (!clause.CrossProductsArePermitted()) {
     auto err = log.Append(clause.SpellingRange(), clause.SpellingRange());
     err << "This clause requires a cross-product, but has not been annotated "
@@ -1372,55 +1382,232 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
   return false;
 }
 
-// Make the INSERT conditional on any zero-argument predicates.
-static void AddConditionsToInsert(QueryImpl *query, ParsedClause clause,
-                                  QueryViewImpl *insert) {
-  std::vector<COND *> conds;
+// The column of the compiler-synthesized boolean `true` constant stream:
+// the token value stored by every unit (condition) relation. One shared
+// CONST stream + SELECT serves the whole query.
+static QueryColumnImpl *TrueColumn(QueryImpl *query) {
+  if (!query->true_col) {
+    QueryConstantImpl *const stream = query->constants.Create();
+    QuerySelectImpl *const select =
+        query->selects.Create(stream, DisplayRange());
+    query->true_col = select->columns.Create(
+        TypeLoc(TypeKind::kBoolean), select, 0u, 0u);
+  }
+  return query->true_col;
+}
 
-  auto add_conds = [&](DefinedNodeRange<ParsedPredicate> range,
-                       UseList<COND> &uses, bool is_positive, QueryViewImpl *user) {
-    conds.clear();
+// The unit relation `⊥c` modeling the zero-arity export `decl`: a 1-arity,
+// `bool`-typed relation whose only possible row is `(true)`.
+static QueryRelationImpl *UnitRelationFor(QueryImpl *query,
+                                          ParsedDeclaration decl) {
+  QueryRelationImpl *&rel = query->decl_to_relation[decl];
+  if (!rel) {
+    rel = query->relations.Create(decl);
+  }
+  assert(rel->is_condition);
+  return rel;
+}
 
-    for (auto pred : range) {
-      auto decl = ParsedDeclaration::Of(pred);
-      if (decl.Arity() || !decl.IsExport()) {
-        continue;
-      }
+// Extend `view` with one extra `bool` output column that reads the `true`
+// token, forwarding all of `view`'s columns unchanged. The token column is
+// the last column.
+static QueryTupleImpl *ExtendWithTrueColumn(QueryImpl *query,
+                                            ClauseContext &context,
+                                            QueryViewImpl *view) {
+  QueryTupleImpl *const ext = query->tuples.Create();
+  ext->color = context.color;
 
-      auto export_ = ParsedExport::From(decl);
-      auto &cond = query->decl_to_condition[export_];
-      if (!cond) {
-        cond = query->conditions.Create(export_);
-      }
+#ifndef NDEBUG
+  ext->producer = "COND-TOKEN";
+#endif
 
-      assert(cond->UsersAreConsistent());
+  auto col_index = 0u;
+  for (QueryColumnImpl *col : view->columns) {
+    ext->input_columns.AddUse(col);
+    QueryColumnImpl *const out_col = ext->columns.Create(
+        col->var, col->type, ext, col->id, col_index++);
+    out_col->CopyConstantFrom(col);
+  }
 
-      conds.push_back(cond);
-    }
+  ext->input_columns.AddUse(TrueColumn(query));
+  (void) ext->columns.Create(TypeLoc(TypeKind::kBoolean), ext, 0u, col_index);
+  return ext;
+}
 
-    std::sort(conds.begin(), conds.end());
-    auto it = std::unique(conds.begin(), conds.end());
-    conds.erase(it, conds.end());
+// Desugar a positive test of the zero-arity predicate `pred` on `view`:
+// a one-pivot equi-join of `view` (extended with the `true` token column)
+// against a SELECT of `pred`'s unit relation. One pivot, never a
+// cross-product: the pivot is an ordinary column-vs-constant join. Returns
+// a view with the same column shape as `view`.
+//
+//    view[X..]   CONST true
+//        \        /
+//      TUPLE [X.., t]        SELECT ⊥c[t]
+//             \               /
+//            JOIN (pivot: t) [t, X..]
+//                  |
+//            TUPLE [X..]
+static QueryViewImpl *ApplyPositiveConditionTest(QueryImpl *query,
+                                                 ClauseContext &context,
+                                                 ParsedPredicate pred,
+                                                 QueryViewImpl *view) {
+  const auto decl = ParsedDeclaration::Of(pred);
+  QueryRelationImpl *const rel = UnitRelationFor(query, decl);
 
-    for (auto cond : conds) {
-      assert(cond);
-      uses.AddUse(cond);
-      if (is_positive) {
-        cond->positive_users.AddUse(user);
-      } else {
-        cond->negative_users.AddUse(user);
-      }
+  // The unit relation's SELECT column is deliberately NOT marked as a
+  // constant: the pivot must remain an ordinary column edge so that the
+  // join keeps expressing the presence dependency on `⊥c`.
+  QuerySelectImpl *const sel = query->selects.Create(rel, pred);
+  sel->color = context.color;
+  rel->selects.AddUse(sel);
+  QueryColumnImpl *const sel_col = sel->columns.Create(
+      TypeLoc(TypeKind::kBoolean), sel, 0u, 0u);
 
-      assert(cond->UsersAreConsistent());
-    }
-  };
+  QueryTupleImpl *const ext = ExtendWithTrueColumn(query, context, view);
+  const auto num_cols = view->columns.Size();
+  QueryColumnImpl *const ext_token_col = ext->columns[num_cols];
+
+  JOIN *const join = query->joins.Create();
+  join->color = context.color;
+  join->joined_views.AddUse(ext);
+  join->joined_views.AddUse(sel);
+  join->num_pivots = 1u;
+
+#ifndef NDEBUG
+  join->producer = "COND-TEST(";
+  join->producer += pred.NameAsString();
+  join->producer += ")";
+#endif
+
+  auto col_index = 0u;
+  QueryColumnImpl *const pivot_col = join->columns.Create(
+      TypeLoc(TypeKind::kBoolean), join, 0u, col_index++);
+  auto [pivot_it, pivot_added] = join->out_to_in.emplace(pivot_col, join);
+  assert(pivot_added);
+  (void) pivot_added;
+  pivot_it->second.AddUse(ext_token_col);
+  pivot_it->second.AddUse(sel_col);
+
+  // Non-pivot columns: the original columns of `view`, via `ext`.
+  for (auto i = 0u; i < num_cols; ++i) {
+    QueryColumnImpl *const in_col = ext->columns[i];
+    QueryColumnImpl *const out_col = join->columns.Create(
+        in_col->var, in_col->type, join, in_col->id, col_index++);
+    auto [in_cols_it, added] = join->out_to_in.emplace(out_col, join);
+    assert(added);
+    (void) added;
+    in_cols_it->second.AddUse(in_col);
+  }
+
+  // Restore the original column shape (drop the token).
+  QueryTupleImpl *const proj = query->tuples.Create();
+  proj->color = context.color;
+  for (auto i = 0u; i < num_cols; ++i) {
+    QueryColumnImpl *const join_col = join->columns[i + 1u];
+    proj->input_columns.AddUse(join_col);
+    (void) proj->columns.Create(join_col->var, join_col->type, proj,
+                                join_col->id, i);
+  }
+  return proj;
+}
+
+// Desugar a negative test of the zero-arity predicate `pred` on `view`: an
+// ordinary NEGATE whose matched column is the `true` token and whose
+// attached columns carry `view`'s columns. Returns a view with the same
+// column shape as `view`.
+//
+//    view[X..]   CONST true
+//        \        /
+//      TUPLE [X.., t]    TUPLE[t] over SELECT ⊥c[t]
+//             \           /
+//         NEGATE (match: t; attached: X..) [t, X..]
+//                  |
+//            TUPLE [X..]
+static QueryViewImpl *ApplyNegativeConditionTest(QueryImpl *query,
+                                                 ClauseContext &context,
+                                                 ParsedPredicate pred,
+                                                 QueryViewImpl *view) {
+  const auto decl = ParsedDeclaration::Of(pred);
+  QueryRelationImpl *const rel = UnitRelationFor(query, decl);
+
+  QuerySelectImpl *const sel = query->selects.Create(rel, pred);
+  sel->color = context.color;
+  rel->selects.AddUse(sel);
+  QueryColumnImpl *const sel_col = sel->columns.Create(
+      TypeLoc(TypeKind::kBoolean), sel, 0u, 0u);
+
+  TUPLE *const negated_view = query->tuples.Create();
+  negated_view->color = context.color;
+  negated_view->is_used_by_negation = true;
+  negated_view->input_columns.AddUse(sel_col);
+  (void) negated_view->columns.Create(
+      TypeLoc(TypeKind::kBoolean), negated_view, 0u, 0u);
+
+  QueryTupleImpl *const ext = ExtendWithTrueColumn(query, context, view);
+  const auto num_cols = view->columns.Size();
+  QueryColumnImpl *const ext_token_col = ext->columns[num_cols];
+
+  NEGATION *const negate = query->negations.Create();
+  negate->color = context.color;
+  negate->negated_view.Emplace(negate, negated_view);
+  negate->is_never = pred.IsNegatedWithNever();
+  negate->negations.emplace_back(pred);
+
+  auto col_index = 0u;
+  negate->input_columns.AddUse(ext_token_col);
+  (void) negate->columns.Create(TypeLoc(TypeKind::kBoolean), negate, 0u,
+                                col_index++);
+
+  for (auto i = 0u; i < num_cols; ++i) {
+    QueryColumnImpl *const in_col = ext->columns[i];
+    negate->attached_columns.AddUse(in_col);
+    (void) negate->columns.Create(in_col->var, in_col->type, negate,
+                                  in_col->id, col_index++);
+  }
+
+  // Restore the original column shape (drop the token).
+  QueryTupleImpl *const proj = query->tuples.Create();
+  proj->color = context.color;
+  for (auto i = 0u; i < num_cols; ++i) {
+    QueryColumnImpl *const neg_col = negate->columns[i + 1u];
+    proj->input_columns.AddUse(neg_col);
+    (void) proj->columns.Create(neg_col->var, neg_col->type, proj,
+                                neg_col->id, i);
+  }
+  return proj;
+}
+
+// Desugar every zero-arity predicate test of `clause` into unit-relation
+// gates over `view`, at the clause's sink. Each distinct condition is
+// tested once per polarity (set semantics).
+static QueryViewImpl *ApplyConditionTests(QueryImpl *query,
+                                          ParsedClause clause,
+                                          ClauseContext &context,
+                                          QueryViewImpl *view) {
+  // NOTE(pag): Auto-declared zero-arity exports are name-less, so their
+  //            `Id()`s collide; distinct conditions are distinguished by
+  //            declaration (context) equality, never by `Id()`.
+  std::unordered_set<ParsedDeclaration> positive_seen;
+  std::unordered_set<ParsedDeclaration> negative_seen;
 
   for (auto g = 0u, num_groups = clause.NumGroups(); g < num_groups; ++g) {
-    add_conds(clause.PositivePredicates(g), insert->positive_conditions, true,
-              insert);
-    add_conds(clause.NegatedPredicates(g), insert->negative_conditions, false,
-              insert);
+    for (auto pred : clause.PositivePredicates(g)) {
+      const auto decl = ParsedDeclaration::Of(pred);
+      if (!decl.Arity() && decl.IsExport() &&
+          positive_seen.insert(decl).second) {
+        view = ApplyPositiveConditionTest(query, context, pred, view);
+      }
+    }
+    for (auto pred : clause.NegatedPredicates(g)) {
+      const auto decl = ParsedDeclaration::Of(pred);
+      if (!decl.Arity() && decl.IsExport() &&
+          negative_seen.insert(decl).second) {
+        view = ApplyNegativeConditionTest(query, context, pred, view);
+      }
+    }
   }
+
+  return view;
 }
 
 // The goal of this function is to build multiple equivalent dataflows out of
@@ -2026,66 +2213,11 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   const ParsedDeclaration decl = ParsedDeclaration::Of(clause);
   INSERT *insert = nullptr;
 
-  // Add the conditions tested.
-  //
-  // TODO(pag): Apply the conditions to whatever we send over from groups.
-  for (auto g = 0u; g < num_groups; ++g) {
-    if (!clause.PositivePredicates(g).empty() ||
-        !clause.NegatedPredicates(g).empty()) {
-      auto col_index = 0u;
-      TUPLE *cond_guard = nullptr;
-      if (clause.Arity()) {
-        cond_guard = query->tuples.Create();
-        cond_guard->color = context.color;
-        for (ParsedVariable var : clause.Parameters()) {
-          cond_guard->input_columns.AddUse(clause_head->columns[col_index]);
-          (void) cond_guard->columns.Create(var, cond_guard, VarId(context, var),
-                                            col_index);
-          ++col_index;
-        }
-      // Zero-arity clause head (a condition definition). Build a pass-through
-      // tuple that forwards every column of `clause_head`, without
-      // substituting `clause_head`'s uses: when the body is a bare predicate,
-      // `clause_head` is the SELECT held in `QueryIOImpl::receives` /
-      // `QueryRelationImpl::selects`, and those lists must contain only
-      // SELECT nodes for `QueryImpl::ConnectInsertsToSelects` to work.
-      } else {
-        cond_guard = query->tuples.Create();
-        cond_guard->color = context.color;
-        for (QueryColumnImpl *col : clause_head->columns) {
-          cond_guard->input_columns.AddUse(col);
-          QueryColumnImpl *out_col = cond_guard->columns.Create(
-              col->var, col->type, cond_guard, col->id, col_index++);
-          out_col->CopyConstantFrom(col);
-        }
-      }
-
-      AddConditionsToInsert(query, clause, cond_guard);
-      clause_head = cond_guard;
-    }
-  }
-
-  // Functor for adding in the `sets_condition` flag. If this is a deletion
-  // clause, e.g. `!cond : ...` then we want to add `set_condition` to the
-  // DELETE node; however, if it's an insertion clause then we want to add
-  // it to the INSERT.
-  auto set_condition = false;
-  auto add_set_conditon = [=, &set_condition](QueryViewImpl *view) {
-    if (!set_condition && !decl.Arity()) {
-      set_condition = true;
-      const ParsedExport export_decl = ParsedExport::From(decl);
-      auto &cond = query->decl_to_condition[export_decl];
-      if (!cond) {
-        cond = query->conditions.Create(export_decl);
-      }
-
-      view->sets_condition.Emplace(view, cond);
-      cond->setters.AddUse(view);
-
-      assert(cond->UsersAreConsistent());
-      assert(cond->SettersAreConsistent());
-    }
-  };
+  // Desugar every zero-arity predicate test into a unit-relation gate at
+  // the clause's sink: positive tests become one-pivot equi-joins against a
+  // SELECT of the condition's unit relation, negative tests become ordinary
+  // NEGATEs.
+  clause_head = ApplyConditionTests(query, clause, context, clause_head);
 
   if (decl.IsMessage()) {
     IO *&stream = query->decl_to_input[decl];
@@ -2105,10 +2237,46 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert->color = context.color;
     rel->inserts.AddUse(insert);
 
-  // It's a zero-argument predicate.
+  // A zero-arity clause head defines a condition. Prove it by inserting the
+  // `true` token into the condition's unit relation. The INSERT stores only
+  // the token; the body's presence is carried by a read-only witness column
+  // (one representative column of the body view) in `attached_columns`.
+  //
+  //    clause_head[w0..wn]   CONST true
+  //             \             /
+  //            TUPLE [t=true, w0]
+  //                   |
+  //            INSERT (store: t; attached: w0)
+  //                   |
+  //            RELATION (unit, 1 bool column)
   } else {
     assert(decl.IsExport());
-    add_set_conditon(clause_head);
+    QueryRelationImpl *const rel = UnitRelationFor(query, decl);
+
+    TUPLE *const witness = query->tuples.Create();
+    witness->color = context.color;
+
+#ifndef NDEBUG
+    witness->producer = "COND-WITNESS(";
+    witness->producer += clause.NameAsString();
+    witness->producer += ")";
+#endif
+
+    witness->input_columns.AddUse(TrueColumn(query));
+    (void) witness->columns.Create(TypeLoc(TypeKind::kBoolean), witness, 0u,
+                                   0u);
+
+    assert(!clause_head->columns.Empty());
+    QueryColumnImpl *const witness_col = clause_head->columns[0];
+    witness->input_columns.AddUse(witness_col);
+    (void) witness->columns.Create(witness_col->var, witness_col->type,
+                                   witness, witness_col->id, 1u);
+
+    insert = query->inserts.Create(rel, decl);
+    insert->color = context.color;
+    rel->inserts.AddUse(insert);
+    insert->input_columns.AddUse(witness->columns[0]);
+    insert->attached_columns.AddUse(witness->columns[1]);
     return true;
   }
 
@@ -2116,7 +2284,6 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     insert->input_columns.AddUse(col);
   }
 
-  // We just proved a zero-argument predicate, i.e. a condition.
   assert(clause_head->columns.Size() == clause.Arity());
 
   return true;
@@ -2157,14 +2324,6 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     }
 
     return true;
-  };
-
-  // If the output of `view` is conditional, i.e. dependent on the refcount
-  // condition variables, or if a condition variable is dependent on the
-  // output, then successors of `view` can't share the data model with `view`.
-  auto output_is_conditional = +[](QueryView view) {
-    return view.SetCondition() || !view.PositiveConditions().empty() ||
-           !view.NegativeConditions().empty();
   };
 
   auto has_multiple_succs =
@@ -2270,7 +2429,6 @@ static void BuildEquivalenceSets(QueryImpl *query) {
     EquivalenceSet *insert_model = select->equivalence_set.get()->Find();
     for (auto pred : select->predecessors) {
       assert(pred->AsInsert());
-      assert(!output_is_conditional(pred));
       const auto pred_model = view_to_model[pred];
       EquivalenceSet::TryUnion(insert_model, pred_model);
     }
@@ -2297,7 +2455,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       assert(!preds.empty());
 //      auto possible_sharing_preds = view.InductivePredecessors();
 //      for (QueryView pred : possible_sharing_preds) {
-//        if (!output_is_conditional(pred) && !pred.IsUsedByNegation() &&
+//        if (!pred.IsUsedByNegation() &&
 //            !has_multiple_succs(pred) &&
 //            pred.CanProduceDeletions() == view.CanReceiveDeletions()) {
 //          EquivalenceSet *const pred_model = view_to_model[pred];
@@ -2311,8 +2469,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       const auto tuple = QueryTuple::From(view);
       if (preds.size() == 1u) {
         const auto pred = preds[0];
-        if (!output_is_conditional(pred) &&
-            all_cols_match(tuple.InputColumns(), pred.Columns())) {
+        if (all_cols_match(tuple.InputColumns(), pred.Columns())) {
           EquivalenceSet *const pred_model = view_to_model[pred];
           EquivalenceSet::TryUnion(model, pred_model);
         }
@@ -2326,8 +2483,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
       for (auto succ : view.NonInductiveSuccessors()) {
         if (succ.IsTuple()) {
           const auto tuple = QueryTuple::From(succ);
-          if (all_cols_match(view.Columns(), tuple.InputColumns()) &&
-              !output_is_conditional(succ)) {
+          if (all_cols_match(view.Columns(), tuple.InputColumns())) {
             EquivalenceSet *const succ_model = view_to_model[succ];
             EquivalenceSet::TryUnion(model, succ_model);
           }
@@ -2343,8 +2499,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 //      QueryView view(merge);
 
       QueryView pred_view(merge->merged_views[0]);
-      if (!has_multiple_succs(pred_view) && !pred_view.IsUsedByNegation() &&
-          !output_is_conditional(pred_view)) {
+      if (!has_multiple_succs(pred_view) && !pred_view.IsUsedByNegation()) {
 #ifndef NDEBUG
         merge->producer += " (REDUNDANT?)";
 #endif
@@ -2392,17 +2547,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     }
   }
 
-#ifndef NDEBUG
-  auto check_conds = [=] (void) {
-    for (COND *cond : impl->conditions) {
-      assert(cond->UsersAreConsistent());
-      assert(cond->SettersAreConsistent());
-    }
-  };
-#else
-#  define check_conds()
-#endif
-
   impl->RemoveUnusedViews();
   impl->ClearGroupIDs();
   impl->TrackDifferentialUpdates(log);
@@ -2410,20 +2554,14 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
-  check_conds();
-
   impl->Simplify(log);
   if (num_errors != log.Size()) {
     return std::nullopt;
   }
 
-  check_conds();
-
   if (!impl->ConnectInsertsToSelects(log)) {
     return std::nullopt;
   }
-
-  check_conds();
 
   try {
     if (optimize) {
@@ -2432,12 +2570,9 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
         return std::nullopt;
       }
 
-      check_conds();
     }
 
     impl->ConvertConstantInputsToTuples();
-    impl->RemoveUnusedViews();
-    impl->ExtractConditionsToTuples();
     impl->RemoveUnusedViews();
     impl->ProxyInsertsWithTuples();
     impl->LinkViews();  // NOTE(pag): Might add new views.

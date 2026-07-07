@@ -125,56 +125,6 @@ class QueryColumnImpl : public Def<QueryColumnImpl> {
   uint64_t hash{0};
 };
 
-// A condition to be tested in order to admit tuples into a relation or
-// produce tuples.
-class QueryConditionImpl : public Def<QueryConditionImpl>, public User {
- public:
-  ~QueryConditionImpl(void);
-
-  // An anonymous, not-user-defined condition that is instead inferred based
-  // off of optmizations.
-  QueryConditionImpl(void);
-
-  // An explicit, user-defined condition. Usually associated with there-exists
-  // checks or configuration options.
-  explicit QueryConditionImpl(ParsedExport decl_);
-
-  inline uint64_t Sort(void) const noexcept {
-    return declaration ? declaration->Id() : reinterpret_cast<uintptr_t>(this);
-  }
-
-  // Is this a trivial condition?
-  bool IsTrivial(std::unordered_map<QueryViewImpl *, bool> &conditional_views);
-
-  // Is this a trivial condition?
-  bool IsTrivial(void);
-
-  // Are the `positive_users` and `negative_users` lists consistent?
-  bool UsersAreConsistent(void) const;
-
-  // Are the setters of this condition consistent?
-  bool SettersAreConsistent(void) const;
-
-  // The declaration of the `ParsedExport` that is associated with this
-  // zero-argument predicate.
-  const std::optional<ParsedDeclaration> declaration;
-
-  // List of views using this condition.
-  WeakUseList<QueryViewImpl> positive_users;
-  WeakUseList<QueryViewImpl> negative_users;
-
-  // List of views that produce values for this condition.
-  //
-  // TODO(pag): Consider making this not be a weak use list.
-  WeakUseList<QueryViewImpl> setters;
-
-  bool in_trivial_check{false};
-
-  bool in_depth_calc{false};
-
-  bool is_dead{false};
-};
-
 // A "table" of data.
 class QueryRelationImpl : public Def<QueryRelationImpl>, public User {
  public:
@@ -218,13 +168,14 @@ class QueryConstantImpl : public QueryStreamImpl {
 
   QueryConstantImpl(ParsedLiteral literal_);
 
+  // A literal-less constant: the compiler-synthesized boolean `true` token
+  // that unit (condition) relations store, typed `TypeKind::kBoolean`.
+  inline QueryConstantImpl(void) {}
+
   QueryConstantImpl *AsConstant(void) noexcept override;
   const char *KindName(void) const noexcept override;
 
   const std::optional<ParsedLiteral> literal;
-
- protected:
-  inline QueryConstantImpl(void) {}
 };
 
 // Use of a constant.
@@ -330,29 +281,6 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // and `false` if it has already been performed.
   bool PrepareToDelete(void);
 
-  // Copy all positive and negative conditions from `this` into `that`.
-  void CopyTestedConditionsTo(QueryViewImpl *that);
-
-  // Transfer all positive and negative conditions from `this` into `that`.
-  void TransferTestedConditionsTo(QueryViewImpl *that);
-
-  // Converts this node to be unconditional, it doesn't affect set conditions.
-  void DropTestedConditions(void);
-
-  // Converts this node to not set any conditions. When this was the last
-  // setter, the condition is unconditionally satisfied, and every test of it
-  // is dropped.
-  void DropSetConditions(void);
-
-  // Stops this (dying) node from setting any conditions. When this was the
-  // last setter, the condition can never be satisfied: positive testers are
-  // unsatisfiable and are deleted, and negative tests are vacuously true and
-  // are dropped.
-  void DropSetConditionsOfDeadView(void);
-
-  // If `sets_condition` is non-null, then transfer the setter to `that`.
-  void TransferSetConditionTo(QueryViewImpl *that);
-
   // Copy the group IDs and the receive/produce deletions from `this` to `that`.
   void CopyDifferentialAndGroupIdsTo(QueryViewImpl *that);
 
@@ -393,15 +321,12 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   bool IsUsed(void) const noexcept;
 
   // Is this view directly being used? This does not check columns, but does
-  // check conditions.
+  // check view-level uses (e.g. by MERGEs).
   bool IsUsedDirectly(void) const noexcept;
 
   // Invoked any time time that any of the columns used by this view are
   // modified.
   void Update(uint64_t) override;
-
-  // Sort the `positive_conditions` and `negative_conditions`.
-  void OrderConditions(void);
 
   // Canonicalizes an input/output column pair. Returns `true` in the first
   // element if non-local changes are made, and `true` in the second element
@@ -500,13 +425,6 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // These are used by MAPs and FILTERs, which need to pull along state from
   // their sources.
   UseList<QueryColumnImpl> attached_columns;
-
-  // Zero argument predicates that constrain this node.
-  UseList<QueryConditionImpl> positive_conditions;
-  UseList<QueryConditionImpl> negative_conditions;
-
-  // If this VIEW sets a CONDition, then keep track of that here.
-  WeakUseRef<QueryConditionImpl> sets_condition;
 
   // Predecessors and successors of this VIEW.
   //
@@ -638,9 +556,8 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   bool CheckIncomingViewsMatch(const UseList<QueryColumnImpl> &cols1,
                                const UseList<QueryColumnImpl> &cols2) const;
 
-  // If `cols1:cols2` pull their data from a tuple, and if that tuple is
-  // unconditional, or if its conditions are trivial, then update `cols1:cols2`
-  // to point at the source of the data of those tuples.
+  // If `cols1:cols2` pull their data from a forwarding tuple, then update
+  // `cols1:cols2` to point at the source of the data of those tuples.
   //
   // Takes in the `incoming_view` pulled from by `cols1:cols2` and returns the
   // updated `incoming_view`.
@@ -689,9 +606,9 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
                             const UseList<QueryColumnImpl> &cols1,
                             const UseList<QueryColumnImpl> &cols2);
 
-  // Try to figure out if `view` is conditional. That could mean that it
-  // depends directly on a condition, or that it depends on something that
-  // may be present or may be absent (e.g. the output of a `JOIN`).
+  // Try to figure out if `view` is conditional, i.e. whether it depends on
+  // something that may be present or may be absent (e.g. the output of a
+  // `JOIN`).
   static bool IsConditional(
       QueryViewImpl *view,
       std::unordered_map<QueryViewImpl *, bool> &conditional_views);
@@ -704,11 +621,7 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // Utilities for depth calculation.
   static unsigned EstimateDepth(const UseList<QueryColumnImpl> &cols,
                                 unsigned depth);
-  static unsigned EstimateDepth(const UseList<QueryConditionImpl> &conds,
-                                unsigned depth);
   static unsigned GetDepth(const UseList<QueryColumnImpl> &cols,
-                           unsigned depth);
-  static unsigned GetDepth(const UseList<QueryConditionImpl> &conds,
                            unsigned depth);
 
   // Utility for comparing use lists.
@@ -826,9 +739,6 @@ class QueryJoinImpl final : public QueryViewImpl {
   // replacements easier.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
-
-  // Remove all constant uses.
-  void RemoveConstants(QueryImpl *query);
 
   // Convert a trivial join (only has a single input view) into a TUPLE.
   void ConvertTrivialJoinToTuple(QueryImpl *impl);
@@ -1095,19 +1005,13 @@ class QueryImpl {
   // to encourange better CSE results.
   void Canonicalize(const OptimizationContext &opt, const ErrorLog &);
 
-  // Sometimes we have a bunch of dumb condition patterns, roughly looking like
-  // a chain of constant input tuples, conditioned on the next one in the chain,
-  // and so we want to eliminate all the unnecessary intermediary tuples and
-  // conditions and shrink down to a more minimal form.
-  bool ShrinkConditions(void);
-
   // Eliminate dead flows. This uses a taint-based approach and identifies a
   // VIEW as dead if it is not derived directly or indirectly from input
   // messages.
   bool EliminateDeadFlows(void);
 
   // Apply common subexpression elimination (CSE) to the dataflow, canonicalize
-  // the dataflow, minimize/shrink conditions, and eliminate dead flows.
+  // the dataflow, and eliminate dead flows.
   void Optimize(const ErrorLog &);
 
   // Convert all views having constant inputs to depend upon tuple nodes, so
@@ -1120,15 +1024,11 @@ class QueryImpl {
 
   // Identify which data flows can receive and produce deletions.
   void TrackDifferentialUpdates(const ErrorLog &log,
-                                bool check_conds = false) const;
+                                bool report_message_errors = false) const;
 
   // Track which views are constant after initialization.
   // See `VIEW::is_const_after_init`.
   void TrackConstAfterInit(void) const;
-
-  // Extract conditions from regular nodes and force them to belong to only
-  // tuple nodes. This simplifies things substantially for downstream users.
-  void ExtractConditionsToTuples(void);
 
   // Finalize column ID values. Column ID values relate to lexical scope, to
   // some extent. Two columns with the same ID can be said to have the same
@@ -1160,8 +1060,10 @@ class QueryImpl {
   // stream.
   std::unordered_map<std::string, QueryConstantImpl *> spelling_to_constant;
 
-  // Mapping between export conditions and actual condition nodes.
-  std::unordered_map<ParsedExport, QueryConditionImpl *> decl_to_condition;
+  // Column of the compiler-synthesized, literal-less boolean `true` constant
+  // stream: the token stored by unit (condition) relations. Created on first
+  // use by the condition desugarer in `BuildClause`.
+  QueryColumnImpl *true_col{nullptr};
 
   std::vector<QueryColumnImpl *> tag_columns;
 
@@ -1171,7 +1073,6 @@ class QueryImpl {
   DefList<QueryRelationImpl> relations;
   DefList<QueryConstantImpl> constants;
   DefList<QueryTagImpl> tags;
-  DefList<QueryConditionImpl> conditions;
   DefList<QuerySelectImpl> selects;
   DefList<QueryTupleImpl> tuples;
   DefList<QueryKVIndexImpl> kv_indices;
@@ -1195,7 +1096,6 @@ class QueryImpl {
 };
 
 using COL = QueryColumnImpl;
-using COND = QueryConditionImpl;
 using REL = QueryRelationImpl;
 using STREAM = QueryStreamImpl;
 using CONST = QueryConstantImpl;

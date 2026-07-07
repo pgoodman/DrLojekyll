@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     'stageB/smoke/merge_3/merge_3.nocf/case'
+relocations:     []
+...

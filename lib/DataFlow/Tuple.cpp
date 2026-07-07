@@ -251,8 +251,7 @@ bool QueryTupleImpl::Canonicalize(QueryImpl *,
   }
 
   // We've eliminated all columns. Likely this means that we had a tuple that
-  // was full of constants. Now we're in the unenviable position where we need
-  // to deal with any conditions.
+  // was full of constants.
   if (columns.Empty()) {
 
     // This might happen as a result of `SkipPastForwardingTuples`.
@@ -261,31 +260,8 @@ bool QueryTupleImpl::Canonicalize(QueryImpl *,
       return false;
     }
 
-    // This tuple doesn't test any conditions.
-    if (positive_conditions.Empty() && negative_conditions.Empty()) {
-      PrepareToDelete();
-      return true;
-
-    // This tuple only tests trivial positive conditions.
-    } else if (negative_conditions.Empty()) {
-      auto all_trivial = true;
-      for (auto cond : positive_conditions) {
-        if (!cond->IsTrivial()) {
-          all_trivial = false;
-          break;
-        }
-      }
-
-      if (all_trivial) {
-        PrepareToDelete();
-        return true;
-      }
-    }
-
-    // Restore the old columns.
-    columns.Swap(new_columns);
-    input_columns.Swap(new_input_columns);
-    is_locked = true;
+    PrepareToDelete();
+    return true;
   }
 
   return has.non_local_changes;
@@ -299,9 +275,7 @@ bool QueryTupleImpl::Equals(EqualitySet &eq,
   }
 
   const auto that = that_->AsTuple();
-  if (!that || positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions ||
-      can_receive_deletions != that->can_receive_deletions ||
+  if (!that || can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
       columns.Size() != that->columns.Size() || InsertSetsOverlap(this, that)) {
     return false;
@@ -341,9 +315,7 @@ bool QueryTupleImpl::ForwardsAllInputsAsIs(
   // Check to see if we can use `incoming_view` in place of `this`. We need
   // to be extra careful about whether or not `this` and `incoming_view` are
   // directly used by the same join.
-  if (incoming_view && !sets_condition && positive_conditions.Empty() &&
-      negative_conditions.Empty() &&
-      incoming_view->columns.Size() == num_cols) {
+  if (incoming_view && incoming_view->columns.Size() == num_cols) {
 
     // Make sure all columns are perfectly forwarded.
     for (auto i = 0u; i < num_cols; ++i) {

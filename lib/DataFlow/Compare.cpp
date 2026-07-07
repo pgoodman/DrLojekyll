@@ -398,8 +398,6 @@ bool QueryCompareImpl::Equals(EqualitySet &eq,
       can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
       columns.Size() != that_->columns.Size() ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions ||
       InsertSetsOverlap(this, that)) {
     return false;
   }
@@ -420,13 +418,12 @@ bool QueryCompareImpl::Equals(EqualitySet &eq,
 // to the data sources, shrinking the volume of tuples that flow through the
 // predecessor and exposing further folding opportunities upstream. It only
 // applies when `can_sink` is set, when there is a single incoming view, and
-// when that view neither sets a condition nor is tested by a negation (both
-// of which pin the predecessor's output in place).
+// when that view is not tested by a negation (which pins the predecessor's
+// output in place).
 //
 //    if not can_sink:                                 give up
 //    pred := incoming view of inputs + attached
-//    if no pred, pred sets a condition, or pred is
-//        used by a NEGATE:                            give up
+//    if no pred, or pred is used by a NEGATE:         give up
 //    if pred is a MERGE:   sink through the MERGE
 //    if pred is a NEGATE:  sink through the NEGATE
 //    otherwise:            give up
@@ -436,7 +433,7 @@ bool QueryCompareImpl::TrySink(QueryImpl *query) {
   }
 
   VIEW *pred = VIEW::GetIncomingView(input_columns, attached_columns);
-  if (!pred || pred->sets_condition || pred->is_used_by_negation) {
+  if (!pred || pred->is_used_by_negation) {
     return false;
   }
 

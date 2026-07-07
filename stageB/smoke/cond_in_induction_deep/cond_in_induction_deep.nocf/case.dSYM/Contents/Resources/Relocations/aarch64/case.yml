@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     'stageB/smoke/cond_in_induction_deep/cond_in_induction_deep.nocf/case'
+relocations:     []
+...

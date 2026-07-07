@@ -281,6 +281,19 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
                              TABLE *last_table_) {
   const QueryView view(product_view);
 
+#ifndef NDEBUG
+  // Zero-pivot JOINs appear only under `@product`: a unit (condition)
+  // relation feeding a cross-product means the condition desugaring failed
+  // to pivot, which would silently widen the unimplemented product-removal
+  // feature gap.
+  for (auto joined_view : product_view.JoinedViews()) {
+    if (joined_view.IsSelect()) {
+      const auto sel = QuerySelect::From(joined_view);
+      assert(!sel.IsRelation() || !sel.Relation().IsCondition());
+    }
+  }
+#endif
+
   // First, check if we should push this tuple through the PRODUCT. If it's
   // not resident in the view tagged for the `QueryJoin` then we know it's
   // never been seen before.

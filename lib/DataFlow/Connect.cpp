@@ -35,8 +35,6 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
 #endif
 
     insert->CopyDifferentialAndGroupIdsTo(proxy);
-    insert->TransferSetConditionTo(proxy);
-    insert->TransferTestedConditionsTo(proxy);
 
     auto col_index = 0u;
     for (auto in_col : insert->input_columns) {
@@ -234,10 +232,20 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
 
     const ParsedDeclaration decl(rel->declaration);
 
-    // WE don't generate a MERGE in the case of a zero-arity predicate, i.e.
-    // a CONDition variable, because there might be multiple ways of proving
-    // that CONDition that have different arities.
+    // A unit (condition) relation keeps its materialized INSERT -> RELATION
+    // -> SELECT structure: its setter INSERTs store only the `true` token
+    // while carrying witness reads of differing arities, so they can never
+    // be inlined into their readers. Wire each SELECT to the relation's
+    // INSERTs so that dead-flow tainting and view linking see the edges.
     if (!decl.Arity()) {
+      assert(rel->is_condition);
+      for (VIEW *sel_view : rel->selects) {
+        QuerySelectImpl *const sel = sel_view->AsSelect();
+        assert(sel != nullptr);
+        for (VIEW *insert_view : rel->inserts) {
+          sel->inserts.AddUse(insert_view);
+        }
+      }
       continue;
     }
 

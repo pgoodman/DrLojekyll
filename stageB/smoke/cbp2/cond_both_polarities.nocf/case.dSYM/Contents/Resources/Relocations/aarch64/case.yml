@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     'stageB/smoke/cbp2/cond_both_polarities.nocf/case'
+relocations:     []
+...

@@ -101,10 +101,6 @@ class Context {
   // Maps received messages to their handler procedures.
   std::unordered_map<ParsedMessage, PROC *> messsage_handler;
 
-  // Maps views to the functions that check if their conditions are satisfied
-  // or not.
-  std::unordered_map<QueryView, PROC *> cond_checker_procs;
-
   // Maps negations to the checker procedure that tries to figure out if the
   // negated view has some data or not.
   //  std::unordered_map<QueryView, PROC *> negation_checker_procs;
@@ -566,9 +562,6 @@ inline bool EndsWithReturn(REGION *region) {
     return false;
   }
 }
-
-// Returns a global reference count variable associated with a query condition.
-VAR *ConditionVariable(ProgramImpl *impl, QueryCondition cond);
 
 // Expand the set of available columns.
 void ExpandAvailableColumns(

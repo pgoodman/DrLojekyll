@@ -48,7 +48,6 @@ DataVariableImpl::DataVariableImpl(unsigned id_, VariableRole role_)
 
 TypeLoc DataVariableImpl::Type(void) const noexcept {
   switch (role) {
-    case VariableRole::kConditionRefCount:
     case VariableRole::kInitGuard:
     case VariableRole::kConstantZero:
     case VariableRole::kConstantOne:
@@ -83,7 +82,6 @@ TypeLoc DataVariableImpl::Type(void) const noexcept {
 
 bool DataVariableImpl::IsGlobal(void) const noexcept {
   switch (role) {
-    case VariableRole::kConditionRefCount:
     case VariableRole::kInitGuard:
     case VariableRole::kConstant:
     case VariableRole::kConstantTag:
@@ -103,7 +101,6 @@ bool DataVariableImpl::IsConstant(void) const noexcept {
     case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue: return true;
-    case VariableRole::kConditionRefCount:
     case VariableRole::kRecordElement: return false;
     default:
       if (query_const.has_value()) {
@@ -167,8 +164,7 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
     //  // to save too much stuff in output tables produced from maps, because we
     //  // can recompute that data. That has the effect of possibly pessimizing
     //  // our data modeling, though.
-    //  } else if (view.IsMap() && (view.CanReceiveDeletions() ||
-    //                              !!view.SetCondition())) {
+    //  } else if (view.IsMap() && view.CanReceiveDeletions()) {
     //    const auto map = QueryMap::From(view);
     //    const auto functor = map.Functor();
     //
@@ -213,6 +209,8 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
 
   // A table backing a unit (condition) relation is flagged as such; any
   // SELECT from or INSERT into a condition relation marks the shared table.
+  // A unit relation stores at most the row `(true)`: exactly one `bool`
+  // column, populated only by the desugarer-created token INSERTs.
   if (view.IsInsert()) {
     const auto insert = QueryInsert::From(view);
     if (insert.IsRelation() && insert.Relation().IsCondition()) {
@@ -224,6 +222,14 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
       model->table->is_condition = true;
     }
   }
+
+#ifndef NDEBUG
+  if (model->table->is_condition) {
+    assert(model->table->columns.Size() == 1u);
+    assert(model->table->columns[0]->type.UnderlyingKind() ==
+           TypeKind::kBoolean);
+  }
+#endif
 
   const auto old_size = model->table->views.size();
   model->table->views.push_back(view);

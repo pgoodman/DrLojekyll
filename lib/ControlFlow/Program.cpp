@@ -672,11 +672,6 @@ Token DataVariable::Name(void) const noexcept {
     }
   }
 
-  if (ret.IsInvalid() && impl->query_cond) {
-    if (auto pred = impl->query_cond->Predicate(); pred) {
-      ret = pred->Name();
-    }
-  }
   return ret;
 }
 
@@ -700,7 +695,6 @@ TypeLoc DataVariable::Type(void) const noexcept {
 // Whether this variable is global.
 bool DataVariable::IsGlobal(void) const noexcept {
   switch (DefiningRole()) {
-    case VariableRole::kConditionRefCount:
     case VariableRole::kInitGuard:
     case VariableRole::kConstant:
     case VariableRole::kConstantTag:

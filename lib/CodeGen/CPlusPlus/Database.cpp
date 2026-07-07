@@ -197,8 +197,6 @@ class Generator {
                std::to_string(proc.Message()->Arity());
       case ProcedureKind::kTupleFinder:
         return "find_" + std::to_string(proc.Id());
-      case ProcedureKind::kConditionTester:
-        return "test_" + std::to_string(proc.Id());
       case ProcedureKind::kQueryMessageInjector:
         return "inject_" + std::to_string(proc.Id());
       default: return "proc_" + std::to_string(proc.Id());

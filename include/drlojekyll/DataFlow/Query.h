@@ -108,31 +108,6 @@ class QueryColumn : public Node<QueryColumn, QueryColumnImpl> {
   friend class Node;
 };
 
-// A condition related to a zero-argument predicate that must be tested.
-class QueryConditionImpl;
-class QueryCondition : public Node<QueryCondition, QueryConditionImpl> {
- public:
-  // The declaration associated with this condition.
-  const std::optional<ParsedDeclaration> &Predicate(void) const noexcept;
-
-  // The list of views that produce nodes iff this condition is true.
-  UsedNodeRange<QueryView> PositiveUsers(void) const;
-
-  // The list of views that produce nodes iff this condition is false.
-  UsedNodeRange<QueryView> NegativeUsers(void) const;
-
-  // The list of views that set or unset this condition.
-  UsedNodeRange<QueryView> Setters(void) const;
-
-  // Depth of this node.
-  unsigned Depth(void) const noexcept;
-
- private:
-  friend class QueryView;
-
-  using Node<QueryCondition, QueryConditionImpl>::Node;
-};
-
 // A table in a query. Corresponds with a declared predicate in a Datalog.
 class QueryRelationImpl;
 class QueryRelation : public Node<QueryRelation, QueryRelationImpl> {
@@ -447,14 +422,6 @@ class QueryView : public Node<QueryView, QueryViewImpl> {
 
   // Get a hash of this view.
   uint64_t Hash(void) const noexcept;
-
-  // What condition this view sets, if any.
-  std::optional<QueryCondition> SetCondition(void) const noexcept;
-
-  // Conditions, i.e. zero-argument predicates, that must be true (or false)
-  // for tuples to be accepted into this node.
-  UsedNodeRange<QueryCondition> PositiveConditions(void) const noexcept;
-  UsedNodeRange<QueryCondition> NegativeConditions(void) const noexcept;
 
   // Successor and predecessor views of this view.
   UsedNodeRange<QueryView> Successors(void) const noexcept;
@@ -966,7 +933,6 @@ class Query {
 
   ::hyde::ParsedModule ParsedModule(void) const noexcept;
 
-  DefinedNodeRange<QueryCondition> Conditions(void) const;
   DefinedNodeRange<QueryJoin> Joins(void) const;
   DefinedNodeRange<QuerySelect> Selects(void) const;
   DefinedNodeRange<QueryTuple> Tuples(void) const;
@@ -1063,15 +1029,6 @@ struct hash<::hyde::QueryView> {
   using result_type = uint64_t;
   inline uint64_t operator()(::hyde::QueryView view) const noexcept {
     return view.UniqueId();
-  }
-};
-
-template <>
-struct hash<::hyde::QueryCondition> {
-  using argument_type = ::hyde::QueryCondition;
-  using result_type = uint64_t;
-  inline uint64_t operator()(::hyde::QueryCondition cond) const noexcept {
-    return cond.UniqueId();
   }
 };
 

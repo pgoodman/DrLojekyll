@@ -1,0 +1,13 @@
+#message set_c1(i32 X).
+#message set_c2(i32 X).
+#message add_r(i32 X).
+#local c1_support(i32 X).
+#local c2_support(i32 X).
+#local r(i32 X).
+#query both_pos(free i32 X).
+c1_support(X) : set_c1(X).
+c2_support(X) : set_c2(X).
+r(X) : add_r(X).
+c1 : c1_support(_).
+c2 : c2_support(_).
+both_pos(X) : r(X), c1, c2.

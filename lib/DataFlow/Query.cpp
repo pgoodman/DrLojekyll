@@ -35,9 +35,6 @@ QueryImpl::~QueryImpl(void) {
   ForEachView([](VIEW *view) {
     view->input_columns.ClearWithoutErasure();
     view->attached_columns.ClearWithoutErasure();
-    view->positive_conditions.ClearWithoutErasure();
-    view->negative_conditions.ClearWithoutErasure();
-    view->sets_condition.ClearWithoutErasure();
     view->predecessors.ClearWithoutErasure();
     view->successors.ClearWithoutErasure();
 
@@ -73,12 +70,6 @@ QueryImpl::~QueryImpl(void) {
 
   for (auto merge : merges) {
     merge->merged_views.ClearWithoutErasure();
-  }
-
-  for (auto cond : conditions) {
-    cond->positive_users.ClearWithoutErasure();
-    cond->negative_users.ClearWithoutErasure();
-    cond->setters.ClearWithoutErasure();
   }
 
   for (auto select : selects) {
@@ -432,27 +423,6 @@ uint64_t QueryView::Hash(void) const noexcept {
   return impl->hash ? impl->hash : impl->Hash();
 }
 
-// What condition this view sets, if any.
-std::optional<QueryCondition> QueryView::SetCondition(void) const noexcept {
-  if (impl->sets_condition) {
-    return QueryCondition(impl->sets_condition.get());
-  } else {
-    return std::nullopt;
-  }
-}
-
-// Positive conditions, i.e. zero-argument predicates, that must be true
-// for tuples to be accepted into this node.
-UsedNodeRange<QueryCondition>
-QueryView::PositiveConditions(void) const noexcept {
-  return {impl->positive_conditions.begin(), impl->positive_conditions.end()};
-}
-
-UsedNodeRange<QueryCondition>
-QueryView::NegativeConditions(void) const noexcept {
-  return {impl->negative_conditions.begin(), impl->negative_conditions.end()};
-}
-
 // Successor and predecessor views of this view.
 UsedNodeRange<QueryView> QueryView::Successors(void) const noexcept {
   return {impl->successors.begin(), impl->successors.end()};
@@ -655,46 +625,6 @@ bool QueryColumn::operator!=(QueryColumn that) const noexcept {
   return impl != that.impl;
 }
 
-// The declaration of the
-const std::optional<ParsedDeclaration> &
-QueryCondition::Predicate(void) const noexcept {
-  return impl->declaration;
-}
-
-// The list of views that produce nodes iff this condition is true.
-UsedNodeRange<QueryView> QueryCondition::PositiveUsers(void) const {
-  impl->positive_users.RemoveNull();
-  impl->positive_users.Unique();
-  return {impl->positive_users.begin(), impl->positive_users.end()};
-}
-
-// The list of views that produce nodes iff this condition is false.
-UsedNodeRange<QueryView> QueryCondition::NegativeUsers(void) const {
-  impl->negative_users.RemoveNull();
-  impl->negative_users.Unique();
-  return {impl->negative_users.begin(), impl->negative_users.end()};
-}
-
-// The list of views that set or unset this condition.
-UsedNodeRange<QueryView> QueryCondition::Setters(void) const {
-  return {impl->setters.begin(), impl->setters.end()};
-}
-
-// Depth of this node.
-unsigned QueryCondition::Depth(void) const noexcept {
-  if (impl->in_depth_calc) {
-    assert(false);  // Suggests a condition is dependent on itself.
-    return 1u;
-  }
-  impl->in_depth_calc = true;
-  auto depth = 1u;
-  for (VIEW *setter : impl->setters) {
-    depth = std::max(depth, setter->Depth());
-  }
-  impl->in_depth_calc = false;
-  return depth + 1u;
-}
-
 std::optional<ParsedLiteral> QueryConstant::Literal(void) const noexcept {
   if (impl->AsTag()) {
     return std::nullopt;
@@ -712,8 +642,12 @@ TypeLoc QueryConstant::Type(void) const noexcept {
   if (impl->AsTag()) {
     return TypeKind::kUnsigned16;
 
+  // The literal-less constant is the compiler-synthesized boolean `true`
+  // token stored by unit (condition) relations.
+  } else if (!impl->literal) {
+    return TypeKind::kBoolean;
+
   } else {
-    assert(impl->literal.has_value());
     return impl->literal->Type();
   }
 }
@@ -833,9 +767,13 @@ void QuerySelect::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
                                  with_col) const {
   const auto max_i = impl->columns.Size();
   for (auto view : impl->inserts) {
+    if (!view || view->is_dead) {
+      continue;
+    }
+    assert(view->input_columns.Size() == max_i);
     for (auto i = 0u; i < max_i; ++i) {
       const auto out_col = impl->columns[i];
-      const auto in_col = view->columns[i];
+      const auto in_col = view->input_columns[i];
       with_col(QueryColumn(in_col), InputColumnRole::kCopied,
                QueryColumn(out_col));
     }
@@ -1803,11 +1741,6 @@ void QueryKVIndex::ForEachUse(std::function<void(QueryColumn, InputColumnRole,
   for (auto in_col : impl->attached_columns) {
     with_col(QueryColumn(in_col), InputColumnRole::kIndexValue, std::nullopt);
   }
-}
-
-DefinedNodeRange<QueryCondition> Query::Conditions(void) const {
-  return {DefinedNodeIterator<QueryCondition>(impl->conditions.begin()),
-          DefinedNodeIterator<QueryCondition>(impl->conditions.end())};
 }
 
 DefinedNodeRange<QueryJoin> Query::Joins(void) const {

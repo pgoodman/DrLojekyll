@@ -4,18 +4,6 @@
 
 namespace hyde {
 
-// TODO(pag): If we decrement a condition then maybe we shouldn't re-check
-//            if stuff exists, but at the same time, condition variables
-//            don't fit nicely into our differential model.
-//
-//            On second thought, they *might* actually fit semi-fine. The
-//            trick is that we need to find anything possibly dependent on
-//            the truthiness of the condition, mark it as deleted, then
-//            and only then decrement the condition. Right now we have
-//            some of that backwards (delete happens later). Anyway, I
-//            think it's reasonable to wait until this is a problem, then
-//            try to solve it.
-
 // Build an eager region for publishing data, or inserting it. This might end
 // up passing things through if this isn't actually a message publication.
 void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
@@ -57,7 +45,6 @@ void BuildEagerInsertRegion(ProgramImpl *impl, QueryView pred_view,
 
   // This insert represents a message publication.
   if (insert.IsStream()) {
-    assert(!view.SetCondition());  // TODO(pag): Is this possible?
     auto io = QueryIO::From(insert.Stream());
     auto message = ParsedMessage::From(io.Declaration());
 
@@ -146,6 +133,14 @@ void CreateBottomUpInsertRemover(ProgramImpl *impl, Context &context,
 
       auto let = impl->operation_regions.CreateDerived<LET>(par);
       par->AddRegion(let);
+
+      // Bind the SELECT's columns to the INSERT's stored columns, whose
+      // variables are in scope.
+      auto i = 0u;
+      for (auto col : succ_view.Columns()) {
+        const auto in_col = insert.NthInputColumn(i++);
+        let->col_id_to_var[col.Id()] = let->VariableFor(impl, in_col);
+      }
 
       BuildEagerRemovalRegions(impl, succ_view, context, let,
                                succ_view.Successors(), already_removed);

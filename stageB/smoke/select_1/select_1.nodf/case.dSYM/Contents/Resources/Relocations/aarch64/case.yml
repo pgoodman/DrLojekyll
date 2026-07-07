@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     'stageB/smoke/select_1/select_1.nodf/case'
+relocations:     []
+...

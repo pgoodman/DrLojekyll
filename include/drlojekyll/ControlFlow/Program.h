@@ -175,7 +175,6 @@ class ProgramParallelRegion
 };
 
 enum class VariableRole : int {
-  kConditionRefCount,
   kInitGuard,
   kConstant,
   kConstantTag,
@@ -1000,10 +999,6 @@ enum class ProcedureKind : unsigned {
   // database. This may do top-down execution of the data flows to re-prove
   // the tuple.
   kTupleFinder,
-
-  // Tests condition variables, returning `true` or `false` if the conditions
-  // are all satisfied or if at least one fails, respectively.
-  kConditionTester,
 
   // A query message forcing function, i.e. a function that internally sends
   // a message given the bound parameters of a query.

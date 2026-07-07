@@ -63,15 +63,11 @@ unsigned QueryAggregateImpl::Depth(void) noexcept {
   auto estimate = EstimateDepth(config_columns, 1u);
   estimate = EstimateDepth(group_by_columns, estimate);
   estimate = EstimateDepth(aggregated_columns, estimate);
-  estimate = EstimateDepth(positive_conditions, estimate);
-  estimate = EstimateDepth(negative_conditions, estimate);
   depth = estimate + 1u;
 
   auto real = GetDepth(config_columns, 1u);
   real = GetDepth(group_by_columns, real);
   real = GetDepth(aggregated_columns, real);
-  real = GetDepth(positive_conditions, real);
-  real = GetDepth(negative_conditions, real);
   depth = real + 1u;
 
   return depth;
@@ -294,8 +290,6 @@ bool QueryAggregateImpl::Equals(EqualitySet &eq,
       columns.Size() != that->columns.Size() ||
       can_receive_deletions != that->can_receive_deletions ||
       can_produce_deletions != that->can_produce_deletions ||
-      positive_conditions != that->positive_conditions ||
-      negative_conditions != that->negative_conditions ||
       InsertSetsOverlap(this, that)) {
     return false;
   }

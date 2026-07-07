@@ -15,7 +15,6 @@ set(DataFlow_SRCS
     "Column.cpp"
     "Columns.cpp"
     "Compare.cpp"
-    "Condition.cpp"
     "Connect.cpp"
     "Compare.cpp"
     "Constant.cpp"

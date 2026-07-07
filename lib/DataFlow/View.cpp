@@ -23,8 +23,6 @@ QueryViewImpl::QueryViewImpl(void)
       columns(this),
       input_columns(this),
       attached_columns(this),
-      positive_conditions(this),
-      negative_conditions(this),
       predecessors(this),
       successors(this) {
   assert(reinterpret_cast<uintptr_t>(static_cast<User *>(this)) ==
@@ -123,18 +121,8 @@ uint64_t QueryViewImpl::Sort(void) noexcept {
 }
 
 // Is this view directly being used? This does not check columns, but does
-// check conditions.
+// check view-level uses (e.g. by MERGEs).
 bool QueryViewImpl::IsUsedDirectly(void) const noexcept {
-
-  // If this view sets a condition, and there is at least one user of the
-  // condition, then assume we're used.
-  //
-  // NOTE(pag): We could feasibly do a recursive check against those users.
-  if (sets_condition && 0u < (sets_condition->positive_users.Size() +
-                              sets_condition->negative_users.Size())) {
-    return true;
-  }
-
   if (this->Def<QueryViewImpl>::IsUsed()) {
     if (is_dead) {
 #ifndef NDEBUG
@@ -201,17 +189,6 @@ void QueryViewImpl::Update(uint64_t next_timestamp) {
   //  ForEachUse<QueryViewImpl>([=] (QueryViewImpl *user, QueryViewImpl *) {
   //    user->Update(next_timestamp);
   //  });
-}
-
-// Sort the `positive_conditions` and `negative_conditions`.
-void QueryViewImpl::OrderConditions(void) {
-  auto cb = [](COND *cond) { return cond->setters.Empty(); };
-
-  positive_conditions.RemoveIf(cb);
-  negative_conditions.RemoveIf(cb);
-
-  positive_conditions.Unique();
-  negative_conditions.Unique();
 }
 
 // Record the mapping between `in_col` and `out_col` into `this->in_to_out`,
@@ -375,14 +352,10 @@ unsigned QueryViewImpl::Depth(void) noexcept {
 
   auto estimate = EstimateDepth(input_columns, 1u);
   estimate = EstimateDepth(attached_columns, depth);
-  estimate = EstimateDepth(positive_conditions, depth);
-  estimate = EstimateDepth(negative_conditions, depth);
   depth = estimate + 1u;
 
   auto real = GetDepth(input_columns, 1u);
   real = GetDepth(attached_columns, real);
-  real = GetDepth(positive_conditions, real);
-  real = GetDepth(negative_conditions, real);
   depth = real + 1u;
 
   return depth;
@@ -399,36 +372,12 @@ unsigned QueryViewImpl::EstimateDepth(const UseList<QueryColumnImpl> &cols,
   return depth;
 }
 
-unsigned QueryViewImpl::EstimateDepth(const UseList<QueryConditionImpl> &conds,
-                                      unsigned depth) {
-  auto cond_depth = 2u;
-  auto has_conds = false;
-  for (const auto cond : conds) {
-    has_conds = true;
-    for (auto view : cond->setters) {
-      cond_depth = std::max(cond_depth, view->depth);
-    }
-  }
-  return has_conds ? std::max(depth, cond_depth + 1u) : depth;
-}
-
 unsigned QueryViewImpl::GetDepth(
     const UseList<QueryColumnImpl> &cols, unsigned depth) {
   for (const auto input_col : cols) {
     const auto input_depth = input_col->view->Depth();
     if (input_depth >= depth) {
       depth = input_depth;
-    }
-  }
-  return depth;
-}
-
-unsigned QueryViewImpl::GetDepth(
-    const UseList<QueryConditionImpl> &conds, unsigned depth) {
-  for (const auto cond : conds) {
-    auto cond_depth = QueryCondition(cond).Depth();
-    if (cond_depth >= depth) {
-      depth = cond_depth;
     }
   }
   return depth;
@@ -461,16 +410,6 @@ uint64_t QueryViewImpl::HashInit(void) const noexcept {
 
   init_hash ^= RotateRight64(init_hash, 33) * (columns.Size() + 7u);
 
-  for (auto positive_cond : this->positive_conditions) {
-    init_hash ^= RotateRight64(init_hash, 33) *
-                 reinterpret_cast<uintptr_t>(positive_cond);
-  }
-
-  for (auto negative_cond : this->negative_conditions) {
-    init_hash ^= RotateRight64(init_hash, 33) *
-                 ~reinterpret_cast<uintptr_t>(negative_cond);
-  }
-
   return init_hash;
 }
 
@@ -499,116 +438,6 @@ uint64_t QueryViewImpl::UpHash(unsigned depth) const noexcept {
   return up_hash;
 }
 
-// Converts this node to be unconditional, it doesn't affect set conditions.
-void QueryViewImpl::DropTestedConditions(void) {
-  const auto is_this_view = [this](QueryViewImpl *v) { return v == this; };
-
-#ifndef NDEBUG
-  std::vector<COND *> conds_seen;
-  for (auto cond : positive_conditions) {
-    conds_seen.push_back(cond);
-  }
-  for (auto cond : negative_conditions) {
-    conds_seen.push_back(cond);
-  }
-  for (auto cond : conds_seen) {
-    assert(cond->UsersAreConsistent());
-  }
-#endif
-
-  for (auto cond : positive_conditions) {
-    cond->positive_users.RemoveIf(is_this_view);
-  }
-  for (auto cond : negative_conditions) {
-    cond->negative_users.RemoveIf(is_this_view);
-  }
-
-  positive_conditions.Clear();
-  negative_conditions.Clear();
-
-#ifndef NDEBUG
-  for (auto cond : conds_seen) {
-    assert(cond->UsersAreConsistent());
-  }
-#endif
-}
-
-// Converts this node to not set any conditions. When this was the last
-// setter, the condition is unconditionally satisfied (the caller has proven
-// that the setter's data is always present), so every test of the condition
-// is dropped.
-void QueryViewImpl::DropSetConditions(void) {
-  auto cond = sets_condition.get();
-  if (!cond) {
-    return;
-  }
-
-  const auto is_this_view = [this](QueryViewImpl *v) { return v == this; };
-  sets_condition.Clear();
-  cond->setters.RemoveIf(is_this_view);
-
-  if (!cond->setters.Empty()) {
-    return;
-  }
-
-  const auto is_cond = [cond](COND *c) { return c == cond; };
-  for (auto tester : cond->positive_users) {
-    tester->positive_conditions.RemoveIf(is_cond);
-  }
-  for (auto tester : cond->negative_users) {
-    tester->negative_conditions.RemoveIf(is_cond);
-  }
-
-  cond->positive_users.Clear();
-  cond->negative_users.Clear();
-}
-
-// Stops this (dying) node from setting any conditions. When this was the
-// last setter, the condition's reference count can never become non-zero:
-// positive testers can never produce data and are deleted (cascading through
-// `PrepareToDelete`), and negative tests are vacuously true and are removed.
-void QueryViewImpl::DropSetConditionsOfDeadView(void) {
-  QueryConditionImpl *const cond = sets_condition.get();
-  if (!cond) {
-    return;
-  }
-
-  const auto is_this_view = [this](QueryViewImpl *v) { return v == this; };
-  sets_condition.Clear();
-  cond->setters.RemoveIf(is_this_view);
-
-  if (!cond->setters.Empty()) {
-    return;
-  }
-
-  // Deleting a tester mutates the condition's user lists, so snapshot the
-  // testers and disconnect the condition first.
-  std::vector<QueryViewImpl *> positive_testers;
-  std::vector<QueryViewImpl *> negative_testers;
-  for (QueryViewImpl *tester : cond->positive_users) {
-    if (tester) {
-      positive_testers.push_back(tester);
-    }
-  }
-  for (QueryViewImpl *tester : cond->negative_users) {
-    if (tester) {
-      negative_testers.push_back(tester);
-    }
-  }
-  cond->positive_users.Clear();
-  cond->negative_users.Clear();
-
-  const auto is_cond = [cond](COND *c) { return c == cond; };
-  for (QueryViewImpl *tester : negative_testers) {
-    tester->negative_conditions.RemoveIf(is_cond);
-    tester->is_canonical = false;
-  }
-  for (QueryViewImpl *tester : positive_testers) {
-    tester->positive_conditions.RemoveIf(is_cond);
-    tester->PrepareToDelete();
-  }
-}
-
 // Prepare to delete this node. This tries to drop all dependencies and
 // unlink this node from the dataflow graph. It returns `true` if successful
 // and `false` if it has already been performed.
@@ -625,9 +454,6 @@ bool QueryViewImpl::PrepareToDelete(void) {
   attached_columns.Clear();
 
   const auto is_this_view = [this](QueryViewImpl *v) { return v == this; };
-
-  DropTestedConditions();
-  DropSetConditionsOfDeadView();
 
   if (auto merge = AsMerge(); merge) {
     merge->merged_views.Clear();
@@ -714,142 +540,6 @@ bool QueryViewImpl::PrepareToDelete(void) {
   return true;
 }
 
-// Copy all positive and negative conditions from `this` into `that`.
-void QueryViewImpl::CopyTestedConditionsTo(QueryViewImpl *that) {
-  assert(this != that);
-
-#ifndef NDEBUG
-  std::vector<QueryConditionImpl *> conds_seen;
-  for (QueryConditionImpl *cond : positive_conditions) {
-    conds_seen.push_back(cond);
-  }
-  for (QueryConditionImpl *cond : negative_conditions) {
-    conds_seen.push_back(cond);
-  }
-  for (QueryConditionImpl *cond : conds_seen) {
-    assert(cond->UsersAreConsistent());
-    assert(cond->SettersAreConsistent());
-  }
-#endif
-
-  for (QueryConditionImpl *cond : positive_conditions) {
-    assert(cond);
-    assert(cond != that->sets_condition.get());
-    that->positive_conditions.AddUse(cond);
-    cond->positive_users.AddUse(that);
-  }
-
-  for (QueryConditionImpl *cond : negative_conditions) {
-    assert(cond);
-    assert(cond != that->sets_condition.get());
-    that->negative_conditions.AddUse(cond);
-    cond->negative_users.AddUse(that);
-  }
-
-  that->OrderConditions();
-
-#ifndef NDEBUG
-  for (QueryConditionImpl *cond : conds_seen) {
-    assert(cond->UsersAreConsistent());
-    assert(cond->SettersAreConsistent());
-  }
-#endif
-}
-
-// Transfer all positive and negative conditions from `this` into `that`.
-void QueryViewImpl::TransferTestedConditionsTo(QueryViewImpl *that) {
-  this->CopyTestedConditionsTo(that);
-  this->DropTestedConditions();
-}
-
-// If `sets_condition` is non-null, then transfer the setter to `that`.
-void QueryViewImpl::TransferSetConditionTo(QueryViewImpl *that) {
-  assert(this != that);
-
-  QueryConditionImpl *const cond = sets_condition.get();
-  if (!cond) {
-    return;
-  }
-
-  assert(cond->SettersAreConsistent());
-
-  auto is_this_or_that = [=](QueryViewImpl *v) {
-    return v == this || v == that;
-  };
-
-#ifndef NDEBUG
-
-  // Don't introduce cycles?
-  for (auto tested_cond : that->positive_conditions) {
-    assert(tested_cond != cond);
-  }
-  for (auto tested_cond : that->negative_conditions) {
-    assert(tested_cond != cond);
-  }
-#endif
-
-  // Simple case: transfer "settership" of the condition.
-  QueryConditionImpl *const that_cond = that->sets_condition.get();
-  if (!that_cond) {
-    that->sets_condition.Swap(sets_condition);
-    cond->setters.RemoveIf(is_this_or_that);
-    cond->setters.AddUse(that);
-
-    assert(!sets_condition);
-    assert(cond->UsersAreConsistent());
-    assert(cond->SettersAreConsistent());
-    return;
-  }
-
-  // Next simplest case: `that` is also setting the same condition, so we'll
-  // just unlink `this` from `cond`s setter list.
-  if (that_cond == cond) {
-    cond->setters.RemoveIf(is_this_or_that);
-    cond->setters.AddUse(that);
-    sets_condition.Clear();
-
-    assert(!sets_condition);
-    assert(cond->UsersAreConsistent());
-    assert(cond->SettersAreConsistent());
-    return;
-  }
-
-  // TODO(pag): Think more about refactoring below. Might need to force a guard
-  //            tuple.
-  assert(false);
-
-  // If `cond` is only set by `this`, and `that` already has its own
-  // condition, then we'll let that other condition take over this
-  // condition.
-  //
-  // TODO(pag): It's totally possible for `that_cond` to be stronger / more
-  //            constrained than `cond`, which could be problematic.
-  if (cond->setters.Size() == 1u) {
-
-    for (auto view : cond->positive_users) {
-      that_cond->positive_users.AddUse(view);
-    }
-    for (auto view : cond->negative_users) {
-      that_cond->negative_users.AddUse(view);
-    }
-
-    cond->ReplaceAllUsesWith(that_cond);
-    cond->setters.Clear();
-    cond->positive_users.Clear();
-    cond->negative_users.Clear();
-
-  // Our condition is set by multiple different QueryViewImpls. We'll constrain
-  // `that_cond` by adding `cond` as a tested condition to `that`.
-  } else {
-    cond->setters.RemoveIf([=](QueryViewImpl *v) { return v == this; });
-    cond->positive_users.AddUse(that);
-    that->positive_conditions.AddUse(cond);
-  }
-
-  that->is_canonical = false;
-  sets_condition.Clear();
-}
-
 // Copy the group IDs and the receive/produce deletions from `this` to `that`.
 void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
 
@@ -875,44 +565,14 @@ void QueryViewImpl::SubstituteAllUsesWith(QueryViewImpl *that) {
     is_used_by_negation = false;
   }
 
-#ifndef NDEBUG
-  std::vector<QueryConditionImpl *> conds_seen;
-  for (auto cond : positive_conditions) {
-    conds_seen.push_back(cond);
-  }
-  for (auto cond : negative_conditions) {
-    conds_seen.push_back(cond);
-  }
-  if (auto cond = sets_condition.get()) {
-    conds_seen.push_back(cond);
-  }
-  for (auto cond : conds_seen) {
-    assert(cond->UsersAreConsistent());
-    assert(cond->SettersAreConsistent());
-  }
-#endif
-
   unsigned i = 0u;
   for (auto col : columns) {
     col->ReplaceAllUsesWith(that->columns[i++]);
   }
 
-  // We don't want to replace the weak uses of `this` in any condition's
-  // `positive_users` or `negative_users`, nor in any `COND::setters` lists.
-  this->QueryViewImpl::ReplaceUsesWithIf<User>(
-      that, [=](User *user, QueryViewImpl *) {
-        return !dynamic_cast<QueryConditionImpl *>(user);
-      });
+  this->Def<QueryViewImpl>::ReplaceAllUsesWith(that);
 
   CopyDifferentialAndGroupIdsTo(that);
-  TransferSetConditionTo(that);
-
-#ifndef NDEBUG
-  for (QueryConditionImpl *cond : conds_seen) {
-    assert(cond->UsersAreConsistent());
-    assert(cond->SettersAreConsistent());
-  }
-#endif
 
   if (color && that->color) {
     if (color != that->color) {
@@ -927,8 +587,7 @@ void QueryViewImpl::SubstituteAllUsesWith(QueryViewImpl *that) {
 // Replace all uses of `this` with `that`. The semantic here is that `this`
 // is completely subsumed/replaced by `that`.
 void QueryViewImpl::ReplaceAllUsesWith(QueryViewImpl *that) {
-  SubstituteAllUsesWith(that);  // Will do `TransferSetConditionsTo`.
-  TransferTestedConditionsTo(that);
+  SubstituteAllUsesWith(that);
   PrepareToDelete();
 }
 
@@ -949,7 +608,7 @@ bool QueryViewImpl::IntroducesControlDependency(void) const noexcept {
 // Returns `true` if all output columns are used.
 bool QueryViewImpl::AllColumnsAreUsed(void) const noexcept {
   if (IsUsedDirectly()) {
-    return true;  // Used in a MERGE or CONDition.
+    return true;  // Used in a MERGE.
   }
 
   for (auto col : columns) {
@@ -960,32 +619,29 @@ bool QueryViewImpl::AllColumnsAreUsed(void) const noexcept {
 
   return true;
 }
-
 // Insert a pass-through TUPLE between `this` and its users, and return that
 // tuple, or `nullptr` when no guard is needed. A view that is used directly
-// -- as an operand of a UNION (MERGE), or as the setter of a CONDition --
-// exposes its exact column arity and ordering to those users, so its own
-// canonicalization must not re-order, de-duplicate, or drop columns. The
-// guard tuple absorbs that external interface: every direct use (including
-// the set condition, group IDs, and differential flags) moves onto the
-// tuple, which forwards each column of `this` in order, leaving `this` free
-// to restructure its columns beneath a stable facade. With `force`, a guard
-// is inserted even when `this` is not directly used, which callers use to
-// isolate a view before attaching new conditions to it.
+// -- as an operand of a UNION (MERGE) -- exposes its exact column arity and
+// ordering to those users, so its own canonicalization must not re-order,
+// de-duplicate, or drop columns. The guard tuple absorbs that external
+// interface: every direct use (including group IDs and differential flags)
+// moves onto the tuple, which forwards each column of `this` in order,
+// leaving `this` free to restructure its columns beneath a stable facade.
+// With `force`, a guard is inserted even when `this` is not directly used.
 //
 //    if not force and not IsUsedDirectly(): return nullptr
 //    tuple = new TUPLE with one output per column of this, constants copied
-//    SubstituteAllUsesWith(tuple)   // users, set COND, group ids move over
+//    SubstituteAllUsesWith(tuple)   // users, group ids move over
 //    tuple.input_columns = this->columns
 //    return tuple
 //
 //   before:                          after:
 //
 //    JOIN(out: A, B, C)               JOIN(out: A, B, C)  <- may now
-//      |          \                     |               reorder/drop cols
-//    UNION      sets COND             TUPLE(in: A,B,C -> out: A,B,C)
-//                                       |          \
-//                                     UNION      sets COND
+//      |                                |               reorder/drop cols
+//    UNION                            TUPLE(in: A,B,C -> out: A,B,C)
+//                                       |
+//                                     UNION
 QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query,
                                               bool force) {
 
@@ -1287,17 +943,16 @@ bool QueryViewImpl::ColumnsEq(EqualitySet &eq,
   return true;
 }
 
-// If `cols1:cols2` pull their data from a tuple, and if that tuple is
-// unconditional, or if its conditions are trivial, then update `cols1:cols2`
-// to point at the source of the data of those tuples. This retargets the
-// input use lists of `this` through arbitrarily long chains of forwarding
-// TUPLEs (and, via `PullDataFromBeyondTrivialUnions`, single-source UNIONs)
-// so that `this` reads directly from the ultimate producer. Skipping a
-// forwarding view is sound only when that view cannot filter data, i.e. it
-// tests no negative conditions and only trivial positive ones. Constant
-// columns in the lists pass through unchanged. Shortening the dependency
-// chains reduces dataflow depth, and bypassed tuples that lose their last
-// user become dead and are removed later.
+// If `cols1:cols2` pull their data from a forwarding tuple, then update
+// `cols1:cols2` to point at the source of the data of those tuples. This
+// retargets the input use lists of `this` through arbitrarily long chains
+// of forwarding TUPLEs (and, via `PullDataFromBeyondTrivialUnions`,
+// single-source UNIONs) so that `this` reads directly from the ultimate
+// producer. Skipping a forwarding view is sound because a TUPLE only
+// forwards values and cannot filter data. Constant columns in the lists
+// pass through unchanged. Shortening the dependency chains reduces dataflow
+// depth, and bypassed tuples that lose their last user become dead and are
+// removed later.
 //
 // The keep-last-edge rule bounds the chase: when every retargeted column
 // resolves to a constant while the hopped-over tuple itself still reads
@@ -1311,7 +966,7 @@ bool QueryViewImpl::ColumnsEq(EqualitySet &eq,
 //
 // NOTE(pag): This updates `is_canonical = false` if it changes anything.
 //
-//    if incoming_view is null, or is `this`, or may filter: return as-is
+//    if incoming_view is null, or is `this`: return as-is
 //    if incoming_view is not a TUPLE:
 //      return PullDataFromBeyondTrivialUnions(incoming_view, cols1, cols2)
 //    for col in cols1 and cols2:
@@ -1354,16 +1009,6 @@ QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuplesImpl(
     return incoming_view;
   }
   visited.push_back(incoming_view);
-
-  if (!incoming_view->negative_conditions.Empty()) {
-    return incoming_view;
-  }
-
-  for (auto pos_condition : incoming_view->positive_conditions) {
-    if (!pos_condition->IsTrivial()) {
-      return incoming_view;
-    }
-  }
 
   const auto tuple = incoming_view->AsTuple();
   if (!tuple) {
@@ -1455,11 +1100,10 @@ QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialTuplesImpl(
 // are `this` (a direct recursion back through the reader), the merge
 // itself, or repeats of the already-chosen source do not count as extra
 // sources; if a second distinct source exists, the UNION genuinely merges
-// data and cannot be skipped. A UNION testing negative or non-trivial
-// positive conditions may filter, so it is also kept. After the rewrite,
-// tuple-skipping resumes from the discovered source.
+// data and cannot be skipped. After the rewrite, tuple-skipping resumes
+// from the discovered source.
 //
-//    if maybe_merge is not a UNION, or may filter: return as-is
+//    if maybe_merge is not a UNION: return as-is
 //    source = unique view in merged_views excluding {this, merge, dups}
 //    if no source, or more than one: return as-is
 //    for col in cols1 and cols2:
@@ -1482,16 +1126,6 @@ QueryViewImpl *QueryViewImpl::PullDataFromBeyondTrivialUnions(
   QueryMergeImpl *const merge = maybe_merge->AsMerge();
   if (!merge) {
     return maybe_merge;
-  }
-
-  if (!merge->negative_conditions.Empty()) {
-    return maybe_merge;
-  }
-
-  for (auto pos_condition : merge->positive_conditions) {
-    if (!pos_condition->IsTrivial()) {
-      return maybe_merge;
-    }
   }
 
   QueryViewImpl *incoming_view = nullptr;
@@ -1629,11 +1263,7 @@ bool QueryViewImpl::RetainsEdgeTo(const QueryViewImpl *incoming_view,
 //
 // Conditional in this case means: does `view` always have data after
 // initialization? Unconditional views derive purely from constants, which
-// are inserted at init time. Callers rely on this: `IsTrivial` treats a
-// condition with only unconditional setters as always satisfied, and drops
-// tests of it. The relevant thing here is CONDitions, which are implemented
-// as reference counts on some QueryViewImpl. If that view will always have
-// data, then we say that the view isn't conditional.
+// are inserted at init time.
 //
 // A view whose evaluation is in progress when it is queried again depends
 // on itself through a cycle. A cycle contributes no data of its own, so it
@@ -1656,18 +1286,6 @@ bool QueryViewImpl::IsConditional(
   if (view->is_unsat || view->is_dead) {
     is_cond = true;
     return true;
-  }
-
-  if (!view->negative_conditions.Empty()) {
-    is_cond = true;
-    return true;
-  }
-
-  for (auto cond : view->positive_conditions) {
-    if (!cond->IsTrivial(conditional_views)) {
-      is_cond = true;
-      return true;
-    }
   }
 
   // These all introduce control dependencies. It's too annoying to truly
