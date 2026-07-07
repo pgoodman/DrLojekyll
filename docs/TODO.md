@@ -273,6 +273,36 @@ relation is differential (body support retracts the tuple), while the
 interned storage is immortal arena state (a value having been constructed is
 not undone by retraction).
 
+Implicit typing transform. If forming works that way, then ANY use of a
+record type is a use of the formed unary relation. A record-typed parameter
+
+    foo(RecordType R) : body.
+
+is implicitly
+
+    foo(R) : RecordType_rel(R), body.
+
+and the same transform applies to record-typed variables in body positions.
+Consequences:
+
+- Typing IS membership: the static type is a compile-time approximation and
+  the unary relation is its exact runtime extension. Range restriction /
+  safety for record-typed variables falls out — they are always grounded by
+  the type relation.
+- Since the type relation's extension is rule-defined, this is refinement
+  types as datalog: any unary relation can serve as a "type", and record
+  types are the ones with constructor structure.
+- The naive transform adds one join per typed variable, but most implicit
+  membership atoms are provenance-redundant: if the binding source already
+  guarantees membership (the variable flows from a column that only ever
+  holds derived members), canonicalization must elide the join — same
+  flavor as the unit-conditions pivot-join elision.
+- Message ingress needs a decision: interning a JSON-shaped literal creates
+  the value, but the implicit atom checks MEMBERSHIP. Ingress should
+  probably assert membership with the message itself as differential
+  support (retract the message, membership retracts; storage stays), so
+  message-borne records satisfy implicit typing consistently.
+
 Caution: record construction in heads is function symbols in heads —
 datalog with constructors is Turing-complete, and a recursive rule that
 builds ever-deeper records diverges (infinite Herbrand universe). Needs a
