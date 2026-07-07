@@ -496,7 +496,6 @@ enum class ProgramOperation {
   // Used to test-and-update the init-guard variable that ensures the
   // initialization flow runs exactly once.
   kTestAndAdd,
-  kTestAndSub,
 
   // Call another procedure.
   kCallProcedure,
@@ -1134,7 +1133,11 @@ class ProgramPublishRegionImpl final : public OP {
 
 using PUBLISH = ProgramPublishRegionImpl;
 
-// Represents a positive or negative existence check.
+// A run-once guard: increments `accumulator` and executes `body` if and only
+// if the incremented value is `1`. The sole producer is the entry procedure's
+// init guard (a `kInitGuard` global), which makes the constant-initialization
+// flows run exactly once even though the entry procedure runs on every
+// message batch.
 class ProgramTestAndSetRegionImpl final : public OP {
  public:
   virtual ~ProgramTestAndSetRegionImpl(void);
@@ -1157,10 +1160,8 @@ class ProgramTestAndSetRegionImpl final : public OP {
 
   ProgramTestAndSetRegionImpl *AsTestAndSet(void) noexcept override;
 
-  // The variables are used as `(src_dest OP= update_val) == comapre_val`.
+  // The counter incremented by `1`; `body` executes when the result is `1`.
   UseRef<VAR> accumulator;
-  UseRef<VAR> displacement;
-  UseRef<VAR> comparator;
 };
 
 using TESTANDSET = ProgramTestAndSetRegionImpl;
@@ -1649,14 +1650,13 @@ class ProgramImpl : public User {
   DefList<TABLE> tables;
   DefList<DATARECORDCASE> record_cases;
 
-  // List of variables associated with globals (e.g. reference counts).
+  // List of variables associated with globals (e.g. the init guard).
   DefList<VAR> global_vars;
 
   // List of variables associated with constants.
   DefList<VAR> const_vars;
 
   VAR *const zero;
-  VAR *const one;
   VAR *const false_;
   VAR *const true_;
 

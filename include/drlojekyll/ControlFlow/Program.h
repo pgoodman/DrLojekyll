@@ -179,7 +179,6 @@ enum class VariableRole : int {
   kConstant,
   kConstantTag,
   kConstantZero,
-  kConstantOne,
   kConstantFalse,
   kConstantTrue,
   kVectorVariable,
@@ -391,30 +390,21 @@ class DataVector : public Node<DataVector, DataVectorImpl> {
   using Node<DataVector, DataVectorImpl>::Node;
 };
 
-// Perform a test-and-set like operation. In practice, this is used to operate
-// one reference counts, or counters that summarize a group of reference counts.
+// A run-once guard: increments `Accumulator` and executes `Body` if and only
+// if the incremented value is `1`, i.e. `if ((A += 1) == 1) { ... }`. The
+// sole producer is the entry procedure's init guard (a `kInitGuard` global),
+// which makes the constant-initialization flows run exactly once even though
+// the entry procedure runs on every message batch.
 class ProgramTestAndSetRegionImpl;
 class ProgramTestAndSetRegion
     : public Node<ProgramTestAndSetRegion, ProgramTestAndSetRegionImpl> {
  public:
   static ProgramTestAndSetRegion From(ProgramRegion) noexcept;
 
-  bool IsAdd(void) const noexcept;
-  bool IsSubtract(void) const noexcept;
-
-  // The source/destination variable. This is `A` in `(A += D) == C`.
+  // The accumulator variable. This is `A` in `(A += 1) == 1`.
   DataVariable Accumulator(void) const;
 
-  // The amount by which the accumulator is displacement. This is `D` in
-  // `(A += D) == C`.
-  DataVariable Displacement(void) const;
-
-  // The value which must match the accumulated result for `Body` to execute.
-  // This is `C` in `(A += D) == C`.
-  DataVariable Comparator(void) const;
-
-  // Return the body which is conditionally executed if the condition of this
-  // operation is satisfied.
+  // Return the body executed when the incremented accumulator equals `1`.
   std::optional<ProgramRegion> Body(void) const noexcept;
 
  private:

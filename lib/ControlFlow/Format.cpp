@@ -273,33 +273,15 @@ OutputStream &operator<<(OutputStream &os, ProgramTestAndSetRegion region) {
   os << os.Indent();
 
   const auto acc = region.Accumulator();
-  const auto disp = region.Displacement();
-  const auto cmp = region.Comparator();
 
   if (auto maybe_body = region.Body(); maybe_body) {
-    if (region.IsAdd()) {
-      os << "if (" << acc << " += " << disp << ") == " << cmp << '\n';
-
-    } else if (region.IsSubtract()) {
-      os << "if (" << acc << " -= " << disp << ") == " << cmp << '\n';
-
-    } else {
-      assert(false);
-    }
+    os << "if (" << acc << " += 1) == 1\n";
     os.PushIndent();
     os << (*maybe_body);
     os.PopIndent();
 
   } else {
-    if (region.IsAdd()) {
-      os << acc << " += " << disp;
-
-    } else if (region.IsSubtract()) {
-      os << acc << " -= " << disp;
-
-    } else {
-      assert(false);
-    }
+    os << acc << " += 1";
   }
 
   return os;
@@ -927,7 +909,6 @@ OutputStream &operator<<(OutputStream &os, Program program) {
     os << sep << os.Indent() << "const " << Type(os, module, var) << ' ' << var;
     switch (var.DefiningRole()) {
       case VariableRole::kConstantZero: os << " = 0"; break;
-      case VariableRole::kConstantOne: os << " = 1"; break;
       case VariableRole::kConstantFalse: os << " = false"; break;
       case VariableRole::kConstantTrue: os << " = true"; break;
       default:

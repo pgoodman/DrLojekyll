@@ -87,10 +87,8 @@ ProgramImpl::~ProgramImpl(void) {
       view_scan->in_vars.ClearWithoutErasure();
       view_scan->table.ClearWithoutErasure();
 
-    } else if (auto exists_assert = op->AsTestAndSet(); exists_assert) {
-      exists_assert->accumulator.ClearWithoutErasure();
-      exists_assert->displacement.ClearWithoutErasure();
-      exists_assert->comparator.ClearWithoutErasure();
+    } else if (auto test_and_set = op->AsTestAndSet(); test_and_set) {
+      test_and_set->accumulator.ClearWithoutErasure();
 
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       cmp->lhs_vars.ClearWithoutErasure();
@@ -166,7 +164,6 @@ ProgramImpl::ProgramImpl(Query query_, unsigned next_id_)
       global_vars(this),
       const_vars(this),
       zero(const_vars.Create(next_id++, VariableRole::kConstantZero)),
-      one(const_vars.Create(next_id++, VariableRole::kConstantOne)),
       false_(const_vars.Create(next_id++, VariableRole::kConstantFalse)),
       true_(const_vars.Create(next_id++, VariableRole::kConstantTrue)) {}
 
@@ -279,29 +276,9 @@ Mode ProgramModeSwitchRegion::NewMode(void) const noexcept {
   return impl->new_mode;
 }
 
-bool ProgramTestAndSetRegion::IsAdd(void) const noexcept {
-  return impl->op == ProgramOperation::kTestAndAdd;
-}
-
-bool ProgramTestAndSetRegion::IsSubtract(void) const noexcept {
-  return impl->op == ProgramOperation::kTestAndSub;
-}
-
-// The source/destination variable. This is `A` in `(A += D) == C`.
+// The accumulator variable. This is `A` in `(A += 1) == 1`.
 DataVariable ProgramTestAndSetRegion::Accumulator(void) const {
   return DataVariable(impl->accumulator.get());
-}
-
-// The amount by which the accumulator is displacement. This is `D` in
-// `(A += D) == C`.
-DataVariable ProgramTestAndSetRegion::Displacement(void) const {
-  return DataVariable(impl->displacement.get());
-}
-
-// The value which must match the accumulated result for `Body` to execute.
-// This is `C` in `(A += D) == C`.
-DataVariable ProgramTestAndSetRegion::Comparator(void) const {
-  return DataVariable(impl->comparator.get());
 }
 
 #define OPTIONAL_BODY(method_name, name, field) \
@@ -699,7 +676,6 @@ bool DataVariable::IsGlobal(void) const noexcept {
     case VariableRole::kConstant:
     case VariableRole::kConstantTag:
     case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue: return true;
     default: return false;
@@ -712,7 +688,6 @@ bool DataVariable::IsConstant(void) const noexcept {
     case VariableRole::kConstant:
     case VariableRole::kConstantTag:
     case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue: return true;
     default: return false;

@@ -50,7 +50,6 @@ TypeLoc DataVariableImpl::Type(void) const noexcept {
   switch (role) {
     case VariableRole::kInitGuard:
     case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne:
     case VariableRole::kWorkerId: return TypeKind::kUnsigned64;
 
     case VariableRole::kConstantFalse:
@@ -86,7 +85,6 @@ bool DataVariableImpl::IsGlobal(void) const noexcept {
     case VariableRole::kConstant:
     case VariableRole::kConstantTag:
     case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue: return true;
     default: return false;
@@ -98,7 +96,6 @@ bool DataVariableImpl::IsConstant(void) const noexcept {
     case VariableRole::kConstant:
     case VariableRole::kConstantTag:
     case VariableRole::kConstantZero:
-    case VariableRole::kConstantOne:
     case VariableRole::kConstantFalse:
     case VariableRole::kConstantTrue: return true;
     case VariableRole::kRecordElement: return false;

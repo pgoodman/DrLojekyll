@@ -146,7 +146,6 @@ class Generator {
   std::string VarName(DataVariable var) {
     switch (var.DefiningRole()) {
       case VariableRole::kConstantZero: return "0";
-      case VariableRole::kConstantOne: return "1";
       case VariableRole::kConstantFalse: return "false";
       case VariableRole::kConstantTrue: return "true";
       default: break;
@@ -1023,17 +1022,14 @@ void Generator::EmitRegion(ProgramRegion region) {
   } else if (region.IsTestAndSet()) {
     auto tas = ProgramTestAndSetRegion::From(region);
     const auto acc = VarName(tas.Accumulator());
-    const auto disp = VarName(tas.Displacement());
-    const auto op = tas.IsAdd() ? " += " : " -= ";
     if (auto body = tas.Body()) {
-      cc << cc.Indent() << "if ((" << acc << op << disp
-         << ") == " << VarName(tas.Comparator()) << ") {\n";
+      cc << cc.Indent() << "if ((" << acc << " += 1) == 1) {\n";
       cc.PushIndent();
       EmitRegion(*body);
       cc.PopIndent();
       cc << cc.Indent() << "}\n";
     } else {
-      cc << cc.Indent() << acc << op << disp << ";\n";
+      cc << cc.Indent() << acc << " += 1;\n";
     }
   } else if (region.IsWorkerId()) {
     // Single-threaded runtime: the worker id is always zero.

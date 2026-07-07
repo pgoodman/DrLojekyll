@@ -969,18 +969,6 @@ uint64_t ProgramTestAndSetRegionImpl::Hash(uint32_t depth) const {
        (static_cast<unsigned>(DataVariable(accumulator.get()).Type().Kind()) +
         11u));
 
-  hash ^=
-      RotateRight64(hash, 12) *
-      ((static_cast<unsigned>(displacement->role) + 7u) *
-       (static_cast<unsigned>(DataVariable(displacement.get()).Type().Kind()) +
-        12u));
-
-  hash ^=
-      RotateRight64(hash, 11) *
-      ((static_cast<unsigned>(comparator->role) + 7u) *
-       (static_cast<unsigned>(DataVariable(comparator.get()).Type().Kind()) +
-        13u));
-
   if (depth == 0) {
     return hash;
   }
@@ -1010,9 +998,7 @@ bool ProgramTestAndSetRegionImpl::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (!eq.Contains(accumulator.get(), that->accumulator.get()) ||
-      !eq.Contains(displacement.get(), that->displacement.get()) ||
-      !eq.Contains(comparator.get(), that->comparator.get())) {
+  if (!eq.Contains(accumulator.get(), that->accumulator.get())) {
     FAILED_EQ(that_);
     return false;
   }

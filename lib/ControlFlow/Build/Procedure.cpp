@@ -659,18 +659,14 @@ PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query) {
     const auto uncond_inserts_var =
         impl->global_vars.Create(impl->next_id++, VariableRole::kInitGuard);
 
-    // Test that we haven't yet done an initialization.
+    // Test that we haven't yet done an initialization: `(guard += 1) == 1`.
     const auto test_and_set = impl->operation_regions.CreateDerived<TESTANDSET>(
         proc_par, ProgramOperation::kTestAndAdd);
     proc_par->AddRegion(test_and_set);
-
-    // `(cond += 1) == 1`.
     test_and_set->accumulator.Emplace(test_and_set, uncond_inserts_var);
-    test_and_set->displacement.Emplace(test_and_set, impl->one);
-    test_and_set->comparator.Emplace(test_and_set, impl->one);
 
-    const auto cond_par = impl->parallel_regions.Create(test_and_set);
-    test_and_set->body.Emplace(test_and_set, cond_par);
+    const auto init_par = impl->parallel_regions.Create(test_and_set);
+    test_and_set->body.Emplace(test_and_set, init_par);
 
     // Go find all TUPLEs whose inputs are constants. We ignore constant refs,
     // as those are dataflow dependent.
@@ -690,8 +686,8 @@ PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query) {
         continue;
       }
 
-      const auto let = impl->operation_regions.CreateDerived<LET>(cond_par);
-      cond_par->AddRegion(let);
+      const auto let = impl->operation_regions.CreateDerived<LET>(init_par);
+      init_par->AddRegion(let);
 
       // Add variable mappings.
       view.ForEachUse([&](QueryColumn in_col, InputColumnRole,
