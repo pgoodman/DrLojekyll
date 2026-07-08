@@ -659,7 +659,10 @@ OutputStream &operator<<(OutputStream &os, ProgramNetBatchRegion region) {
 }
 
 OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
-  if (auto maybe_body = region.Body(); maybe_body) {
+  const auto maybe_body = region.Body();
+  const auto maybe_added = region.AddedBody();
+  const auto maybe_removed = region.RemovedBody();
+  if (maybe_body || maybe_added || maybe_removed) {
     os << os.Indent() << "join-tables\n";
     os.PushIndent();
     os << os.Indent();
@@ -700,9 +703,37 @@ OutputStream &operator<<(OutputStream &os, ProgramTableJoinRegion region) {
 
       os << '\n';
     }
-    os.PushIndent();
-    os << (*maybe_body);
-    os.PopIndent();
+
+    // A join with only the plain body prints it directly; a join carrying
+    // delta sections names each section's read discipline.
+    if (maybe_body && !maybe_added && !maybe_removed) {
+      os.PushIndent();
+      os << (*maybe_body);
+      os.PopIndent();
+    } else {
+      if (maybe_body) {
+        os << os.Indent() << "current:\n";
+        os.PushIndent();
+        os << (*maybe_body);
+        os.PopIndent();
+        os << '\n';
+      }
+      if (maybe_added) {
+        os << os.Indent() << "added: all-in-new, some-net-added\n";
+        os.PushIndent();
+        os << (*maybe_added);
+        os.PopIndent();
+        if (maybe_removed) {
+          os << '\n';
+        }
+      }
+      if (maybe_removed) {
+        os << os.Indent() << "removed: all-in-i, some-net-deleted\n";
+        os.PushIndent();
+        os << (*maybe_removed);
+        os.PopIndent();
+      }
+    }
     os.PopIndent();
   } else {
     os << os.Indent() << "empty-join";

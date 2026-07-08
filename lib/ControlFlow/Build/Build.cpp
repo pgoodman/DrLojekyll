@@ -442,6 +442,10 @@ static void MapVariables(REGION *region) {
           var->defining_region = region;
         }
       }
+
+      MapVariables(join->added_body.get());
+      MapVariables(join->removed_body.get());
+
     } else if (auto product = op->AsTableProduct(); product) {
       for (const auto &var_list : product->output_vars) {
         for (auto var : var_list) {

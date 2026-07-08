@@ -1308,7 +1308,9 @@ class ProgramTableJoinRegionImpl final : public OP {
         tables(this),
         indices(this),
         pivot_vars(this),
-        pivot_cols() {}
+        pivot_cols(),
+        added_body(this),
+        removed_body(this) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1350,6 +1352,28 @@ class ProgramTableJoinRegionImpl final : public OP {
   // selected tables. Not all of those columns will necessarily be used.
   std::vector<DefList<VAR>> output_vars;
   std::vector<UseList<TABLECOLUMN>> output_cols;
+
+  // Delta sections, alongside the plain `body` (which runs per joined
+  // combination of currently stored rows). Each section runs per joined
+  // combination under a named batch-delta discipline that codegen evaluates
+  // directly on the scanned row ids:
+  //
+  //   added_body:   every side is in the batch-final state (InNew) and at
+  //                 least one side is a net addition of this batch — the
+  //                 combination newly holds.
+  //   removed_body: every side was in the batch-start state (InI) and at
+  //                 least one side is a net deletion of this batch — the
+  //                 combination stopped holding.
+  //
+  // A combination is enumerated once per batch (the pivot vector is
+  // sort-uniqued and the join runs once), so each section fires exactly
+  // once per started/stopped rule instance: an instance changed at several
+  // positions still fires once, and an instance with a net-added side and
+  // a net-deleted side fires neither section (it is in neither the old nor
+  // the new state). Monotone sides answer the reads through their sealed
+  // row-id watermark; a net deletion is impossible there.
+  RegionRef added_body;
+  RegionRef removed_body;
 };
 
 using TABLEJOIN = ProgramTableJoinRegionImpl;

@@ -163,7 +163,11 @@ class RowStore {
 };
 
 // Monotone relation: presence is "row exists in the log". Insert-only; a
-// stored row is present forever, so there is no per-row state of any kind.
+// stored row is present forever. The only per-table state beyond the log is
+// the sealed row-id watermark: row ids are append-ordered, so "present at
+// batch start" is one id comparison, which lets a monotone table answer the
+// same frozen-vs-current membership reads as a differential table when it
+// sits at a read position of a delta join.
 template <typename Row>
 class Table : public RowStore<Row> {
  public:
@@ -186,6 +190,38 @@ class Table : public RowStore<Row> {
     (void) id;
     return true;
   }
+
+  // Batch-start state (the frozen "I"): the row's id predates the seal.
+  bool InI(uint32_t id) const noexcept {
+    return id < sealed;
+  }
+
+  // Final-so-far: a stored monotone row is present forever.
+  bool InNew(uint32_t id) const noexcept {
+    assert(id < this->NumRows());
+    (void) id;
+    return true;
+  }
+
+  // Net addition this batch: the row arrived after the seal.
+  bool NetAdded(uint32_t id) const noexcept {
+    return id >= sealed;
+  }
+
+  // Net deletion is impossible on a monotone relation.
+  bool NetDeleted(uint32_t id) const noexcept {
+    assert(id < this->NumRows());
+    (void) id;
+    return false;
+  }
+
+  // End-of-epoch: advance the batch-start watermark over every stored row.
+  void Seal(void) noexcept {
+    sealed = this->NumRows();
+  }
+
+ private:
+  uint32_t sealed{0u};
 };
 
 // Differential relation: split signed derivation counters (`C_nr`, `C_r`)

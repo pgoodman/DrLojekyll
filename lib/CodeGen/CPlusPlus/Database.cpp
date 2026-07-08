@@ -492,7 +492,14 @@ void Generator::WalkRegion(ProgramRegion region) {
       WalkRegion(*body);
     }
   } else if (region.IsTableJoin()) {
-    if (auto body = ProgramTableJoinRegion::From(region).Body()) {
+    auto join = ProgramTableJoinRegion::From(region);
+    if (auto body = join.Body()) {
+      WalkRegion(*body);
+    }
+    if (auto body = join.AddedBody()) {
+      WalkRegion(*body);
+    }
+    if (auto body = join.RemovedBody()) {
       WalkRegion(*body);
     }
   } else if (region.IsTableScan()) {
@@ -1229,20 +1236,35 @@ void Generator::EmitCheckMember(ProgramCheckMemberRegion region) {
   const auto member = table_member[table.Id()];
   const auto row = RowExpr(VarExprs(region.TupleVariables()));
 
-  // Monotone table: membership is row existence. Differential table: the
-  // named predicate applied to the row's id (a missing row satisfies no
-  // predicate).
+  // Differential table: the named predicate applied to the row's id (a
+  // missing row satisfies no predicate). Monotone table: current-state
+  // membership is row existence; the frozen and net-change predicates read
+  // the sealed row-id watermark.
   std::string cond;
+  bool scoped = true;
   const auto id = "m" + std::to_string(next_ins_id++);
-  if (table.IsDifferential()) {
+  if (!table.IsDifferential()) {
+    switch (region.Predicate()) {
+      case MembershipPredicate::kPresent:
+      case MembershipPredicate::kInNew:
+        cond = member + ".Find(" + row + ") != ::hyde::rt::kNoRow";
+        scoped = false;
+        break;
+      case MembershipPredicate::kInI:
+      case MembershipPredicate::kNetAdded:
+      case MembershipPredicate::kNetDeleted:
+        break;
+      default:
+        Unsupported("a fixpoint-round membership read on a monotone table");
+    }
+  }
+  if (scoped) {
     cc << cc.Indent() << "{\n";
     cc.PushIndent();
     cc << cc.Indent() << "const uint32_t " << id << " = " << member
        << ".Find(" << row << ");\n";
     cond = id + " != ::hyde::rt::kNoRow && " + member + "." +
            PredicateMethod(region.Predicate()) + "(" + id + ")";
-  } else {
-    cond = member + ".Find(" + row + ") != ::hyde::rt::kNoRow";
   }
 
   if (present) {
@@ -1267,7 +1289,7 @@ void Generator::EmitCheckMember(ProgramCheckMemberRegion region) {
     cc << cc.Indent() << "}\n";
   }
 
-  if (table.IsDifferential()) {
+  if (scoped) {
     cc.PopIndent();
     cc << cc.Indent() << "}\n";
   }
@@ -1278,6 +1300,14 @@ void Generator::EmitCommitSweep(ProgramCommitSweepRegion region) {
   const auto table = region.Table();
   const auto member = table_member[table.Id()];
   const auto &fields = col_field[table.Id()];
+
+  // Monotone table: the sweep advances the sealed row-id watermark so the
+  // next epoch's frozen-state reads see this epoch's rows.
+  if (!table.IsDifferential()) {
+    assert(!region.Message());
+    cc << cc.Indent() << member << ".Seal();\n";
+    return;
+  }
 
   if (auto message = region.Message()) {
     cc << cc.Indent() << member << ".Commit([&](const "
@@ -1359,13 +1389,19 @@ void Generator::EmitNetBatch(ProgramNetBatchRegion region) {
 
 void Generator::EmitJoin(ProgramTableJoinRegion region) {
   const auto body = region.Body();
-  if (!body) {
+  const auto added_body = region.AddedBody();
+  const auto removed_body = region.RemovedBody();
+  if (!body && !added_body && !removed_body) {
     return;
   }
   EmitComment(region);
 
   const auto id = region.Id();
   const auto pivot_vars = VarExprs(region.OutputPivotVariables());
+
+  // Per-side membership reads for the delta sections, applied to the row
+  // ids the scans below hold in scope.
+  std::vector<std::string> side_reads;
 
   // Pivot loop.
   cc << cc.Indent() << "for (auto [" << JoinExprs(pivot_vars, ", ") << "] : "
@@ -1424,6 +1460,11 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
     cc << cc.Indent() << "const auto " << row << " = " << member << ".RowAt("
        << cursor << ");\n";
 
+    side_reads.push_back(member + ".InNew(" + cursor + ")");
+    side_reads.push_back(member + ".NetAdded(" + cursor + ")");
+    side_reads.push_back(member + ".InI(" + cursor + ")");
+    side_reads.push_back(member + ".NetDeleted(" + cursor + ")");
+
     // Bind this table's output variables to the scanned row, positionally
     // in table column order (the IR's guard regions rely on this).
     const auto out_vars = region.OutputVariables(i);
@@ -1434,7 +1475,39 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
     }
   }
 
-  EmitRegion(*body);
+  if (body) {
+    EmitRegion(*body);
+  }
+
+  // Delta sections: each per-combination predicate is a conjunction of the
+  // sides' snapshot reads and a disjunction of their net-change reads —
+  // one-byte flag reads (differential sides) or watermark id comparisons
+  // (monotone sides) on the ids already in scope.
+  const auto num_sides = tables.size();
+  const auto emit_section = [&](ProgramRegion section, unsigned all_of,
+                                unsigned one_of) {
+    cc << cc.Indent() << "if (";
+    for (auto i = 0u; i < num_sides; ++i) {
+      cc << side_reads[i * 4u + all_of] << " && ";
+    }
+    auto sep = "(";
+    for (auto i = 0u; i < num_sides; ++i) {
+      cc << sep << side_reads[i * 4u + one_of];
+      sep = " || ";
+    }
+    cc << ")) {\n";
+    cc.PushIndent();
+    EmitRegion(section);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  };
+
+  if (added_body) {
+    emit_section(*added_body, 0u /* InNew */, 1u /* NetAdded */);
+  }
+  if (removed_body) {
+    emit_section(*removed_body, 2u /* InI */, 3u /* NetDeleted */);
+  }
 
   for (auto i = 0u; i < depth; ++i) {
     cc.PopIndent();

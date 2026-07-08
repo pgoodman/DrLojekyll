@@ -65,6 +65,8 @@ ProgramImpl::~ProgramImpl(void) {
       view_join->tables.ClearWithoutErasure();
       view_join->indices.ClearWithoutErasure();
       view_join->pivot_vec.ClearWithoutErasure();
+      view_join->added_body.ClearWithoutErasure();
+      view_join->removed_body.ClearWithoutErasure();
       for (auto &cols : view_join->pivot_cols) {
         cols.ClearWithoutErasure();
       }
@@ -940,6 +942,24 @@ ComparisonOperator ProgramTupleCompareRegion::Operator(void) const noexcept {
 // Unique ID for this join.
 unsigned ProgramTableJoinRegion::Id(void) const noexcept {
   return impl->id;
+}
+
+std::optional<ProgramRegion>
+ProgramTableJoinRegion::AddedBody(void) const noexcept {
+  if (auto body = impl->added_body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
+}
+
+std::optional<ProgramRegion>
+ProgramTableJoinRegion::RemovedBody(void) const noexcept {
+  if (auto body = impl->removed_body.get(); body) {
+    return ProgramRegion(body);
+  } else {
+    return std::nullopt;
+  }
 }
 
 // The index used by the Nth table scan.

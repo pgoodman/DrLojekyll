@@ -743,10 +743,13 @@ class ProgramCheckRecordRegion
   using Node<ProgramCheckRecordRegion, ProgramCheckRecordRegionImpl>::Node;
 };
 
-// The end-of-batch commit sweep of one differential table: publishes each
-// touched row's net 0/1 presence change (against the batch-start snapshot)
-// to `Message()` when the table backs a `@differential` transmit view, seals
-// the new snapshot, and clears the batch-scratch flags.
+// The end-of-batch commit sweep of one table. On a differential table it
+// publishes each touched row's net 0/1 presence change (against the
+// batch-start snapshot) to `Message()` when the table backs a
+// `@differential` transmit view, seals the new snapshot, and clears the
+// batch-scratch flags. On a monotone table it advances the sealed row-id
+// watermark, so the next epoch's frozen-state reads see this epoch's rows;
+// such a sweep never carries a message.
 class ProgramCommitSweepRegionImpl;
 class ProgramCommitSweepRegion
     : public Node<ProgramCommitSweepRegion, ProgramCommitSweepRegionImpl> {
@@ -855,6 +858,22 @@ class ProgramTableJoinRegion
   // The body that conditionally executes for each joined result. Variable
   // bindings are applied.
   std::optional<ProgramRegion> Body(void) const noexcept;
+
+  // Delta sections. Each executes for a joined combination per a named
+  // batch-delta discipline that codegen evaluates directly on the scanned
+  // row ids; variable bindings are applied as for `Body()`.
+  //
+  // `AddedBody()`: every side is in the batch-final state (InNew) and at
+  // least one side is a net addition of this batch — a combination that
+  // newly holds. `RemovedBody()`: every side was in the batch-start state
+  // (InI) and at least one side is a net deletion of this batch — a
+  // combination that stopped holding. The pivot vector is sort-uniqued and
+  // the join runs once per batch, so each section fires exactly once per
+  // started/stopped rule instance; an instance with a net-added side and a
+  // net-deleted side fires neither. Monotone sides answer the reads
+  // through their sealed row-id watermark.
+  std::optional<ProgramRegion> AddedBody(void) const noexcept;
+  std::optional<ProgramRegion> RemovedBody(void) const noexcept;
 
   // The pivot vector that contains the join pivots. The elements of this
   // pivot vector are in the same order as `OutputPivotVariables()`.

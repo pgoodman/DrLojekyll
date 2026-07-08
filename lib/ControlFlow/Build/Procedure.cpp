@@ -317,6 +317,10 @@ static void FixupContainingProcedure(REGION *region, REGION *parent) {
     } else if (auto get = op->AsCheckRecord(); get) {
       FixupContainingProcedure(get->absent_body.get(), region);
 
+    } else if (auto join = op->AsTableJoin(); join) {
+      FixupContainingProcedure(join->added_body.get(), region);
+      FixupContainingProcedure(join->removed_body.get(), region);
+
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       FixupContainingProcedure(cmp->false_body.get(), region);
     }

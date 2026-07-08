@@ -1308,11 +1308,19 @@ uint64_t ProgramTableJoinRegionImpl::Hash(uint32_t depth) const {
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 11) * this->OP::body->Hash(depth - 1u);
   }
+  if (this->added_body) {
+    hash ^= RotateRight64(hash, 9) * this->added_body->Hash(depth - 1u);
+  }
+  if (this->removed_body) {
+    hash ^= RotateRight64(hash, 7) * this->removed_body->Hash(depth - 1u);
+  }
   return hash;
 }
 
 bool ProgramTableJoinRegionImpl::IsNoOp(void) const noexcept {
-  return !this->OP::body || this->OP::body->IsNoOp();
+  return (!this->OP::body || this->OP::body->IsNoOp()) &&
+         (!added_body || added_body->IsNoOp()) &&
+         (!removed_body || removed_body->IsNoOp());
 }
 
 bool ProgramTableJoinRegionImpl::Equals(EqualitySet &eq,
@@ -1376,11 +1384,13 @@ bool ProgramTableJoinRegionImpl::Equals(EqualitySet &eq,
   }
 
   if (depth) {
-    if ((!this->OP::body.get()) != (!that->OP::body.get())) {
+    if ((!this->OP::body.get()) != (!that->OP::body.get()) ||
+        (!added_body.get()) != (!that->added_body.get()) ||
+        (!removed_body.get()) != (!that->removed_body.get())) {
       return false;
     }
 
-    if (auto that_body = that->body.get(); that_body) {
+    if (this->OP::body || added_body || removed_body) {
       const auto &pivot_vars_1 = pivot_vars;
       const auto &pivot_vars_2 = that->pivot_vars;
       for (auto j = 0u, max_j = pivot_vars_1.Size(); j < max_j; ++j) {
@@ -1395,7 +1405,17 @@ bool ProgramTableJoinRegionImpl::Equals(EqualitySet &eq,
         }
       }
 
-      if (!body->Equals(eq, that_body, depth - 1u)) {
+      if (auto that_body = that->body.get();
+          that_body && !body->Equals(eq, that_body, depth - 1u)) {
+        return false;
+      }
+      if (auto that_added = that->added_body.get();
+          that_added && !added_body->Equals(eq, that_added, depth - 1u)) {
+        return false;
+      }
+      if (auto that_removed = that->removed_body.get();
+          that_removed &&
+          !removed_body->Equals(eq, that_removed, depth - 1u)) {
         return false;
       }
     }
