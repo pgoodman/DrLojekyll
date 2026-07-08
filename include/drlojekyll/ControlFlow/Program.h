@@ -45,6 +45,9 @@ class ProgramChangeRecordRegion;
 class ProgramCheckMemberRegion;
 class ProgramCheckRecordRegion;
 class ProgramCommitSweepRegion;
+class ProgramClaimRegion;
+class ProgramRetireRegion;
+class ProgramNetBatchRegion;
 class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
 class ProgramTableScanRegion;
@@ -78,6 +81,9 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   ProgramRegion(const ProgramCheckMemberRegion &);
   ProgramRegion(const ProgramCheckRecordRegion &);
   ProgramRegion(const ProgramCommitSweepRegion &);
+  ProgramRegion(const ProgramClaimRegion &);
+  ProgramRegion(const ProgramRetireRegion &);
+  ProgramRegion(const ProgramNetBatchRegion &);
   ProgramRegion(const ProgramTableJoinRegion &);
   ProgramRegion(const ProgramTableProductRegion &);
   ProgramRegion(const ProgramTableScanRegion &);
@@ -102,6 +108,9 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   bool IsCheckMember(void) const noexcept;
   bool IsCheckRecord(void) const noexcept;
   bool IsCommitSweep(void) const noexcept;
+  bool IsClaim(void) const noexcept;
+  bool IsRetire(void) const noexcept;
+  bool IsNetBatch(void) const noexcept;
   bool IsTableJoin(void) const noexcept;
   bool IsTableProduct(void) const noexcept;
   bool IsTableScan(void) const noexcept;
@@ -134,6 +143,9 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   friend class ProgramCheckMemberRegion;
   friend class ProgramCheckRecordRegion;
   friend class ProgramCommitSweepRegion;
+  friend class ProgramClaimRegion;
+  friend class ProgramRetireRegion;
+  friend class ProgramNetBatchRegion;
   friend class ProgramTableJoinRegion;
   friend class ProgramTableProductRegion;
   friend class ProgramTableScanRegion;
@@ -247,7 +259,20 @@ enum class VectorKind : unsigned {
 
   // This is a vector created inside of a message procedure and passed down to
   // the primary data flow function. It is guaranteed to be empty.
-  kEmpty
+  kEmpty,
+
+  // Worklists of claimed rows drained by a stratum's delete/insert
+  // fixpoint rounds.
+  kDeleteQueue,
+  kAddQueue,
+
+  // A stratum's accumulated overdeletion/addition row sets for one batch.
+  kOverdeleteSet,
+  kAdditionSet,
+
+  // A differential message's netted explicit removals/additions.
+  kNetRemovals,
+  kNetAdditions,
 };
 
 // A column in a table.
@@ -580,6 +605,8 @@ enum class MembershipPredicate : unsigned {
   kInNewSansFrontier,     // (kInI && !kDel) || (kAdd && !kAddNow).
   kPresent,               // Count-based presence: C_nr + C_r > 0.
   kRecursivelySupported,  // C_r > 0 (the REDERIVE survival test).
+  kNetDeleted,            // kDel && !kAdd (net deletion this batch).
+  kNetAdded,              // kAdd && !kDel (net addition this batch).
 };
 
 // One signed derivation-counter fold on a table: a single +1/-1 of the
@@ -608,6 +635,11 @@ class ProgramUpdateCountRegion
   // Which counter the fold lands on: `kNonRecursive` for seed/init-position
   // firings (C_nr), `kRecursive` for fixpoint back-edge firings (C_r).
   DerivClass DerivationClass(void) const noexcept;
+
+  // Whether the fold is explicit (message) support: the row's `kExplicit`
+  // set-semantics bit rather than a multiset derivation count. Only
+  // meaningful on differential tables.
+  bool IsExplicit(void) const noexcept;
 
  private:
   friend class ProgramRegion;
@@ -731,6 +763,82 @@ class ProgramCommitSweepRegion
   friend class ProgramRegion;
 
   using Node<ProgramCommitSweepRegion, ProgramCommitSweepRegionImpl>::Node;
+};
+
+// Claims a row of a differential table into the overdeletion set
+// (`IsDelete()`) or the addition set, and into the current frontier round.
+// `Body` executes only when the claim succeeds, i.e. on the row's first
+// claim this batch; a repeated claim is absorbed. The claim mutates the
+// row's batch-scratch flags, so the region is a side effect even without a
+// body.
+class ProgramClaimRegionImpl;
+class ProgramClaimRegion
+    : public Node<ProgramClaimRegion, ProgramClaimRegionImpl> {
+ public:
+  static ProgramClaimRegion From(ProgramRegion) noexcept;
+
+  // The body that conditionally executes on the row's first claim this
+  // batch.
+  std::optional<ProgramRegion> Body(void) const noexcept;
+
+  unsigned Arity(void) const noexcept;
+
+  UsedNodeRange<DataVariable> TupleVariables(void) const;
+
+  DataTable Table(void) const;
+
+  // Claim target: `true` claims into the overdeletion set (the delete
+  // frontier), `false` into the addition set (the insert frontier).
+  bool IsDelete(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using Node<ProgramClaimRegion, ProgramClaimRegionImpl>::Node;
+};
+
+// Retires a row of a differential table from the current frontier round:
+// clears the row's current-frontier bit (`kDelNow` when `IsDelete()`,
+// `kAddNow` otherwise). Has no body.
+class ProgramRetireRegionImpl;
+class ProgramRetireRegion
+    : public Node<ProgramRetireRegion, ProgramRetireRegionImpl> {
+ public:
+  static ProgramRetireRegion From(ProgramRegion) noexcept;
+
+  unsigned Arity(void) const noexcept;
+
+  UsedNodeRange<DataVariable> TupleVariables(void) const;
+
+  DataTable Table(void) const;
+
+  // Which frontier bit is cleared: `true` for the delete frontier,
+  // `false` for the insert frontier.
+  bool IsDelete(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using Node<ProgramRetireRegion, ProgramRetireRegionImpl>::Node;
+};
+
+// Nets a differential message's explicit adds against its explicit removes
+// within one batch: rewrites `AddVector()` to one copy of each row whose
+// net occurrence count is positive and `RemoveVector()` to one copy of
+// each row whose net is negative. Has no body.
+class ProgramNetBatchRegionImpl;
+class ProgramNetBatchRegion
+    : public Node<ProgramNetBatchRegion, ProgramNetBatchRegionImpl> {
+ public:
+  static ProgramNetBatchRegion From(ProgramRegion) noexcept;
+
+  DataVector AddVector(void) const noexcept;
+  DataVector RemoveVector(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using Node<ProgramNetBatchRegion, ProgramNetBatchRegionImpl>::Node;
 };
 
 // Perform an equi-join between two or more tables, and iterate over the
@@ -1197,6 +1305,9 @@ class ProgramVisitor {
   virtual void Visit(ProgramCheckMemberRegion val);
   virtual void Visit(ProgramCheckRecordRegion val);
   virtual void Visit(ProgramCommitSweepRegion val);
+  virtual void Visit(ProgramClaimRegion val);
+  virtual void Visit(ProgramRetireRegion val);
+  virtual void Visit(ProgramNetBatchRegion val);
   virtual void Visit(ProgramTableJoinRegion val);
   virtual void Visit(ProgramTableProductRegion val);
   virtual void Visit(ProgramTableScanRegion val);

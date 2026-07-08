@@ -114,6 +114,18 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto sweep = op->AsCommitSweep(); sweep) {
       sweep->table.ClearWithoutErasure();
 
+    } else if (auto claim = op->AsClaim(); claim) {
+      claim->table.ClearWithoutErasure();
+      claim->col_values.ClearWithoutErasure();
+
+    } else if (auto retire = op->AsRetire(); retire) {
+      retire->table.ClearWithoutErasure();
+      retire->col_values.ClearWithoutErasure();
+
+    } else if (auto net = op->AsNetBatch(); net) {
+      net->add_vector.ClearWithoutErasure();
+      net->remove_vector.ClearWithoutErasure();
+
     } else if (auto pub = op->AsPublish(); pub) {
       pub->arg_vars.ClearWithoutErasure();
 
@@ -242,6 +254,9 @@ IS_OP(ChangeRecord)
 IS_OP(CheckMember)
 IS_OP(CheckRecord)
 IS_OP(CommitSweep)
+IS_OP(Claim)
+IS_OP(Retire)
+IS_OP(NetBatch)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
 IS_OP(TableScan)
@@ -289,6 +304,7 @@ OPTIONAL_BODY(Body, ProgramLetBindingRegion, body)
 OPTIONAL_BODY(Body, ProgramVectorLoopRegion, body)
 OPTIONAL_BODY(Body, ProgramUpdateCountRegion, body)
 OPTIONAL_BODY(Body, ProgramChangeRecordRegion, body)
+OPTIONAL_BODY(Body, ProgramClaimRegion, body)
 OPTIONAL_BODY(Body, ProgramTableJoinRegion, body)
 OPTIONAL_BODY(Body, ProgramTableProductRegion, body)
 OPTIONAL_BODY(BodyIfTrue, ProgramTupleCompareRegion, body)
@@ -320,6 +336,9 @@ FROM_OP(ProgramChangeRecordRegion, AsChangeRecord)
 FROM_OP(ProgramCheckMemberRegion, AsCheckMember)
 FROM_OP(ProgramCheckRecordRegion, AsCheckRecord)
 FROM_OP(ProgramCommitSweepRegion, AsCommitSweep)
+FROM_OP(ProgramClaimRegion, AsClaim)
+FROM_OP(ProgramRetireRegion, AsRetire)
+FROM_OP(ProgramNetBatchRegion, AsNetBatch)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
 FROM_OP(ProgramTableProductRegion, AsTableProduct)
 FROM_OP(ProgramTableScanRegion, AsTableScan)
@@ -372,6 +391,8 @@ USED_RANGE(ProgramUpdateCountRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(ProgramChangeRecordRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(ProgramCheckMemberRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(ProgramCheckRecordRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramClaimRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramRetireRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(DataIndex, KeyColumns, DataColumn, columns)
 USED_RANGE(DataIndex, ValueColumns, DataColumn, mapped_columns)
 USED_RANGE(ProgramTupleCompareRegion, LHS, DataVariable, lhs_vars)
@@ -506,6 +527,10 @@ DerivClass ProgramUpdateCountRegion::DerivationClass(void) const noexcept {
   return impl->deriv_class;
 }
 
+bool ProgramUpdateCountRegion::IsExplicit(void) const noexcept {
+  return impl->is_explicit;
+}
+
 unsigned ProgramChangeRecordRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
@@ -599,6 +624,38 @@ DataTable ProgramCommitSweepRegion::Table(void) const {
 std::optional<ParsedMessage>
 ProgramCommitSweepRegion::Message(void) const noexcept {
   return impl->message;
+}
+
+unsigned ProgramClaimRegion::Arity(void) const noexcept {
+  return impl->col_values.Size();
+}
+
+DataTable ProgramClaimRegion::Table(void) const {
+  return DataTable(impl->table.get());
+}
+
+bool ProgramClaimRegion::IsDelete(void) const noexcept {
+  return impl->is_del;
+}
+
+unsigned ProgramRetireRegion::Arity(void) const noexcept {
+  return impl->col_values.Size();
+}
+
+DataTable ProgramRetireRegion::Table(void) const {
+  return DataTable(impl->table.get());
+}
+
+bool ProgramRetireRegion::IsDelete(void) const noexcept {
+  return impl->is_del;
+}
+
+DataVector ProgramNetBatchRegion::AddVector(void) const noexcept {
+  return DataVector(impl->add_vector.get());
+}
+
+DataVector ProgramNetBatchRegion::RemoveVector(void) const noexcept {
+  return DataVector(impl->remove_vector.get());
 }
 
 VariableRole DataVariable::DefiningRole(void) const noexcept {

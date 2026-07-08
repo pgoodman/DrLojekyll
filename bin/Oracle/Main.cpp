@@ -1398,7 +1398,7 @@ class Oracle {
           }
         }
       }
-      for (const auto &[vm, id] : round) {  // RetireDelFrontier
+      for (const auto &[vm, id] : round) {  // RetireDel per drained row
         vm->st[id].del_now = false;
       }
     }
@@ -1468,7 +1468,7 @@ class Oracle {
           }
         }
       }
-      for (const auto &[vm, id] : round) {  // RetireAddFrontier
+      for (const auto &[vm, id] : round) {  // RetireAdd per drained row
         vm->st[id].add_now = false;
       }
     }

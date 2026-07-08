@@ -300,6 +300,18 @@ class DiffTable : public RowStore<Row> {
     return CountR(counts[id]) > 0;
   }
 
+  // Net deletion this batch: claimed into D and never re-claimed into A.
+  bool NetDeleted(uint32_t id) const noexcept {
+    const uint8_t f = flags[id];
+    return (f & kDel) && !(f & kAdd);
+  }
+
+  // Net addition this batch: claimed into A and never overdeleted into D.
+  bool NetAdded(uint32_t id) const noexcept {
+    const uint8_t f = flags[id];
+    return (f & kAdd) && !(f & kDel);
+  }
+
   // Claim `id` into the overdeletion set D and the current delete frontier
   // round. Returns false if already claimed this batch (dequeue dedup).
   bool TryClaimDel(uint32_t id) {
@@ -324,18 +336,16 @@ class DiffTable : public RowStore<Row> {
     return true;
   }
 
-  // Clear the kDelNow bits of a drained delete frontier round.
-  void RetireDelFrontier(const Vec<uint32_t> &round) {
-    for (uint32_t id : round) {
-      flags.Set(id, static_cast<uint8_t>(flags[id] & ~kDelNow));
-    }
+  // Clear one row's kDelNow bit: the row leaves the current delete
+  // frontier round.
+  void RetireDel(uint32_t id) {
+    flags.Set(id, static_cast<uint8_t>(flags[id] & ~kDelNow));
   }
 
-  // Clear the kAddNow bits of a drained insert frontier round.
-  void RetireAddFrontier(const Vec<uint32_t> &round) {
-    for (uint32_t id : round) {
-      flags.Set(id, static_cast<uint8_t>(flags[id] & ~kAddNow));
-    }
+  // Clear one row's kAddNow bit: the row leaves the current insert
+  // frontier round.
+  void RetireAdd(uint32_t id) {
+    flags.Set(id, static_cast<uint8_t>(flags[id] & ~kAddNow));
   }
 
   // End-of-batch: for each touched row, report 0/1 presence crossings vs

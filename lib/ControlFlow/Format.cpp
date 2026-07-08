@@ -120,6 +120,12 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kTableScan: os << "$scan"; break;
     case VectorKind::kMessageOutputs: os << "$publish"; break;
     case VectorKind::kEmpty: os << "$empty"; break;
+    case VectorKind::kDeleteQueue: os << "$delete_queue"; break;
+    case VectorKind::kAddQueue: os << "$add_queue"; break;
+    case VectorKind::kOverdeleteSet: os << "$overdelete"; break;
+    case VectorKind::kAdditionSet: os << "$addition"; break;
+    case VectorKind::kNetRemovals: os << "$net_removals"; break;
+    case VectorKind::kNetAdditions: os << "$net_additions"; break;
   }
 
   os << ':' << vec.Id();
@@ -470,6 +476,8 @@ static OutputStream &PrintPredicate(OutputStream &os,
     case MembershipPredicate::kRecursivelySupported:
       os << "recursively-supported";
       break;
+    case MembershipPredicate::kNetDeleted: os << "net-deleted"; break;
+    case MembershipPredicate::kNetAdded: os << "net-added"; break;
   }
   return os;
 }
@@ -477,7 +485,11 @@ static OutputStream &PrintPredicate(OutputStream &os,
 OutputStream &operator<<(OutputStream &os,
                          ProgramUpdateCountRegion region) {
 
-  os << os.Indent() << "update-count " << (region.IsAdd() ? '+' : '-');
+  os << os.Indent() << "update-count";
+  if (region.IsExplicit()) {
+    os << "-explicit";
+  }
+  os << ' ' << (region.IsAdd() ? '+' : '-');
   PrintDerivClass(os, region.DerivationClass());
   os << " {";
 
@@ -603,6 +615,46 @@ OutputStream &operator<<(OutputStream &os, ProgramCommitSweepRegion region) {
   if (auto message = region.Message(); message) {
     os << " publishing " << message->Name() << '/' << message->Arity();
   }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramClaimRegion region) {
+  os << os.Indent() << (region.IsDelete() ? "claim-del" : "claim-add")
+     << " {";
+  auto sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} in " << region.Table();
+
+  if (auto maybe_body = region.Body(); maybe_body) {
+    os << '\n';
+    os.PushIndent();
+    os << os.Indent() << "if-claimed\n";
+    os.PushIndent();
+    os << (*maybe_body);
+    os.PopIndent();
+    os.PopIndent();
+  }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramRetireRegion region) {
+  os << os.Indent() << (region.IsDelete() ? "retire-del" : "retire-add")
+     << " {";
+  auto sep = "";
+  for (auto var : region.TupleVariables()) {
+    os << sep << var;
+    sep = ", ";
+  }
+  os << "} in " << region.Table();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramNetBatchRegion region) {
+  os << os.Indent() << "net-batch " << region.AddVector() << ' '
+     << region.RemoveVector();
   return os;
 }
 
@@ -823,6 +875,9 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramChangeRecordRegion)
   MAKE_VISITOR(ProgramCheckRecordRegion)
   MAKE_VISITOR(ProgramCommitSweepRegion)
+  MAKE_VISITOR(ProgramClaimRegion)
+  MAKE_VISITOR(ProgramRetireRegion)
+  MAKE_VISITOR(ProgramNetBatchRegion)
   MAKE_VISITOR(ProgramTableJoinRegion)
   MAKE_VISITOR(ProgramTableProductRegion)
   MAKE_VISITOR(ProgramTableScanRegion)

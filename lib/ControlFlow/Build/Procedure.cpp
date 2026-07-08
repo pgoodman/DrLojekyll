@@ -51,7 +51,8 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     // explicit support).
     if (table) {
       insert = impl->operation_regions.CreateDerived<UPDATECOUNT>(
-          loop, true /* is_add */, DerivClass::kNonRecursive);
+          loop, true /* is_add */, DerivClass::kNonRecursive,
+          false /* is_explicit */);
       insert->table.Emplace(insert, table);
       loop->body.Emplace(loop, insert);
 
@@ -112,6 +113,7 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
       case ProgramOperation::kSortAndUniquePivotVector:
       case ProgramOperation::kSortAndUniqueProductInputVector:
       case ProgramOperation::kSortAndUniqueMessageOutputVector:
+      case ProgramOperation::kNetBatchVectors:
         read.insert(vec);
         written.insert(vec);
         break;

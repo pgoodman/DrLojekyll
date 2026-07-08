@@ -162,7 +162,7 @@ static UPDATECOUNT *BuildUpdateCount(ProgramImpl *impl, TABLE *table,
                                      DerivClass deriv_class) {
 
   const auto fold = impl->operation_regions.CreateDerived<UPDATECOUNT>(
-      parent, is_add, deriv_class);
+      parent, is_add, deriv_class, false /* is_explicit */);
 
   fold->table.Emplace(fold, table);
   for (auto col : cols) {

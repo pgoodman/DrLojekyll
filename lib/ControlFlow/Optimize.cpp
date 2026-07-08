@@ -1008,6 +1008,42 @@ static bool OptimizeImpl(ProgramImpl *impl, CHANGERECORD *fold) {
   return changed;
 }
 
+// Try to eliminate an unnecessary child of a CLAIM (row claim) region. A
+// CLAIM claims the tuple's row in `table` into the overdeletion or
+// addition set and the current frontier round, and executes `body` only
+// when the claim succeeds (the row's first claim this batch). A body that
+// does nothing observable (`IsNoOp`) is detached, letting enclosing
+// SERIES/PARALLEL passes erase the empty scaffolding and the dead-region
+// sweep reclaim the detached subtree. The CLAIM itself is never removed:
+// the claim mutates the row's batch-scratch flags, so the region is a side
+// effect even when the first-claim body is gone.
+//
+//    changed = false
+//    if body and body.IsNoOp():                // first-claim continuation
+//      detach body; changed = true
+//    return changed
+//
+//    Before:                               After:
+//      CLAIM(T, del)                         CLAIM(T, del)
+//      +-claimed: LET {}       (no-op)         (no child; the claim
+//                                               still executes)
+static bool OptimizeImpl(ProgramImpl *impl, CLAIM *claim) {
+  auto changed = false;
+  (void) impl;
+
+  if (auto claimed_body = claim->body.get()) {
+    assert(claimed_body->parent == claim);
+
+    if (claimed_body->IsNoOp()) {
+      claimed_body->parent = nullptr;
+      claim->body.Clear();
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 // Try to eliminate unnecessary children of a CHECKMEMBER (membership gate)
 // region. A CHECKMEMBER reads one named membership predicate of the tuple
 // `col_values` in `table` and dispatches to at most one of two children:
@@ -1173,7 +1209,7 @@ static void CheckProcedures(ProgramImpl *impl) {
 // (flattening, no-op and unreachable-code removal), then all OPERATION
 // regions dispatched by kind (LET binding down-propagation, TUPLECMP
 // simplification, and no-op body pruning for CALL, GENERATOR, CHECKMEMBER,
-// CHECKRECORD, UPDATECOUNT, CHANGERECORD, and generically every
+// CHECKRECORD, UPDATECOUNT, CLAIM, CHANGERECORD, and generically every
 // other operation), and finally each PROC. Regions already detached by an
 // earlier rewrite in the same sweep -- unused, or whose `Ancestor()` is no
 // longer linked under a procedure -- are skipped. After every sweep,
@@ -1317,6 +1353,10 @@ void ProgramImpl::Optimize(void) {
 
       } else if (auto fold = op->AsUpdateCount(); fold) {
         changed = OptimizeImpl(this, fold) | changed;
+        CheckProcedures(this);
+
+      } else if (auto claim = op->AsClaim(); claim) {
+        changed = OptimizeImpl(this, claim) | changed;
         CheckProcedures(this);
 
       } else if (auto emplace = op->AsChangeRecord(); emplace) {

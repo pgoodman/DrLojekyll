@@ -501,6 +501,18 @@ enum class ProgramOperation {
   kReturnTrueFromProcedure,
   kReturnFalseFromProcedure,
 
+  // Claim a row into the overdeletion/addition set and the current
+  // frontier round; `body` executes on the row's first claim this batch.
+  kClaim,
+
+  // Retire a row from the current frontier round (clear its kDelNow or
+  // kAddNow bit).
+  kRetire,
+
+  // Net a differential message's explicit adds against its explicit
+  // removes within one batch, rewriting both vectors.
+  kNetBatchVectors,
+
   // TODO: use in future.
 
   // Test/set a global boolean variable to `true`. The variable is
@@ -531,6 +543,9 @@ class ProgramOperationRegionImpl : public REGION {
   virtual ProgramCheckMemberRegionImpl *AsCheckMember(void) noexcept;
   virtual ProgramCheckRecordRegionImpl *AsCheckRecord(void) noexcept;
   virtual ProgramCommitSweepRegionImpl *AsCommitSweep(void) noexcept;
+  virtual ProgramClaimRegionImpl *AsClaim(void) noexcept;
+  virtual ProgramRetireRegionImpl *AsRetire(void) noexcept;
+  virtual ProgramNetBatchRegionImpl *AsNetBatch(void) noexcept;
   virtual ProgramTableJoinRegionImpl *AsTableJoin(void) noexcept;
   virtual ProgramTableProductRegionImpl *AsTableProduct(void) noexcept;
   virtual ProgramTableScanRegionImpl *AsTableScan(void) noexcept;
@@ -792,11 +807,13 @@ class ProgramUpdateCountRegionImpl final : public OP {
   virtual ~ProgramUpdateCountRegionImpl(void);
 
   inline ProgramUpdateCountRegionImpl(REGION *parent_, bool is_add_,
-                                      DerivClass deriv_class_)
+                                      DerivClass deriv_class_,
+                                      bool is_explicit_)
       : OP(parent_, ProgramOperation::kUpdateCount),
         col_values(this),
         is_add(is_add_),
-        deriv_class(deriv_class_) {}
+        deriv_class(deriv_class_),
+        is_explicit(is_explicit_) {}
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -826,6 +843,11 @@ class ProgramUpdateCountRegionImpl final : public OP {
   // seed/init-position firings, `kRecursive` (C_r) for fixpoint back-edge
   // firings.
   const DerivClass deriv_class;
+
+  // Whether the fold is explicit (message) support: the row's `kExplicit`
+  // set-semantics bit rather than a multiset derivation count. Only
+  // meaningful on differential tables.
+  const bool is_explicit;
 };
 
 using UPDATECOUNT = ProgramUpdateCountRegionImpl;
@@ -1015,6 +1037,122 @@ class ProgramCommitSweepRegionImpl final : public OP {
 };
 
 using COMMITSWEEP = ProgramCommitSweepRegionImpl;
+
+// A claim of one row of a differential table into the overdeletion set
+// (`is_del`) or the addition set, and into the current frontier round.
+// `body` executes only when the claim succeeds, i.e. on the row's first
+// claim this batch. The claim mutates the row's batch-scratch flags, so
+// the region is a side effect even when the body is gone.
+class ProgramClaimRegionImpl final : public OP {
+ public:
+  virtual ~ProgramClaimRegionImpl(void);
+
+  inline ProgramClaimRegionImpl(REGION *parent_, bool is_del_)
+      : OP(parent_, ProgramOperation::kClaim),
+        col_values(this),
+        is_del(is_del_) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+
+  ProgramClaimRegionImpl *AsClaim(void) noexcept override;
+
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq, REGION *that,
+              uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<REGION *> &merges) override;
+
+  // Variables that make up the tuple.
+  UseList<VAR> col_values;
+
+  // Table whose row is being claimed.
+  UseRef<TABLE> table;
+
+  // Claim target: `true` claims into the overdeletion set (the delete
+  // frontier), `false` into the addition set (the insert frontier).
+  const bool is_del;
+};
+
+using CLAIM = ProgramClaimRegionImpl;
+
+// A retirement of one row of a differential table from the current
+// frontier round: clears the row's current-frontier bit (`kDelNow` when
+// `is_del`, `kAddNow` otherwise). Has no body.
+class ProgramRetireRegionImpl final : public OP {
+ public:
+  virtual ~ProgramRetireRegionImpl(void);
+
+  inline ProgramRetireRegionImpl(REGION *parent_, bool is_del_)
+      : OP(parent_, ProgramOperation::kRetire),
+        col_values(this),
+        is_del(is_del_) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+
+  ProgramRetireRegionImpl *AsRetire(void) noexcept override;
+
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq, REGION *that,
+              uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<REGION *> &merges) override;
+
+  // Variables that make up the tuple.
+  UseList<VAR> col_values;
+
+  // Table whose row is being retired.
+  UseRef<TABLE> table;
+
+  // Which frontier bit is cleared: `true` for the delete frontier,
+  // `false` for the insert frontier.
+  const bool is_del;
+};
+
+using RETIRE = ProgramRetireRegionImpl;
+
+// Nets a differential message's explicit adds against its explicit removes
+// within one batch: rewrites `add_vector` to one copy of each row whose
+// net occurrence count is positive and `remove_vector` to one copy of each
+// row whose net is negative. Has no body.
+class ProgramNetBatchRegionImpl final : public OP {
+ public:
+  virtual ~ProgramNetBatchRegionImpl(void);
+
+  inline ProgramNetBatchRegionImpl(REGION *parent_)
+      : OP(parent_, ProgramOperation::kNetBatchVectors) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+
+  ProgramNetBatchRegionImpl *AsNetBatch(void) noexcept override;
+
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq, REGION *that,
+              uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<REGION *> &merges) override;
+
+  // The message's explicit-addition and explicit-removal vectors, both
+  // read and rewritten in place.
+  UseRef<VECTOR> add_vector;
+  UseRef<VECTOR> remove_vector;
+};
+
+using NETBATCH = ProgramNetBatchRegionImpl;
 
 // Calls another IR procedure. All IR procedures return `true` or `false`. This
 // return value can be tested, and if it is, a body can be conditionally

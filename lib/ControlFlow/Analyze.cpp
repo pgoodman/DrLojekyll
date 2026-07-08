@@ -804,6 +804,11 @@ void AnalysisContext::ConvertToCheckRecord(
 void AnalysisContext::ConvertToChangeRecord(
     ProgramImpl *impl, UPDATECOUNT *change) {
 
+  // A record fold cannot carry explicit (message) support.
+  if (change->is_explicit) {
+    return;
+  }
+
   TABLE * const table = change->table.get();
   REGION *prev_record = nullptr;
 

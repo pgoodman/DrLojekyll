@@ -27,6 +27,9 @@ ProgramChangeRecordRegionImpl::~ProgramChangeRecordRegionImpl(void) {}
 ProgramCheckMemberRegionImpl::~ProgramCheckMemberRegionImpl(void) {}
 ProgramCheckRecordRegionImpl::~ProgramCheckRecordRegionImpl(void) {}
 ProgramCommitSweepRegionImpl::~ProgramCommitSweepRegionImpl(void) {}
+ProgramClaimRegionImpl::~ProgramClaimRegionImpl(void) {}
+ProgramRetireRegionImpl::~ProgramRetireRegionImpl(void) {}
+ProgramNetBatchRegionImpl::~ProgramNetBatchRegionImpl(void) {}
 ProgramTableJoinRegionImpl::~ProgramTableJoinRegionImpl(void) {}
 ProgramTableProductRegionImpl::~ProgramTableProductRegionImpl(void) {}
 ProgramTableScanRegionImpl::~ProgramTableScanRegionImpl(void) {}
@@ -135,6 +138,21 @@ ProgramOperationRegionImpl::AsCheckRecord(void) noexcept {
 
 ProgramCommitSweepRegionImpl *
 ProgramOperationRegionImpl::AsCommitSweep(void) noexcept {
+  return nullptr;
+}
+
+ProgramClaimRegionImpl *
+ProgramOperationRegionImpl::AsClaim(void) noexcept {
+  return nullptr;
+}
+
+ProgramRetireRegionImpl *
+ProgramOperationRegionImpl::AsRetire(void) noexcept {
+  return nullptr;
+}
+
+ProgramNetBatchRegionImpl *
+ProgramOperationRegionImpl::AsNetBatch(void) noexcept {
   return nullptr;
 }
 
@@ -432,6 +450,222 @@ const bool ProgramCommitSweepRegionImpl::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
+ProgramClaimRegionImpl *
+ProgramClaimRegionImpl::AsClaim(void) noexcept {
+  return this;
+}
+
+uint64_t ProgramClaimRegionImpl::Hash(uint32_t depth) const {
+  uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
+  hash ^= RotateRight64(hash, 13) * (is_del ? 13u : 19u);
+  hash ^= RotateRight64(hash, 13) * table->id * 17;
+  for (auto var : col_values) {
+    hash ^= RotateRight64(hash, 13) *
+            ((static_cast<unsigned>(var->role) + 7u) *
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
+  }
+  if (depth == 0) {
+    return hash;
+  }
+
+  if (this->OP::body) {
+    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
+  }
+
+  return hash;
+}
+
+bool ProgramClaimRegionImpl::IsNoOp(void) const noexcept {
+  // The claim mutates the row's batch-scratch flags even when the
+  // first-claim body is gone.
+  assert(!col_values.Empty());
+  return false;
+}
+
+bool ProgramClaimRegionImpl::Equals(EqualitySet &eq, REGION *that_,
+                                    uint32_t depth) const noexcept {
+  const auto that_op = that_->AsOperation();
+  if (!that_op) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  const auto that = that_op->AsClaim();
+  if (!that || table.get() != that->table.get() || is_del != that->is_del) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  for (auto i = 0u, max_i = col_values.Size(); i < max_i; ++i) {
+    if (!eq.Contains(col_values[i], that->col_values[i])) {
+      FAILED_EQ(that_);
+      return false;
+    }
+  }
+
+  if (depth == 0) {
+    return true;
+  }
+
+  if (!body != !(that->body)) {
+    return false;
+  }
+
+  if (body && !body->Equals(eq, that->body.get(), depth - 1u)) {
+    return false;
+  }
+
+  return true;
+}
+
+const bool ProgramClaimRegionImpl::MergeEqual(
+    ProgramImpl *prog, std::vector<REGION *> &merges) {
+
+  // Structurally identical sibling claims target one row: one claim
+  // applies, all first-claim continuations run under it.
+  auto new_par = prog->parallel_regions.Create(this);
+
+  if (auto claim_body = body.get(); claim_body) {
+    claim_body->parent = new_par;
+    new_par->AddRegion(claim_body);
+    body.Clear();
+  }
+
+  body.Emplace(this, new_par);
+
+  for (auto region : merges) {
+    auto merge = region->AsOperation()->AsClaim();
+    assert(merge);  // These should all be the same type
+    assert(merge != this);
+
+    if (const auto merge_body = merge->body.get(); merge_body) {
+      merge_body->parent = new_par;
+      new_par->AddRegion(merge_body);
+      merge->body.Clear();
+    }
+
+    merge->parent = nullptr;
+  }
+  return true;
+}
+
+// -----------------------------------------------------------------------------
+
+ProgramRetireRegionImpl *
+ProgramRetireRegionImpl::AsRetire(void) noexcept {
+  return this;
+}
+
+uint64_t ProgramRetireRegionImpl::Hash(uint32_t depth) const {
+  (void) depth;
+  uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
+  hash ^= RotateRight64(hash, 13) * (is_del ? 13u : 19u);
+  hash ^= RotateRight64(hash, 13) * table->id * 17;
+  for (auto var : col_values) {
+    hash ^= RotateRight64(hash, 13) *
+            ((static_cast<unsigned>(var->role) + 7u) *
+             (static_cast<unsigned>(DataVariable(var).Type().Kind()) + 11u));
+  }
+  return hash;
+}
+
+bool ProgramRetireRegionImpl::IsNoOp(void) const noexcept {
+  // The retirement clears the row's current-frontier bit: always a side
+  // effect.
+  assert(!col_values.Empty());
+  return false;
+}
+
+bool ProgramRetireRegionImpl::Equals(EqualitySet &eq, REGION *that_,
+                                     uint32_t depth) const noexcept {
+  (void) depth;
+  const auto that_op = that_->AsOperation();
+  if (!that_op) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  const auto that = that_op->AsRetire();
+  if (!that || table.get() != that->table.get() || is_del != that->is_del) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  for (auto i = 0u, max_i = col_values.Size(); i < max_i; ++i) {
+    if (!eq.Contains(col_values[i], that->col_values[i])) {
+      FAILED_EQ(that_);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+const bool ProgramRetireRegionImpl::MergeEqual(
+    ProgramImpl *prog, std::vector<REGION *> &merges) {
+
+  // A retirement has no body: identical siblings are removed by exact CSE,
+  // never merged.
+  assert(false && "Probable error when trying to merge retirements");
+  (void) prog;
+  (void) merges;
+  return false;
+}
+
+// -----------------------------------------------------------------------------
+
+ProgramNetBatchRegionImpl *
+ProgramNetBatchRegionImpl::AsNetBatch(void) noexcept {
+  return this;
+}
+
+uint64_t ProgramNetBatchRegionImpl::Hash(uint32_t depth) const {
+  (void) depth;
+  uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
+  hash ^= (static_cast<unsigned>(add_vector->kind) + 1u) * 17;
+  hash ^= (static_cast<unsigned>(remove_vector->kind) + 1u) * 17;
+  for (auto type : add_vector->col_types) {
+    hash ^= RotateRight64(hash, 13) * (static_cast<unsigned>(type.Kind()) + 11u);
+  }
+  return hash;
+}
+
+bool ProgramNetBatchRegionImpl::IsNoOp(void) const noexcept {
+  // The netting rewrites both vectors in place: always a side effect.
+  return false;
+}
+
+bool ProgramNetBatchRegionImpl::Equals(EqualitySet &eq, REGION *that_,
+                                       uint32_t) const noexcept {
+  const auto that_op = that_->AsOperation();
+  if (!that_op) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  const auto that = that_op->AsNetBatch();
+  if (!that || !eq.Contains(add_vector.get(), that->add_vector.get()) ||
+      !eq.Contains(remove_vector.get(), that->remove_vector.get())) {
+    FAILED_EQ(that_);
+    return false;
+  }
+
+  return true;
+}
+
+const bool ProgramNetBatchRegionImpl::MergeEqual(
+    ProgramImpl *prog, std::vector<REGION *> &merges) {
+
+  // A netting has no body: identical siblings are removed by exact CSE,
+  // never merged.
+  assert(false && "Probable error when trying to merge vector nettings");
+  (void) prog;
+  (void) merges;
+  return false;
+}
+
+// -----------------------------------------------------------------------------
+
 ProgramLetBindingRegionImpl *
 ProgramLetBindingRegionImpl::AsLetBinding(void) noexcept {
   return this;
@@ -628,6 +862,9 @@ uint64_t ProgramUpdateCountRegionImpl::Hash(uint32_t depth) const {
   hash ^= RotateRight64(hash, 13) * (is_add ? 13u : 19u);
   hash ^= RotateRight64(hash, 13) *
           (static_cast<unsigned>(deriv_class) + 1u) * 17;
+  if (is_explicit) {
+    hash ^= RotateRight64(hash, 13) * 23u;
+  }
   hash ^= RotateRight64(hash, 13) * table->id * 17;
   for (auto var : col_values) {
     hash ^= RotateRight64(hash, 13) *
@@ -661,7 +898,8 @@ bool ProgramUpdateCountRegionImpl::Equals(EqualitySet &eq, REGION *that_,
 
   const auto that = that_op->AsUpdateCount();
   if (!that || table.get() != that->table.get() || is_add != that->is_add ||
-      deriv_class != that->deriv_class) {
+      deriv_class != that->deriv_class ||
+      is_explicit != that->is_explicit) {
     FAILED_EQ(that_);
     return false;
   }

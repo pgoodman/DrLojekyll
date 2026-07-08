@@ -262,6 +262,9 @@ class Generator {
   void EmitUpdateCount(ProgramUpdateCountRegion region);
   void EmitCheckMember(ProgramCheckMemberRegion region);
   void EmitCommitSweep(ProgramCommitSweepRegion region);
+  void EmitClaim(ProgramClaimRegion region);
+  void EmitRetire(ProgramRetireRegion region);
+  void EmitNetBatch(ProgramNetBatchRegion region);
   void EmitGenerate(ProgramGenerateRegion region);
   void EmitInduction(ProgramInductionRegion region);
   void EmitJoin(ProgramTableJoinRegion region);
@@ -473,6 +476,11 @@ void Generator::WalkRegion(ProgramRegion region) {
   } else if (region.IsUpdateCount()) {
     auto change = ProgramUpdateCountRegion::From(region);
     if (auto body = change.Body()) {
+      WalkRegion(*body);
+    }
+  } else if (region.IsClaim()) {
+    auto claim = ProgramClaimRegion::From(region);
+    if (auto body = claim.Body()) {
       WalkRegion(*body);
     }
   } else if (region.IsCheckMember()) {
@@ -987,6 +995,12 @@ void Generator::EmitRegion(ProgramRegion region) {
     EmitCheckMember(ProgramCheckMemberRegion::From(region));
   } else if (region.IsCommitSweep()) {
     EmitCommitSweep(ProgramCommitSweepRegion::From(region));
+  } else if (region.IsClaim()) {
+    EmitClaim(ProgramClaimRegion::From(region));
+  } else if (region.IsRetire()) {
+    EmitRetire(ProgramRetireRegion::From(region));
+  } else if (region.IsNetBatch()) {
+    EmitNetBatch(ProgramNetBatchRegion::From(region));
   } else if (region.IsTableJoin()) {
     EmitJoin(ProgramTableJoinRegion::From(region));
   } else if (region.IsTableProduct()) {
@@ -1143,24 +1157,31 @@ void Generator::EmitUpdateCount(ProgramUpdateCountRegion region) {
 
   // Differential table: one signed counter fold; every fresh log entry is
   // linked into the indexes (liveness is filtered at read time), and the
-  // crossed body runs only on a zero-crossing event.
-  const char *method = region.IsAdd() ? "AddDerivation" : "SubDerivation";
-  const char *cls =
-      region.DerivationClass() == DerivClass::kRecursive
-          ? "::hyde::rt::DerivClass::kRecursive"
-          : "::hyde::rt::DerivClass::kNonRecursive";
+  // crossed body runs only on a zero-crossing event. An explicit fold
+  // toggles the row's set-semantics message-support bit instead of moving
+  // a multiset derivation count.
+  std::string call;
+  if (region.IsExplicit()) {
+    call = (region.IsAdd() ? "AddExplicit(" : "SubExplicit(") + row + ")";
+  } else {
+    const char *method = region.IsAdd() ? "AddDerivation" : "SubDerivation";
+    const char *cls =
+        region.DerivationClass() == DerivClass::kRecursive
+            ? "::hyde::rt::DerivClass::kRecursive"
+            : "::hyde::rt::DerivClass::kNonRecursive";
+    call = std::string(method) + "(" + row + ", " + cls + ")";
+  }
 
   if (!body && !has_indexes) {
-    cc << cc.Indent() << member << "." << method << "(" << row << ", " << cls
-       << ");\n";
+    cc << cc.Indent() << member << "." << call << ";\n";
     return;
   }
 
   const auto d = "d" + std::to_string(next_ins_id++);
   cc << cc.Indent() << "{\n";
   cc.PushIndent();
-  cc << cc.Indent() << "const auto " << d << " = " << member << "." << method
-     << "(" << row << ", " << cls << ");\n";
+  cc << cc.Indent() << "const auto " << d << " = " << member << "." << call
+     << ";\n";
   if (has_indexes) {
     cc << cc.Indent() << "if (" << d << ".added_row) {\n";
     cc.PushIndent();
@@ -1191,6 +1212,8 @@ static const char *PredicateMethod(MembershipPredicate pred) {
     case MembershipPredicate::kPresent: return "Present";
     case MembershipPredicate::kRecursivelySupported:
       return "RecursivelySupported";
+    case MembershipPredicate::kNetDeleted: return "NetDeleted";
+    case MembershipPredicate::kNetAdded: return "NetAdded";
   }
   Unsupported("an unknown membership predicate");
 }
@@ -1277,6 +1300,61 @@ void Generator::EmitCommitSweep(ProgramCommitSweepRegion region) {
   cc << "#ifndef NDEBUG\n";
   cc << cc.Indent() << member << ".DebugValidateCounts();\n";
   cc << "#endif\n";
+}
+
+void Generator::EmitClaim(ProgramClaimRegion region) {
+  EmitComment(region);
+  const auto table = region.Table();
+  if (!table.IsDifferential()) {
+    Unsupported("a row claim on a monotone table");
+  }
+  const auto member = table_member[table.Id()];
+  const auto row = RowExpr(VarExprs(region.TupleVariables()));
+  const auto id = "id" + std::to_string(next_ins_id++);
+  const char *method = region.IsDelete() ? "TryClaimDel" : "TryClaimAdd";
+
+  cc << cc.Indent() << "{\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto " << id << " = " << member << ".Find("
+     << row << ");\n";
+  cc << cc.Indent() << "if (" << id << " != ::hyde::rt::kNoRow && " << member
+     << "." << method << "(" << id << ")) {\n";
+  cc.PushIndent();
+  EmitOptional(region.Body());
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+}
+
+void Generator::EmitRetire(ProgramRetireRegion region) {
+  EmitComment(region);
+  const auto table = region.Table();
+  if (!table.IsDifferential()) {
+    Unsupported("a frontier retirement on a monotone table");
+  }
+  const auto member = table_member[table.Id()];
+  const auto row = RowExpr(VarExprs(region.TupleVariables()));
+  const auto id = "id" + std::to_string(next_ins_id++);
+  const char *method = region.IsDelete() ? "RetireDel" : "RetireAdd";
+
+  cc << cc.Indent() << "{\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto " << id << " = " << member << ".Find("
+     << row << ");\n";
+  cc << cc.Indent() << "if (" << id << " != ::hyde::rt::kNoRow) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << member << "." << method << "(" << id << ");\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+}
+
+void Generator::EmitNetBatch(ProgramNetBatchRegion region) {
+  EmitComment(region);
+  cc << cc.Indent() << "::hyde::rt::NetBatch(" << VecName(region.AddVector())
+     << ", " << VecName(region.RemoveVector()) << ");\n";
 }
 
 void Generator::EmitJoin(ProgramTableJoinRegion region) {

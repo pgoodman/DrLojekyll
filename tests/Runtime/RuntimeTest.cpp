@@ -113,6 +113,43 @@ TEST(Vec, GrowsPastInlineCapacity) {
   ASSERT_EQ(v[9999].y, 19998u);
 }
 
+TEST(Vec, NetBatchNetsAddsAgainstRemoves) {
+  hyde::rt::Vec<PairRow> adds(hyde::rt::MallocAllocator());
+  hyde::rt::Vec<PairRow> removes(hyde::rt::MallocAllocator());
+
+  // Nets: {1,1} = +2, {2,2} = 0, {3,3} = -1, {4,4} = +1, {5,5} = -2.
+  adds.Add({1u, 1u});
+  adds.Add({2u, 2u});
+  adds.Add({1u, 1u});
+  adds.Add({3u, 3u});
+  adds.Add({4u, 4u});
+  removes.Add({2u, 2u});
+  removes.Add({3u, 3u});
+  removes.Add({3u, 3u});
+  removes.Add({5u, 5u});
+  removes.Add({5u, 5u});
+
+  hyde::rt::NetBatch(adds, removes);
+
+  // One copy per positive-net row, in first-appearance order.
+  ASSERT_EQ(adds.Size(), 2u);
+  ASSERT_TRUE(adds[0] == (PairRow{1u, 1u}));
+  ASSERT_TRUE(adds[1] == (PairRow{4u, 4u}));
+
+  // One copy per negative-net row; zero-net rows vanish from both.
+  ASSERT_EQ(removes.Size(), 2u);
+  ASSERT_TRUE(removes[0] == (PairRow{3u, 3u}));
+  ASSERT_TRUE(removes[1] == (PairRow{5u, 5u}));
+}
+
+TEST(Vec, NetBatchOnEmptyVectorsIsANoOp) {
+  hyde::rt::Vec<PairRow> adds(hyde::rt::MallocAllocator());
+  hyde::rt::Vec<PairRow> removes(hyde::rt::MallocAllocator());
+  hyde::rt::NetBatch(adds, removes);
+  ASSERT_TRUE(adds.Empty());
+  ASSERT_TRUE(removes.Empty());
+}
+
 TEST(Table, MonotoneTryAddDedup) {
   hyde::rt::Table<PairRow> t(hyde::rt::MallocAllocator());
 
@@ -164,15 +201,6 @@ struct RecordingSink {
     published.emplace_back(row, added);
   }
 };
-
-// Empty-vector helper for frontier retirement.
-hyde::rt::Vec<uint32_t> IdVec(std::initializer_list<uint32_t> ids) {
-  hyde::rt::Vec<uint32_t> v(hyde::rt::MallocAllocator());
-  for (uint32_t id : ids) {
-    v.Add(id);
-  }
-  return v;
-}
 
 }  // namespace
 
@@ -306,14 +334,15 @@ TEST(DiffTable, ClaimDedupAndFrontierRetirement) {
   ASSERT_FALSE(t.TryClaimDel(d.id));
 
   // While in the current frontier round, the row is alive-at-claim but no
-  // longer survives-so-far.
+  // longer survives-so-far, and it is a net deletion.
   ASSERT_FALSE(t.SurvivesSoFar(d.id));
   ASSERT_TRUE(t.AliveAtClaim(d.id));
   ASSERT_FALSE(t.InNew(d.id));
+  ASSERT_TRUE(t.NetDeleted(d.id));
+  ASSERT_FALSE(t.NetAdded(d.id));
 
-  // Retiring the round clears only the frontier bit.
-  auto round = IdVec({d.id});
-  t.RetireDelFrontier(round);
+  // Retiring the row clears only the frontier bit.
+  t.RetireDel(d.id);
   ASSERT_FALSE(t.AliveAtClaim(d.id));
 
   RecordingSink sink;
@@ -344,8 +373,7 @@ TEST(DiffTable, AddClaimAndInsertFrontierPredicates) {
   ASSERT_TRUE(t.InNewWithFrontier(d.id));
   ASSERT_FALSE(t.InNewSansFrontier(d.id));
 
-  auto round = IdVec({d.id});
-  t.RetireAddFrontier(round);
+  t.RetireAdd(d.id);
   ASSERT_TRUE(t.InNewSansFrontier(d.id));
 
   RecordingSink sink;
@@ -369,6 +397,10 @@ TEST(DiffTable, DeleteThenRederivePublishesNothing) {
   ASSERT_TRUE(t.TryClaimDel(d.id));
   ASSERT_TRUE(t.AddDerivation({6u, 6u}, DerivClass::kRecursive).crossed);
   ASSERT_TRUE(t.TryClaimAdd(d.id));
+
+  // Claimed into both D and A: neither a net deletion nor a net addition.
+  ASSERT_FALSE(t.NetDeleted(d.id));
+  ASSERT_FALSE(t.NetAdded(d.id));
 
   RecordingSink sink;
   t.Commit(sink);

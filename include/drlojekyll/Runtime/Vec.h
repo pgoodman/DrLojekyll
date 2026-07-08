@@ -13,6 +13,12 @@
 
 namespace hyde::rt {
 
+template <typename T>
+class Vec;
+
+template <typename T>
+void NetBatch(Vec<T> &adds, Vec<T> &removes);
+
 // A flat growable array with an explicit allocator. `T` must be trivially
 // copyable and trivially destructible — generated row structs are plain
 // aggregates of scalar columns, and the runtime enforces that.
@@ -108,6 +114,9 @@ class Vec {
   }
 
  private:
+  template <typename U>
+  friend void NetBatch(Vec<U> &adds, Vec<U> &removes);
+
   void Grow(void) {
     const size_t new_capacity = capacity ? capacity * 2u : 16u;
     T *new_items = allocator.AllocateArray<T>(new_capacity);
@@ -135,5 +144,45 @@ class Vec {
   size_t count{0u};
   size_t capacity{0u};
 };
+
+// Nets a differential message's explicit adds against its explicit removes
+// within one batch. Each distinct row value's net count is (#occurrences in
+// `adds`) − (#occurrences in `removes`); afterwards `adds` holds exactly one
+// copy of each row with a positive net and `removes` exactly one copy of
+// each row with a negative net. Rows appear in first-appearance order
+// (`adds` scanned first, then `removes`).
+template <typename T>
+void NetBatch(Vec<T> &adds, Vec<T> &removes) {
+  Vec<T> distinct(adds.allocator);
+  Vec<int64_t> nets(adds.allocator);
+
+  const auto fold = [&](const T &row, int64_t delta) {
+    for (size_t i = 0u; i < distinct.Size(); ++i) {
+      if (distinct[i] == row) {
+        nets.Set(i, nets[i] + delta);
+        return;
+      }
+    }
+    distinct.Add(row);
+    nets.Add(delta);
+  };
+
+  for (const T &row : adds) {
+    fold(row, +1);
+  }
+  for (const T &row : removes) {
+    fold(row, -1);
+  }
+
+  adds.Clear();
+  removes.Clear();
+  for (size_t i = 0u; i < distinct.Size(); ++i) {
+    if (nets[i] > 0) {
+      adds.Add(distinct[i]);
+    } else if (nets[i] < 0) {
+      removes.Add(distinct[i]);
+    }
+  }
+}
 
 }  // namespace hyde::rt
