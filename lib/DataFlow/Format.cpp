@@ -47,6 +47,11 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       sep = "<BR />";
     }
 
+    if (auto stratum = view.Stratum()) {
+      os << sep << "STRATUM " << *stratum;
+      sep = "<BR />";
+    }
+
     os << sep << "EQ SET " << view.EquivalenceSetId() << "</TD>";
   };
 

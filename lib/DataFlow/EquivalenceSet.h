@@ -83,6 +83,13 @@ class EquivalenceSet {
   unsigned id;
   WeakUseList<VIEW> views_in_set;
 
+  // Stratum that owns this data model's table, assigned by
+  // `QueryImpl::Stratify` on the canonical set (`Find()`): the highest
+  // stratum among the member views. When the members straddle strata, the
+  // model is additionally recorded in
+  // `QueryImpl::stratum_straddling_models`.
+  unsigned stratum{0u};
+
  private:
   static void MakeParent(EquivalenceSet *old_set, EquivalenceSet *new_parent) {
     for (auto use : old_set->views_in_set) {

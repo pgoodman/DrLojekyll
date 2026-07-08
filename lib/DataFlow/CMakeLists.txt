@@ -34,6 +34,7 @@ set(DataFlow_SRCS
     "Query.cpp"
     "Relation.cpp"
     "Select.cpp"
+    "Stratify.cpp"
     "Stream.cpp"
     "Taint.cpp"
     "Tuple.cpp"

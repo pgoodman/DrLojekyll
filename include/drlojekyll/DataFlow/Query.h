@@ -5,6 +5,7 @@
 #include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/Node.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -295,6 +296,17 @@ enum class InputColumnRole {
   kPublished,
 };
 
+// Classification of a table-inserting dataflow edge relative to the SCC
+// (stratum) of the table's data model: a row derived over a `kRecursive`
+// edge circulates on a back-edge of the table's own SCC, while a
+// `kNonRecursive` row arrives from a strictly lower stratum. The split is
+// what lets differential maintenance keep separate per-row derivation
+// counters (`C_nr`/`C_r`) for the two edge kinds.
+enum class DerivClass : uint8_t {
+  kNonRecursive,
+  kRecursive,
+};
+
 // A view into a collection of rows. The rows may be derived from a selection
 // or a join.
 class QueryViewImpl;
@@ -347,6 +359,20 @@ class QueryView : public Node<QueryView, QueryViewImpl> {
 
   unsigned EquivalenceSetId(void) const noexcept;
   UsedNodeRange<QueryView> EquivalenceSetViews(void) const;
+
+  // Stratum id of this view: the topological index of its SCC in the
+  // condensation of the dataflow graph (assigned by stratification at the
+  // end of `Query::Build`). Two views share a stratum id if and only if
+  // they are in the same SCC, and every data edge goes from a lower stratum
+  // to a higher (or the same) one; a recursive fixpoint is exactly a
+  // multi-view stratum.
+  std::optional<unsigned> Stratum(void) const noexcept;
+
+  // Derivation class of the table-inserting edge from this (deriving) view
+  // into the table backing `target`'s data model: `kRecursive` iff this
+  // view shares an SCC with any view of that data model, else
+  // `kNonRecursive`.
+  DerivClass DerivationClassInto(QueryView target) const noexcept;
 
   // Is this view constant after the initialization of the program? This is
   // computed at the end of building the dataflow graph, and helps us optimize
@@ -932,6 +958,10 @@ class Query {
   ~Query(void);
 
   ::hyde::ParsedModule ParsedModule(void) const noexcept;
+
+  // Number of strata (SCCs of the dataflow condensation) assigned by
+  // stratification; `QueryView::Stratum` ids range over `[0, NumStrata())`.
+  unsigned NumStrata(void) const noexcept;
 
   DefinedNodeRange<QueryJoin> Joins(void) const;
   DefinedNodeRange<QuerySelect> Selects(void) const;

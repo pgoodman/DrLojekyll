@@ -248,6 +248,28 @@ UsedNodeRange<QueryView> QueryView::EquivalenceSetViews(void) const {
   }
 }
 
+// Stratum id of this view: the topological index of its SCC in the
+// condensation of the dataflow graph, assigned by `QueryImpl::Stratify`.
+std::optional<unsigned> QueryView::Stratum(void) const noexcept {
+  return impl->stratum;
+}
+
+// Derivation class of the table-inserting edge from this (deriving) view
+// into the table backing `target`'s data model: `kRecursive` iff this view
+// shares an SCC with any view of that data model (the rows this view derives
+// then circulate on a back-edge of the table's own SCC), else
+// `kNonRecursive` (they arrive from outside it).
+DerivClass QueryView::DerivationClassInto(QueryView target) const noexcept {
+  assert(impl->stratum.has_value());
+  assert(target.impl->equivalence_set != nullptr);
+  for (VIEW *member : target.impl->equivalence_set->Find()->views_in_set) {
+    if (member->stratum == impl->stratum) {
+      return DerivClass::kRecursive;
+    }
+  }
+  return DerivClass::kNonRecursive;
+}
+
 bool QueryView::IsConstantAfterInitialization(void) const noexcept {
   return impl->is_const_after_init;
 }
@@ -1817,6 +1839,12 @@ Query::~Query(void) {}
 
 ::hyde::ParsedModule Query::ParsedModule(void) const noexcept {
   return impl->module;
+}
+
+// Number of strata (SCCs of the dataflow condensation) assigned by
+// stratification.
+unsigned Query::NumStrata(void) const noexcept {
+  return impl->num_strata;
 }
 
 }  // namespace hyde

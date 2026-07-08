@@ -7,36 +7,59 @@
 
 namespace hyde {
 
-// Identify which data flows can receive and produce deletions.
-void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
-                                         bool report_message_errors) const {
+// Enumerate the INSERT -> SELECT seams of the dataflow: pairs where a
+// SELECT reads the same declaration (relation or message stream) that an
+// INSERT writes. These are dataflow edges that are not expressed as column
+// edges.
+void QueryImpl::ForEachInsertToSelectSeam(
+    std::function<void(QueryInsertImpl *, QuerySelectImpl *)> cb) const {
 
   std::unordered_map<ParsedDeclaration, std::vector<SELECT *>> decl_to_selects;
-
-  std::unordered_map<INSERT *, std::vector<SELECT *>> insert_to_selects;
-
-  const_cast<const QueryImpl *>(this)->ForEachView([](VIEW *v) {
-    v->can_receive_deletions = false;
-    v->can_produce_deletions = false;
-  });
 
   for (auto select : selects) {
     if (auto rel = select->relation.get(); rel) {
       decl_to_selects[rel->declaration].push_back(select);
     } else if (auto stream = select->stream.get(); stream) {
       if (auto input = stream->AsIO(); input) {
-        if (ParsedMessage::From(input->declaration).IsDifferential()) {
-          select->can_receive_deletions = true;
-          select->can_produce_deletions = true;
-        }
         decl_to_selects[input->declaration].push_back(select);
       }
     }
   }
 
   for (auto insert : inserts) {
-    for (auto select : decl_to_selects[insert->declaration]) {
-      insert_to_selects[insert].push_back(select);
+    if (auto it = decl_to_selects.find(insert->declaration);
+        it != decl_to_selects.end()) {
+      for (auto select : it->second) {
+        cb(insert, select);
+      }
+    }
+  }
+}
+
+// Identify which data flows can receive and produce deletions.
+void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
+                                         bool report_message_errors) const {
+
+  std::unordered_map<INSERT *, std::vector<SELECT *>> insert_to_selects;
+  ForEachInsertToSelectSeam([&insert_to_selects](INSERT *insert,
+                                                 SELECT *select) {
+    insert_to_selects[insert].push_back(select);
+  });
+
+  const_cast<const QueryImpl *>(this)->ForEachView([](VIEW *v) {
+    v->can_receive_deletions = false;
+    v->can_produce_deletions = false;
+  });
+
+  // Receives of a `@differential` message are differential at the source.
+  for (auto select : selects) {
+    if (auto stream = select->stream.get(); stream) {
+      if (auto input = stream->AsIO(); input) {
+        if (ParsedMessage::From(input->declaration).IsDifferential()) {
+          select->can_receive_deletions = true;
+          select->can_produce_deletions = true;
+        }
+      }
     }
   }
 

@@ -8,6 +8,7 @@
 #include <drlojekyll/Util/DefUse.h>
 
 #include <cassert>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -543,6 +544,13 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // IR, but it's nifty for debugging.
   std::optional<unsigned> table_id;
 
+  // Stratum id of this view, assigned by `QueryImpl::Stratify`: the
+  // topological index of this view's SCC in the condensation of the dataflow
+  // graph. Two views share a stratum id if and only if they are in the same
+  // SCC; every data edge goes from a lower stratum to a higher (or the same)
+  // one.
+  std::optional<unsigned> stratum;
+
   // Information about if this is inductive.
   std::unique_ptr<InductionInfo> induction_info;
 
@@ -1028,6 +1036,22 @@ class QueryImpl {
   void TrackDifferentialUpdates(const ErrorLog &log,
                                 bool report_message_errors = false) const;
 
+  // Enumerate the INSERT -> SELECT seams of the dataflow: pairs where a
+  // SELECT reads the same declaration (relation or message stream) that an
+  // INSERT writes. These are dataflow edges that are not expressed as column
+  // edges; `TrackDifferentialUpdates` propagates differential capability
+  // across them and `Stratify` includes them in its SCC condensation.
+  void ForEachInsertToSelectSeam(
+      std::function<void(QueryInsertImpl *, QuerySelectImpl *)> cb) const;
+
+  // Stratify the dataflow: compute the SCC condensation of the view graph,
+  // assign each view (and each data model) a topological stratum id, and
+  // warn about unstratified negation (a NEGATE whose negated view lies
+  // inside the NEGATE's own SCC). Runs after `IdentifyInductions` (so the
+  // SCC structure can be cross-checked against `InductionInfo`) and after
+  // `BuildEquivalenceSets` (so data models exist to receive strata).
+  void Stratify(void);
+
   // Track which views are constant after initialization.
   // See `VIEW::is_const_after_init`.
   void TrackConstAfterInit(void) const;
@@ -1095,6 +1119,17 @@ class QueryImpl {
 
   std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> forwards_col_taints;
   std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> backwards_col_taints;
+
+  // Number of strata (SCCs of the condensation) assigned by `Stratify`;
+  // view/model stratum ids range over `[0, num_strata)`.
+  unsigned num_strata{0u};
+
+  // Data models whose member views land in more than one stratum, recorded
+  // by `Stratify` (canonical equivalence sets, ordered by id). Such a model's
+  // table is owned by the highest stratum among its views; the control-flow
+  // build must treat lower-stratum views' insertions into it as seeds of that
+  // owning stratum.
+  std::vector<EquivalenceSet *> stratum_straddling_models;
 };
 
 using COL = QueryColumnImpl;
