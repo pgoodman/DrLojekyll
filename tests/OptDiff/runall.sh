@@ -8,6 +8,9 @@
 #
 # Environment:
 #   DR       path to the drlojekyll compiler         (required, except --bless)
+#   ORACLE   path to the drlojekyll-oracle binary    (default: the
+#            drlojekyll-oracle next to $DR; built via
+#            `cmake --build <builddir> --target drlojekyll-oracle` if missing)
 #   CXX      C++ compiler                            (default: clang++)
 #   TIMEOUT  per-stage timeout in seconds            (default: 120)
 #
@@ -19,10 +22,14 @@
 #     elimination is a dataflow optimization).
 #   every other case — diffrun.sh must pass: all 4 modes compile, build,
 #     run, and match goldens/<case>.stdout.
+#   any case with a cases/<name>.batches sidecar additionally runs the
+#     derivation-counter oracle (drlojekyll-oracle <case.dr> <case.batches>);
+#     its stdout is byte-compared against goldens/<name>.oracle.stdout.
 #
 # Blessing: goldens are updated ONLY by an explicit --bless invocation, after
 # reviewing the outputs of a run — never automatically on failure. --bless
-# copies each case's opt-mode stdout out of <workroot> into goldens/.
+# copies each case's opt-mode stdout out of <workroot> into goldens/, and
+# each case's oracle stdout into goldens/<name>.oracle.stdout.
 #
 # Prints "SUITE: PASS (<n> cases)" and exits 0 iff every case meets its
 # expectation; otherwise prints the failing verdict lines and exits 1.
@@ -45,6 +52,12 @@ if [ "${1:-}" = "--bless" ]; then
       echo "blessed $name"
       n=$((n + 1))
     fi
+    osrc="$d$name.oracle/stdout"
+    if [ -f "$osrc" ]; then
+      cp "$osrc" "$HERE/goldens/$name.oracle.stdout"
+      echo "blessed $name.oracle"
+      n=$((n + 1))
+    fi
   done
   # kvindex_1 runs outside diffrun.sh, so its workdir layout is flat.
   if [ -f "$WORKROOT/kvindex_1.opt/stdout" ] \
@@ -60,6 +73,9 @@ fi
 : "${DR:?set DR to the drlojekyll compiler path}"
 case $DR in /*) ;; *) DR=$(pwd)/$DR ;; esac
 export DR
+ORACLE=${ORACLE:-$(dirname "$DR")/drlojekyll-oracle}
+case $ORACLE in /*) ;; *) ORACLE=$(pwd)/$ORACLE ;; esac
+export ORACLE
 export CXX=${CXX:-clang++}
 export TIMEOUT=${TIMEOUT:-120}
 
@@ -124,6 +140,32 @@ if [ "${1:-}" = "--one" ]; then
     return 0
   }
 
+  run_oracle() {  # oracle step: any case with a .batches sidecar runs the
+                  # derivation-counter oracle against its own golden
+    batches="$HERE/cases/$NAME.batches"
+    if [ ! -f "$batches" ]; then
+      return 0
+    fi
+    out="$WORKROOT/$NAME/$NAME.oracle"
+    mkdir -p "$out"
+    if ! timeout "$TIMEOUT" "$ORACLE" "$DRC" "$batches" \
+        >"$out/stdout" 2>"$out/stderr"; then
+      echo "$NAME oracle ORACLE-FAIL"
+      return 1
+    fi
+    if [ ! -f "$HERE/goldens/$NAME.oracle.stdout" ]; then
+      echo "$NAME oracle GOLDEN-MISSING"
+      return 1
+    fi
+    if ! cmp -s "$HERE/goldens/$NAME.oracle.stdout" "$out/stdout"; then
+      echo "$NAME oracle GOLDEN-DIVERGE"
+      return 1
+    fi
+    echo "$NAME oracle OK"
+    return 0
+  }
+
+  st=0
   case $NAME in
     aggregate_1|kvindex_2|kvindex_3|kvindex_4)
       for mode in opt nodf nocf none; do
@@ -139,16 +181,31 @@ if [ "${1:-}" = "--one" ]; then
       echo "$NAME modesplit OK"
       ;;
     *)
-      exec "$HERE/diffrun.sh" "$DRC" "$DRV" "$WORKROOT/$NAME"
+      "$HERE/diffrun.sh" "$DRC" "$DRV" "$WORKROOT/$NAME" || st=1
       ;;
   esac
-  exit 0
+  run_oracle || st=1
+  exit $st
 fi
 
 # ---- parallel driver ----
 WORKROOT=${1:?usage: runall.sh <workroot> [jobs] [name-filter-regex]}
 JOBS=${2:-6}
 FILTER=${3:-.}
+
+# Build the oracle if it is missing (it lives in the same build tree as DR).
+if [ ! -x "$ORACLE" ]; then
+  builddir=$(dirname "$ORACLE")/..
+  echo "building drlojekyll-oracle in $builddir"
+  if ! cmake --build "$builddir" --target drlojekyll-oracle >/dev/null; then
+    echo "FATAL: cannot build drlojekyll-oracle; set ORACLE= explicitly"
+    exit 1
+  fi
+fi
+if [ ! -x "$ORACLE" ]; then
+  echo "FATAL: oracle binary not found at $ORACLE; set ORACLE= explicitly"
+  exit 1
+fi
 
 mkdir -p "$WORKROOT"
 WORKROOT=$(cd "$WORKROOT" && pwd)

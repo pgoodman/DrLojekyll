@@ -1,0 +1,23 @@
+# Transcribed from optimize_6.main.cpp: 4 batches, in driver order.
+
+batch
++ add_edge 1 2
++ add_edge 2 3
++ add_edge 4 5
+end
+
+batch
++ input 1
++ input 2
+end
+
+# mixed: add {7,8}, delete earlier edge {2,3}
+batch
++ add_edge 7 8
+- add_edge 2 3
+end
+
+batch
+- add_edge 4 5
+- add_edge 7 8
+end

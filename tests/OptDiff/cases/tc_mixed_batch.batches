@@ -1,0 +1,13 @@
+# Transcribed from tc_mixed_batch.main.cpp: seed edge = {(1,2),(1,4),(4,5)},
+# then one mixed batch removing edge(1,2) and adding edge(2,5). Expected
+# final t: {(1,4),(1,5),(2,5),(4,5)} — t(1,5) survives on its untouched
+# support (t(1,4), edge(4,5)); this is the §5.1.1 worked example.
+batch
++ edge_msg 1 2
++ edge_msg 1 4
++ edge_msg 4 5
+end
+batch
++ edge_msg 2 5
+- edge_msg 1 2
+end

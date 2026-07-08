@@ -1,0 +1,19 @@
+# Transcribed from select_6.main.cpp: 3 batches, in driver order.
+
+batch
++ log_in 1
++ log_in 2
+end
+
+batch
++ boot 2
++ boot 4
+end
+
+# mixed: add 3; remove 1 (log_in-only support, vanishes) and 2 (boot
+# support survives)
+batch
++ log_in 3
+- log_in 1
+- log_in 2
+end

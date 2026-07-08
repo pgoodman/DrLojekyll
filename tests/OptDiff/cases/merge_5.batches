@@ -1,0 +1,26 @@
+# Transcribed from merge_5.main.cpp: 5 batches, in driver order.
+# Round 1: base data, no denials.
+batch
++ a 1
++ a 2
+end
+
+batch
++ b 2
++ b 3
+end
+
+# Round 2: deny 2 through da.
+batch
++ da 2
+end
+
+# Round 3: retract the da denial, then deny 3 through db (two calls =
+# two batches).
+batch
+- da 2
+end
+
+batch
++ db 3
+end

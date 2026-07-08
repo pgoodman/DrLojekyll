@@ -1,0 +1,29 @@
+# Transcribed from tower_of_compares.main.cpp: 5 driver sends = 5 batches.
+# The @differential message is named "remove" but its added-vec INSERTS rows
+# (entry_3(A,1,2) : remove(A)); batch 4 is its removed vec retracting {0}.
+# Batch 5 re-inserts add_entry(1,2,3), a duplicate of a batch-1 row.
+
+batch
++ add_entry 1 2 3
++ add_entry 2 5 1
++ add_entry 3 4 5
++ add_entry 5 2 6
+end
+
+batch
++ add_entry2 4
+end
+
+batch
++ remove 0
++ remove -3
+end
+
+batch
+- remove 0
+end
+
+batch
++ add_entry -2 -1 0
++ add_entry 1 2 3
+end

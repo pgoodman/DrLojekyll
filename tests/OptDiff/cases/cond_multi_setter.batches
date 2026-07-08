@@ -1,0 +1,30 @@
+# Transcribed from cond_multi_setter.main.cpp: 6 batches, in driver order.
+# Two setter clauses for condition c; alternating setter support.
+
+batch
++ add_item 1
++ add_item 2
++ add_item 3
+end
+
+batch
++ add_a 10
+end
+
+batch
++ add_b 20
+end
+
+# a retracted while b still supports c
+batch
+- add_a 10
+end
+
+# last setter support gone: c flips false
+batch
+- add_b 20
+end
+
+batch
++ add_a 30
+end

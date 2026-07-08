@@ -388,7 +388,16 @@ cases, debug build, cross-check asserts active; these gate Stage 3):
    fixed_function_head → modified_function_type → type_name`. No other file
    hits (the `negate_*` and `cond_in_induction*` candidates are all clean:
    their negations/conditions read strictly lower strata).
-   **§11 Q1 needs an owner decision before Stage 3.**
+   **§11 Q1 decision (owner, 2026-07-07): reject.** Nothing has ever
+   enforced stratification (`docs/Language.md` claims it; no check existed
+   before Stratify) — an in-SCC negation flows through
+   `GetOrInitInduction` into the induction's cycle vectors and computes
+   whatever fixpoint dequeue order produces. That is an operational
+   semantics: the programmer, not the engine, carries the convergence
+   argument, exactly as in any Turing-complete language — it works until
+   it doesn't. The diagnostic hardens to an error at Stage 3; a
+   stratified rewrite of `evm_func_parse.dr` is attempted there, and the
+   file moves to the feature-gap list if the rewrite fails.
 2. **`disassemble.dr` stratifies cleanly** (verified explicitly): its
    NEGATE sits at stratum 14 reading a lower stratum, while the recursive
    `function_instructions` union is stratum 21 — the lower-stratum-negation
@@ -473,35 +482,115 @@ noted above):
 Gate: ctest 3/3; full suite `SUITE: PASS` all 4 modes, goldens
 byte-identical; audit report exists; `disassemble` stratifies clean.
 
-## Stage 2 — reference counting oracle
+## Stage 2 — reference counting oracle (DONE)
 
-An interpreter over the dataflow IR implementing §5 directly (maps of
-row → `(C_nr, C_r)` per table; the seed/fixpoint schemas as literal loops;
-a few hundred lines). Guards Stages 3–5 permanently.
+Landed: `bin/Oracle/Main.cpp` (target `drlojekyll-oracle`, registered in
+`bin/CMakeLists.txt`; links DataFlow/Display/Lex/Parse/Util only — it
+interprets the dataflow IR, never the control-flow IR); 24
+`tests/OptDiff/cases/<name>.batches` sidecars transcribed from the
+differential drivers; the oracle execution step in `runall.sh` (any case
+with a `.batches` sidecar runs
+`drlojekyll-oracle <case.dr> <case.batches>`, byte-compared against
+`goldens/<name>.oracle.stdout`; `--bless` promotes oracle stdouts; the
+oracle binary is auto-built if missing; `ORACLE=` env override); 24 oracle
+goldens blessed after semantic review.
 
-1. **S2.1 harness decision (owner sign-off)**: OptDiff drivers hardcode
-   batches in C++ `main.cpp`, so the oracle needs the batch data in an
-   executable-independent form. Recommended: a tiny batch DSL
-   (`+msg args… / -msg args… / commit / query name bindings args…`) in
-   `tests/OptDiff/cases/<name>.batches`, consumed by (i) the oracle binary
-   and (ii) a shared driver-side replay helper, migrating only the
-   differential cases' drivers (audit the count first; monotone cases keep
-   their drivers untouched). The alternative — teaching the oracle to
-   parse driver C++ — is rejected.
-2. **S2.2 oracle binary** (`bin/oracle/` or a `drlojekyll` flag; linked
-   against `lib/DataFlow`): loads the `.dr`, builds the query (optimized
-   mode), evaluates per §5 with from-scratch semi-naive as the base,
-   prints in the drivers' output format.
-3. **S2.3 runall.sh variant**: differential cases gain a 5th execution
-   variant compared against the same golden.
-4. **S2.4 pre-swap validation**: run the oracle against the *current*
-   compiler's goldens. Any disagreement is a latent all-modes-wrong
-   compiler bug (F11/F15's escape route) or an oracle/semantics
-   misunderstanding — resolved (FINDINGS.md entry or oracle fix) before
-   Stage 3.
+**Deviations from the plan as written:**
 
-Gate: oracle agrees with every differential golden (or documented,
-resolved findings); suite green.
+- **S2.1**: the `.batches` DSL is ops-only (`batch … end` blocks of
+  `+/-msg values`; one block = one §5.0 epoch). No `commit`/`query`
+  directives and no driver-side replay helper: sidecars are transcribed
+  from the drivers (adopted owner decision 4 below), the oracle prints its
+  own canonical final relation dump, and interleaved driver dumps remain
+  covered by the compiled golden while the oracle's per-batch
+  incremental-vs-from-scratch assertions referee every intermediate state.
+- **S2.2**: the oracle builds the UNOPTIMIZED dataflow
+  (`Query::Build(…, optimize=false)`) for maximal independence from the
+  optimizer, and materializes per VIEW (finer than per-table; data-model
+  merging is deliberately not modeled, so it does not referee decision 2
+  directly — a Stage 3 ownership bug still surfaces as a view-level
+  presence/counter mismatch).
+- **S2.3**: the oracle is compared against its own golden
+  (`<name>.oracle.stdout`), not the driver-format golden — driver output
+  formats are per-case and interleaved; the semantic comparison against
+  the compiled goldens was performed by hand (table below).
+
+**Adopted owner decisions (provisional, recommended defaults):**
+
+1. In-SCC negation is REJECTED (the Stratify warning hardens to an error
+   at Stage 3; `evm_func_parse.dr` gets a rewrite attempt there). The
+   oracle refuses such programs with a clean diagnostic.
+2. Table phase ownership: the model's unique multi-view stratum owns
+   D/R/I when one exists, else the highest member stratum.
+3. Same-batch explicit add+remove of one fact NETS TO ZERO at ingest
+   (§5.0) — deterministic, diverging from today's order-dependent
+   outcome; `negation_flap` flap B is the known, expected divergence.
+4. Oracle inputs come from `.batches` sidecars transcribed from drivers;
+   compiled-side validation at Stage 3 uses an in-DB debug recount
+   (`DebugValidateCounts`), not batch extraction.
+
+**S2.4 cross-check vs the compiled goldens** (oracle final state vs the
+final dump implied by `goldens/<name>.stdout`): 22 of 24 transcribed cases
+agree exactly. The two divergences:
+
+- `negation_flap` — expected (decision 3): both flaps net to zero in the
+  oracle (`visible = {1,3}`); the committed golden's flap B lets the
+  removal win (`visible = {1,2,3}`). Re-bless at Stage 3.
+- `transitive_closure_diff` — **latent compiler bug of the
+  all-modes-identically-wrong class (the F11/F15 escape route), found by
+  the oracle**: after the batch `+{(4,7),(8,1)} −{(2,3)}` the edge set is
+  the acyclic chain 3→4→7→8→1→2, yet the golden's round 2 retains a
+  self-supporting closure residue (e.g. `from 1: 1 2 4 7 8`; truth:
+  `from 1: 2`). The non-linear rule `tc(F,T) : tc(F,X), tc(X,T)` lets
+  old-cycle closure rows mutually re-prove each other through the
+  kUnknown→kAbsent recheck; the linear formulation
+  (`transitive_closure_diff2`, same batches) matches the oracle
+  row-for-row. Exactly the "no spurious tuples" property the C_nr/C_r
+  split enforces structurally. Verdict: compiler wrong, oracle right
+  (both oracle paths agree and match hand computation).
+  `transitive_closure_diff.stdout` joins `negation_flap.stdout` on the
+  Stage 3 re-bless list; neither golden was touched now.
+
+**Proposal errata found by implementing §5 literally** (code follows the
+proposal unless noted; wording fixes for a future proposal edit):
+
+1. §5.0 netting is unspecified for multi-op nets on one row (e.g.
+   `{+,+,−}`): the oracle uses the arithmetic net sign; `kExplicit` stays
+   one set-semantics bit, so a net of +2 is one `AddExplicit`.
+2. §5.2's seed `SubDerivation(head(F), class(edge))` is ambiguous per
+   position; the only reading consistent with net-exact per-class counts
+   (and with the fixpoint's hardcoded `kRecursive`) is the RULE's fixed
+   class: recursive iff any body atom's `DerivationClassInto(head)` is
+   recursive. Implemented so.
+3. §3.1's `crossed` on `SubDerivation` fires on EVERY decrement of an
+   in-I row with `C_nr ≤ 0`, not only a sign crossing (intended per §5.2;
+   the field name is a footgun; duplicate enqueues absorbed by
+   `TryClaimDel`).
+4. §5.4's crossover silently relies on the negation key spanning the
+   negated view's entire row (true in this IR); partial-key negation
+   would over-fire it.
+5. §5.5 Commit clears only `kDel|kAdd`; clearing all four claim/frontier
+   flags is the safe spelling (the oracle does).
+6. §5 is phrased per-table; per-view counting is finer and sound.
+7. `DerivationClassInto` on straddling models can classify an edge from a
+   strictly-lower-stratum view as kRecursive (deriving view shares an SCC
+   with *some* member of the target's model); sound (seed subs complete
+   before REDERIVE's read), but `C_r` is then not strictly "back-edge
+   arrivals of the row's own SCC" — Stage 3 note.
+
+**Adversarial audit + stress**: the oracle's `SeedReads`/`FixReads` were
+verified line-by-line against §5.1's two read-state tables and the §3.1
+crossing predicates; `tc_mixed_batch` and `two_hop_phantom` were traced by
+hand through the code, reproducing §5.1.1's worked counter values at every
+phase boundary (including the transient `C_nr(h(2,9)) = −1` phantom dip
+that commits at exactly 0). Stress: seeds 1–30 × 25 rounds on
+`tc_mixed_batch`, `two_hop_phantom`, `negation_flap`,
+`tc_nonlinear_diff`, `cond_both_polarities` — 150/150 clean,
+~6.1M assertions.
+
+Gate results: ctest 3/3; full suite `SUITE: PASS` (132 cases × 4 modes +
+24 oracle steps); zero modifications to existing goldens (the 24
+`.oracle.stdout` files are new).
 
 ## Stage 3 — the swap (one landing; checkpoints a–e)
 

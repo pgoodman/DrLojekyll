@@ -1,0 +1,69 @@
+# Transcribed from cond_diff_flipflop.main.cpp: 15 batches, in driver order.
+# Gate flip-flop: 4 open/close cycles, partial retraction, two same-batch swaps.
+
+batch
++ item 1
++ item 2
+end
+
+batch
++ support 10
+end
+
+batch
++ item 3
+end
+
+batch
+- item 2
+end
+
+batch
+- support 10
+end
+
+batch
++ item 4
+end
+
+batch
+- item 3
+end
+
+batch
++ support 20
+end
+
+# same-batch item swap while gate open: add 5, retract 1
+batch
++ item 5
+- item 1
+end
+
+batch
+- support 20
+end
+
+batch
++ support 30
++ support 40
+end
+
+# partial retraction: 40 remains, gate stays open
+batch
+- support 30
+end
+
+# same-batch support swap: gate stays open
+batch
++ support 50
+- support 40
+end
+
+batch
+- support 50
+end
+
+batch
++ support 10
+end

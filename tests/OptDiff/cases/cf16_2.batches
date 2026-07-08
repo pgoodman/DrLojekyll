@@ -1,0 +1,29 @@
+# Transcribed from cf16_2.main.cpp: five add_edge batches driving the
+# symmetric-pair join. Symmetry of 1<->2 is broken (batch 3) and restored
+# (batch 4); the 5,5 self-loop and the 3<->4 pair are removed. Final
+# symmetric = {(1,2),(2,1)}. The driver's six interleaved cursor dumps
+# (mid-run flip-flops) are not expressible in a final-state sidecar.
+batch
++ add_edge 1 2
++ add_edge 2 1
++ add_edge 3 4
+end
+# completes (3,4)/(4,3); self-loop
+batch
++ add_edge 4 3
++ add_edge 5 5
+end
+# breaks symmetry of 1<->2
+batch
+- add_edge 2 1
+end
+# restore one, remove self-loop
+batch
++ add_edge 2 1
+- add_edge 5 5
+end
+# remove both directions of 3<->4
+batch
+- add_edge 3 4
+- add_edge 4 3
+end

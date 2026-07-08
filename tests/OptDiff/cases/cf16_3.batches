@@ -1,0 +1,23 @@
+# Transcribed from cf16_3.main.cpp: transitive closure with a cycle
+# 2->3->4->2 formed then broken. Final edges = {(1,2),(2,3),(4,2)}, so
+# reachable = {(1,2),(1,3),(2,3),(4,2),(4,3)}. The driver's five
+# interleaved bound-probe dumps over the 5x5 grid (mid-run cycle-break
+# state) are not expressible in a final-state sidecar.
+batch
++ add_edge 1 2
++ add_edge 2 3
+end
+# creates a cycle 2->3->4->2
+batch
++ add_edge 3 4
++ add_edge 4 2
+end
+# breaks the chain and the cycle
+batch
+- add_edge 2 3
+end
+# re-add one, remove another
+batch
++ add_edge 2 3
+- add_edge 3 4
+end

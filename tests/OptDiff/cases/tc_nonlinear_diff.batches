@@ -1,0 +1,19 @@
+# Transcribed from tc_nonlinear_diff.main.cpp, PART 1 ONLY: the deterministic
+# same-batch add+remove removal-cascade hazard (2 batches on one database).
+#
+# Part 2 of the driver constructs 12 FRESH Database instances (seeds 1..12)
+# and feeds each 40 PRNG-generated batches; one sidecar file addresses one
+# database, so those 480 batches cannot live here. They are validated by
+# expanding the driver's PRNG offline (same LCG, same std::set iteration
+# order) into per-seed batch files and running each through the oracle.
+
+batch
++ add_edge 3 1
++ add_edge 1 1
++ add_edge 4 3
+end
+
+batch
++ add_edge 2 3
+- add_edge 1 1
+end

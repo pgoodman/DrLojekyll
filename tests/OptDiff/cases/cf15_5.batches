@@ -1,0 +1,22 @@
+# Transcribed from cf15_5.main.cpp. The driver dumps 4 times (once on the
+# empty DB before any batch, then after each batch), mixing a cursor scan
+# (all_reach_ff) with a 5x5 bound-probe grid (is_reach_bb); only the final
+# state is checked here.
+
+# round1
+batch
++ add_edge 1 2
++ add_edge 2 3
++ add_edge 3 4
+end
+
+# round2
+batch
++ add_edge 5 1
+- add_edge 2 3
+end
+
+# round3
+batch
+- add_edge 1 2
+end

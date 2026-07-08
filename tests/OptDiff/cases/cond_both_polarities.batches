@@ -1,0 +1,47 @@
+# Transcribed from cond_both_polarities.main.cpp: ten batches — four
+# non-differential data batches (add_r x2, add_s x2) interleaved with six
+# single-row differential condition flips of c1/c2 support facts.
+# Final gate state c1=0 c2=0: pos_neg/both_pos empty, mixed = s = {10,11,12}
+# (row 12 arrived while !c1 was false and appears only once !c1 holds
+# again). The driver's nine interleaved cursor dumps (mid-run gate-state x
+# data-arrival orderings) are not expressible in a final-state sidecar.
+batch
++ add_r 1
++ add_r 2
+end
+batch
++ add_s 10
++ add_s 11
+end
+# c1 := on
+batch
++ set_c1 100
+end
+# new r row flows through the open gates
+batch
++ add_r 3
+end
+# c2 := on
+batch
++ set_c2 200
+end
+# c1 := off
+batch
+- set_c1 100
+end
+# c2 := off
+batch
+- set_c2 200
+end
+# reopen c1
+batch
++ set_c1 100
+end
+# arrives while !c1 is false: must NOT reach mixed
+batch
++ add_s 12
+end
+# final: c1 := off
+batch
+- set_c1 100
+end

@@ -1,0 +1,5 @@
+ORACLE: OK (5 batches, 847 assertions)
+user_is_logged_in	1
+user_is_logged_in	2
+user_is_logged_in	3
+user_is_logged_in	4

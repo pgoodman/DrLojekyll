@@ -1,0 +1,18 @@
+# Transcribed from cf13_1.main.cpp. The driver dumps the q_f cursor after
+# each batch (3 interleaved dumps); only the final state is checked here.
+
+batch
++ add 1
++ add 2
++ add 3
+end
+
+batch
++ add 4
+- add 2
+end
+
+batch
+- add 1
+- add 4
+end

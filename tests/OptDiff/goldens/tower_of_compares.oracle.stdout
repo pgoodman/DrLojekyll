@@ -1,0 +1,6 @@
+ORACLE: OK (5 batches, 1308 assertions)
+entry_1	-3 1
+entry_1	-2 -1
+entry_1	1 2
+entry_1	3 4
+entry_1	4 4

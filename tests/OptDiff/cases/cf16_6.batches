@@ -1,0 +1,27 @@
+# Transcribed from cf16_6.main.cpp: mixes non-differential add_user with
+# differential log_in through the zero-arity condition is_logged_in. The
+# log_in(4) fact only sets the condition once user(4) exists (batch 5).
+# Final: condition true via (4, user 4), users {1,2,3,4} all logged in.
+# The driver's six interleaved bound probes (the condition-false middle
+# state) are not expressible in a final-state sidecar.
+batch
++ add_user 1
++ add_user 2
++ add_user 3
+end
+# condition true: user 2 logs in
+batch
++ log_in 2
+end
+# condition false again
+batch
+- log_in 2
+end
+# login by a non-user does not set the condition
+batch
++ log_in 4
+end
+# now user 4 exists and its login sets the condition
+batch
++ add_user 4
+end

@@ -1,0 +1,25 @@
+# Transcribed from negation_flap.main.cpp: items {1,2,3}, blocker {2}, then
+# two same-batch add+remove flaps of a blocker fact. Under the oracle's
+# ingest-netting contract (StackSafeNegation.md §5.0/§5.5, provisional
+# owner decision 3) BOTH flaps net to zero, so blocker(2) stays present and
+# the final visible set is {1, 3}. This DIVERGES from the compiled golden,
+# where the removal wins flap B's dequeue race and visible ends {1, 2, 3}.
+batch
++ item 1
++ item 2
++ item 3
+end
+batch
++ blocker 2
+end
+# Flap A: add+remove of blocker(3), never previously present: nets to zero.
+batch
++ blocker 3
+- blocker 3
+end
+# Flap B: add+remove of blocker(2), which IS present: nets to zero (the
+# documented divergence — today's engine removes it).
+batch
++ blocker 2
+- blocker 2
+end

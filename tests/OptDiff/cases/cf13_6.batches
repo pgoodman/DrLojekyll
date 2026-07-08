@@ -1,0 +1,27 @@
+# Transcribed from cf13_6.main.cpp. The driver interleaves 3 dumps (a
+# bound probe chk_b over 0..5 plus a cursor scan all_f); the mid-run
+# cross-support state (t(2) surviving via b after a removes 2) is only
+# visible in that interleaved output — only the final state is checked
+# here.
+
+batch
++ a 1
++ a 2
+end
+
+batch
++ b 2
++ b 3
+end
+
+# t(2) still supported via b.
+batch
+- a 2
+end
+
+# t = {1, 4}.
+batch
++ b 4
+- b 2
+- b 3
+end

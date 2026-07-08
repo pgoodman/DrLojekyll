@@ -1,0 +1,31 @@
+# Transcribed from booleans_diff.main.cpp. The driver dumps a bound probe
+# (user_is_logged_in_b over ids 1..6) before any batch and after every
+# batch; those interleaved query points are not representable here — only
+# the final state is checked.
+
+# Round 1: add users.
+batch
++ add_user 1
++ add_user 2
++ add_user 3
+end
+
+# Round 1: log one user in.
+batch
++ log_in 2
+end
+
+# Round 2: extend the user set.
+batch
++ add_user 4
+end
+
+# Round 2: log in an id that is not a user.
+batch
++ log_in 5
+end
+
+# Round 2: differentially retract the only real login.
+batch
+- log_in 2
+end

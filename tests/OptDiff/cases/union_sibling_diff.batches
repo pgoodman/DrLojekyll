@@ -1,0 +1,29 @@
+# Transcribed from union_sibling_diff.main.cpp: 6 driver sends = 6 batches.
+# Batch 3 removes a(1) while b(1) still supports out(1) (sibling survival);
+# batch 4 removes the last support; batch 5 re-adds through a.
+
+batch
++ a 1
++ a 2
+end
+
+batch
++ b 1
++ b 3
+end
+
+batch
+- a 1
+end
+
+batch
+- b 1
+end
+
+batch
++ a 1
+end
+
+batch
+- a 2
+end

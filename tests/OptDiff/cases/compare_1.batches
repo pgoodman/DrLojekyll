@@ -1,0 +1,17 @@
+# Transcribed from compare_1.main.cpp: two add_pair batches. Final pairs =
+# {(1,2),(3,3),(5,5),(2,2)}; q_eq keeps the X=Y diagonal {2,3,5}; q_lt is
+# always empty (X<Y over a fused column is unsatisfiable). The driver's
+# compile-time requires-expression probe for the optimizer-dropped q_lt
+# entry point is an API-shape branch a sidecar cannot express.
+batch
++ add_pair 1 1
++ add_pair 1 2
++ add_pair 3 3
++ add_pair 4 5
+end
+batch
++ add_pair 5 5
++ add_pair 2 2
+- add_pair 1 1
+- add_pair 4 5
+end
