@@ -1,0 +1,10 @@
+seeded:
+h(1, 4)
+h(1, 9)
+h(3, 5)
+h(7, 5)
+after mixed batch:
+h(1, 4)
+h(1, 9)
+h(2, 4)
+h(7, 5)

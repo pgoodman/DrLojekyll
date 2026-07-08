@@ -1,0 +1,2 @@
+after seed: count=6001 min=0 max=6000
+after retract: count=0

@@ -1,0 +1,20 @@
+; Linear transitive closure over a @differential edge relation, exercised
+; with a single mixed add/remove batch (the derivation-counter proposal's
+; worked example, docs/proposals/StackSafeNegation.md 5.1.1): from state
+; edge = {(1,2),(1,4),(4,5)}, one batch removes edge(1,2) AND adds
+; edge(2,5). t(1,2) must go, t(2,5) must appear, and t(1,5) -- whose sole
+; support t(1,4),edge(4,5) is untouched by the batch -- must survive the
+; interleaved removal/insertion cascades.
+#message edge_msg(u64 From, u64 To) @differential.
+
+#local edge(From, To).
+#local t(From, To).
+
+#query t_out(free u64 From, free u64 To).
+
+edge(From, To) : edge_msg(From, To).
+
+t(From, To) : edge(From, To).
+t(From, To) : t(From, X), edge(X, To).
+
+t_out(From, To) : t(From, To).

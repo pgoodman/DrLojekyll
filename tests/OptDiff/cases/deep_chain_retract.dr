@@ -1,0 +1,22 @@
+; Deep linear derivation chain over a @differential base fact. The driver
+; feeds a descending next-chain N -> N-1 -> ... -> 0 and the single base
+; fact base(N), so reach(k) has exactly one derivation of depth N - k and
+; the deepest row reach(0) has the numerically smallest key. Retracting
+; base(N) marks the whole chain unknown, and the recheck resolves rows in
+; ascending key order, so the first checker call on reach(0) recurses
+; through all N unresolved predecessors -- the maximum-recursion-depth
+; shape for the top-down checker machinery. The driver's chain depth is
+; chosen empirically to pass in today's debug build with stack headroom
+; to spare (see kChainDepth in the driver); the Stage 3 acceptance gate
+; raises it to 100000 in constant stack.
+#message base(u64 X) @differential.
+#message next(u64 From, u64 To).
+
+#local reach(X).
+
+#query reach_out(free u64 X).
+
+reach(X) : base(X).
+reach(Y) : reach(X), next(X, Y).
+
+reach_out(X) : reach(X).

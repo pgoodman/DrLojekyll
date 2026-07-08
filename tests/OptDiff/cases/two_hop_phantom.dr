@@ -1,0 +1,20 @@
+; Two-hop join h(X,Z) : e(X,Y), e(Y,Z) over a @differential edge relation,
+; hit with a mixed batch that removes e(3,9) and adds e(2,3) in one message
+; (a Stage 0 sentinel of docs/proposals/StackSafeNegation.md). The pairing
+; (added e(2,3), removed e(3,9)) is a "phantom" instance: h(2,9) belongs to
+; neither the old nor the new materialization and must not surface. The
+; seed state makes the batch's support overlap partial: h(1,9) has two
+; derivations and loses only the one through e(3,9); h(3,5) loses its only
+; one; h(2,4) is genuinely new; h(1,4) and h(7,5) are untouched.
+#message e_msg(u64 X, u64 Y) @differential.
+
+#local e(X, Y).
+#local h(X, Z).
+
+#query h_out(free u64 X, free u64 Z).
+
+e(X, Y) : e_msg(X, Y).
+
+h(X, Z) : e(X, Y), e(Y, Z).
+
+h_out(X, Z) : h(X, Z).

@@ -1,0 +1,21 @@
+; Negation under a same-batch add+remove flap of the negated fact. One
+; batch both adds and removes blocker(3) (never previously present), and a
+; later batch both adds and removes blocker(2) (already present). Ingest
+; netting would leave the database unchanged in both cases; today's engine
+; dequeues adds and removes in an internal order
+; (docs/proposals/StackSafeNegation.md, Open Question 3), and this case
+; pins that order-dependent outcome as the baseline: the absent-fact flap
+; nets to nothing, but for the present fact the removal wins and
+; blocker(2) ends absent (item 2 becomes visible).
+#message blocker(i32 X) @differential.
+#message item(i32 X).
+
+#local blocked(i32 X).
+#local stored(i32 X).
+
+#query visible(free i32 X).
+
+blocked(X) : blocker(X).
+stored(X) : item(X).
+
+visible(X) : stored(X), !blocked(X).
