@@ -586,11 +586,33 @@ void FinalizeInductionWorkItem::Run(ProgramImpl *impl, Context &context) {
       continue;
     }
     PARALLEL *const cycle_par = induction->output_cycles[merge];
-    LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
-    cycle_par->AddRegion(cycle);
 
     DataModel *const model = impl->view_to_model[merge]->FindAs<DataModel>();
     TABLE *const table = model->table;
+
+    // A deletion-capable induction's outputs park in its table's
+    // net-additions frontier (the output loop enumerates the rows that
+    // entered the table this batch, gated on current support); the
+    // non-inductive successors' seeds range over that frontier in their
+    // strata's phases.
+    if (merge.CanProduceDeletions()) {
+      assert(table != nullptr);
+      VECTORAPPEND *const append =
+          impl->operation_regions.CreateDerived<VECTORAPPEND>(
+              cycle_par, ProgramOperation::kAppendToInductionVector);
+      append->vector.Emplace(
+          append, TableDeltaVector(impl, context, table,
+                                   VectorKind::kNetAdditions));
+      for (auto col : merge.Columns()) {
+        append->tuple_vars.AddUse(cycle_par->VariableFor(impl, col));
+      }
+      cycle_par->AddRegion(append);
+      continue;
+    }
+
+    LET *const cycle = impl->operation_regions.CreateDerived<LET>(cycle_par);
+    cycle_par->AddRegion(cycle);
+
     BuildEagerInsertionRegions(impl, merge, context, cycle,
                                merge.NonInductiveSuccessors(), table);
   }

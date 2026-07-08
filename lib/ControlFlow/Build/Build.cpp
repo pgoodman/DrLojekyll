@@ -534,6 +534,75 @@ DerivClass EmissionDerivClass(ProgramImpl *impl, Context &context,
   return DerivClass::kNonRecursive;
 }
 
+// A table is differential when any of its member views can produce
+// deletions (the codegen table-flavor rule).
+bool TableIsDifferential(TABLE *table) {
+  for (const QueryView &view : table->views) {
+    if (view.CanProduceDeletions()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// The lazily created per-table delta vector of `kind` (one of the six
+// batch-skeleton kinds documented on `Context::table_delta_vecs`).
+VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
+                         VectorKind kind) {
+  VECTOR *&vec = context.table_delta_vecs[table][static_cast<unsigned>(kind)];
+  if (vec) {
+    return vec;
+  }
+
+  // Shape the vector on a member view whose columns span the table (an
+  // INSERT view exposes its stored columns as input columns).
+  const auto num_cols = table->columns.Size();
+  for (const QueryView &view : table->views) {
+    if (!view.IsInsert() && view.Columns().size() == num_cols) {
+      vec = context.entry_proc->VectorFor(impl, kind, view.Columns());
+      return vec;
+    }
+  }
+  for (const QueryView &view : table->views) {
+    if (view.IsInsert()) {
+      const auto insert = QueryInsert::From(view);
+      if (insert.InputColumns().size() == num_cols) {
+        std::vector<TypeLoc> col_types;
+        for (auto col : insert.InputColumns()) {
+          col_types.push_back(col.Type());
+        }
+        vec = context.entry_proc->vectors.Create(impl->next_id++, kind,
+                                                 col_types, 0u);
+        return vec;
+      }
+    }
+  }
+  assert(false);
+  return nullptr;
+}
+
+// Append the tuple of `view` (its columns, or an INSERT's stored input
+// columns) to `vec` inside `parent`.
+static VECTORAPPEND *AppendViewTupleToVector(ProgramImpl *impl,
+                                             REGION *parent, QueryView view,
+                                             VECTOR *vec) {
+  VECTORAPPEND *const append =
+      impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          parent, ProgramOperation::kAppendToInductionVector);
+  append->vector.Emplace(append, vec);
+
+  if (view.IsInsert()) {
+    for (auto col : QueryInsert::From(view).InputColumns()) {
+      append->tuple_vars.AddUse(parent->VariableFor(impl, col));
+    }
+  } else {
+    for (auto col : view.Columns()) {
+      append->tuple_vars.AddUse(parent->VariableFor(impl, col));
+    }
+  }
+  return append;
+}
+
 // Possibly add a counter fold into `parent` persisting the tuple of `view`
 // into its table. Returns the fold (or `parent` when no fold was needed),
 // the table of `view`, and the updated `already_added`.
@@ -597,6 +666,18 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
   PARALLEL *par = impl->parallel_regions.Create(parent);
   parent->body.Emplace(parent, par);
 
+  // A deletion-capable non-inductive view's rows park in its table's add
+  // queue at the fold's zero crossing; propagation through its
+  // non-inductive consumers runs in the table's stratum phases, driven by
+  // the frontier vectors the phases derive from the claimed queues.
+  // (Inductive views' propagation is owned by their fixpoint machinery.)
+  if (table != nullptr && parent != parent_ && TableIsDifferential(table) &&
+      !view.InductionGroupId().has_value()) {
+    par->AddRegion(AppendViewTupleToVector(
+        impl, par, view,
+        TableDeltaVector(impl, context, table, VectorKind::kAddQueue)));
+  }
+
   //  std::unordered_map<DataModel *, std::vector<QueryView>> grouped_successors;
   //  for (auto succ_view : successors) {
   //    const auto succ_view_model =
@@ -655,10 +736,34 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
   //    }
   //  }
 
+  auto any_cut_succ = false;
   for (QueryView succ_view : successors) {
+
+    // A deletion-capable non-inductive successor is fed by its own table's
+    // stratum phases (its seeds range over this view's table's frontier
+    // vectors), never by the eager walk.
+    if (succ_view.CanReceiveDeletions() &&
+        !succ_view.InductionGroupId().has_value()) {
+      any_cut_succ = true;
+      continue;
+    }
+
     const auto let = impl->operation_regions.CreateDerived<LET>(par);
     par->AddRegion(let);
     BuildEagerRegion(impl, view, succ_view, context, let, last_table);
+  }
+
+  // A monotone boundary: this view's table feeds a differential consumer's
+  // seeds, so its rows added this batch accumulate into the table's
+  // net-additions frontier at the fold's crossing (each new row crosses at
+  // exactly one fold site of the table). A differential table needs no
+  // boundary append: its frontiers are consolidated by its own stratum's
+  // phases from the claimed queues.
+  if (any_cut_succ && parent != parent_ && table != nullptr &&
+      !TableIsDifferential(table)) {
+    par->AddRegion(AppendViewTupleToVector(
+        impl, par, view,
+        TableDeltaVector(impl, context, table, VectorKind::kNetAdditions)));
   }
 }
 

@@ -140,7 +140,32 @@ class Context {
       view_to_product_action;
   std::unordered_map<QueryView, ContinueInductionWorkItem *>
       view_to_induction_action;
+
+  // The per-table vectors of the differential batch skeleton, all owned by
+  // the entry procedure and keyed by (table, vector kind):
+  //
+  //   kDeleteQueue / kAddQueue    rows whose explicit or derived counter
+  //                               fold crossed zero, awaiting their
+  //                               stratum's claim drain (delQ / addQ);
+  //   kOverdeleteSet / kAdditionSet
+  //                               rows claimed this batch (D / A);
+  //   kNetRemovals / kNetAdditions
+  //                               the consolidated signed frontiers that
+  //                               higher strata's seeds range over
+  //                               (D\A / A\D; a monotone boundary table
+  //                               has only kNetAdditions).
+  std::unordered_map<TABLE *, std::unordered_map<unsigned, VECTOR *>>
+      table_delta_vecs;
 };
+
+// A table is differential when any of its member views can produce
+// deletions (the codegen table-flavor rule).
+bool TableIsDifferential(TABLE *table);
+
+// The lazily created per-table delta vector of `kind` (one of the six
+// batch-skeleton kinds documented on `Context::table_delta_vecs`).
+VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
+                         VectorKind kind);
 
 OP *BuildStateCheckCaseReturnFalse(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseReturnTrue(ProgramImpl *impl, REGION *parent);

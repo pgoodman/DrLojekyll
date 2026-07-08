@@ -18,22 +18,74 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
   const auto message = ParsedMessage::From(io.Declaration());
   (void) message;
 
-  VECTOR *removal_vec = nullptr;
   const auto vec =
       proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
   vec->added_message.emplace(message);
 
-  // Loop over the receives for adding.
+  VECTOR *removal_vec = nullptr;
   for (auto receive : receives) {
-
-    // A differential message keeps its removal parameter vector (the
-    // generated message-handler API takes an add vector and a remove
-    // vector), even though no region consumes it yet: differential removal
-    // ingest lands with the per-stratum delete fixpoints.
-    if (!removal_vec && receive.CanReceiveDeletions()) {
+    if (receive.CanReceiveDeletions()) {
       removal_vec =
           proc->VectorFor(impl, VectorKind::kParameter, receive.Columns());
       removal_vec->removed_message.emplace(message);
+      break;
+    }
+  }
+
+  // One loop per receive per polarity. The message handler nets the two
+  // parameter vectors before calling the entry procedure (one received
+  // batch is one epoch), so a row added and removed in one batch has
+  // already vanished and each surviving row folds exactly one explicit
+  // crossing. The fold toggles the row's message-support bit; its zero
+  // crossing parks the row in the receive table's add or delete queue,
+  // drained by the table's stratum phases.
+  const auto build_explicit_loop = [&](QueryView receive, VECTOR *loop_vec,
+                                       bool is_add) {
+    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+    parent->AddRegion(loop);
+    loop->vector.Emplace(loop, loop_vec);
+
+    DataModel *const model = impl->view_to_model[receive]->FindAs<DataModel>();
+    TABLE *const table = model->table;
+    assert(table != nullptr);
+
+    UPDATECOUNT *const fold =
+        impl->operation_regions.CreateDerived<UPDATECOUNT>(
+            loop, is_add, DerivClass::kNonRecursive, true /* is_explicit */);
+    fold->table.Emplace(fold, table);
+    loop->body.Emplace(loop, fold);
+
+    for (auto col : receive.Columns()) {
+      VAR *const var = loop->defined_vars.Create(
+          impl->next_id++, VariableRole::kVectorVariable);
+      var->query_column = col;
+      loop->col_id_to_var.emplace(col.Id(), var);
+      fold->col_values.AddUse(var);
+    }
+
+    VECTOR *const queue = TableDeltaVector(
+        impl, context, table,
+        is_add ? VectorKind::kAddQueue : VectorKind::kDeleteQueue);
+    VECTORAPPEND *const append =
+        impl->operation_regions.CreateDerived<VECTORAPPEND>(
+            fold, ProgramOperation::kAppendToInductionVector);
+    append->vector.Emplace(append, queue);
+    for (auto col : receive.Columns()) {
+      append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+    }
+    fold->body.Emplace(fold, append);
+  };
+
+  for (auto receive : receives) {
+
+    // A deletion-capable receive: both polarities park in the receive
+    // table's queues; its consumers run in the table's stratum phases.
+    if (receive.CanReceiveDeletions()) {
+      assert(removal_vec != nullptr);
+      build_explicit_loop(receive, vec, true);
+      build_explicit_loop(receive, removal_vec, false);
+      continue;
     }
 
     const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
@@ -47,8 +99,7 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     UPDATECOUNT *insert = nullptr;
 
     // If this message receive has a corresponding table, then persist the
-    // received tuple with a nonrecursive counter fold (message receipt is
-    // explicit support).
+    // received tuple with a nonrecursive counter fold.
     if (table) {
       insert = impl->operation_regions.CreateDerived<UPDATECOUNT>(
           loop, true /* is_add */, DerivClass::kNonRecursive,
@@ -267,14 +318,19 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
   }
 
   for (TABLE *table : impl->tables) {
-    auto is_differential = false;
-    for (const QueryView &table_view : table->views) {
-      if (table_view.CanProduceDeletions()) {
-        is_differential = true;
-        break;
+
+    // A monotone table on the boundary of the differential subgraph (its
+    // net-additions frontier feeds some stratum's seeds) gets a sweep that
+    // advances its sealed row-id watermark; other monotone tables carry no
+    // batch state.
+    if (!TableIsDifferential(table)) {
+      if (auto it = context.table_delta_vecs.find(table);
+          it != context.table_delta_vecs.end()) {
+        COMMITSWEEP *const sweep =
+            impl->operation_regions.CreateDerived<COMMITSWEEP>(seq);
+        sweep->table.Emplace(sweep, table);
+        seq->AddRegion(sweep);
       }
-    }
-    if (!is_differential) {
       continue;
     }
 
@@ -386,6 +442,17 @@ void BuildIOProcedure(ProgramImpl *impl, Query query, QueryIO io,
 
   auto seq = impl->series_regions.Create(io_proc);
   io_proc->body.Emplace(io_proc, seq);
+
+  // A differential message's explicit adds are netted against its explicit
+  // removes before the data flow runs (one received batch is one epoch): a
+  // row present in both vectors with net zero leaves no trace, and a row
+  // netting positive or negative survives in exactly one vector.
+  if (io_remove_vec != nullptr) {
+    NETBATCH *const net = impl->operation_regions.CreateDerived<NETBATCH>(seq);
+    net->add_vector.Emplace(net, io_vec);
+    net->remove_vector.Emplace(net, io_remove_vec);
+    seq->AddRegion(net);
+  }
 
   auto call =
       impl->operation_regions.CreateDerived<CALL>(impl->next_id++, seq, proc);
