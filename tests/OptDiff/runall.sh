@@ -24,12 +24,17 @@
 #     run, and match goldens/<case>.stdout.
 #   any case with a cases/<name>.batches sidecar additionally runs the
 #     derivation-counter oracle (drlojekyll-oracle <case.dr> <case.batches>);
-#     its stdout is byte-compared against goldens/<name>.oracle.stdout.
+#     its stdout is byte-compared against goldens/<name>.oracle.stdout. The
+#     same case then runs the monotone projection
+#     (drlojekyll-oracle <case.dr> <case.batches> --project-monotone: the
+#     program over only the surviving inputs), byte-compared against
+#     goldens/<name>.monotone.stdout.
 #
 # Blessing: goldens are updated ONLY by an explicit --bless invocation, after
 # reviewing the outputs of a run — never automatically on failure. --bless
-# copies each case's opt-mode stdout out of <workroot> into goldens/, and
-# each case's oracle stdout into goldens/<name>.oracle.stdout.
+# copies each case's opt-mode stdout out of <workroot> into goldens/, each
+# case's oracle stdout into goldens/<name>.oracle.stdout, and each case's
+# monotone-projection stdout into goldens/<name>.monotone.stdout.
 #
 # Prints "SUITE: PASS (<n> cases)" and exits 0 iff every case meets its
 # expectation; otherwise prints the failing verdict lines and exits 1.
@@ -56,6 +61,12 @@ if [ "${1:-}" = "--bless" ]; then
     if [ -f "$osrc" ]; then
       cp "$osrc" "$HERE/goldens/$name.oracle.stdout"
       echo "blessed $name.oracle"
+      n=$((n + 1))
+    fi
+    msrc="$d$name.monotone/stdout"
+    if [ -f "$msrc" ]; then
+      cp "$msrc" "$HERE/goldens/$name.monotone.stdout"
+      echo "blessed $name.monotone"
       n=$((n + 1))
     fi
   done
@@ -141,28 +152,52 @@ if [ "${1:-}" = "--one" ]; then
   }
 
   run_oracle() {  # oracle step: any case with a .batches sidecar runs the
-                  # derivation-counter oracle against its own golden
+                  # derivation-counter oracle against its own golden, then the
+                  # monotone projection (the program over only the surviving
+                  # inputs) against its own golden
     batches="$HERE/cases/$NAME.batches"
     if [ ! -f "$batches" ]; then
       return 0
     fi
+    orc=0
+
     out="$WORKROOT/$NAME/$NAME.oracle"
     mkdir -p "$out"
     if ! timeout "$TIMEOUT" "$ORACLE" "$DRC" "$batches" \
         >"$out/stdout" 2>"$out/stderr"; then
       echo "$NAME oracle ORACLE-FAIL"
-      return 1
-    fi
-    if [ ! -f "$HERE/goldens/$NAME.oracle.stdout" ]; then
+      orc=1
+    elif [ ! -f "$HERE/goldens/$NAME.oracle.stdout" ]; then
       echo "$NAME oracle GOLDEN-MISSING"
-      return 1
-    fi
-    if ! cmp -s "$HERE/goldens/$NAME.oracle.stdout" "$out/stdout"; then
+      orc=1
+    elif ! cmp -s "$HERE/goldens/$NAME.oracle.stdout" "$out/stdout"; then
       echo "$NAME oracle GOLDEN-DIVERGE"
-      return 1
+      orc=1
+    else
+      echo "$NAME oracle OK"
     fi
-    echo "$NAME oracle OK"
-    return 0
+
+    # Monotone projection: the program evaluated as if nothing had been
+    # removed — over exactly the surviving inputs. Its output is the
+    # ground-truth final materialization and a standing F16-class gate
+    # (a spurious cyclic residue would surface here as a divergence).
+    mout="$WORKROOT/$NAME/$NAME.monotone"
+    mkdir -p "$mout"
+    if ! timeout "$TIMEOUT" "$ORACLE" "$DRC" "$batches" --project-monotone \
+        >"$mout/stdout" 2>"$mout/stderr"; then
+      echo "$NAME monotone MONO-FAIL"
+      orc=1
+    elif [ ! -f "$HERE/goldens/$NAME.monotone.stdout" ]; then
+      echo "$NAME monotone MONO-MISSING"
+      orc=1
+    elif ! cmp -s "$HERE/goldens/$NAME.monotone.stdout" "$mout/stdout"; then
+      echo "$NAME monotone MONO-DIVERGE"
+      orc=1
+    else
+      echo "$NAME monotone OK"
+    fi
+
+    return $orc
   }
 
   st=0

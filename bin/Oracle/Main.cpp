@@ -1649,9 +1649,14 @@ class Oracle {
   // evaluation over the accumulated explicit facts, then rule-instance
   // counting over the final materialization.
 
-  void CheckAgainstScratch(void) {
+  // Semi-naive stratified SET evaluation over the current explicit facts
+  // (the `kExplicit` bits on the receive views), materializing every view's
+  // present rows into `scratch`. This is the sole monotone evaluator: the
+  // per-batch cross-check and the monotone projection both drive it, the
+  // former over the accumulated net facts and the latter over the surviving
+  // set fed as one epoch.
+  void EvaluateScratch(void) {
     scratch.assign(models.size(), ScratchView());
-    expected.assign(models.size(), {});
 
     ScratchSrc src{&scratch};
 
@@ -1703,6 +1708,13 @@ class Oracle {
         }
       }
     }
+  }
+
+  void CheckAgainstScratch(void) {
+    EvaluateScratch();
+    expected.assign(models.size(), {});
+
+    ScratchSrc src{&scratch};
 
     // Count derivation instances of the final materialization.
     for (auto &rp : rules) {
@@ -1782,11 +1794,36 @@ class Oracle {
     Fail(os.str());
   }
 
+  // Number of named (non-condition) relations — the M in the INVARIANT line
+  // and the relation count of the canonical dump.
+  unsigned CountNamedRelations(void) {
+    unsigned n = 0;
+    for (auto rel : query->Relations()) {
+      if (!rel.IsCondition()) {
+        ++n;
+      }
+    }
+    return n;
+  }
+
+  // Intern one explicit fact into every receive view of a message and mark
+  // it present, WITHOUT touching any counter or frontier. Used only by the
+  // monotone projection to seed the from-scratch evaluator with the
+  // surviving-fact set as a single add-only epoch.
+  void SeedExplicitOnly(unsigned msg, const Row &row) {
+    for (auto *vm : msgs[msg].receives) {
+      const auto id = vm->Intern(row);
+      vm->st[id].is_explicit = true;
+    }
+  }
+
   // ------------------------------------------------------------------
   // Final output: every named (non-condition) relation's present rows in
-  // canonical sorted form.
+  // canonical sorted form. `from_scratch` selects the row source: the
+  // incremental materialization (per-row `kInI`) or the from-scratch
+  // `scratch` set (all rows present) built by EvaluateScratch.
 
-  std::string DumpRelations(void) {
+  std::string DumpRelations(bool from_scratch) {
     struct RelOut {
       std::string name;
       std::vector<hyde::TypeKind> types;
@@ -1811,10 +1848,19 @@ class Oracle {
         if (ro.types.empty()) {
           ro.types = vm->types;
         }
-        for (uint32_t id = 0; id < vm->rows.size(); ++id) {
-          if (vm->st[id].in_i && !seen.count(vm->rows[id])) {
-            seen.emplace(vm->rows[id], true);
-            ro.rows.push_back(vm->rows[id]);
+        if (from_scratch) {
+          for (const auto &row : scratch[vm->ord].rows) {
+            if (!seen.count(row)) {
+              seen.emplace(row, true);
+              ro.rows.push_back(row);
+            }
+          }
+        } else {
+          for (uint32_t id = 0; id < vm->rows.size(); ++id) {
+            if (vm->st[id].in_i && !seen.count(vm->rows[id])) {
+              seen.emplace(vm->rows[id], true);
+              ro.rows.push_back(vm->rows[id]);
+            }
           }
         }
       }
@@ -1969,7 +2015,7 @@ int RunStress(Oracle &oracle, uint64_t seed, uint64_t rounds) {
     oracle.RunBatch(ops);
   }
 
-  const std::string dump = oracle.DumpRelations();
+  const std::string dump = oracle.DumpRelations(false);
   SplitMix64 h{0x5EEDF00Dull};
   uint64_t digest = 0;
   for (char ch : dump) {
@@ -1984,6 +2030,79 @@ int RunStress(Oracle &oracle, uint64_t seed, uint64_t rounds) {
   std::cout << "STRESS: seed=" << seed << " rounds=" << rounds
             << " digest=" << buf << "\n";
   std::cout << dump;
+  return EXIT_SUCCESS;
+}
+
+// ---------------------------------------------------------------------
+// Monotone projection: evaluate the program as if nothing had ever been
+// removed — over exactly the explicit facts that SURVIVE the whole batch
+// sequence. No counters, no removal, no differential machinery: this is
+// the ground-truth final materialization the differential run must match.
+//
+// A fact survives iff its net add/remove state across the sequence is
+// present. Netting is per batch (matching §5.0 ingest netting) over a
+// set-semantics presence bit: within a batch, adds and removes of one row
+// net arithmetically; a positive net makes the fact present, a negative
+// net absent, a zero net leaves it unchanged. So an add later cancelled by
+// a remove, or an add+remove in one batch, does NOT survive. This is
+// exactly the state the incremental path's `kExplicit` bit reaches, which
+// is why the projection equals the differential final materialization.
+
+int RunMonotoneProjection(
+    Oracle &oracle, const std::vector<std::vector<Oracle::BatchOp>> &batches) {
+  struct NetKey {
+    unsigned msg;
+    Row row;
+    bool operator==(const NetKey &o) const {
+      return msg == o.msg && row == o.row;
+    }
+  };
+  struct NetKeyHash {
+    size_t operator()(const NetKey &k) const {
+      return RowHash{}(k.row) * 31 + k.msg;
+    }
+  };
+
+  std::unordered_map<NetKey, bool, NetKeyHash> present;
+  std::vector<NetKey> present_order;  // deterministic surviving-set walk
+  for (const auto &ops : batches) {
+    std::unordered_map<NetKey, int64_t, NetKeyHash> net;
+    std::vector<NetKey> order;
+    for (const auto &op : ops) {
+      NetKey k{op.msg, op.row};
+      auto it = net.find(k);
+      if (it == net.end()) {
+        net.emplace(k, op.add ? 1 : -1);
+        order.push_back(k);
+      } else {
+        it->second += op.add ? 1 : -1;
+      }
+    }
+    for (const auto &k : order) {
+      const int64_t n = net[k];
+      if (n == 0) {
+        continue;  // Net-zero within the batch: presence unchanged.
+      }
+      auto [it, inserted] = present.emplace(k, n > 0);
+      if (inserted) {
+        present_order.push_back(k);
+      } else {
+        it->second = n > 0;
+      }
+    }
+  }
+
+  size_t n_surviving = 0;
+  for (const auto &k : present_order) {
+    if (present[k]) {
+      ++n_surviving;
+      oracle.SeedExplicitOnly(k.msg, k.row);
+    }
+  }
+
+  oracle.EvaluateScratch();
+  std::cout << "MONOTONE-PROJECTION: " << n_surviving << " surviving facts\n";
+  std::cout << oracle.DumpRelations(/*from_scratch=*/true);
   return EXIT_SUCCESS;
 }
 
@@ -2014,11 +2133,37 @@ int main(int argc, const char *argv[]) {
   }
 
   const auto batches = ParseBatches(argv[2], oracle);
+
+  bool monotone = false;
+  if (argc >= 4) {
+    if (!std::strcmp(argv[3], "--project-monotone")) {
+      monotone = true;
+    } else {
+      std::cerr << "USAGE: " << argv[0]
+                << " <case.dr> <case.batches> [--project-monotone]"
+                << std::endl;
+      return EXIT_FAILURE;
+    }
+  }
+
+  if (monotone) {
+    return RunMonotoneProjection(oracle, batches);
+  }
+
   for (const auto &b : batches) {
     oracle.RunBatch(b);
   }
   std::cout << "ORACLE: OK (" << oracle.batches_run << " batches, "
             << oracle.checks << " assertions)\n";
-  std::cout << oracle.DumpRelations();
+  std::cout << oracle.DumpRelations(/*from_scratch=*/false);
+
+  // The per-batch cross-assertions proved incremental presence equals the
+  // from-scratch (monotone) materialization for every view; since the
+  // from-scratch path evaluates over exactly the surviving explicit facts,
+  // reaching here means the differential final state equals the monotone
+  // projection. Report it on stderr as the positive counterpart to the
+  // FailMismatch dump (which names the first divergent view on failure).
+  std::cerr << "INVARIANT: differential-final == monotone-projection ("
+            << oracle.CountNamedRelations() << " relations)\n";
   return EXIT_SUCCESS;
 }

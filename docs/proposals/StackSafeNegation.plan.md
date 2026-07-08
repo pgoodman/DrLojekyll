@@ -592,6 +592,43 @@ Gate results: ctest 3/3; full suite `SUITE: PASS` (132 cases × 4 modes +
 24 oracle steps); zero modifications to existing goldens (the 24
 `.oracle.stdout` files are new).
 
+**Monotone projection (`--project-monotone`), a standing F16-class gate.**
+The oracle already runs two agreeing paths per batch — the incremental
+`(C_nr, C_r)` counters and an independent from-scratch semi-naive
+stratified SET evaluation over the accumulated net explicit facts. The
+`--project-monotone` mode exposes that from-scratch evaluator directly on
+the surviving-input set: it reduces the `.batches` sequence to the facts
+whose net add/remove state across the whole sequence is present (per-batch
+ingest netting, set semantics — an add later cancelled by a remove, or an
+add+remove in one batch, does not survive), feeds them as one add-only
+epoch, and prints the same canonical relation dump as the normal final
+state, prefixed by `MONOTONE-PROJECTION: N surviving facts`. This is the
+ground-truth final materialization: the program evaluated as if nothing had
+ever been removed. `runall.sh` runs it for every `.batches` sidecar
+(verdict `<name> monotone OK|MONO-FAIL|MONO-MISSING|MONO-DIVERGE`,
+byte-compared against `goldens/<name>.monotone.stdout`, promoted by
+`--bless`); 24 monotone goldens blessed after hand-verifying each
+surviving-fact set. The normal run additionally prints, to stderr, the line
+`INVARIANT: differential-final == monotone-projection (M relations)` — the
+positive counterpart to the `FailMismatch` dump — so the property the
+counters exist to guarantee is stated in the oracle's own output.
+
+This is the F16 gate made structural: `transitive_closure_diff`'s surviving
+edges are the acyclic chain 3→4→7→8→1→2, so the monotone projection shows
+`reachable_from 1 2` and NO self-loops. It therefore DISAGREES with the
+buggy (F16) compiled golden `transitive_closure_diff.stdout`
+(`from 1: 1 2 4 7 8`) and AGREES with the oracle's own differential final —
+a spurious cyclic residue can never satisfy the monotone golden, because
+the monotone evaluator has no removal machinery to leave a residue in.
+
+*Limitation — final-state only.* The monotone projection is the materialized
+state after the LAST batch. It does not capture the drivers' intermediate
+per-batch observations (dumps between sends), which remain covered by the
+compiled golden and by the oracle's per-batch incremental-vs-from-scratch
+cross-assertions; it also does not exercise the differential/removal code
+paths (that is the point — it is the monotone referee, not a second
+differential run).
+
 ## Stage 3 — the swap (one landing; checkpoints a–e)
 
 Honestly a monolith: the tri-state's producers and consumers cannot be
