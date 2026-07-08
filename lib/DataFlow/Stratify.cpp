@@ -1,9 +1,9 @@
 // Copyright 2026, Trail of Bits. All rights reserved.
 
+#include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parse.h>
 
 #include <algorithm>
-#include <iostream>
 #include <unordered_map>
 #include <vector>
 
@@ -66,15 +66,13 @@ struct TarjanFrame {
 //     these ids (`QueryView::DerivationClassInto`): recursive iff the
 //     deriving view shares an SCC with any of the target model's views.
 //
-// The pass also checks stratified negation: a NEGATE whose negated view
+// The pass also enforces stratified negation: a NEGATE whose negated view
 // lies in the NEGATE's own SCC reads the absence of data that the negation's
 // own result can still produce, which has no order-independent meaning. Such
-// negations are reported as a warning (the control-flow build compiles them
-// through its inductive-negation path, whose removal ordering is
-// arrival-order dependent); `tests/OptDiff/cases/evm_func_parse.dr` is the
-// corpus witness of the shape. A negation of a *lower* stratum is the fully
-// supported shape: the negated data is final before the reading stratum
-// runs.
+// negations are rejected with an error on the negated predicate;
+// `tests/OptDiff/cases/evm_func_parse.dr` is the corpus witness of the
+// shape. A negation of a *lower* stratum is the fully supported shape: the
+// negated data is final before the reading stratum runs.
 //
 //     index views; sources(v) := predecessors(v) ∪ {negated_view(v)}
 //                                ∪ {INSERT i : (i, v) is a decl seam}
@@ -83,7 +81,7 @@ struct TarjanFrame {
 //       condensation with data sources first
 //     stratum(model) := max stratum over member views; record straddlers
 //     for each NEGATE n:
-//       if stratum(negated_view(n)) == stratum(n): warn (unstratified)
+//       if stratum(negated_view(n)) == stratum(n): error (unstratified)
 //
 // Before (view graph):                  After (strata assigned):
 //
@@ -100,7 +98,7 @@ struct TarjanFrame {
 //   `t`'s SCC {UNION, JOIN} is stratum 2: it reads only strata 0/1 (seeds,
 //   C_nr edges) and itself (back-edge, C_r edge); the INSERT below it is a
 //   higher stratum. A NEGATE reading `t` from stratum 3+ is legal; a NEGATE
-//   inside stratum 2 negating `t` draws the warning.
+//   inside stratum 2 negating `t` draws the error.
 //
 // Cross-checks against `IdentifyInductions` (debug builds): that pass seeds
 // only MERGE/JOIN/NEGATE views with `InductionInfo` and unions two views'
@@ -121,7 +119,7 @@ struct TarjanFrame {
 // classified recursive (same SCC) is exactly an inductive-predecessor edge,
 // i.e. a fixpoint-body emission position in the control-flow build, and a
 // non-recursive edge is a seed/init emission position.
-void QueryImpl::Stratify(void) {
+void QueryImpl::Stratify(const ErrorLog &log) {
 
   // Index the (live) views.
   std::vector<VIEW *> views;
@@ -266,10 +264,9 @@ void QueryImpl::Stratify(void) {
             stratum_straddling_models.end(),
             [](EquivalenceSet *a, EquivalenceSet *b) { return a->id < b->id; });
 
-  // Warn about unstratified negation: the negated view must be final before
-  // the NEGATE's stratum runs, which is impossible when both share an SCC,
-  // so differential removal through such a negation is arrival-order
-  // dependent.
+  // Reject unstratified negation: the negated view must be final before the
+  // NEGATE's stratum runs, which is impossible when both share an SCC, so
+  // no removal order through such a negation is well-defined.
   for (NEGATION *negate : negations) {
     if (negate->is_dead) {
       continue;
@@ -280,19 +277,19 @@ void QueryImpl::Stratify(void) {
     }
 
     if (negate->negations.empty()) {
-      std::cerr << "warning: Negated predicate is recursively derived from "
-                   "the negation's own result (unstratified negation); "
-                   "differential removal through it is order-dependent\n";
+      log.Append() << "Negated predicate is recursively derived from the "
+                      "negation's own result (unstratified negation)";
     } else {
       for (ParsedPredicate pred : negate->negations) {
-        const auto pos = pred.SpellingRange().From();
-        std::cerr << "warning: ";
-        if (pos.IsValid()) {
-          std::cerr << "line " << pos.Line() << ':' << pos.Column() << ": ";
-        }
-        std::cerr << "Negated predicate is recursively derived from the "
-                     "negation's own result (unstratified negation); "
-                     "differential removal through it is order-dependent\n";
+        const ParsedClause clause = ParsedClause::Containing(pred);
+        Error err =
+            log.Append(clause.SpellingRange(), pred.SpellingRange());
+        err << "Negated predicate is recursively derived from the "
+               "negation's own result (unstratified negation)";
+        err.Note(clause.SpellingRange(), pred.SpellingRange())
+            << "The negated relation must be fully computable before any "
+               "clause that negates it runs; break the recursion through "
+               "the negation";
       }
     }
   }

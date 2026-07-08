@@ -57,8 +57,8 @@ byte-compared against the same golden (cross-mode agreement is implied).
   (env: `DR=` compiler path, `TIMEOUT=` seconds).
 - Full suite: `DR=build/debug/bin/drlojekyll tests/OptDiff/runall.sh
   <workroot> [jobs] [name-filter-regex]` — must end `SUITE: PASS`.
-  Expected-diagnostic cases (aggregate_1, kvindex_1–4) are encoded in
-  runall.sh.
+  Expected-diagnostic cases (aggregate_1, kvindex_1–4, evm_func_parse) are
+  encoded in runall.sh.
 - Blessing: goldens change ONLY via explicit
   `runall.sh --bless <workroot> [filter]` after reviewing a run's outputs —
   never automatically on failure, and never to make a red case green.
@@ -107,14 +107,17 @@ signatures before writing a driver.
 - Union sinking (`do_sink` in `QueryImpl::Optimize`) is commented out —
   `lib/DataFlow/Merge.cpp` sinking code is currently unreachable.
 
-## Known feature gaps (clean diagnostics from the control-flow build)
+## Known feature gaps (clean diagnostics)
 
 Aggregates, KV indices (mutable params), cross-products over differential
-(deletable) data, impure functors. Three corpus files exercise these gaps
-and fail the control-flow build in all modes: `data/examples/average_weight.dr`,
+(deletable) data, impure functors (control-flow build), and unstratified
+negation — a negated predicate recursively derived from the negation's own
+result (rejected by the dataflow Stratify pass in all modes). Corpus files
+exercising these: `data/examples/average_weight.dr`,
 `pairwise_average_weight.dr` (KV indices), `conditions_to_bools.dr` (an
-explicit `@product` join of two deletable locals). Every other file under
-`data/` compiles in all 4 modes.
+explicit `@product` join of two deletable locals),
+`data/self_testing_examples/evm_func_parse.dr` (unstratified negation).
+Every other file under `data/` compiles in all 4 modes.
 
 ## Gotchas
 

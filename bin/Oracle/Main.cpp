@@ -45,10 +45,9 @@
 //
 // Rejected up front (clean diagnostics): aggregates, KV indices, MAP
 // functors (the differential OptDiff corpus declares none — implement a
-// functor here before using one), float/foreign-typed columns, and
-// in-SCC negation (a NEGATE whose negated view shares its stratum) per
-// the provisional owner decision that unstratified negation is refused
-// going forward.
+// functor here before using one), and float/foreign-typed columns.
+// Unstratified (in-SCC) negation never reaches the oracle: the dataflow
+// Stratify pass rejects it inside `Query::Build`.
 //
 // Same-batch explicit add+remove of one fact NETS TO ZERO at ingest
 // (§5.0/§5.5) — deterministic, and a known divergence from the current
@@ -608,18 +607,7 @@ class Oracle {
       return EXIT_FAILURE;
     }
 
-    // Feature gates. The in-SCC negation rejection comes first: it is the
-    // semantic decision (unstratified negation is refused), not an
-    // implementation gap.
-    for (auto neg : query->Negations()) {
-      const auto nv = hyde::QueryView::From(neg);
-      if (StratumOf(nv) == StratumOf(neg.NegatedView())) {
-        Fail("in-SCC negation rejected: the negated view shares the "
-             "NEGATE's stratum, so removal through it is order-dependent "
-             "(provisional owner decision: unstratified negation is refused "
-             "going forward)");
-      }
-    }
+    // Feature gates.
     for (auto agg : query->Aggregates()) {
       (void) agg;
       Fail("aggregates are not supported by the oracle (existing feature "

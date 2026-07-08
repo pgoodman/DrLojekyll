@@ -364,14 +364,16 @@ recorded below (work items S1.1–S1.7 as planned unless noted).
   strata are per data model, and models are built by `BuildEquivalenceSets`,
   which itself runs after both `IdentifyInductions` and the final
   differential tracking. All the plan's ordering requirements still hold.
-- **S1.4 diagnostic is a warning, not an error**: the corpus audit found a
-  real in-SCC negation (below), so per the stage contract the diagnostic
-  demotes to a `std::cerr` warning ("unstratified negation ... removal
-  through it is order-dependent") and compilation proceeds through today's
-  inductive-negation path. `Stratify` consequently takes no `ErrorLog`.
-  Whether it hardens to an error (rejecting `evm_func_parse.dr`) or gets
-  Motik-style per-iteration traces is the §11 Q1 owner decision gating
-  Stage 3.
+- **S1.4 diagnostic**: initially landed as a warning (the corpus audit
+  found a real in-SCC negation, below). Per the §11 Q1 owner decision it is
+  now a hard `ErrorLog` error (error + note on the negated predicate's
+  spelling range, rendered like every other compiler diagnostic);
+  `Stratify(const ErrorLog &)` is checked in `Query::Build` like its
+  neighbor passes. Hardened at the start of Stage 3 checkpoint (b) — by
+  then checkpoint (a) had deleted the inductive-negation machinery, so an
+  unstratified program would otherwise compile to silently wrong removals.
+  `evm_func_parse` moved to runall.sh's expected-diagnostic list; its
+  stratified rewrite is still attempted at checkpoint (d).
 - **S1.5**: in addition to `QueryView::Stratum()` / `Query::NumStrata()`,
   a `DerivClass` enum and `QueryView::DerivationClassInto(target)` landed
   in the public dataflow API: `kRecursive` iff the deriving view shares an

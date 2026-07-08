@@ -1046,11 +1046,12 @@ class QueryImpl {
 
   // Stratify the dataflow: compute the SCC condensation of the view graph,
   // assign each view (and each data model) a topological stratum id, and
-  // warn about unstratified negation (a NEGATE whose negated view lies
-  // inside the NEGATE's own SCC). Runs after `IdentifyInductions` (so the
-  // SCC structure can be cross-checked against `InductionInfo`) and after
-  // `BuildEquivalenceSets` (so data models exist to receive strata).
-  void Stratify(void);
+  // reject unstratified negation (a NEGATE whose negated view lies inside
+  // the NEGATE's own SCC) with an error on the negated predicate. Runs
+  // after `IdentifyInductions` (so the SCC structure can be cross-checked
+  // against `InductionInfo`) and after `BuildEquivalenceSets` (so data
+  // models exist to receive strata).
+  void Stratify(const ErrorLog &log);
 
   // Track which views are constant after initialization.
   // See `VIEW::is_const_after_init`.

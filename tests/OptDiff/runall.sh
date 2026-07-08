@@ -15,8 +15,10 @@
 #   TIMEOUT  per-stage timeout in seconds            (default: 120)
 #
 # Case expectations:
-#   aggregate_1, kvindex_2/3/4 — the compiler must exit 1 with a rendered
-#     diagnostic (no assert/crash) in all 4 modes.
+#   aggregate_1, kvindex_2/3/4, evm_func_parse — the compiler must exit 1
+#     with a rendered diagnostic (no assert/crash) in all 4 modes
+#     (evm_func_parse: unstratified negation, rejected by the dataflow
+#     Stratify pass).
 #   kvindex_1 — runs under opt/nocf, each matching goldens/kvindex_1.stdout;
 #     exits 1 with a rendered diagnostic under nodf/none (KVINDEX->TUPLE
 #     elimination is a dataflow optimization).
@@ -202,7 +204,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    aggregate_1|kvindex_2|kvindex_3|kvindex_4)
+    aggregate_1|kvindex_2|kvindex_3|kvindex_4|evm_func_parse)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

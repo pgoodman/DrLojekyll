@@ -2609,7 +2609,10 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   }
 
   BuildEquivalenceSets(impl.get());
-  impl->Stratify();
+  impl->Stratify(log);
+  if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
 
   return Query(std::move(impl));
 }
