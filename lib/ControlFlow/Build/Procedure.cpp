@@ -26,7 +26,10 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
   // Loop over the receives for adding.
   for (auto receive : receives) {
 
-    // Add a removal vector if any of the receives can receive deletions.
+    // A differential message keeps its removal parameter vector (the
+    // generated message-handler API takes an add vector and a remove
+    // vector), even though no region consumes it yet: differential removal
+    // ingest lands with the per-stratum delete fixpoints.
     if (!removal_vec && receive.CanReceiveDeletions()) {
       removal_vec =
           proc->VectorFor(impl, VectorKind::kParameter, receive.Columns());
@@ -41,19 +44,14 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
 
     DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
     TABLE *table = model->table;
-    CHANGETUPLE *insert = nullptr;
-//    CHANGERECORD *insert = nullptr;
+    UPDATECOUNT *insert = nullptr;
 
-    // If this message receive has a corresponding table, then save it as
-    // a record here.
+    // If this message receive has a corresponding table, then persist the
+    // received tuple with a nonrecursive counter fold (message receipt is
+    // explicit support).
     if (table) {
-//      insert = impl->operation_regions.CreateDerived<CHANGERECORD>(
-//          impl->next_id++, loop, TupleState::kAbsent, TupleState::kPresent);
-//      insert->table.Emplace(insert, table);
-//      loop->body.Emplace(loop, insert);
-
-      insert = impl->operation_regions.CreateDerived<CHANGETUPLE>(
-          loop, TupleState::kAbsent, TupleState::kPresent);
+      insert = impl->operation_regions.CreateDerived<UPDATECOUNT>(
+          loop, true /* is_add */, DerivClass::kNonRecursive);
       insert->table.Emplace(insert, table);
       loop->body.Emplace(loop, insert);
 
@@ -68,76 +66,11 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
 
       if (insert) {
         insert->col_values.AddUse(var);
-//        const auto record_var = insert->record_vars.Create(
-//            impl->next_id++,VariableRole::kRecordElement);
-//        record_var->defining_region = insert;
-//        record_var->query_column = col;
-//        insert->col_id_to_var.emplace(col.Id(), record_var);
       }
     }
 
     BuildEagerInsertionRegions(impl, receive, context, next_parent,
                                receive.Successors(), table);
-  }
-
-  if (!removal_vec) {
-    assert(!message.IsDifferential());
-    return;
-  }
-
-  assert(message.IsDifferential());
-
-  // Loop over the receives for adding.
-  for (auto receive : receives) {
-    if (!receive.CanReceiveDeletions()) {
-      continue;
-    }
-
-    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
-    parent->AddRegion(loop);
-    loop->vector.Emplace(loop, removal_vec);
-    OP *next_parent = loop;
-
-    DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
-    TABLE *table = model->table;
-    CHANGETUPLE *remove = nullptr;
-//    CHANGERECORD *remove = nullptr;
-
-    // If this message receive has a corresponding table, then save it as
-    // a record here.
-    if (table) {
-//      remove = impl->operation_regions.CreateDerived<CHANGERECORD>(
-//          impl->next_id++, loop, TupleState::kPresent, TupleState::kAbsent);
-//      remove->table.Emplace(remove, table);
-//      loop->body.Emplace(loop, remove);
-
-      remove = impl->operation_regions.CreateDerived<CHANGETUPLE>(
-          loop, TupleState::kPresent, TupleState::kAbsent);
-      remove->table.Emplace(remove, table);
-      loop->body.Emplace(loop, remove);
-
-      next_parent = remove;
-    }
-
-    for (auto col : receive.Columns()) {
-      const auto var = loop->defined_vars.Create(impl->next_id++,
-                                                 VariableRole::kVectorVariable);
-      var->query_column = col;
-      loop->col_id_to_var.emplace(col.Id(), var);
-
-      if (remove) {
-        remove->col_values.AddUse(var);
-//        const auto record_var = remove->record_vars.Create(
-//            impl->next_id++,VariableRole::kRecordElement);
-//        record_var->defining_region = remove;
-//        record_var->query_column = col;
-//        remove->col_id_to_var.emplace(col.Id(), record_var);
-      }
-    }
-
-    BuildEagerRemovalRegions(
-        impl, receive, context, next_parent, receive.Successors(), table);
   }
 }
 
@@ -227,9 +160,20 @@ static void CreateDifferentialMessageVectors(
       assert(message.IsPublished());
 
       if (message.IsDifferential()) {
-        context.publish_vecs[message] =
-            proc->VectorFor(impl, VectorKind::kMessageOutputs, pred.Columns());
-        context.published_view.emplace(message, insert);
+
+        // A deletion-capable flow publishes net presence changes through
+        // the end-of-batch commit sweep of the table backing the
+        // transmit's predecessor.
+        if (QueryView(transmits[0]).CanReceiveDeletions()) {
+          context.commit_published_view.emplace(message, transmits[0]);
+
+        // A monotone flow accumulates rows into a vector that is
+        // sort-uniqued and published at the end of the batch.
+        } else {
+          context.publish_vecs[message] = proc->VectorFor(
+              impl, VectorKind::kMessageOutputs, pred.Columns());
+          context.published_view.emplace(message, insert);
+        }
       }
     }
   }
@@ -274,7 +218,6 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
     iter->vector.Emplace(iter, vec);
 
     // Add in variable bindings.
-    std::vector<std::pair<QueryColumn, QueryColumn>> available_cols;
     for (auto col : insert.InputColumns()) {
       const auto var = iter->defined_vars.Create(impl->next_id++,
                                                  VariableRole::kMessageOutput);
@@ -285,65 +228,19 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
       }
 
       iter->col_id_to_var[col.Id()] = var;
-      available_cols.emplace_back(col, col);
     }
 
-    // A row in the output vector may have been retracted since it was
-    // appended (removers append candidate retractions too), so each row is
-    // re-proven by a top-down checker: proven rows publish as additions,
-    // disproven rows publish as removals.
-    if (view.CanReceiveDeletions()) {
-      const auto model = impl->view_to_model[view]->FindAs<DataModel>();
-      TABLE *const table = model->table;
-
-      // Call the top-down checker.
-      PROC *const checker_proc = GetOrCreateTopDownChecker(
-          impl, context, view.Predecessors()[0], available_cols, table);
-
-      // Now call the checker procedure. Unlike in normal checkers, we're
-      // doing a check on `false`.
-      CALL *const check = impl->operation_regions.CreateDerived<CALL>(
-          impl->next_id++, iter, checker_proc);
-      iter->body.Emplace(iter, check);
-
-      for (auto var : iter->defined_vars) {
-        check->arg_vars.AddUse(var);
-      }
-
-      // Now make the publishers for removal / insertion.
-
-      PUBLISH *const publish_add =
-          impl->operation_regions.CreateDerived<PUBLISH>(
-              check, message, impl->next_id++,
-              ProgramOperation::kPublishMessage);
-      check->body.Emplace(check, publish_add);
-
-      PUBLISH *const publish_removal =
-          impl->operation_regions.CreateDerived<PUBLISH>(
-              check, message, impl->next_id++,
-              ProgramOperation::kPublishMessageRemoval);
-      check->false_body.Emplace(check, publish_removal);
-
-      for (auto var : iter->defined_vars) {
-        publish_add->arg_vars.AddUse(var);
-        publish_removal->arg_vars.AddUse(var);
-      }
-
     // No flow into this transmit can produce deletions, so every vector row
-    // is a fresh derivation from this epoch's eager insertion path and no
-    // remover exists to retract it: publish each row as an addition, with
-    // no re-proving checker (whose recursion would need persisted state
-    // this monotone flow never creates).
-    } else {
-      PUBLISH *const publish_add =
-          impl->operation_regions.CreateDerived<PUBLISH>(
-              iter, message, impl->next_id++,
-              ProgramOperation::kPublishMessage);
-      iter->body.Emplace(iter, publish_add);
+    // is a fresh derivation from this epoch's eager insertion path: publish
+    // each row as an addition.
+    PUBLISH *const publish_add =
+        impl->operation_regions.CreateDerived<PUBLISH>(
+            iter, message, impl->next_id++,
+            ProgramOperation::kPublishMessage);
+    iter->body.Emplace(iter, publish_add);
 
-      for (auto var : iter->defined_vars) {
-        publish_add->arg_vars.AddUse(var);
-      }
+    for (auto var : iter->defined_vars) {
+      publish_add->arg_vars.AddUse(var);
     }
 
     // Finally, clear the vector; we're done.
@@ -354,11 +251,45 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
     clear->vector.Emplace(clear, vec);
   }
 
+  // The end-of-batch commit sweeps: one per differential table, sealing the
+  // batch-start snapshot and clearing the batch-scratch flags. A table that
+  // backs a `@differential` transmit publishes its net presence changes
+  // through its sweep.
+  std::unordered_map<TABLE *, ParsedMessage> table_to_message;
+  for (const auto &[message, transmit] : context.commit_published_view) {
+    const auto pred = transmit.Predecessors()[0];
+    DataModel *const pred_model =
+        impl->view_to_model[pred]->FindAs<DataModel>();
+    assert(pred_model->table != nullptr);
+    table_to_message.emplace(pred_model->table, message);
+  }
+
+  for (TABLE *table : impl->tables) {
+    auto is_differential = false;
+    for (const QueryView &table_view : table->views) {
+      if (table_view.CanProduceDeletions()) {
+        is_differential = true;
+        break;
+      }
+    }
+    if (!is_differential) {
+      continue;
+    }
+
+    COMMITSWEEP *const sweep =
+        impl->operation_regions.CreateDerived<COMMITSWEEP>(seq);
+    sweep->table.Emplace(sweep, table);
+    if (auto it = table_to_message.find(table);
+        it != table_to_message.end()) {
+      sweep->message.emplace(it->second);
+    }
+    seq->AddRegion(sweep);
+  }
+
   // Finally, return from the data flow procedure.
   seq->AddRegion(impl->operation_regions.CreateDerived<RETURN>(
       seq, ProgramOperation::kReturnTrueFromProcedure));
 }
-
 
 // Recursively fix a region's containing procedure.
 static void FixupContainingProcedure(REGION *region, REGION *parent) {
@@ -378,19 +309,11 @@ static void FixupContainingProcedure(REGION *region, REGION *parent) {
     } else if (auto call = op->AsCall(); call) {
       FixupContainingProcedure(call->false_body.get(), region);
 
-    } else if (auto update = op->AsChangeTuple(); update) {
-      FixupContainingProcedure(update->failed_body.get(), region);
-
-    } else if (auto emplace = op->AsChangeRecord(); emplace) {
-      FixupContainingProcedure(emplace->failed_body.get(), region);
-
-    } else if (auto check = op->AsCheckTuple(); check) {
+    } else if (auto check = op->AsCheckMember(); check) {
       FixupContainingProcedure(check->absent_body.get(), region);
-      FixupContainingProcedure(check->unknown_body.get(), region);
 
     } else if (auto get = op->AsCheckRecord(); get) {
       FixupContainingProcedure(get->absent_body.get(), region);
-      FixupContainingProcedure(get->unknown_body.get(), region);
 
     } else if (auto cmp = op->AsTupleCompare(); cmp) {
       FixupContainingProcedure(cmp->false_body.get(), region);

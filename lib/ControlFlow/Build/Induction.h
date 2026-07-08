@@ -76,8 +76,7 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
 
 void AppendToInductionInputVectors(ProgramImpl *impl, QueryView vec_view,
                                    QueryView inductive_view, Context &context,
-                                   OP *parent, INDUCTION *induction,
-                                   bool for_add);
+                                   OP *parent, INDUCTION *induction);
 
 REGION *AppendToInductionOutputVectors(ProgramImpl *impl, QueryView vec_view,
                                        Context &context, INDUCTION *induction,

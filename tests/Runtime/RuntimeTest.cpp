@@ -5,8 +5,10 @@
 #include <DrTest.h>
 
 #include <cstdint>
+#include <initializer_list>
 #include <set>
 #include <utility>
+#include <vector>
 
 #include <drlojekyll/Runtime/Allocator.h>
 #include <drlojekyll/Runtime/Hash.h>
@@ -111,34 +113,19 @@ TEST(Vec, GrowsPastInlineCapacity) {
   ASSERT_EQ(v[9999].y, 19998u);
 }
 
-TEST(Table, InsertFindStates) {
+TEST(Table, MonotoneTryAddDedup) {
   hyde::rt::Table<PairRow> t(hyde::rt::MallocAllocator());
 
-  ASSERT_EQ(static_cast<int>(t.State({1u, 2u})),
-            static_cast<int>(hyde::rt::TupleState::kAbsent));
+  ASSERT_EQ(t.Find({1u, 2u}), hyde::rt::kNoRow);
 
-  auto r1 = t.TryChangeAbsentToPresent({1u, 2u});
-  ASSERT_TRUE(r1.changed);
-  auto r2 = t.TryChangeAbsentToPresent({1u, 2u});
-  ASSERT_FALSE(r2.changed);
+  auto r1 = t.TryAdd({1u, 2u});
+  ASSERT_TRUE(r1.added);
+  auto r2 = t.TryAdd({1u, 2u});
+  ASSERT_FALSE(r2.added);
   ASSERT_EQ(r1.id, r2.id);
 
-  ASSERT_EQ(static_cast<int>(t.State({1u, 2u})),
-            static_cast<int>(hyde::rt::TupleState::kPresent));
-  ASSERT_EQ(t.NumRows(), 1u);
-
-  // Differential cycle: present -> unknown -> present.
-  ASSERT_TRUE(t.TryChangePresentToUnknown({1u, 2u}));
-  ASSERT_FALSE(t.TryChangeAbsentToPresent({1u, 2u}).changed);
-  ASSERT_TRUE(t.TryChangeAbsentOrUnknownToPresent({1u, 2u}).changed);
-
-  // Retraction: present -> absent -> present again.
-  ASSERT_TRUE(t.TryChangePresentToAbsent({1u, 2u}));
-  ASSERT_EQ(static_cast<int>(t.State({1u, 2u})),
-            static_cast<int>(hyde::rt::TupleState::kAbsent));
-  ASSERT_TRUE(t.TryChangeAbsentToPresent({1u, 2u}).changed);
-
-  // Row storage is stable: still one row.
+  ASSERT_EQ(t.Find({1u, 2u}), r1.id);
+  ASSERT_TRUE(t.Present(r1.id));
   ASSERT_EQ(t.NumRows(), 1u);
 }
 
@@ -147,23 +134,277 @@ TEST(Table, ManyRowsRehashCorrectly) {
   constexpr uint32_t kN = 50000u;
 
   for (uint32_t i = 0u; i < kN; ++i) {
-    ASSERT_TRUE(t.TryChangeAbsentToPresent({i, i ^ 0xdeadbeefu}).changed);
+    ASSERT_TRUE(t.TryAdd({i, i ^ 0xdeadbeefu}).added);
   }
   ASSERT_EQ(t.NumRows(), kN);
 
   // Every row is findable after many rehashes, and no duplicate inserts.
   for (uint32_t i = 0u; i < kN; ++i) {
-    ASSERT_FALSE(t.TryChangeAbsentToPresent({i, i ^ 0xdeadbeefu}).changed);
+    ASSERT_FALSE(t.TryAdd({i, i ^ 0xdeadbeefu}).added);
   }
 
   // Scan sees every row exactly once.
   std::set<uint32_t> seen;
   for (uint32_t id = 0u; id < t.NumRows(); ++id) {
-    ASSERT_EQ(static_cast<int>(t.StateAt(id)),
-              static_cast<int>(hyde::rt::TupleState::kPresent));
     seen.insert(t.RowAt(id).x);
   }
   ASSERT_EQ(seen.size(), kN);
+}
+
+namespace {
+
+using DiffPairs = hyde::rt::DiffTable<PairRow>;
+using hyde::rt::DerivClass;
+
+// A commit sink that records the published (row, added) crossings.
+struct RecordingSink {
+  std::vector<std::pair<PairRow, bool>> published;
+
+  void operator()(const PairRow &row, bool added) {
+    published.emplace_back(row, added);
+  }
+};
+
+// Empty-vector helper for frontier retirement.
+hyde::rt::Vec<uint32_t> IdVec(std::initializer_list<uint32_t> ids) {
+  hyde::rt::Vec<uint32_t> v(hyde::rt::MallocAllocator());
+  for (uint32_t id : ids) {
+    v.Add(id);
+  }
+  return v;
+}
+
+}  // namespace
+
+TEST(DiffTable, AddCrossingAndCommit) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  // First derivation up-crosses; the second does not.
+  auto d1 = t.AddDerivation({1u, 2u}, DerivClass::kNonRecursive);
+  ASSERT_TRUE(d1.crossed);
+  ASSERT_TRUE(d1.added_row);
+  auto d2 = t.AddDerivation({1u, 2u}, DerivClass::kRecursive);
+  ASSERT_FALSE(d2.crossed);
+  ASSERT_FALSE(d2.added_row);
+  ASSERT_EQ(d1.id, d2.id);
+
+  // Mid-batch: count-based presence holds; InI is still the empty snapshot.
+  ASSERT_TRUE(t.Present(d1.id));
+  ASSERT_TRUE(t.RecursivelySupported(d1.id));
+  ASSERT_FALSE(t.InI(d1.id));
+
+  RecordingSink sink;
+  t.Commit(sink);
+  ASSERT_EQ(sink.published.size(), 1u);
+  ASSERT_TRUE(sink.published[0].first == (PairRow{1u, 2u}));
+  ASSERT_TRUE(sink.published[0].second);
+
+  // Sealed snapshot: InI and InNew now agree with presence.
+  ASSERT_TRUE(t.InI(d1.id));
+  ASSERT_TRUE(t.InNew(d1.id));
+  t.DebugValidateCounts();
+}
+
+TEST(DiffTable, SubCrossingFiresOnEveryInIDecrementWithNonPositiveNr) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  // Row with C_nr = 0, C_r = 1, committed present.
+  auto d = t.AddDerivation({3u, 4u}, DerivClass::kRecursive);
+  RecordingSink sink;
+  t.Commit(sink);
+  ASSERT_TRUE(t.InI(d.id));
+
+  // A recursive decrement fires the down-crossing because the post-state
+  // C_nr is non-positive, regardless of which counter moved.
+  auto s = t.SubDerivation({3u, 4u}, DerivClass::kRecursive);
+  ASSERT_TRUE(s.crossed);
+  ASSERT_FALSE(t.Present(s.id));
+}
+
+TEST(DiffTable, NrFirewallSuppressesCrossing) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  // Row with C_nr = 2, committed.
+  t.AddDerivation({5u, 6u}, DerivClass::kNonRecursive);
+  auto d = t.AddDerivation({5u, 6u}, DerivClass::kNonRecursive);
+  RecordingSink sink;
+  t.Commit(sink);
+
+  // First decrement leaves C_nr = 1 > 0: no crossing, cascade stops dead.
+  ASSERT_FALSE(t.SubDerivation({5u, 6u}, DerivClass::kNonRecursive).crossed);
+
+  // Second decrement reaches C_nr = 0: crossing.
+  ASSERT_TRUE(t.SubDerivation({5u, 6u}, DerivClass::kNonRecursive).crossed);
+
+  RecordingSink sink2;
+  t.Commit(sink2);
+  ASSERT_EQ(sink2.published.size(), 1u);
+  ASSERT_FALSE(sink2.published[0].second);
+  ASSERT_FALSE(t.InI(d.id));
+}
+
+TEST(DiffTable, PhantomPairOnNeverPresentRowIsSilent) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  // Phantom minus on a never-present head: the counter dips to -1, but the
+  // crossing predicate requires kInI, so nothing propagates.
+  auto s = t.SubDerivation({7u, 8u}, DerivClass::kNonRecursive);
+  ASSERT_FALSE(s.crossed);
+  ASSERT_TRUE(s.added_row);  // Fresh log entry even for a transient negative.
+  ASSERT_FALSE(t.Present(s.id));
+
+  // The paired phantom plus restores -1 -> 0; the up-crossing predicate
+  // requires after_total > 0, so it too is silent.
+  auto a = t.AddDerivation({7u, 8u}, DerivClass::kNonRecursive);
+  ASSERT_FALSE(a.crossed);
+
+  RecordingSink sink;
+  t.Commit(sink);
+  ASSERT_TRUE(sink.published.empty());
+  t.DebugValidateCounts();
+}
+
+TEST(DiffTable, TransientNegativeDipOnPresentRowNetsToNothing) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  // Present row with C_nr = 1.
+  t.AddDerivation({9u, 1u}, DerivClass::kNonRecursive);
+  RecordingSink sink0;
+  t.Commit(sink0);
+
+  // Two decrements (1 -> 0 -> -1): both fire the down-crossing (duplicate
+  // enqueues are absorbed by TryClaimDel), then two increments restore 1.
+  auto s1 = t.SubDerivation({9u, 1u}, DerivClass::kNonRecursive);
+  ASSERT_TRUE(s1.crossed);
+  auto s2 = t.SubDerivation({9u, 1u}, DerivClass::kNonRecursive);
+  ASSERT_TRUE(s2.crossed);
+
+  auto a1 = t.AddDerivation({9u, 1u}, DerivClass::kNonRecursive);
+  ASSERT_FALSE(a1.crossed);  // -1 -> 0: not an up-crossing.
+  auto a2 = t.AddDerivation({9u, 1u}, DerivClass::kNonRecursive);
+  ASSERT_TRUE(a2.crossed);  // 0 -> 1: a genuine up-crossing.
+
+  // Batch-start presence equals final presence: nothing is published.
+  RecordingSink sink;
+  t.Commit(sink);
+  ASSERT_TRUE(sink.published.empty());
+  ASSERT_TRUE(t.Present(s1.id));
+  t.DebugValidateCounts();
+}
+
+TEST(DiffTable, ClaimDedupAndFrontierRetirement) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  auto d = t.AddDerivation({2u, 2u}, DerivClass::kNonRecursive);
+  RecordingSink sink0;
+  t.Commit(sink0);
+
+  t.SubDerivation({2u, 2u}, DerivClass::kNonRecursive);
+
+  // Claim into D exactly once.
+  ASSERT_TRUE(t.TryClaimDel(d.id));
+  ASSERT_FALSE(t.TryClaimDel(d.id));
+
+  // While in the current frontier round, the row is alive-at-claim but no
+  // longer survives-so-far.
+  ASSERT_FALSE(t.SurvivesSoFar(d.id));
+  ASSERT_TRUE(t.AliveAtClaim(d.id));
+  ASSERT_FALSE(t.InNew(d.id));
+
+  // Retiring the round clears only the frontier bit.
+  auto round = IdVec({d.id});
+  t.RetireDelFrontier(round);
+  ASSERT_FALSE(t.AliveAtClaim(d.id));
+
+  RecordingSink sink;
+  t.Commit(sink);
+  ASSERT_EQ(sink.published.size(), 1u);
+  ASSERT_FALSE(sink.published[0].second);
+
+  // Commit reset the claim flags: the row is claimable again next batch.
+  t.AddDerivation({2u, 2u}, DerivClass::kNonRecursive);
+  t.SubDerivation({2u, 2u}, DerivClass::kNonRecursive);
+  ASSERT_TRUE(t.TryClaimDel(d.id));
+  RecordingSink sink2;
+  t.Commit(sink2);
+  ASSERT_TRUE(sink2.published.empty());
+}
+
+TEST(DiffTable, AddClaimAndInsertFrontierPredicates) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  auto d = t.AddDerivation({4u, 4u}, DerivClass::kRecursive);
+  ASSERT_TRUE(d.crossed);
+
+  ASSERT_TRUE(t.TryClaimAdd(d.id));
+  ASSERT_FALSE(t.TryClaimAdd(d.id));
+
+  // Claimed into A and into the current insert frontier round.
+  ASSERT_TRUE(t.InNew(d.id));
+  ASSERT_TRUE(t.InNewWithFrontier(d.id));
+  ASSERT_FALSE(t.InNewSansFrontier(d.id));
+
+  auto round = IdVec({d.id});
+  t.RetireAddFrontier(round);
+  ASSERT_TRUE(t.InNewSansFrontier(d.id));
+
+  RecordingSink sink;
+  t.Commit(sink);
+  ASSERT_EQ(sink.published.size(), 1u);
+  ASSERT_TRUE(sink.published[0].second);
+}
+
+TEST(DiffTable, DeleteThenRederivePublishesNothing) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  // Committed row supported once nonrecursively.
+  auto d = t.AddDerivation({6u, 6u}, DerivClass::kNonRecursive);
+  RecordingSink sink0;
+  t.Commit(sink0);
+
+  // Overdelete it, claim it, then rederive it via a recursive support and
+  // claim the re-add: net no change, so Commit publishes nothing and the
+  // row ends the batch with both claim flags reset.
+  ASSERT_TRUE(t.SubDerivation({6u, 6u}, DerivClass::kNonRecursive).crossed);
+  ASSERT_TRUE(t.TryClaimDel(d.id));
+  ASSERT_TRUE(t.AddDerivation({6u, 6u}, DerivClass::kRecursive).crossed);
+  ASSERT_TRUE(t.TryClaimAdd(d.id));
+
+  RecordingSink sink;
+  t.Commit(sink);
+  ASSERT_TRUE(sink.published.empty());
+  ASSERT_TRUE(t.Present(d.id));
+  ASSERT_TRUE(t.InI(d.id));
+  t.DebugValidateCounts();
+}
+
+TEST(DiffTable, ExplicitSupportIsOneSetSemanticsBit) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+
+  // First explicit add up-crosses; a duplicate explicit add is a no-op.
+  auto a1 = t.AddExplicit({8u, 8u});
+  ASSERT_TRUE(a1.crossed);
+  auto a2 = t.AddExplicit({8u, 8u});
+  ASSERT_FALSE(a2.crossed);
+  ASSERT_TRUE(t.Present(a1.id));
+
+  RecordingSink sink0;
+  t.Commit(sink0);
+  ASSERT_EQ(sink0.published.size(), 1u);
+
+  // Explicit removal drops the one explicit support; a duplicate removal
+  // (and one on a never-added row) is a no-op.
+  auto s1 = t.SubExplicit({8u, 8u});
+  ASSERT_TRUE(s1.crossed);
+  auto s2 = t.SubExplicit({8u, 8u});
+  ASSERT_FALSE(s2.crossed);
+  ASSERT_FALSE(t.SubExplicit({1u, 9u}).crossed);
+
+  RecordingSink sink;
+  t.Commit(sink);
+  ASSERT_EQ(sink.published.size(), 1u);
+  ASSERT_FALSE(sink.published[0].second);
+  t.DebugValidateCounts();
 }
 
 TEST(Index, KeyedChains) {
@@ -173,7 +414,7 @@ TEST(Index, KeyedChains) {
   // Three rows under x=7, one under x=8, none under x=9.
   for (PairRow row : {PairRow{7u, 1u}, PairRow{7u, 2u}, PairRow{8u, 1u},
                       PairRow{7u, 3u}}) {
-    if (auto ins = t.TryChangeAbsentToPresent(row); ins.added_row) {
+    if (auto ins = t.TryAdd(row); ins.added) {
       by_x.Add({row.x}, ins.id);
     }
   }
@@ -200,7 +441,7 @@ TEST(Index, ManyKeysRehash) {
   for (uint32_t i = 0u; i < kN; ++i) {
     // Two rows per key.
     for (uint32_t j = 0u; j < 2u; ++j) {
-      if (auto ins = t.TryChangeAbsentToPresent({i, j}); ins.added_row) {
+      if (auto ins = t.TryAdd({i, j}); ins.added) {
         by_x.Add({i}, ins.id);
       }
     }

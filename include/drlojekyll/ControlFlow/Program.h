@@ -30,7 +30,6 @@ class ProgramReturnRegion;
 class ProgramTestAndSetRegion;
 class ProgramGenerateRegion;
 class ProgramInductionRegion;
-class ProgramModeSwitchRegion;
 class ProgramLetBindingRegion;
 class ProgramParallelRegion;
 class ProgramProcedure;
@@ -41,10 +40,11 @@ class ProgramVectorClearRegion;
 class ProgramVectorLoopRegion;
 class ProgramVectorSwapRegion;
 class ProgramVectorUniqueRegion;
-class ProgramChangeTupleRegion;
+class ProgramUpdateCountRegion;
 class ProgramChangeRecordRegion;
-class ProgramCheckTupleRegion;
+class ProgramCheckMemberRegion;
 class ProgramCheckRecordRegion;
+class ProgramCommitSweepRegion;
 class ProgramTableJoinRegion;
 class ProgramTableProductRegion;
 class ProgramTableScanRegion;
@@ -64,7 +64,6 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   ProgramRegion(const ProgramTestAndSetRegion &);
   ProgramRegion(const ProgramGenerateRegion &);
   ProgramRegion(const ProgramInductionRegion &);
-  ProgramRegion(const ProgramModeSwitchRegion &);
   ProgramRegion(const ProgramLetBindingRegion &);
   ProgramRegion(const ProgramParallelRegion &);
   ProgramRegion(const ProgramPublishRegion &);
@@ -74,10 +73,11 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   ProgramRegion(const ProgramVectorLoopRegion &);
   ProgramRegion(const ProgramVectorSwapRegion &);
   ProgramRegion(const ProgramVectorUniqueRegion &);
-  ProgramRegion(const ProgramChangeTupleRegion &);
+  ProgramRegion(const ProgramUpdateCountRegion &);
   ProgramRegion(const ProgramChangeRecordRegion &);
-  ProgramRegion(const ProgramCheckTupleRegion &);
+  ProgramRegion(const ProgramCheckMemberRegion &);
   ProgramRegion(const ProgramCheckRecordRegion &);
+  ProgramRegion(const ProgramCommitSweepRegion &);
   ProgramRegion(const ProgramTableJoinRegion &);
   ProgramRegion(const ProgramTableProductRegion &);
   ProgramRegion(const ProgramTableScanRegion &);
@@ -96,12 +96,12 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   bool IsVectorClear(void) const noexcept;
   bool IsVectorSwap(void) const noexcept;
   bool IsVectorUnique(void) const noexcept;
-  bool IsModeSwitch(void) const noexcept;
   bool IsLetBinding(void) const noexcept;
-  bool IsChangeTuple(void) const noexcept;
+  bool IsUpdateCount(void) const noexcept;
   bool IsChangeRecord(void) const noexcept;
-  bool IsCheckTuple(void) const noexcept;
+  bool IsCheckMember(void) const noexcept;
   bool IsCheckRecord(void) const noexcept;
+  bool IsCommitSweep(void) const noexcept;
   bool IsTableJoin(void) const noexcept;
   bool IsTableProduct(void) const noexcept;
   bool IsTableScan(void) const noexcept;
@@ -119,7 +119,6 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   friend class ProgramTestAndSetRegion;
   friend class ProgramGenerateRegion;
   friend class ProgramInductionRegion;
-  friend class ProgramModeSwitchRegion;
   friend class ProgramLetBindingRegion;
   friend class ProgramParallelRegion;
   friend class ProgramProcedure;
@@ -130,10 +129,11 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   friend class ProgramVectorLoopRegion;
   friend class ProgramVectorSwapRegion;
   friend class ProgramVectorUniqueRegion;
-  friend class ProgramChangeTupleRegion;
+  friend class ProgramUpdateCountRegion;
   friend class ProgramChangeRecordRegion;
-  friend class ProgramCheckTupleRegion;
+  friend class ProgramCheckMemberRegion;
   friend class ProgramCheckRecordRegion;
+  friend class ProgramCommitSweepRegion;
   friend class ProgramTableJoinRegion;
   friend class ProgramTableProductRegion;
   friend class ProgramTableScanRegion;
@@ -234,12 +234,6 @@ enum class VectorKind : unsigned {
   kInductionInputs,
   kInductionSwaps,
   kInductionOutputs,
-
-  // Rows of a differential inductive merge that are still in an unknown
-  // state once the induction's fixpoint has drained. They are re-proven with
-  // a top-down checker in the induction's output region, and the proven ones
-  // are re-seeded into the induction's input vector.
-  kInductionRechecks,
   kJoinPivots,
   kInductiveJoinPivots,
   kInductiveJoinPivotSwaps,
@@ -464,31 +458,6 @@ class ProgramGenerateRegion
   using Node<ProgramGenerateRegion, ProgramGenerateRegionImpl>::Node;
 };
 
-enum class Mode {
-  kBottomUpAddition,
-  kBottomUpRemoval
-};
-
-// A region which semantically tells us we're swithing modes, e.g. to removing
-// data, or to adding data.
-class ProgramModeSwitchRegionImpl;
-class ProgramModeSwitchRegion
-    : public Node<ProgramModeSwitchRegion, ProgramModeSwitchRegionImpl> {
- public:
-  static ProgramModeSwitchRegion From(ProgramRegion) noexcept;
-
-  // What is the new mode for the code in `Body`?
-  Mode NewMode(void) const noexcept;
-
-  // Return the body to which the lexical scoping of the variables applies.
-  std::optional<ProgramRegion> Body(void) const noexcept;
-
- private:
-  friend class ProgramRegion;
-  using Node<ProgramModeSwitchRegion, ProgramModeSwitchRegionImpl>::Node;
-};
-
-
 // A let binding is an assignment of variables.
 class ProgramLetBindingRegionImpl;
 class ProgramLetBindingRegion
@@ -598,31 +567,34 @@ class ProgramVectorSwapRegion
   using Node<ProgramVectorSwapRegion, ProgramVectorSwapRegionImpl>::Node;
 };
 
-enum class TupleState : unsigned {
-  kPresent,
-  kAbsent,
-  kUnknown,
-  kAbsentOrUnknown
+// The named membership predicates of a differential table. Every read of a
+// differential table by generated joins goes through exactly one of these,
+// named explicitly on its CHECKMEMBER region so the frozen-vs-current read
+// discipline of the delta schemas is auditable in `-ir-out`.
+enum class MembershipPredicate : unsigned {
+  kInI,                   // Batch-start state (the frozen "I").
+  kInNew,                 // Final-so-far: (kInI && !kDel) || kAdd.
+  kSurvivesSoFar,         // kInI && !kDel.
+  kAliveAtClaim,          // kInI && (!kDel || kDelNow).
+  kInNewWithFrontier,     // (kInI && !kDel) || kAdd.
+  kInNewSansFrontier,     // (kInI && !kDel) || (kAdd && !kAddNow).
+  kPresent,               // Count-based presence: C_nr + C_r > 0.
+  kRecursivelySupported,  // C_r > 0 (the REDERIVE survival test).
 };
 
-// Set the state of a tuple in a view. In the simplest case, this behaves like
-// a SQL `INSERT` statement: it says that some data exists in a relation. There
-// are two other states that can be set: absent, which is like a `DELETE`, and
-// unknown, which has no SQL equivalent, but it like a tentative `DELETE`. An
-// unknown tuple is one which has been speculatively marked as deleted, and
-// needs to be re-proven in order via alternate means in order for it to be
-// used.
-class ProgramChangeTupleRegionImpl;
-class ProgramChangeTupleRegion
-    : public Node<ProgramChangeTupleRegion, ProgramChangeTupleRegionImpl> {
+// One signed derivation-counter fold on a table: a single +1/-1 of the
+// row's `C_nr` or `C_r` counter, applied inline at a rule-firing site
+// (multiset discipline: one fold per rule-instance firing). `Body` executes
+// only when the fold is a zero-crossing event. On a monotone table the fold
+// degenerates to an insert-if-new, whose crossing is "the row is new".
+class ProgramUpdateCountRegionImpl;
+class ProgramUpdateCountRegion
+    : public Node<ProgramUpdateCountRegion, ProgramUpdateCountRegionImpl> {
  public:
-  static ProgramChangeTupleRegion From(ProgramRegion) noexcept;
+  static ProgramUpdateCountRegion From(ProgramRegion) noexcept;
 
-  // The body that conditionally executes if the state transition succeeds.
-  std::optional<ProgramRegion> BodyIfSucceeded(void) const noexcept;
-
-  // The body that conditionally executes if the state transition fails.
-  std::optional<ProgramRegion> BodyIfFailed(void) const noexcept;
+  // The body that conditionally executes on a zero crossing.
+  std::optional<ProgramRegion> Body(void) const noexcept;
 
   unsigned Arity(void) const noexcept;
 
@@ -630,20 +602,20 @@ class ProgramChangeTupleRegion
 
   DataTable Table(void) const;
 
-  // We check if the tuple's current state is this.
-  TupleState FromState(void) const noexcept;
+  // Fold sign: `true` adds a derivation, `false` retracts one.
+  bool IsAdd(void) const noexcept;
 
-  // If the tuple's prior state matches `FromState()`, then we change the state
-  // to `ToState()`.
-  TupleState ToState(void) const noexcept;
+  // Which counter the fold lands on: `kNonRecursive` for seed/init-position
+  // firings (C_nr), `kRecursive` for fixpoint back-edge firings (C_r).
+  DerivClass DerivationClass(void) const noexcept;
 
  private:
   friend class ProgramRegion;
 
-  using Node<ProgramChangeTupleRegion, ProgramChangeTupleRegionImpl>::Node;
+  using Node<ProgramUpdateCountRegion, ProgramUpdateCountRegionImpl>::Node;
 };
 
-// This is similar to a `ProgramChangeTupleRegion`; however, it also
+// This is similar to a `ProgramUpdateCountRegion`; however, it also
 // creates new definitions for the variables which it is updating. The key
 // idea is that this gets us the "record" associated with some tuple data,
 // rather than us keeping with the tuple data itself.
@@ -653,11 +625,8 @@ class ProgramChangeRecordRegion
  public:
   static ProgramChangeRecordRegion From(ProgramRegion) noexcept;
 
-  // The body that conditionally executes if the state transition succeeds.
-  std::optional<ProgramRegion> BodyIfSucceeded(void) const noexcept;
-
-  // The body that conditionally executes if the state transition fails.
-  std::optional<ProgramRegion> BodyIfFailed(void) const noexcept;
+  // The body that conditionally executes on a zero crossing.
+  std::optional<ProgramRegion> Body(void) const noexcept;
 
   unsigned Arity(void) const noexcept;
 
@@ -666,18 +635,16 @@ class ProgramChangeRecordRegion
 
   UsedNodeRange<DataVariable> TupleVariables(void) const;
 
-  // The defined record variables. These are defined in both the successful
-  // and failing bodies!
+  // The defined record variables.
   DefinedNodeRange<DataVariable> RecordVariables(void) const;
 
   DataTable Table(void) const;
 
-  // We check if the tuple's current state is this.
-  TupleState FromState(void) const noexcept;
+  // Fold sign: `true` adds a derivation, `false` retracts one.
+  bool IsAdd(void) const noexcept;
 
-  // If the tuple's prior state matches `FromState()`, then we change the state
-  // to `ToState()`.
-  TupleState ToState(void) const noexcept;
+  // Which counter the fold lands on.
+  DerivClass DerivationClass(void) const noexcept;
 
  private:
   friend class ProgramRegion;
@@ -685,21 +652,18 @@ class ProgramChangeRecordRegion
   using Node<ProgramChangeRecordRegion, ProgramChangeRecordRegionImpl>::Node;
 };
 
-// Check the state of a tuple. This is sort of like asking if something exists,
-// but has three conditionally executed children, based off of the state.
-// One state is that the tuple os missing from a view. The second state is
-// that the tuple is present in the view. The final state is that we are
-// not sure if the tuple is present or absent, because it has been marked
-// as a candidate for deletion, and thus we need to re-prove it.
-class ProgramCheckTupleRegionImpl;
-class ProgramCheckTupleRegion
-    : public Node<ProgramCheckTupleRegion, ProgramCheckTupleRegionImpl> {
+// A strictly two-way membership gate on a table: `IfPresent` executes when
+// the named predicate holds for the tuple, `IfAbsent` when it does not. The
+// predicate names one of the differential membership reads; on a monotone
+// table the gate is simply row existence.
+class ProgramCheckMemberRegionImpl;
+class ProgramCheckMemberRegion
+    : public Node<ProgramCheckMemberRegion, ProgramCheckMemberRegionImpl> {
  public:
-  static ProgramCheckTupleRegion From(ProgramRegion) noexcept;
+  static ProgramCheckMemberRegion From(ProgramRegion) noexcept;
 
   std::optional<ProgramRegion> IfPresent(void) const noexcept;
   std::optional<ProgramRegion> IfAbsent(void) const noexcept;
-  std::optional<ProgramRegion> IfUnknown(void) const noexcept;
 
   unsigned Arity(void) const noexcept;
 
@@ -707,14 +671,17 @@ class ProgramCheckTupleRegion
 
   DataTable Table(void) const;
 
+  // The membership predicate this gate reads.
+  MembershipPredicate Predicate(void) const noexcept;
+
  private:
   friend class ProgramRegion;
 
-  using Node<ProgramCheckTupleRegion, ProgramCheckTupleRegionImpl>::Node;
+  using Node<ProgramCheckMemberRegion, ProgramCheckMemberRegionImpl>::Node;
 };
 
-// This is like `ProgramCheckTupleRegion`, except that it operates on records,
-// i.e. it defines new variables for what is being returned.
+// This is like `ProgramCheckMemberRegion`, except that it operates on
+// records, i.e. it defines new variables for what is being returned.
 class ProgramCheckRecordRegionImpl;
 class ProgramCheckRecordRegion
     : public Node<ProgramCheckRecordRegion, ProgramCheckRecordRegionImpl> {
@@ -723,7 +690,6 @@ class ProgramCheckRecordRegion
 
   std::optional<ProgramRegion> IfPresent(void) const noexcept;
   std::optional<ProgramRegion> IfAbsent(void) const noexcept;
-  std::optional<ProgramRegion> IfUnknown(void) const noexcept;
 
   // Returns a unique ID for this region.
   unsigned Id(void) const noexcept;
@@ -736,10 +702,35 @@ class ProgramCheckRecordRegion
 
   DataTable Table(void) const;
 
+  // The membership predicate this gate reads.
+  MembershipPredicate Predicate(void) const noexcept;
+
  private:
   friend class ProgramRegion;
 
   using Node<ProgramCheckRecordRegion, ProgramCheckRecordRegionImpl>::Node;
+};
+
+// The end-of-batch commit sweep of one differential table: publishes each
+// touched row's net 0/1 presence change (against the batch-start snapshot)
+// to `Message()` when the table backs a `@differential` transmit view, seals
+// the new snapshot, and clears the batch-scratch flags.
+class ProgramCommitSweepRegionImpl;
+class ProgramCommitSweepRegion
+    : public Node<ProgramCommitSweepRegion, ProgramCommitSweepRegionImpl> {
+ public:
+  static ProgramCommitSweepRegion From(ProgramRegion) noexcept;
+
+  DataTable Table(void) const;
+
+  // The `@differential` message fed by this table, if any: net presence
+  // crossings publish through it.
+  std::optional<ParsedMessage> Message(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using Node<ProgramCommitSweepRegion, ProgramCommitSweepRegionImpl>::Node;
 };
 
 // Perform an equi-join between two or more tables, and iterate over the
@@ -985,11 +976,6 @@ enum class ProcedureKind : unsigned {
   // network. This is a kind of bottom-up execution of the dataflow.
   kMessageHandler,
 
-  // Given a tuple as input, return `true` if that tuple is present in the
-  // database. This may do top-down execution of the data flows to re-prove
-  // the tuple.
-  kTupleFinder,
-
   // A query message forcing function, i.e. a function that internally sends
   // a message given the bound parameters of a query.
   kQueryMessageInjector,
@@ -1115,10 +1101,6 @@ class ProgramQuery {
   // of the query declaration.
   std::optional<DataIndex> index;
 
-  // If present, a procedure which must be invoked on each scanned tuple from
-  // the table / index.
-  std::optional<ProgramProcedure> tuple_checker;
-
   // If present, a procedure which must be invoked in order to ensure the
   // presence of any backing data. The parameters to this procedure are any
   // `bound`-attributed parameters of the query declaration.
@@ -1126,12 +1108,10 @@ class ProgramQuery {
 
   inline explicit ProgramQuery(
       ParsedQuery query_, DataTable table_, std::optional<DataIndex> index_,
-      std::optional<ProgramProcedure> tuple_checker_,
       std::optional<ProgramProcedure> forcing_function_)
       : query(query_),
         table(table_),
         index(std::move(index_)),
-        tuple_checker(std::move(tuple_checker_)),
         forcing_function(std::move(forcing_function_)) {}
 
   ProgramQuery(const ProgramQuery &) = default;
@@ -1202,7 +1182,6 @@ class ProgramVisitor {
   virtual void Visit(ProgramTestAndSetRegion val);
   virtual void Visit(ProgramGenerateRegion val);
   virtual void Visit(ProgramInductionRegion val);
-  virtual void Visit(ProgramModeSwitchRegion val);
   virtual void Visit(ProgramLetBindingRegion val);
   virtual void Visit(ProgramParallelRegion val);
   virtual void Visit(ProgramProcedure val);
@@ -1213,10 +1192,11 @@ class ProgramVisitor {
   virtual void Visit(ProgramVectorLoopRegion val);
   virtual void Visit(ProgramVectorSwapRegion val);
   virtual void Visit(ProgramVectorUniqueRegion val);
-  virtual void Visit(ProgramChangeTupleRegion val);
+  virtual void Visit(ProgramUpdateCountRegion val);
   virtual void Visit(ProgramChangeRecordRegion val);
-  virtual void Visit(ProgramCheckTupleRegion val);
+  virtual void Visit(ProgramCheckMemberRegion val);
   virtual void Visit(ProgramCheckRecordRegion val);
+  virtual void Visit(ProgramCommitSweepRegion val);
   virtual void Visit(ProgramTableJoinRegion val);
   virtual void Visit(ProgramTableProductRegion val);
   virtual void Visit(ProgramTableScanRegion val);

@@ -296,9 +296,6 @@ class ProgramRegionImpl : public Def<ProgramRegionImpl>, public User {
   virtual ProgramParallelRegionImpl *AsParallel(void) noexcept;
   virtual ProgramInductionRegionImpl *AsInduction(void) noexcept;
 
-  // Find the nearest containing mode switch.
-  ProgramModeSwitchRegionImpl *ContainingModeSwitch(void) noexcept;
-
   // Returns `true` if all paths through `this` ends with a `return` region.
   virtual bool EndsWithReturn(void) const noexcept = 0;
 
@@ -405,17 +402,20 @@ enum class ProgramOperation {
   // to observe / report on.
   kAppendQueryParamsToMessageInjectVector,
 
-  // Insert into a table. Can be interpreted as conditional (a runtime may
-  // choose to check if the insert is new or not). If the insert succeeds, then
-  // execution descends into `body`.
-  kInsertIntoTable,
-  kEmplaceIntoTable,
+  // One signed derivation-counter fold on a table (a +1/-1 of `C_nr` or
+  // `C_r`); execution descends into `body` on a zero crossing. On a
+  // monotone table this is an insert-if-new.
+  kUpdateCount,
+  kUpdateCountRecord,
 
-  // Check the state of a tuple from a table. This executes one of three
-  // bodies: `body` if the tuple is present, `absent_body` if the tuple is
-  // absent, and `unknown_body` if the tuple may have been deleted.
-  kCheckTupleInTable,
-  kCheckRecordFromTable,
+  // Two-way membership gate on a table, naming one membership predicate:
+  // `body` executes if the predicate holds, `absent_body` if it does not.
+  kCheckMember,
+  kCheckMemberRecord,
+
+  // End-of-batch commit sweep of one differential table: publish net 0/1
+  // presence changes, seal the batch-start snapshot, clear scratch flags.
+  kCommitSweep,
 
   // When dealing with MERGE/UNION nodes with an inductive cycle.
   kAppendToInductionVector,
@@ -482,9 +482,6 @@ enum class ProgramOperation {
   kPublishMessage,
   kPublishMessageRemoval,
 
-  // Switch modes, telling us the general intention of the containing code.
-  kModeSwitch,
-
   // Creates a let binding, which assigns uses of variables to definitions of
   // variables. In practice, let bindings are eliminated during the process
   // of optimization.
@@ -527,13 +524,13 @@ class ProgramOperationRegionImpl : public REGION {
   virtual ProgramReturnRegionImpl *AsReturn(void) noexcept;
   virtual ProgramTestAndSetRegionImpl *AsTestAndSet(void) noexcept;
   virtual ProgramGenerateRegionImpl *AsGenerate(void) noexcept;
-  virtual ProgramModeSwitchRegionImpl *AsModeSwitch(void) noexcept;
   virtual ProgramLetBindingRegionImpl *AsLetBinding(void) noexcept;
   virtual ProgramPublishRegionImpl *AsPublish(void) noexcept;
-  virtual ProgramChangeTupleRegionImpl *AsChangeTuple(void) noexcept;
+  virtual ProgramUpdateCountRegionImpl *AsUpdateCount(void) noexcept;
   virtual ProgramChangeRecordRegionImpl *AsChangeRecord(void) noexcept;
-  virtual ProgramCheckTupleRegionImpl *AsCheckTuple(void) noexcept;
+  virtual ProgramCheckMemberRegionImpl *AsCheckMember(void) noexcept;
   virtual ProgramCheckRecordRegionImpl *AsCheckRecord(void) noexcept;
+  virtual ProgramCommitSweepRegionImpl *AsCommitSweep(void) noexcept;
   virtual ProgramTableJoinRegionImpl *AsTableJoin(void) noexcept;
   virtual ProgramTableProductRegionImpl *AsTableProduct(void) noexcept;
   virtual ProgramTableScanRegionImpl *AsTableScan(void) noexcept;
@@ -558,35 +555,6 @@ class ProgramOperationRegionImpl : public REGION {
 };
 
 using OP = ProgramOperationRegionImpl;
-
-// A region which semantically tells us we're swithing modes, e.g. to removing
-// data, or to adding data.
-class ProgramModeSwitchRegionImpl final : public OP {
- public:
-  virtual ~ProgramModeSwitchRegionImpl(void);
-
-  void Accept(ProgramVisitor &visitor) override;
-  uint64_t Hash(uint32_t depth) const override;
-  bool IsNoOp(void) const noexcept override;
-
-  // Returns `true` if `this` and `that` are structurally equivalent (after
-  // variable renaming).
-  bool Equals(EqualitySet &eq, REGION *that,
-              uint32_t depth) const noexcept override;
-
-  const bool MergeEqual(ProgramImpl *prog,
-                        std::vector<REGION *> &merges) override;
-
-  inline ProgramModeSwitchRegionImpl(REGION *parent_, Mode new_mode_)
-      : OP(parent_, ProgramOperation::kModeSwitch),
-        new_mode(new_mode_) {}
-
-  const Mode new_mode;
-
-  ProgramModeSwitchRegionImpl *AsModeSwitch(void) noexcept override;
-};
-
-using MODESWITCH = ProgramModeSwitchRegionImpl;
 
 // A let binding, i.e. an assignment of zero or more variables. Variables
 // are assigned pairwise from `used_vars` into `defined_vars`.
@@ -814,28 +782,25 @@ class ProgramVectorUniqueRegionImpl final : public OP {
 
 using VECTORUNIQUE = ProgramVectorUniqueRegionImpl;
 
-// Set the state of a tuple in a view. In the simplest case, this behaves like
-// a SQL `INSERT` statement: it says that some data exists in a relation. There
-// are two other states that can be set: absent, which is like a `DELETE`, and
-// unknown, which has no SQL equivalent, but it like a tentative `DELETE`. An
-// unknown tuple is one which has been speculatively marked as deleted, and
-// needs to be re-proven in order via alternate means in order for it to be
-// used.
-class ProgramChangeTupleRegionImpl final : public OP {
+// One signed derivation-counter fold on a table: a single +1/-1 of the
+// row's `C_nr` or `C_r` counter, applied inline at a rule-firing site
+// (multiset discipline: one fold per rule-instance firing). `body` executes
+// only on a zero-crossing event. On a monotone table the fold degenerates
+// to an insert-if-new whose crossing is "the row is new".
+class ProgramUpdateCountRegionImpl final : public OP {
  public:
-  virtual ~ProgramChangeTupleRegionImpl(void);
+  virtual ~ProgramUpdateCountRegionImpl(void);
 
-  inline ProgramChangeTupleRegionImpl(REGION *parent_, TupleState from_state_,
-                                      TupleState to_state_)
-      : OP(parent_, ProgramOperation::kInsertIntoTable),
+  inline ProgramUpdateCountRegionImpl(REGION *parent_, bool is_add_,
+                                      DerivClass deriv_class_)
+      : OP(parent_, ProgramOperation::kUpdateCount),
         col_values(this),
-        failed_body(this),
-        from_state(from_state_),
-        to_state(to_state_) {}
+        is_add(is_add_),
+        deriv_class(deriv_class_) {}
 
   void Accept(ProgramVisitor &visitor) override;
 
-  ProgramChangeTupleRegionImpl *AsChangeTuple(void) noexcept override;
+  ProgramUpdateCountRegionImpl *AsUpdateCount(void) noexcept override;
 
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
@@ -848,25 +813,24 @@ class ProgramChangeTupleRegionImpl final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  // Returns `true` if all paths through `this` ends with a `return` region.
-  bool EndsWithReturn(void) const noexcept override;
-
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
-  // View into which the tuple is being inserted.
+  // Table whose counter is being folded.
   UseRef<TABLE> table;
 
-  // If we failed to change the state, then execute this body.
-  RegionRef failed_body;
+  // Fold sign: `true` adds a derivation, `false` retracts one.
+  const bool is_add;
 
-  const TupleState from_state;
-  const TupleState to_state;
+  // Which counter the fold lands on: `kNonRecursive` (C_nr) for
+  // seed/init-position firings, `kRecursive` (C_r) for fixpoint back-edge
+  // firings.
+  const DerivClass deriv_class;
 };
 
-using CHANGETUPLE = ProgramChangeTupleRegionImpl;
+using UPDATECOUNT = ProgramUpdateCountRegionImpl;
 
-// This is similar to a `ProgramChangeTupleRegion`; however, it also
+// This is similar to a `ProgramUpdateCountRegion`; however, it also
 // creates new definitions for the variables which it is updating. The key
 // idea is that this gets us the "record" associated with some tuple data,
 // rather than us keeping with the tuple data itself.
@@ -875,15 +839,13 @@ class ProgramChangeRecordRegionImpl final : public OP {
   virtual ~ProgramChangeRecordRegionImpl(void);
 
   inline ProgramChangeRecordRegionImpl(unsigned id_, REGION *parent_,
-                                       TupleState from_state_,
-                                       TupleState to_state_)
-      : OP(parent_, ProgramOperation::kEmplaceIntoTable),
+                                       bool is_add_, DerivClass deriv_class_)
+      : OP(parent_, ProgramOperation::kUpdateCountRecord),
         id(id_),
         col_values(this),
         record_vars(this),
-        failed_body(this),
-        from_state(from_state_),
-        to_state(to_state_) {}
+        is_add(is_add_),
+        deriv_class(deriv_class_) {}
 
   void Accept(ProgramVisitor &visitor) override;
 
@@ -900,50 +862,46 @@ class ProgramChangeRecordRegionImpl final : public OP {
   const bool MergeEqual(ProgramImpl *prog,
                         std::vector<REGION *> &merges) override;
 
-  // Returns `true` if all paths through `this` ends with a `return` region.
-  bool EndsWithReturn(void) const noexcept override;
-
   const unsigned id;
 
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
-  // Output record variables from this state emplace.
+  // Output record variables from this fold.
   DefList<VAR> record_vars;
 
-  // View into which the tuple is being inserted.
+  // Table whose counter is being folded.
   UseRef<TABLE> table;
 
-  // If we failed to change the state, then execute this body.
-  RegionRef failed_body;
+  // Fold sign: `true` adds a derivation, `false` retracts one.
+  const bool is_add;
 
-  const TupleState from_state;
-  const TupleState to_state;
+  // Which counter the fold lands on.
+  const DerivClass deriv_class;
 };
 
 using CHANGERECORD = ProgramChangeRecordRegionImpl;
 
-// Check the state of a tuple. This is sort of like asking if something exists,
-// but has three conditionally executed children, based off of the state.
-// One state is that the tuple os missing from a view. The second state is
-// that the tuple is present in the view. The final state is that we are
-// not sure if the tuple is present or absent, because it has been marked
-// as a candidate for deletion, and thus we need to re-prove it.
-class ProgramCheckTupleRegionImpl final : public OP {
+// A strictly two-way membership gate on a table, naming one membership
+// predicate explicitly: `body` executes if the predicate holds for the
+// tuple, `absent_body` if it does not. On a monotone table the gate is
+// simply row existence.
+class ProgramCheckMemberRegionImpl final : public OP {
  public:
-  virtual ~ProgramCheckTupleRegionImpl(void);
+  virtual ~ProgramCheckMemberRegionImpl(void);
 
-  inline ProgramCheckTupleRegionImpl(REGION *parent_)
-      : OP(parent_, ProgramOperation::kCheckTupleInTable),
+  inline ProgramCheckMemberRegionImpl(REGION *parent_,
+                                      MembershipPredicate predicate_)
+      : OP(parent_, ProgramOperation::kCheckMember),
         col_values(this),
         absent_body(this),
-        unknown_body(this) {}
+        predicate(predicate_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
   bool IsNoOp(void) const noexcept override;
 
-  ProgramCheckTupleRegionImpl *AsCheckTuple(void) noexcept override;
+  ProgramCheckMemberRegionImpl *AsCheckMember(void) noexcept override;
 
   // Returns `true` if all paths through `this` ends with a `return` region.
   bool EndsWithReturn(void) const noexcept override;
@@ -959,32 +917,32 @@ class ProgramCheckTupleRegionImpl final : public OP {
   // Variables that make up the tuple.
   UseList<VAR> col_values;
 
-  // View into which the tuple is being inserted.
+  // Table whose membership is being read.
   UseRef<TABLE> table;
 
-  // Region that is conditionally executed if the tuple is not present.
+  // Region that is conditionally executed if the predicate does not hold.
   RegionRef absent_body;
 
-  // Region that is conditionally executed if the tuple was deleted and hasn't
-  // been re-checked.
-  RegionRef unknown_body;
+  // The membership predicate this gate reads.
+  const MembershipPredicate predicate;
 };
 
-using CHECKTUPLE = ProgramCheckTupleRegionImpl;
+using CHECKMEMBER = ProgramCheckMemberRegionImpl;
 
-// This is like `ProgramCheckTupleRegion`, except that it operates on records,
-// i.e. it defines new variables for what is being returned.
+// This is like `ProgramCheckMemberRegion`, except that it operates on
+// records, i.e. it defines new variables for what is being returned.
 class ProgramCheckRecordRegionImpl final : public OP {
  public:
   virtual ~ProgramCheckRecordRegionImpl(void);
 
-  inline ProgramCheckRecordRegionImpl(unsigned id_, REGION *parent_)
-      : OP(parent_, ProgramOperation::kCheckRecordFromTable),
+  inline ProgramCheckRecordRegionImpl(unsigned id_, REGION *parent_,
+                                      MembershipPredicate predicate_)
+      : OP(parent_, ProgramOperation::kCheckMemberRecord),
         id(id_),
         col_values(this),
         record_vars(this),
         absent_body(this),
-        unknown_body(this) {}
+        predicate(predicate_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1011,18 +969,52 @@ class ProgramCheckRecordRegionImpl final : public OP {
   // Defined variables from the record.
   DefList<VAR> record_vars;
 
-  // View into which the tuple is being inserted.
+  // Table whose membership is being read.
   UseRef<TABLE> table;
 
-  // Region that is conditionally executed if the tuple is not present.
+  // Region that is conditionally executed if the predicate does not hold.
   RegionRef absent_body;
 
-  // Region that is conditionally executed if the tuple was deleted and hasn't
-  // been re-checked.
-  RegionRef unknown_body;
+  // The membership predicate this gate reads.
+  const MembershipPredicate predicate;
 };
 
 using CHECKRECORD = ProgramCheckRecordRegionImpl;
+
+// The end-of-batch commit sweep of one differential table: publishes each
+// touched row's net 0/1 presence change (against the batch-start snapshot)
+// through `message` when the table backs a `@differential` transmit view,
+// seals the new snapshot, and clears the batch-scratch flags.
+class ProgramCommitSweepRegionImpl final : public OP {
+ public:
+  virtual ~ProgramCommitSweepRegionImpl(void);
+
+  inline ProgramCommitSweepRegionImpl(REGION *parent_)
+      : OP(parent_, ProgramOperation::kCommitSweep) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  ProgramCommitSweepRegionImpl *AsCommitSweep(void) noexcept override;
+
+  // Returns `true` if `this` and `that` are structurally equivalent (after
+  // variable renaming).
+  bool Equals(EqualitySet &eq, REGION *that,
+              uint32_t depth) const noexcept override;
+
+  const bool MergeEqual(ProgramImpl *prog,
+                        std::vector<REGION *> &merges) override;
+
+  // Table being committed.
+  UseRef<TABLE> table;
+
+  // The `@differential` message fed by this table, if any: net presence
+  // crossings publish through it.
+  std::optional<ParsedMessage> message;
+};
+
+using COMMITSWEEP = ProgramCommitSweepRegionImpl;
 
 // Calls another IR procedure. All IR procedures return `true` or `false`. This
 // return value can be tested, and if it is, a body can be conditionally
@@ -1572,7 +1564,6 @@ class ProgramInductionRegionImpl final : public REGION {
   // loop operates on this vector. The init region of an induction fills this
   // vector.
   std::unordered_map<QueryView, VECTOR *> view_to_add_vec;
-  std::unordered_map<QueryView, VECTOR *> view_to_remove_vec;
 
   // This is the swap vector. Inside of a fixpoint loop, we swap this with the
   // normal vector, so that the current iteration of the loop can append to
@@ -1588,15 +1579,12 @@ class ProgramInductionRegionImpl final : public REGION {
   std::unordered_map<QueryView, VECTOR *> view_to_output_vec;
 
   // List of append to vector regions inside this induction.
-  std::vector<REGION *> init_appends_add;
-  std::vector<REGION *> init_appends_remove;
+  std::vector<REGION *> init_appends;
   std::vector<OP *> cycle_appends;
 
-  std::unordered_map<QueryView, PARALLEL *> output_add_cycles;
-  std::unordered_map<QueryView, PARALLEL *> output_remove_cycles;
+  std::unordered_map<QueryView, PARALLEL *> output_cycles;
 
-  std::unordered_map<QueryView, PARALLEL *> fixpoint_add_cycles;
-  std::unordered_map<QueryView, PARALLEL *> fixpoint_remove_cycles;
+  std::unordered_map<QueryView, PARALLEL *> fixpoint_cycles;
 
   const unsigned id;
 
@@ -1605,9 +1593,6 @@ class ProgramInductionRegionImpl final : public REGION {
     kAccumulatingCycleRegions,
     kBuildingOutputRegions
   } state = kAccumulatingInputRegions;
-
-  // Can this induction produce deletions?
-  bool is_differential{false};
 
   // All of the UNIONs, JOINs, and NEGATEs of the induction.
   std::vector<QueryView> views;
@@ -1639,7 +1624,6 @@ class ProgramImpl : public User {
 
   // List of query entry points.
   std::vector<ProgramQuery> queries;
-  UseList<REGION> query_checkers;
 
   DefList<PROC> procedure_regions;
   DefList<SERIES> series_regions;

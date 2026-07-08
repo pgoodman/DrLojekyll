@@ -194,8 +194,6 @@ class Generator {
       case ProcedureKind::kMessageHandler:
         return Sanitize(ToString(proc.Message()->Name())) + "_" +
                std::to_string(proc.Message()->Arity());
-      case ProcedureKind::kTupleFinder:
-        return "find_" + std::to_string(proc.Id());
       case ProcedureKind::kQueryMessageInjector:
         return "inject_" + std::to_string(proc.Id());
       default: return "proc_" + std::to_string(proc.Id());
@@ -261,8 +259,9 @@ class Generator {
   }
 
   void EmitCall(ProgramCallRegion region);
-  void EmitChangeTuple(ProgramChangeTupleRegion region);
-  void EmitCheckTuple(ProgramCheckTupleRegion region);
+  void EmitUpdateCount(ProgramUpdateCountRegion region);
+  void EmitCheckMember(ProgramCheckMemberRegion region);
+  void EmitCommitSweep(ProgramCommitSweepRegion region);
   void EmitGenerate(ProgramGenerateRegion region);
   void EmitInduction(ProgramInductionRegion region);
   void EmitJoin(ProgramTableJoinRegion region);
@@ -471,27 +470,17 @@ void Generator::WalkRegion(ProgramRegion region) {
     if (auto body = ProgramLetBindingRegion::From(region).Body()) {
       WalkRegion(*body);
     }
-  } else if (region.IsModeSwitch()) {
-    if (auto body = ProgramModeSwitchRegion::From(region).Body()) {
+  } else if (region.IsUpdateCount()) {
+    auto change = ProgramUpdateCountRegion::From(region);
+    if (auto body = change.Body()) {
       WalkRegion(*body);
     }
-  } else if (region.IsChangeTuple()) {
-    auto change = ProgramChangeTupleRegion::From(region);
-    if (auto body = change.BodyIfSucceeded()) {
-      WalkRegion(*body);
-    }
-    if (auto body = change.BodyIfFailed()) {
-      WalkRegion(*body);
-    }
-  } else if (region.IsCheckTuple()) {
-    auto check = ProgramCheckTupleRegion::From(region);
+  } else if (region.IsCheckMember()) {
+    auto check = ProgramCheckMemberRegion::From(region);
     if (auto body = check.IfPresent()) {
       WalkRegion(*body);
     }
     if (auto body = check.IfAbsent()) {
-      WalkRegion(*body);
-    }
-    if (auto body = check.IfUnknown()) {
       WalkRegion(*body);
     }
   } else if (region.IsTableJoin()) {
@@ -850,11 +839,13 @@ void Generator::EmitDatabaseDecl(void) {
      << hh.Indent() << "[[maybe_unused]] DatabaseLog &log;\n"
      << hh.Indent() << "[[maybe_unused]] DatabaseFunctors &functors;\n\n";
 
-  // Tables and their indexes.
+  // Tables and their indexes. Differential tables carry per-row derivation
+  // counters; monotone tables are insert-only row logs.
   for (DataTable table : program.Tables()) {
     const auto id = table.Id();
-    hh << hh.Indent() << "::hyde::rt::Table<" << row_type[id] << "> "
-       << table_member[id] << ";\n";
+    hh << hh.Indent() << "::hyde::rt::"
+       << (table.IsDifferential() ? "DiffTable<" : "Table<") << row_type[id]
+       << "> " << table_member[id] << ";\n";
     for (DataIndex index : table.Indices()) {
       if (auto it = index_member.find(index.Id()); it != index_member.end()) {
         hh << hh.Indent() << "::hyde::rt::Index<" << key_type[index.Id()]
@@ -946,8 +937,6 @@ void Generator::EmitRegion(ProgramRegion region) {
     for (auto sub : ProgramParallelRegion::From(region).Regions()) {
       EmitRegion(sub);
     }
-  } else if (region.IsModeSwitch()) {
-    EmitOptional(ProgramModeSwitchRegion::From(region).Body());
   } else if (region.IsLetBinding()) {
     auto let = ProgramLetBindingRegion::From(region);
     EmitComment(region);
@@ -992,10 +981,12 @@ void Generator::EmitRegion(ProgramRegion region) {
     auto swap = ProgramVectorSwapRegion::From(region);
     cc << cc.Indent() << VecName(swap.LHS()) << ".Swap(" << VecName(swap.RHS())
        << ");\n";
-  } else if (region.IsChangeTuple()) {
-    EmitChangeTuple(ProgramChangeTupleRegion::From(region));
-  } else if (region.IsCheckTuple()) {
-    EmitCheckTuple(ProgramCheckTupleRegion::From(region));
+  } else if (region.IsUpdateCount()) {
+    EmitUpdateCount(ProgramUpdateCountRegion::From(region));
+  } else if (region.IsCheckMember()) {
+    EmitCheckMember(ProgramCheckMemberRegion::From(region));
+  } else if (region.IsCommitSweep()) {
+    EmitCommitSweep(ProgramCommitSweepRegion::From(region));
   } else if (region.IsTableJoin()) {
     EmitJoin(ProgramTableJoinRegion::From(region));
   } else if (region.IsTableProduct()) {
@@ -1113,17 +1104,13 @@ void Generator::EmitIndexAdds(DataTable table, const std::string &ins,
   }
 }
 
-void Generator::EmitChangeTuple(ProgramChangeTupleRegion region) {
+void Generator::EmitUpdateCount(ProgramUpdateCountRegion region) {
   EmitComment(region);
   const auto table = region.Table();
   const auto tuple_exprs = VarExprs(region.TupleVariables());
   const auto row = RowExpr(tuple_exprs);
   const auto member = table_member[table.Id()];
-  const auto success = region.BodyIfSucceeded();
-  const auto failure = region.BodyIfFailed();
-
-  const auto from = region.FromState();
-  const auto to = region.ToState();
+  const auto body = region.Body();
 
   bool has_indexes = false;
   for (DataIndex index : table.Indices()) {
@@ -1133,116 +1120,163 @@ void Generator::EmitChangeTuple(ProgramChangeTupleRegion region) {
     }
   }
 
-  // Transitions that can insert a fresh row need index maintenance.
-  const bool inserts = (to == TupleState::kPresent) &&
-                       (from == TupleState::kAbsent ||
-                        from == TupleState::kAbsentOrUnknown);
-  if (inserts) {
-    const char *method = (from == TupleState::kAbsent)
-                             ? "TryChangeAbsentToPresent"
-                             : "TryChangeAbsentOrUnknownToPresent";
-    if (!success && !failure && !has_indexes) {
-      cc << cc.Indent() << member << "." << method << "(" << row << ");\n";
+  // Monotone table: the fold degenerates to an insert-if-new, whose
+  // crossing is "the row is new". Retraction folds cannot target a
+  // monotone table.
+  if (!table.IsDifferential()) {
+    if (!body && !has_indexes) {
+      cc << cc.Indent() << member << ".TryAdd(" << row << ");\n";
       return;
     }
     const auto ins = "ins" + std::to_string(next_ins_id++);
-    cc << cc.Indent() << "if (const auto " << ins << " = " << member << "."
-       << method << "(" << row << "); " << ins << ".changed) {\n";
+    cc << cc.Indent() << "if (const auto " << ins << " = " << member
+       << ".TryAdd(" << row << "); " << ins << ".added) {\n";
     cc.PushIndent();
-    if (has_indexes) {
-      cc << cc.Indent() << "if (" << ins << ".added_row) {\n";
-      cc.PushIndent();
-      EmitIndexAdds(table, ins, tuple_exprs);
-      cc.PopIndent();
-      cc << cc.Indent() << "}\n";
-    }
-    if (success) {
-      EmitRegion(*success);
+    EmitIndexAdds(table, ins, tuple_exprs);
+    if (body) {
+      EmitRegion(*body);
     }
     cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+    return;
+  }
+
+  // Differential table: one signed counter fold; every fresh log entry is
+  // linked into the indexes (liveness is filtered at read time), and the
+  // crossed body runs only on a zero-crossing event.
+  const char *method = region.IsAdd() ? "AddDerivation" : "SubDerivation";
+  const char *cls =
+      region.DerivationClass() == DerivClass::kRecursive
+          ? "::hyde::rt::DerivClass::kRecursive"
+          : "::hyde::rt::DerivClass::kNonRecursive";
+
+  if (!body && !has_indexes) {
+    cc << cc.Indent() << member << "." << method << "(" << row << ", " << cls
+       << ");\n";
+    return;
+  }
+
+  const auto d = "d" + std::to_string(next_ins_id++);
+  cc << cc.Indent() << "{\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto " << d << " = " << member << "." << method
+     << "(" << row << ", " << cls << ");\n";
+  if (has_indexes) {
+    cc << cc.Indent() << "if (" << d << ".added_row) {\n";
+    cc.PushIndent();
+    EmitIndexAdds(table, d, tuple_exprs);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  }
+  if (body) {
+    cc << cc.Indent() << "if (" << d << ".crossed) {\n";
+    cc.PushIndent();
+    EmitRegion(*body);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  }
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+}
+
+// The runtime method reading one named membership predicate.
+static const char *PredicateMethod(MembershipPredicate pred) {
+  switch (pred) {
+    case MembershipPredicate::kInI: return "InI";
+    case MembershipPredicate::kInNew: return "InNew";
+    case MembershipPredicate::kSurvivesSoFar: return "SurvivesSoFar";
+    case MembershipPredicate::kAliveAtClaim: return "AliveAtClaim";
+    case MembershipPredicate::kInNewWithFrontier: return "InNewWithFrontier";
+    case MembershipPredicate::kInNewSansFrontier: return "InNewSansFrontier";
+    case MembershipPredicate::kPresent: return "Present";
+    case MembershipPredicate::kRecursivelySupported:
+      return "RecursivelySupported";
+  }
+  Unsupported("an unknown membership predicate");
+}
+
+void Generator::EmitCheckMember(ProgramCheckMemberRegion region) {
+  const auto present = region.IfPresent();
+  const auto absent = region.IfAbsent();
+  if (!present && !absent) {
+    return;
+  }
+  EmitComment(region);
+  const auto table = region.Table();
+  const auto member = table_member[table.Id()];
+  const auto row = RowExpr(VarExprs(region.TupleVariables()));
+
+  // Monotone table: membership is row existence. Differential table: the
+  // named predicate applied to the row's id (a missing row satisfies no
+  // predicate).
+  std::string cond;
+  const auto id = "m" + std::to_string(next_ins_id++);
+  if (table.IsDifferential()) {
+    cc << cc.Indent() << "{\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "const uint32_t " << id << " = " << member
+       << ".Find(" << row << ");\n";
+    cond = id + " != ::hyde::rt::kNoRow && " + member + "." +
+           PredicateMethod(region.Predicate()) + "(" + id + ")";
+  } else {
+    cond = member + ".Find(" + row + ") != ::hyde::rt::kNoRow";
+  }
+
+  if (present) {
+    cc << cc.Indent() << "if (" << cond << ") {\n";
+    cc.PushIndent();
+    EmitRegion(*present);
+    cc.PopIndent();
     cc << cc.Indent() << "}";
-    if (failure) {
+    if (absent) {
       cc << " else {\n";
       cc.PushIndent();
-      EmitRegion(*failure);
+      EmitRegion(*absent);
       cc.PopIndent();
       cc << cc.Indent() << "}";
     }
     cc << "\n";
-    return;
-  }
-
-  // Pure state transitions on existing rows.
-  const char *method = nullptr;
-  if (from == TupleState::kPresent && to == TupleState::kUnknown) {
-    method = "TryChangePresentToUnknown";
-  } else if (from == TupleState::kPresent && to == TupleState::kAbsent) {
-    method = "TryChangePresentToAbsent";
-  } else if (from == TupleState::kUnknown && to == TupleState::kAbsent) {
-    method = "TryChangeUnknownToAbsent";
   } else {
-    Unsupported("a tuple state transition the runtime has no method for");
-  }
-
-  if (!success && !failure) {
-    cc << cc.Indent() << member << "." << method << "(" << row << ");\n";
-    return;
-  }
-  if (!success && failure) {
-    cc << cc.Indent() << "if (!" << member << "." << method << "(" << row
-       << ")) {\n";
+    cc << cc.Indent() << "if (!(" << cond << ")) {\n";
     cc.PushIndent();
-    EmitRegion(*failure);
+    EmitRegion(*absent);
     cc.PopIndent();
     cc << cc.Indent() << "}\n";
-    return;
   }
-  cc << cc.Indent() << "if (" << member << "." << method << "(" << row
-     << ")) {\n";
-  cc.PushIndent();
-  EmitRegion(*success);
-  cc.PopIndent();
-  cc << cc.Indent() << "}";
-  if (failure) {
-    cc << " else {\n";
-    cc.PushIndent();
-    EmitRegion(*failure);
+
+  if (table.IsDifferential()) {
     cc.PopIndent();
-    cc << cc.Indent() << "}";
+    cc << cc.Indent() << "}\n";
   }
-  cc << "\n";
 }
 
-void Generator::EmitCheckTuple(ProgramCheckTupleRegion region) {
-  const auto present = region.IfPresent();
-  const auto absent = region.IfAbsent();
-  const auto unknown = region.IfUnknown();
-  if (!present && !absent && !unknown) {
-    return;
-  }
+void Generator::EmitCommitSweep(ProgramCommitSweepRegion region) {
   EmitComment(region);
-  const auto row = RowExpr(VarExprs(region.TupleVariables()));
-  cc << cc.Indent() << "switch (" << table_member[region.Table().Id()]
-     << ".State(" << row << ")) {\n";
-  cc.PushIndent();
-  const auto emit_case = [&](const char *state,
-                             std::optional<ProgramRegion> body) {
-    if (!body) {
-      return;
-    }
-    cc << cc.Indent() << "case ::hyde::rt::TupleState::" << state << ": {\n";
+  const auto table = region.Table();
+  const auto member = table_member[table.Id()];
+  const auto &fields = col_field[table.Id()];
+
+  if (auto message = region.Message()) {
+    cc << cc.Indent() << member << ".Commit([&](const "
+       << row_type[table.Id()] << " &row, bool added) {\n";
     cc.PushIndent();
-    EmitRegion(*body);
-    cc << cc.Indent() << "break;\n";
+    cc << cc.Indent() << "log." << message->Name() << "_" << message->Arity()
+       << "(";
+    for (const auto &field : fields) {
+      cc << "row." << field << ", ";
+    }
+    cc << "added);\n";
     cc.PopIndent();
-    cc << cc.Indent() << "}\n";
-  };
-  emit_case("kPresent", present);
-  emit_case("kAbsent", absent);
-  emit_case("kUnknown", unknown);
-  cc << cc.Indent() << "default: break;\n";
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";
+    cc << cc.Indent() << "});\n";
+  } else {
+    cc << cc.Indent() << member << ".Commit([](const "
+       << row_type[table.Id()] << " &, bool) {});\n";
+  }
+
+  // The generated database self-checks its counters after every batch.
+  cc << "#ifndef NDEBUG\n";
+  cc << cc.Indent() << member << ".DebugValidateCounts();\n";
+  cc << "#endif\n";
 }
 
 void Generator::EmitJoin(ProgramTableJoinRegion region) {
@@ -1670,16 +1704,6 @@ void Generator::EmitInduction(ProgramInductionRegion region) {
     cc << ")";
   };
 
-  // The output region's recheck pass re-proves rows left in an unknown state
-  // by the fixpoint's removal cascades, and re-seeds the ones that prove
-  // present back into the induction's input vectors. Their derivations must
-  // be replayed, so the fixpoint re-runs until the input vectors are still
-  // empty after the output region.
-  const auto reentry = "reenter" + std::to_string(region.Id());
-  cc << cc.Indent() << "for (bool " << reentry << " = true; " << reentry
-     << "; ) {\n";
-  cc.PushIndent();
-
   const auto changed = "changed" + std::to_string(region.Id());
   cc << cc.Indent() << "for (bool " << changed << " = true; " << changed
      << "; " << changed << " = !";
@@ -1692,15 +1716,7 @@ void Generator::EmitInduction(ProgramInductionRegion region) {
 
   if (auto output = region.Output()) {
     EmitRegion(*output);
-    cc << cc.Indent() << reentry << " = !";
-    vectors_empty();
-    cc << ";\n";
-  } else {
-    cc << cc.Indent() << reentry << " = false;\n";
   }
-
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";
 }
 
 // -----------------------------------------------------------------------
@@ -1727,23 +1743,18 @@ void Generator::EmitQueries(void) {
     const bool has_free =
         std::find(is_bound.begin(), is_bound.end(), false) != is_bound.end();
 
-    // The state filter applied to each candidate row: a top-down checker
-    // procedure when tuples may need re-derivation, else a state lookup.
+    // The liveness filter applied to each candidate row: a count-based
+    // presence read on a differential table; nothing on a monotone table,
+    // whose stored rows are present forever.
+    const bool differential = table.IsDifferential();
     const auto emit_row_filter = [&](const std::string &row,
                                      const std::string &id_expr) {
-      if (spec.tuple_checker) {
-        cc << cc.Indent() << "if (!db." << ProcName(*spec.tuple_checker)
-           << "(";
-        auto sep = "";
-        for (auto i = 0u; i < params.size(); ++i) {
-          cc << sep << row << "." << fields[i];
-          sep = ", ";
-        }
-        cc << ")) {\n";
-      } else {
-        cc << cc.Indent() << "if (db." << member << ".StateAt(" << id_expr
-           << ") != ::hyde::rt::TupleState::kPresent) {\n";
+      (void) row;
+      if (!differential) {
+        return;
       }
+      cc << cc.Indent() << "if (!db." << member << ".Present(" << id_expr
+         << ")) {\n";
       cc.PushIndent();
       cc << cc.Indent() << "continue;\n";
       cc.PopIndent();
@@ -1765,13 +1776,15 @@ void Generator::EmitQueries(void) {
         cc << cc.Indent() << ProcName(*spec.forcing_function) << "("
            << JoinExprs(param_names, ", ") << ");\n";
       }
-      if (spec.tuple_checker) {
-        cc << cc.Indent() << "return " << ProcName(*spec.tuple_checker) << "("
-           << JoinExprs(param_names, ", ") << ");\n";
+      if (differential) {
+        cc << cc.Indent() << "const uint32_t id = " << member << ".Find("
+           << RowExpr(param_names) << ");\n";
+        cc << cc.Indent()
+           << "return id != ::hyde::rt::kNoRow && " << member
+           << ".Present(id);\n";
       } else {
-        cc << cc.Indent() << "return " << member << ".State("
-           << RowExpr(param_names)
-           << ") == ::hyde::rt::TupleState::kPresent;\n";
+        cc << cc.Indent() << "return " << member << ".Find("
+           << RowExpr(param_names) << ") != ::hyde::rt::kNoRow;\n";
       }
       cc.PopIndent();
       cc << "}\n\n";

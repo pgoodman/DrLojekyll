@@ -5,8 +5,6 @@
 namespace hyde {
 
 ProgramImpl::~ProgramImpl(void) {
-  query_checkers.ClearWithoutErasure();
-
   for (auto table : tables) {
     for (auto column : table->columns) {
       column->table.ClearWithoutErasure();
@@ -55,15 +53,13 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto vec_unique = op->AsVectorUnique(); vec_unique) {
       vec_unique->vector.ClearWithoutErasure();
 
-    } else if (auto view_insert = op->AsChangeTuple(); view_insert) {
+    } else if (auto view_insert = op->AsUpdateCount(); view_insert) {
       view_insert->table.ClearWithoutErasure();
       view_insert->col_values.ClearWithoutErasure();
-      view_insert->failed_body.ClearWithoutErasure();
 
     } else if (auto view_emplace = op->AsChangeRecord(); view_emplace) {
       view_emplace->table.ClearWithoutErasure();
       view_emplace->col_values.ClearWithoutErasure();
-      view_emplace->failed_body.ClearWithoutErasure();
 
     } else if (auto view_join = op->AsTableJoin(); view_join) {
       view_join->tables.ClearWithoutErasure();
@@ -105,17 +101,18 @@ ProgramImpl::~ProgramImpl(void) {
       call->called_proc.ClearWithoutErasure();
       call->false_body.ClearWithoutErasure();
 
-    } else if (auto check = op->AsCheckTuple(); check) {
+    } else if (auto check = op->AsCheckMember(); check) {
       check->col_values.ClearWithoutErasure();
       check->table.ClearWithoutErasure();
       check->absent_body.ClearWithoutErasure();
-      check->unknown_body.ClearWithoutErasure();
 
     } else if (auto get = op->AsCheckRecord(); get) {
       get->col_values.ClearWithoutErasure();
       get->table.ClearWithoutErasure();
       get->absent_body.ClearWithoutErasure();
-      get->unknown_body.ClearWithoutErasure();
+
+    } else if (auto sweep = op->AsCommitSweep(); sweep) {
+      sweep->table.ClearWithoutErasure();
 
     } else if (auto pub = op->AsPublish(); pub) {
       pub->arg_vars.ClearWithoutErasure();
@@ -152,7 +149,6 @@ ProgramImpl::ProgramImpl(Query query_, unsigned next_id_)
     : User(this),
       query(query_),
       next_id(next_id_),
-      query_checkers(this),
       procedure_regions(this),
       series_regions(this),
       parallel_regions(this),
@@ -239,13 +235,13 @@ IS_OP(Call)
 IS_OP(Return)
 IS_OP(TestAndSet)
 IS_OP(Generate)
-IS_OP(ModeSwitch)
 IS_OP(LetBinding)
 IS_OP(Publish)
-IS_OP(ChangeTuple)
+IS_OP(UpdateCount)
 IS_OP(ChangeRecord)
-IS_OP(CheckTuple)
+IS_OP(CheckMember)
 IS_OP(CheckRecord)
+IS_OP(CommitSweep)
 IS_OP(TableJoin)
 IS_OP(TableProduct)
 IS_OP(TableScan)
@@ -272,10 +268,6 @@ ProgramParallelRegion::From(ProgramRegion region) noexcept {
   return ProgramParallelRegion(derived_impl);
 }
 
-Mode ProgramModeSwitchRegion::NewMode(void) const noexcept {
-  return impl->new_mode;
-}
-
 // The accumulator variable. This is `A` in `(A += 1) == 1`.
 DataVariable ProgramTestAndSetRegion::Accumulator(void) const {
   return DataVariable(impl->accumulator.get());
@@ -294,12 +286,9 @@ OPTIONAL_BODY(Body, ProgramTestAndSetRegion, body)
 OPTIONAL_BODY(BodyIfResults, ProgramGenerateRegion, body)
 OPTIONAL_BODY(BodyIfEmpty, ProgramGenerateRegion, empty_body)
 OPTIONAL_BODY(Body, ProgramLetBindingRegion, body)
-OPTIONAL_BODY(Body, ProgramModeSwitchRegion, body)
 OPTIONAL_BODY(Body, ProgramVectorLoopRegion, body)
-OPTIONAL_BODY(BodyIfSucceeded, ProgramChangeTupleRegion, body)
-OPTIONAL_BODY(BodyIfFailed, ProgramChangeTupleRegion, failed_body)
-OPTIONAL_BODY(BodyIfSucceeded, ProgramChangeRecordRegion, body)
-OPTIONAL_BODY(BodyIfFailed, ProgramChangeRecordRegion, failed_body)
+OPTIONAL_BODY(Body, ProgramUpdateCountRegion, body)
+OPTIONAL_BODY(Body, ProgramChangeRecordRegion, body)
 OPTIONAL_BODY(Body, ProgramTableJoinRegion, body)
 OPTIONAL_BODY(Body, ProgramTableProductRegion, body)
 OPTIONAL_BODY(BodyIfTrue, ProgramTupleCompareRegion, body)
@@ -325,12 +314,12 @@ FROM_OP(ProgramReturnRegion, AsReturn)
 FROM_OP(ProgramTestAndSetRegion, AsTestAndSet)
 FROM_OP(ProgramGenerateRegion, AsGenerate)
 FROM_OP(ProgramLetBindingRegion, AsLetBinding)
-FROM_OP(ProgramModeSwitchRegion, AsModeSwitch)
 FROM_OP(ProgramPublishRegion, AsPublish)
-FROM_OP(ProgramChangeTupleRegion, AsChangeTuple)
+FROM_OP(ProgramUpdateCountRegion, AsUpdateCount)
 FROM_OP(ProgramChangeRecordRegion, AsChangeRecord)
-FROM_OP(ProgramCheckTupleRegion, AsCheckTuple)
+FROM_OP(ProgramCheckMemberRegion, AsCheckMember)
 FROM_OP(ProgramCheckRecordRegion, AsCheckRecord)
+FROM_OP(ProgramCommitSweepRegion, AsCommitSweep)
 FROM_OP(ProgramTableJoinRegion, AsTableJoin)
 FROM_OP(ProgramTableProductRegion, AsTableProduct)
 FROM_OP(ProgramTableScanRegion, AsTableScan)
@@ -379,9 +368,9 @@ USED_RANGE(ProgramPublishRegion, VariableArguments, DataVariable, arg_vars)
 USED_RANGE(ProgramGenerateRegion, InputVariables, DataVariable, used_vars)
 USED_RANGE(ProgramLetBindingRegion, UsedVariables, DataVariable, used_vars)
 USED_RANGE(ProgramVectorAppendRegion, TupleVariables, DataVariable, tuple_vars)
-USED_RANGE(ProgramChangeTupleRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramUpdateCountRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(ProgramChangeRecordRegion, TupleVariables, DataVariable, col_values)
-USED_RANGE(ProgramCheckTupleRegion, TupleVariables, DataVariable, col_values)
+USED_RANGE(ProgramCheckMemberRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(ProgramCheckRecordRegion, TupleVariables, DataVariable, col_values)
 USED_RANGE(DataIndex, KeyColumns, DataColumn, columns)
 USED_RANGE(DataIndex, ValueColumns, DataColumn, mapped_columns)
@@ -501,20 +490,20 @@ ParsedFunctor ProgramGenerateRegion::Functor(void) const noexcept {
   return impl->functor;
 }
 
-unsigned ProgramChangeTupleRegion::Arity(void) const noexcept {
+unsigned ProgramUpdateCountRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramChangeTupleRegion::Table(void) const {
+DataTable ProgramUpdateCountRegion::Table(void) const {
   return DataTable(impl->table.get());
 }
 
-TupleState ProgramChangeTupleRegion::FromState(void) const noexcept {
-  return impl->from_state;
+bool ProgramUpdateCountRegion::IsAdd(void) const noexcept {
+  return impl->is_add;
 }
 
-TupleState ProgramChangeTupleRegion::ToState(void) const noexcept {
-  return impl->to_state;
+DerivClass ProgramUpdateCountRegion::DerivationClass(void) const noexcept {
+  return impl->deriv_class;
 }
 
 unsigned ProgramChangeRecordRegion::Arity(void) const noexcept {
@@ -530,24 +519,28 @@ DataTable ProgramChangeRecordRegion::Table(void) const {
   return DataTable(impl->table.get());
 }
 
-TupleState ProgramChangeRecordRegion::FromState(void) const noexcept {
-  return impl->from_state;
+bool ProgramChangeRecordRegion::IsAdd(void) const noexcept {
+  return impl->is_add;
 }
 
-TupleState ProgramChangeRecordRegion::ToState(void) const noexcept {
-  return impl->to_state;
+DerivClass ProgramChangeRecordRegion::DerivationClass(void) const noexcept {
+  return impl->deriv_class;
 }
 
-unsigned ProgramCheckTupleRegion::Arity(void) const noexcept {
+unsigned ProgramCheckMemberRegion::Arity(void) const noexcept {
   return impl->col_values.Size();
 }
 
-DataTable ProgramCheckTupleRegion::Table(void) const {
+DataTable ProgramCheckMemberRegion::Table(void) const {
   return DataTable(impl->table.get());
 }
 
+MembershipPredicate ProgramCheckMemberRegion::Predicate(void) const noexcept {
+  return impl->predicate;
+}
+
 std::optional<ProgramRegion>
-ProgramCheckTupleRegion::IfPresent(void) const noexcept {
+ProgramCheckMemberRegion::IfPresent(void) const noexcept {
   if (auto body = impl->body.get(); body) {
     return ProgramRegion(body);
   } else {
@@ -556,17 +549,8 @@ ProgramCheckTupleRegion::IfPresent(void) const noexcept {
 }
 
 std::optional<ProgramRegion>
-ProgramCheckTupleRegion::IfAbsent(void) const noexcept {
+ProgramCheckMemberRegion::IfAbsent(void) const noexcept {
   if (auto body = impl->absent_body.get(); body) {
-    return ProgramRegion(body);
-  } else {
-    return std::nullopt;
-  }
-}
-
-std::optional<ProgramRegion>
-ProgramCheckTupleRegion::IfUnknown(void) const noexcept {
-  if (auto body = impl->unknown_body.get(); body) {
     return ProgramRegion(body);
   } else {
     return std::nullopt;
@@ -584,6 +568,10 @@ unsigned ProgramCheckRecordRegion::Arity(void) const noexcept {
 
 DataTable ProgramCheckRecordRegion::Table(void) const {
   return DataTable(impl->table.get());
+}
+
+MembershipPredicate ProgramCheckRecordRegion::Predicate(void) const noexcept {
+  return impl->predicate;
 }
 
 std::optional<ProgramRegion>
@@ -604,13 +592,13 @@ ProgramCheckRecordRegion::IfAbsent(void) const noexcept {
   }
 }
 
-std::optional<ProgramRegion>
-ProgramCheckRecordRegion::IfUnknown(void) const noexcept {
-  if (auto body = impl->unknown_body.get(); body) {
-    return ProgramRegion(body);
-  } else {
-    return std::nullopt;
-  }
+DataTable ProgramCommitSweepRegion::Table(void) const {
+  return DataTable(impl->table.get());
+}
+
+std::optional<ParsedMessage>
+ProgramCommitSweepRegion::Message(void) const noexcept {
+  return impl->message;
 }
 
 VariableRole DataVariable::DefiningRole(void) const noexcept {

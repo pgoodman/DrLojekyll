@@ -67,7 +67,7 @@ REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
   // assignment to the PRODUCT.
   if (NeedsInductionCycleVector(view)) {
     assert(induction != nullptr);
-    PARALLEL *const par = induction->fixpoint_add_cycles[view];
+    PARALLEL *const par = induction->fixpoint_cycles[view];
     LET *const let = par->parent->AsOperation()->AsLetBinding();
     assert(let != nullptr);
 
@@ -208,28 +208,6 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   });
 
   OP *parent = product;
-
-  // If this product can receive deletions, then we need to possibly double
-  // check its sources, because indices don't actually maintain states.
-  if (view.CanReceiveDeletions()) {
-
-    // We (should) have all columns by this point, so we'll proceed like that.
-    std::vector<QueryColumn> view_cols(view.Columns().begin(),
-                                       view.Columns().end());
-
-    // Call the predecessors. If any of the predecessors return `false` then
-    // that means we have failed.
-    for (auto pred_view : view.Predecessors()) {
-      const auto [index_is_good, index_is_good_call] = CallTopDownChecker(
-          impl, context, parent, view, view_cols, pred_view, nullptr);
-
-      COMMENT(index_is_good_call->comment =
-                  __FILE__ ": ContinueProductWorkItem::Run";)
-
-      parent->body.Emplace(parent, index_is_good);
-      parent = index_is_good_call;
-    }
-  }
 
   // Add a tuple to the output vector. We don't need to compute a worker ID
   // because we know we're dealing with only worker-specific data in this
@@ -382,7 +360,7 @@ void BuildEagerProductRegion(ProgramImpl *impl, QueryView pred_view,
     // `pred_view` is an inductive predecessor of this PRODUCT.
     } else {
       AppendToInductionInputVectors(impl, pred_view, view, context, parent,
-                                    induction, true);
+                                    induction);
     }
 
   // This is a "simple" PRODUCT, i.e. all predecessor views are either all

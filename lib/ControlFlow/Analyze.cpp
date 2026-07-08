@@ -169,7 +169,7 @@ class AnalysisContext {
   // Analyze a specific update to a specific table.
   void AnalyzeTable(TABLE *table, const UseList<VAR> &col_values,
                     REGION *var_use);
-  void AnalyzeTable(TABLE *table, CHANGETUPLE *update);
+  void AnalyzeTable(TABLE *table, UPDATECOUNT *update);
   void AnalyzeTable(TABLE *table, CHANGERECORD *update);
 
   // Analyze a specific table.
@@ -182,11 +182,11 @@ class AnalysisContext {
   // Unique and group the row provenance information.
   void UniqueAndGroupRowProvenance(void);
 
-  // Convert a `CHECKTUPLE` into a `CHECKRECORD`.
-  void ConvertToCheckRecord(ProgramImpl *impl, CHECKTUPLE *check);
+  // Convert a `CHECKMEMBER` into a `CHECKRECORD`.
+  void ConvertToCheckRecord(ProgramImpl *impl, CHECKMEMBER *check);
 
-  // Convert a `CHANGETUPLE` into a `CHANGERECORD`.
-  void ConvertToChangeRecord(ProgramImpl *impl, CHANGETUPLE *change);
+  // Convert an `UPDATECOUNT` into a `CHANGERECORD`.
+  void ConvertToChangeRecord(ProgramImpl *impl, UPDATECOUNT *change);
 
   // Convert uses of tuples from tables in the set to uses of records.
   bool ConvertTablesToRecords(ProgramImpl *impl,
@@ -216,17 +216,14 @@ class AnalysisContext {
 // appends.
 void AnalysisContext::CollectMetadata(ProgramImpl *impl) {
   for (OP *op : impl->operation_regions) {
-    if (CHANGETUPLE *change_state = op->AsChangeTuple()) {
+    if (UPDATECOUNT *change_state = op->AsUpdateCount()) {
       table_updates[change_state->table.get()].push_back(change_state);
 
     } else if (CHANGERECORD *change_record = op->AsChangeRecord()) {
       table_updates[change_record->table.get()].push_back(change_record);
 
     } else if (VECTORAPPEND *append = op->AsVectorAppend()) {
-      auto found_switch = append->ContainingModeSwitch();
-      if (!found_switch) {
-        vector_appends[append->vector.get()].push_back(append);
-      }
+      vector_appends[append->vector.get()].push_back(append);
     }
   }
 
@@ -591,7 +588,7 @@ void AnalysisContext::AnalyzeVariable(
 
   // This variable is a parameter to a procedure.
   } else if (PROC *var_src_proc = var_src->AsProcedure()) {
-    assert(var_src_proc->kind == ProcedureKind::kTupleFinder);
+    (void) var_src_proc;
     assert(false);  // We should never reach here.
 
   } else {
@@ -708,11 +705,10 @@ void AnalysisContext::AnalyzeTable(TABLE *table, const UseList<VAR> &col_values,
 }
 
 // Analyze a specific update to a specific table.
-void AnalysisContext::AnalyzeTable(TABLE *table, CHANGETUPLE *update) {
+void AnalysisContext::AnalyzeTable(TABLE *table, UPDATECOUNT *update) {
 
   // We care only about the sources of added data.
-  if (update->to_state != TupleState::kPresent ||
-      update->containing_procedure->kind == ProcedureKind::kTupleFinder) {
+  if (!update->is_add) {
     return;
   }
 
@@ -722,8 +718,7 @@ void AnalysisContext::AnalyzeTable(TABLE *table, CHANGETUPLE *update) {
 void AnalysisContext::AnalyzeTable(TABLE *table, CHANGERECORD *update) {
 
   // We care only about the sources of added data.
-  if (update->to_state != TupleState::kPresent ||
-      update->containing_procedure->kind == ProcedureKind::kTupleFinder) {
+  if (!update->is_add) {
     return;
   }
 
@@ -733,7 +728,7 @@ void AnalysisContext::AnalyzeTable(TABLE *table, CHANGERECORD *update) {
 // Analyze a specific table.
 void AnalysisContext::AnalyzeTable(TABLE *table, const UpdateList &updates) {
   for (OP *update : updates) {
-    if (CHANGETUPLE *tuple = update->AsChangeTuple()) {
+    if (UPDATECOUNT *tuple = update->AsUpdateCount()) {
       AnalyzeTable(table, tuple);
     } else if (CHANGERECORD *record = update->AsChangeRecord()) {
       AnalyzeTable(table, record);
@@ -743,21 +738,19 @@ void AnalysisContext::AnalyzeTable(TABLE *table, const UpdateList &updates) {
   }
 }
 
-// Convert a `CHECKTUPLE` into a `CHECKRECORD`.
+// Convert a `CHECKMEMBER` into a `CHECKRECORD`.
 void AnalysisContext::ConvertToCheckRecord(
-    ProgramImpl *impl, CHECKTUPLE *check) {
+    ProgramImpl *impl, CHECKMEMBER *check) {
   CHECKRECORD *record = impl->operation_regions.CreateDerived<CHECKRECORD>(
-      impl->next_id++, check->parent);
+      impl->next_id++, check->parent, check->predicate);
   record->col_values.Swap(check->col_values);
   record->table.Emplace(record, check->table.get());
 
   REGION *body = check->body.get();
   REGION *absent_body = check->absent_body.get();
-  REGION *unknown_body = check->unknown_body.get();
 
   check->body.Clear();
   check->absent_body.Clear();
-  check->unknown_body.Clear();
 
   if (body) {
     body->parent = record;
@@ -767,11 +760,6 @@ void AnalysisContext::ConvertToCheckRecord(
   if (absent_body) {
     absent_body->parent = record;
     record->absent_body.Emplace(record, absent_body);
-  }
-
-  if (unknown_body) {
-    unknown_body->parent = record;
-    record->unknown_body.Emplace(record, unknown_body);
   }
 
   for (VAR *in_var : record->col_values) {
@@ -812,9 +800,9 @@ void AnalysisContext::ConvertToCheckRecord(
   check->parent = nullptr;
 }
 
-// Convert a `CHANGETUPLE` into a `CHANGERECORD`.
+// Convert an `UPDATECOUNT` into a `CHANGERECORD`.
 void AnalysisContext::ConvertToChangeRecord(
-    ProgramImpl *impl, CHANGETUPLE *change) {
+    ProgramImpl *impl, UPDATECOUNT *change) {
 
   TABLE * const table = change->table.get();
   REGION *prev_record = nullptr;
@@ -882,24 +870,17 @@ void AnalysisContext::ConvertToChangeRecord(
   }
 
   CHANGERECORD *record = impl->operation_regions.CreateDerived<CHANGERECORD>(
-      impl->next_id++, change->parent, change->from_state, change->to_state);
+      impl->next_id++, change->parent, change->is_add, change->deriv_class);
   record->col_values.Swap(change->col_values);
   record->table.Emplace(record, table);
 
   REGION *body = change->body.get();
-  REGION *failed_body = change->failed_body.get();
 
   change->body.Clear();
-  change->failed_body.Clear();
 
   if (body) {
     body->parent = record;
     record->body.Emplace(record, body);
-  }
-
-  if (failed_body) {
-    failed_body->parent = record;
-    record->failed_body.Emplace(record, failed_body);
   }
 
   for (VAR *in_var : record->col_values) {
@@ -939,14 +920,14 @@ static bool OrderDeepestRegionFirst(REGION *a, REGION *b) {
 bool AnalysisContext::ConvertTablesToRecords(
     ProgramImpl *impl, const std::unordered_set<TABLE *> &tables) {
 
-  std::unordered_map<TABLE *, std::vector<CHANGETUPLE *>> change_states;
-  std::unordered_map<TABLE *, std::vector<CHECKTUPLE *>> check_states;
+  std::unordered_map<TABLE *, std::vector<UPDATECOUNT *>> change_states;
+  std::unordered_map<TABLE *, std::vector<CHECKMEMBER *>> check_states;
 
   for (OP *op : impl->operation_regions) {
-    if (CHANGETUPLE *change = op->AsChangeTuple()) {
+    if (UPDATECOUNT *change = op->AsUpdateCount()) {
       change_states[change->table.get()].push_back(change);
 
-    } else if (CHECKTUPLE *check = op->AsCheckTuple()) {
+    } else if (CHECKMEMBER *check = op->AsCheckMember()) {
       check_states[check->table.get()].push_back(check);
     }
   }
@@ -954,21 +935,10 @@ bool AnalysisContext::ConvertTablesToRecords(
   auto changed = false;
   for (TABLE *table : tables) {
 
-//    // Order deepest first.
-//    auto &checkers = check_states[table];
-//    std::sort(checkers.begin(), checkers.end(), OrderDeepestRegionFirst);
-//
-//    // Check states often contain change states, so we want change states to
-//    // see the record variables of check states, if possible.
-//    for (CHECKTUPLE *check : checkers) {
-//      changed = true;
-//      ConvertToCheckRecord(impl, check);
-//    }
-
     auto &changers = change_states[table];
     std::sort(changers.begin(), changers.end(), OrderDeepestRegionFirst);
 
-    for (CHANGETUPLE *change : changers) {
+    for (UPDATECOUNT *change : changers) {
       changed = true;
       ConvertToChangeRecord(impl, change);
     }
@@ -997,7 +967,7 @@ void AnalysisContext::ConvertInductionsToRecords(ProgramImpl *impl) {
 // Analyze all tables.
 void AnalysisContext::AnalyzeTables(ProgramImpl *impl) {
 
-  // First, go and change every single `CHANGETUPLE` into a `CHANGERECORD`.
+  // First, go and change every single `UPDATECOUNT` into a `CHANGERECORD`.
   std::unordered_set<TABLE *> tables;
   for (TABLE *table : impl->tables) {
     tables.insert(table);

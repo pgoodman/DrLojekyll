@@ -234,14 +234,9 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
   view.SetTableId(model->table->id);
 
   // Sort the views associated with this model so that the first view is
-  // the deepest inductive union associated with the table. This is super
-  // important to know when we're doing top-down checkers, because if we invoke
-  // a top-down checker of a predecessor of a (possibly inductive) union,
-  // and if our invocation is responsible for doing the assertion of absence
-  // prior to trying to re-prove the tuple, then that assertion and top-down
-  // check could unilaterally make a decision about the absence of a tuple
-  // without consulting whether or not the other sources feeding the union
-  // might have provided the data.
+  // the deepest inductive union associated with the table: the union is the
+  // view whose stratum owns the table's differential phases, and consumers
+  // of `views[0]` (e.g. induction discovery) rely on it naming that union.
   std::sort(model->table->views.begin(), model->table->views.end(),
             [](QueryView a, QueryView b) -> bool {
               if (!a.IsMerge() && !b.IsMerge()) {

@@ -19,14 +19,14 @@ ProgramCallRegionImpl::~ProgramCallRegionImpl(void) {}
 ProgramReturnRegionImpl::~ProgramReturnRegionImpl(void) {}
 ProgramTestAndSetRegionImpl::~ProgramTestAndSetRegionImpl(void) {}
 ProgramGenerateRegionImpl::~ProgramGenerateRegionImpl(void) {}
-ProgramModeSwitchRegionImpl::~ProgramModeSwitchRegionImpl(void) {}
 ProgramLetBindingRegionImpl::~ProgramLetBindingRegionImpl(void) {}
 ProgramWorkerIdRegionImpl::~ProgramWorkerIdRegionImpl(void) {}
 ProgramPublishRegionImpl::~ProgramPublishRegionImpl(void) {}
-ProgramChangeTupleRegionImpl::~ProgramChangeTupleRegionImpl(void) {}
+ProgramUpdateCountRegionImpl::~ProgramUpdateCountRegionImpl(void) {}
 ProgramChangeRecordRegionImpl::~ProgramChangeRecordRegionImpl(void) {}
-ProgramCheckTupleRegionImpl::~ProgramCheckTupleRegionImpl(void) {}
+ProgramCheckMemberRegionImpl::~ProgramCheckMemberRegionImpl(void) {}
 ProgramCheckRecordRegionImpl::~ProgramCheckRecordRegionImpl(void) {}
+ProgramCommitSweepRegionImpl::~ProgramCommitSweepRegionImpl(void) {}
 ProgramTableJoinRegionImpl::~ProgramTableJoinRegionImpl(void) {}
 ProgramTableProductRegionImpl::~ProgramTableProductRegionImpl(void) {}
 ProgramTableScanRegionImpl::~ProgramTableScanRegionImpl(void) {}
@@ -108,18 +108,13 @@ ProgramOperationRegionImpl::AsWorkerId(void) noexcept {
   return nullptr;
 }
 
-ProgramModeSwitchRegionImpl *
-ProgramOperationRegionImpl::AsModeSwitch(void) noexcept {
-  return nullptr;
-}
-
 ProgramLetBindingRegionImpl *
 ProgramOperationRegionImpl::AsLetBinding(void) noexcept {
   return nullptr;
 }
 
-ProgramChangeTupleRegionImpl *
-ProgramOperationRegionImpl::AsChangeTuple(void) noexcept {
+ProgramUpdateCountRegionImpl *
+ProgramOperationRegionImpl::AsUpdateCount(void) noexcept {
   return nullptr;
 }
 
@@ -128,13 +123,18 @@ ProgramOperationRegionImpl::AsChangeRecord(void) noexcept {
   return nullptr;
 }
 
-ProgramCheckTupleRegionImpl *
-ProgramOperationRegionImpl::AsCheckTuple(void) noexcept {
+ProgramCheckMemberRegionImpl *
+ProgramOperationRegionImpl::AsCheckMember(void) noexcept {
   return nullptr;
 }
 
 ProgramCheckRecordRegionImpl *
 ProgramOperationRegionImpl::AsCheckRecord(void) noexcept {
+  return nullptr;
+}
+
+ProgramCommitSweepRegionImpl *
+ProgramOperationRegionImpl::AsCommitSweep(void) noexcept {
   return nullptr;
 }
 
@@ -383,90 +383,51 @@ bool ProgramWorkerIdRegionImpl::IsNoOp(void) const noexcept {
 
 // -----------------------------------------------------------------------------
 
-ProgramModeSwitchRegionImpl *
-ProgramModeSwitchRegionImpl::AsModeSwitch(void) noexcept {
+ProgramCommitSweepRegionImpl *
+ProgramCommitSweepRegionImpl::AsCommitSweep(void) noexcept {
   return this;
 }
 
-uint64_t ProgramModeSwitchRegionImpl::Hash(uint32_t depth) const {
+uint64_t ProgramCommitSweepRegionImpl::Hash(uint32_t depth) const {
+  (void) depth;
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  hash ^= RotateRight64(hash, 13) *
-          static_cast<unsigned>(this->new_mode) * 17;
-
-  if (depth == 0) {
-    return hash;
-  }
-
-  if (this->OP::body) {
-    hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
-  }
+  hash ^= RotateRight64(hash, 13) * table->id * 17;
   return hash;
 }
 
-bool ProgramModeSwitchRegionImpl::IsNoOp(void) const noexcept {
-  return !this->OP::body || this->OP::body->IsNoOp();
+bool ProgramCommitSweepRegionImpl::IsNoOp(void) const noexcept {
+  // The sweep publishes and seals the batch snapshot: always a side effect.
+  return false;
 }
 
-bool ProgramModeSwitchRegionImpl::Equals(EqualitySet &eq,
-                                           REGION *that_,
-                                           uint32_t depth) const noexcept {
+bool ProgramCommitSweepRegionImpl::Equals(EqualitySet &eq, REGION *that_,
+                                          uint32_t depth) const noexcept {
+  (void) eq;
+  (void) depth;
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
     return false;
   }
 
-  const auto that = that_op->AsModeSwitch();
-  if (!that || that->new_mode != this->new_mode) {
+  const auto that = that_op->AsCommitSweep();
+  if (!that || table.get() != that->table.get()) {
     FAILED_EQ(that_);
     return false;
-  }
-
-  if (depth == 0) {
-    return true;
-  }
-
-  if ((!body.get()) != (!that->body.get())) {
-    FAILED_EQ(that_);
-    return false;
-  }
-
-  if (auto that_body = that->OP::body.get(); that_body) {
-    return this->OP::body->Equals(eq, that_body, depth - 1u);
-
-  } else {
-    return true;
-  }
-}
-
-const bool ProgramModeSwitchRegionImpl::MergeEqual(
-    ProgramImpl *prog, std::vector<REGION *> &merges) {
-
-  auto par = prog->parallel_regions.Create(this);
-  if (auto curr_body = body.get(); curr_body) {
-    curr_body->parent = par;
-    par->AddRegion(curr_body);
-    body.Clear();
-  }
-
-  body.Emplace(this, par);
-
-  for (auto merge : merges) {
-    auto merged_ms = merge->AsOperation()->AsModeSwitch();
-    assert(merged_ms != nullptr);
-    assert(merged_ms != this);
-    assert(merged_ms->new_mode == this->new_mode);
-
-    if (auto merged_body = merged_ms->body.get(); merged_body) {
-      merged_body->parent = par;
-      par->AddRegion(merged_body);
-      merged_ms->body.Clear();
-    }
-
-    merged_ms->parent = nullptr;
   }
 
   return true;
+}
+
+const bool ProgramCommitSweepRegionImpl::MergeEqual(
+    ProgramImpl *prog, std::vector<REGION *> &merges) {
+
+  // Two sweeps of one table can never both run in one epoch.
+  assert(false &&
+         "Probable error when trying to merge commit sweeps");
+  (void) prog;
+  (void) merges;
+  return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -657,15 +618,16 @@ ProgramVectorAppendRegionImpl::AsVectorAppend(void) noexcept {
 
 // -----------------------------------------------------------------------------
 
-ProgramChangeTupleRegionImpl *
-ProgramChangeTupleRegionImpl::AsChangeTuple(void) noexcept {
+ProgramUpdateCountRegionImpl *
+ProgramUpdateCountRegionImpl::AsUpdateCount(void) noexcept {
   return this;
 }
 
-uint64_t ProgramChangeTupleRegionImpl::Hash(uint32_t depth) const {
+uint64_t ProgramUpdateCountRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(from_state) * 13;
-  hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(to_state) * 17;
+  hash ^= RotateRight64(hash, 13) * (is_add ? 13u : 19u);
+  hash ^= RotateRight64(hash, 13) *
+          (static_cast<unsigned>(deriv_class) + 1u) * 17;
   hash ^= RotateRight64(hash, 13) * table->id * 17;
   for (auto var : col_values) {
     hash ^= RotateRight64(hash, 13) *
@@ -680,30 +642,26 @@ uint64_t ProgramChangeTupleRegionImpl::Hash(uint32_t depth) const {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
   }
 
-  if (this->failed_body) {
-    hash ^= RotateRight64(hash, 53) * ~this->failed_body->Hash(depth - 1u);
-  }
-
   return hash;
 }
 
-bool ProgramChangeTupleRegionImpl::IsNoOp(void) const noexcept {
+bool ProgramUpdateCountRegionImpl::IsNoOp(void) const noexcept {
+  // The counter fold has effects even when the crossed body is gone.
   assert(!col_values.Empty());
   return false;
 }
 
-bool ProgramChangeTupleRegionImpl::Equals(EqualitySet &eq,
-                                                REGION *that_,
-                                                uint32_t depth) const noexcept {
+bool ProgramUpdateCountRegionImpl::Equals(EqualitySet &eq, REGION *that_,
+                                          uint32_t depth) const noexcept {
   const auto that_op = that_->AsOperation();
   if (!that_op) {
     FAILED_EQ(that_);
     return false;
   }
 
-  const auto that = that_op->AsChangeTuple();
-  if (!that || table.get() != that->table.get() ||
-      from_state != that->from_state || to_state != that->to_state) {
+  const auto that = that_op->AsUpdateCount();
+  if (!that || table.get() != that->table.get() || is_add != that->is_add ||
+      deriv_class != that->deriv_class) {
     FAILED_EQ(that_);
     return false;
   }
@@ -719,7 +677,7 @@ bool ProgramChangeTupleRegionImpl::Equals(EqualitySet &eq,
     return true;
   }
 
-  if (!body != !(that->body) || !failed_body != !(that->failed_body)) {
+  if (!body != !(that->body)) {
     return false;
   }
 
@@ -727,62 +685,27 @@ bool ProgramChangeTupleRegionImpl::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (failed_body &&
-      !failed_body->Equals(eq, that->failed_body.get(), depth - 1u)) {
-    return false;
-  }
-
   return true;
 }
 
-// Returns `true` if all paths through `this` ends with a `return` region.
-bool ProgramChangeTupleRegionImpl::EndsWithReturn(void) const noexcept {
-  if (body && failed_body) {
-    return body->EndsWithReturn() && failed_body->EndsWithReturn();
-  } else {
-    return false;
-  }
-}
-
-const bool ProgramChangeTupleRegionImpl::MergeEqual(
+const bool ProgramUpdateCountRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
-  // The implication is that two regions wanted to do the same transition. If
-  // we are doing code gen, the that likely means one region is serialized
-  // before the other, and so there is a kind of race condition, where only
-  // one of them is likely to execute and the other will never execute.
-  assert(false);
-  comment =
-      "!!! STRIP MINING " + std::to_string(reinterpret_cast<uintptr_t>(this));
-  for (auto region : merges) {
-    region->comment = "??? STRIP MINING WITH " +
-                      std::to_string(reinterpret_cast<uintptr_t>(this));
-  }
-
-  assert(false &&
-         "Probable error when trying to strip mine program state transitions");
-
-  // New parallel region for merged bodies into 'this'
+  // Structurally identical sibling folds are one rule-instance firing
+  // reached through two syntactic paths: one fold applies, all
+  // continuations run under it.
   auto new_par = prog->parallel_regions.Create(this);
-  auto new_failed_par = prog->parallel_regions.Create(this);
 
-  if (auto transition_body = body.get(); transition_body) {
-    transition_body->parent = new_par;
-    new_par->AddRegion(transition_body);
+  if (auto fold_body = body.get(); fold_body) {
+    fold_body->parent = new_par;
+    new_par->AddRegion(fold_body);
     body.Clear();
   }
 
-  if (auto transition_failed_body = failed_body.get(); transition_failed_body) {
-    transition_failed_body->parent = new_failed_par;
-    new_failed_par->AddRegion(transition_failed_body);
-    failed_body.Clear();
-  }
-
   body.Emplace(this, new_par);
-  failed_body.Emplace(this, new_failed_par);
 
   for (auto region : merges) {
-    auto merge = region->AsOperation()->AsChangeTuple();
+    auto merge = region->AsOperation()->AsUpdateCount();
     assert(merge);  // These should all be the same type
     assert(merge != this);
 
@@ -790,13 +713,6 @@ const bool ProgramChangeTupleRegionImpl::MergeEqual(
       merge_body->parent = new_par;
       new_par->AddRegion(merge_body);
       merge->body.Clear();
-    }
-
-    if (const auto merge_failed_body = merge->failed_body.get();
-        merge_failed_body) {
-      merge_failed_body->parent = new_failed_par;
-      new_failed_par->AddRegion(merge_failed_body);
-      merge->failed_body.Clear();
     }
 
     merge->parent = nullptr;
@@ -813,8 +729,9 @@ ProgramChangeRecordRegionImpl::AsChangeRecord(void) noexcept {
 
 uint64_t ProgramChangeRecordRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
-  hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(from_state) * 13;
-  hash ^= RotateRight64(hash, 13) * static_cast<unsigned>(to_state) * 17;
+  hash ^= RotateRight64(hash, 13) * (is_add ? 13u : 19u);
+  hash ^= RotateRight64(hash, 13) *
+          (static_cast<unsigned>(deriv_class) + 1u) * 17;
   hash ^= RotateRight64(hash, 13) * table->id * 17;
   for (auto var : col_values) {
     hash ^= RotateRight64(hash, 13) *
@@ -827,10 +744,6 @@ uint64_t ProgramChangeRecordRegionImpl::Hash(uint32_t depth) const {
 
   if (this->OP::body) {
     hash ^= RotateRight64(hash, 13) * this->OP::body->Hash(depth - 1u);
-  }
-
-  if (this->failed_body) {
-    hash ^= RotateRight64(hash, 53) * ~this->failed_body->Hash(depth - 1u);
   }
 
   return hash;
@@ -852,8 +765,8 @@ bool ProgramChangeRecordRegionImpl::Equals(EqualitySet &eq,
   }
 
   const auto that = that_op->AsChangeRecord();
-  if (!that || table.get() != that->table.get() ||
-      from_state != that->from_state || to_state != that->to_state) {
+  if (!that || table.get() != that->table.get() || is_add != that->is_add ||
+      deriv_class != that->deriv_class) {
     FAILED_EQ(that_);
     return false;
   }
@@ -869,7 +782,7 @@ bool ProgramChangeRecordRegionImpl::Equals(EqualitySet &eq,
     return true;
   }
 
-  if (!body != !(that->body) || !failed_body != !(that->failed_body)) {
+  if (!body != !(that->body)) {
     return false;
   }
 
@@ -882,59 +795,24 @@ bool ProgramChangeRecordRegionImpl::Equals(EqualitySet &eq,
     return false;
   }
 
-  if (failed_body &&
-      !failed_body->Equals(eq, that->failed_body.get(), depth - 1u)) {
-    return false;
-  }
-
   return true;
-}
-
-// Returns `true` if all paths through `this` ends with a `return` region.
-bool ProgramChangeRecordRegionImpl::EndsWithReturn(void) const noexcept {
-  if (body && failed_body) {
-    return body->EndsWithReturn() && failed_body->EndsWithReturn();
-  } else {
-    return false;
-  }
 }
 
 const bool ProgramChangeRecordRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
-  // The implication is that two regions wanted to do the same transition. If
-  // we are doing code gen, the that likely means one region is serialized
-  // before the other, and so there is a kind of race condition, where only
-  // one of them is likely to execute and the other will never execute.
-  assert(false);
-  comment =
-      "!!! STRIP MINING " + std::to_string(reinterpret_cast<uintptr_t>(this));
-  for (auto region : merges) {
-    region->comment = "??? STRIP MINING WITH " +
-                      std::to_string(reinterpret_cast<uintptr_t>(this));
-  }
-
-  assert(false &&
-         "Probable error when trying to strip mine program state emplaces");
-
-  // New parallel region for merged bodies into 'this'
+  // Structurally identical sibling folds are one rule-instance firing
+  // reached through two syntactic paths: one fold applies, all
+  // continuations run under it.
   auto new_par = prog->parallel_regions.Create(this);
-  auto new_failed_par = prog->parallel_regions.Create(this);
 
-  if (auto transition_body = body.get(); transition_body) {
-    transition_body->parent = new_par;
-    new_par->AddRegion(transition_body);
+  if (auto fold_body = body.get(); fold_body) {
+    fold_body->parent = new_par;
+    new_par->AddRegion(fold_body);
     body.Clear();
   }
 
-  if (auto transition_failed_body = failed_body.get(); transition_failed_body) {
-    transition_failed_body->parent = new_failed_par;
-    new_failed_par->AddRegion(transition_failed_body);
-    failed_body.Clear();
-  }
-
   body.Emplace(this, new_par);
-  failed_body.Emplace(this, new_failed_par);
 
   for (auto region : merges) {
     auto merge = region->AsOperation()->AsChangeRecord();
@@ -945,13 +823,6 @@ const bool ProgramChangeRecordRegionImpl::MergeEqual(
       merge_body->parent = new_par;
       new_par->AddRegion(merge_body);
       merge->body.Clear();
-    }
-
-    if (const auto merge_failed_body = merge->failed_body.get();
-        merge_failed_body) {
-      merge_failed_body->parent = new_failed_par;
-      new_failed_par->AddRegion(merge_failed_body);
-      merge->failed_body.Clear();
     }
 
     merge->parent = nullptr;
@@ -2137,24 +2008,25 @@ const bool ProgramReturnRegionImpl::MergeEqual(
 
 // -----------------------------------------------------------------------------
 
-ProgramCheckTupleRegionImpl *
-ProgramCheckTupleRegionImpl::AsCheckTuple(void) noexcept {
+ProgramCheckMemberRegionImpl *
+ProgramCheckMemberRegionImpl::AsCheckMember(void) noexcept {
   return this;
 }
 
 // Returns `true` if all paths through `this` ends with a `return` region.
-bool ProgramCheckTupleRegionImpl::EndsWithReturn(void) const noexcept {
-  if (body && absent_body && unknown_body) {
-    return body->EndsWithReturn() && absent_body->EndsWithReturn() &&
-           unknown_body->EndsWithReturn();
+bool ProgramCheckMemberRegionImpl::EndsWithReturn(void) const noexcept {
+  if (body && absent_body) {
+    return body->EndsWithReturn() && absent_body->EndsWithReturn();
   } else {
     return false;
   }
 }
 
-uint64_t ProgramCheckTupleRegionImpl::Hash(uint32_t depth) const {
+uint64_t ProgramCheckMemberRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (this->table->id * 13u);
+  hash ^= RotateRight64(hash, 17) *
+          ((static_cast<unsigned>(this->predicate) + 1u) * 29u);
 
   for (auto var : this->col_values) {
     hash ^= RotateRight64(hash, 13) *
@@ -2171,22 +2043,15 @@ uint64_t ProgramCheckTupleRegionImpl::Hash(uint32_t depth) const {
   if (this->absent_body) {
     hash ^= RotateRight64(hash, 13) * this->absent_body->Hash(depth - 1u);
   }
-  if (this->unknown_body) {
-    hash ^= RotateRight64(hash, 15) * this->unknown_body->Hash(depth - 1u);
-  }
   return hash;
 }
 
-bool ProgramCheckTupleRegionImpl::IsNoOp(void) const noexcept {
+bool ProgramCheckMemberRegionImpl::IsNoOp(void) const noexcept {
   if (body && !body->IsNoOp()) {
     return false;
   }
 
   if (absent_body && !absent_body->IsNoOp()) {
-    return false;
-  }
-
-  if (unknown_body && !unknown_body->IsNoOp()) {
     return false;
   }
 
@@ -2196,17 +2061,17 @@ bool ProgramCheckTupleRegionImpl::IsNoOp(void) const noexcept {
 // Returns `true` if `this` and `that` are structurally equivalent (after
 // variable renaming) after searching down `depth` levels or until leaf,
 // whichever is first, and where `depth` is 0, compare `this` to `that.
-bool ProgramCheckTupleRegionImpl::Equals(EqualitySet &eq,
-                                           REGION *that_,
-                                           uint32_t depth) const noexcept {
+bool ProgramCheckMemberRegionImpl::Equals(EqualitySet &eq,
+                                          REGION *that_,
+                                          uint32_t depth) const noexcept {
   const auto op = that_->AsOperation();
   if (!op) {
     FAILED_EQ(that_);
     return false;
   }
 
-  const auto that = op->AsCheckTuple();
-  if (!that) {
+  const auto that = op->AsCheckMember();
+  if (!that || this->predicate != that->predicate) {
     FAILED_EQ(that_);
     return false;
   }
@@ -2229,17 +2094,15 @@ bool ProgramCheckTupleRegionImpl::Equals(EqualitySet &eq,
   }
   auto next_depth = depth - 1;
 
-  if (!this->body != !that->body || !this->absent_body != !that->absent_body ||
-      !this->unknown_body != !that->unknown_body) {
+  if (!this->body != !that->body ||
+      !this->absent_body != !that->absent_body) {
     FAILED_EQ(that_);
     return false;
   }
 
   if ((body && !body->Equals(eq, that->body.get(), next_depth)) ||
       (absent_body &&
-       !absent_body->Equals(eq, that->absent_body.get(), next_depth)) ||
-      (unknown_body &&
-       !unknown_body->Equals(eq, that->unknown_body.get(), next_depth))) {
+       !absent_body->Equals(eq, that->absent_body.get(), next_depth))) {
     FAILED_EQ(that_);
     return false;
   }
@@ -2247,7 +2110,7 @@ bool ProgramCheckTupleRegionImpl::Equals(EqualitySet &eq,
   return true;
 }
 
-const bool ProgramCheckTupleRegionImpl::MergeEqual(
+const bool ProgramCheckMemberRegionImpl::MergeEqual(
     ProgramImpl *prog, std::vector<REGION *> &merges) {
 
   // New parallel region for merged `body` into 'this'
@@ -2266,20 +2129,11 @@ const bool ProgramCheckTupleRegionImpl::MergeEqual(
     absent_body.Clear();
   }
 
-  // New parallel region for merged `unknown_body` into 'this'
-  auto new_unknown_body = prog->parallel_regions.Create(this);
-  if (auto unknown_body_ptr = unknown_body.get(); unknown_body_ptr) {
-    unknown_body_ptr->parent = new_unknown_body;
-    new_unknown_body->AddRegion(unknown_body_ptr);
-    unknown_body.Clear();
-  }
-
   body.Emplace(this, new_par);
   absent_body.Emplace(this, new_absent_body);
-  unknown_body.Emplace(this, new_unknown_body);
 
   for (auto region : merges) {
-    auto merge = region->AsOperation()->AsCheckTuple();
+    auto merge = region->AsOperation()->AsCheckMember();
     assert(merge);  // These should all be the same type
     assert(merge != this);
 
@@ -2287,13 +2141,6 @@ const bool ProgramCheckTupleRegionImpl::MergeEqual(
       merge_body_ptr->parent = new_par;
       new_par->AddRegion(merge_body_ptr);
       merge->body.Clear();
-    }
-
-    if (auto merge_unknown_body_ptr = merge->unknown_body.get();
-        merge_unknown_body_ptr) {
-      merge_unknown_body_ptr->parent = new_unknown_body;
-      new_unknown_body->AddRegion(merge_unknown_body_ptr);
-      merge->unknown_body.Clear();
     }
 
     if (auto merge_absent_body_ptr = merge->absent_body.get();
@@ -2318,9 +2165,8 @@ ProgramCheckRecordRegionImpl::AsCheckRecord(void) noexcept {
 
 // Returns `true` if all paths through `this` ends with a `return` region.
 bool ProgramCheckRecordRegionImpl::EndsWithReturn(void) const noexcept {
-  if (body && absent_body && unknown_body) {
-    return body->EndsWithReturn() && absent_body->EndsWithReturn() &&
-           unknown_body->EndsWithReturn();
+  if (body && absent_body) {
+    return body->EndsWithReturn() && absent_body->EndsWithReturn();
   } else {
     return false;
   }
@@ -2329,6 +2175,8 @@ bool ProgramCheckRecordRegionImpl::EndsWithReturn(void) const noexcept {
 uint64_t ProgramCheckRecordRegionImpl::Hash(uint32_t depth) const {
   uint64_t hash = static_cast<unsigned>(this->OP::op) * 53;
   hash ^= RotateRight64(hash, 17) * (this->table->id * 13u);
+  hash ^= RotateRight64(hash, 17) *
+          ((static_cast<unsigned>(this->predicate) + 1u) * 29u);
 
   for (auto var : this->col_values) {
     hash ^= RotateRight64(hash, 13) *
@@ -2345,9 +2193,6 @@ uint64_t ProgramCheckRecordRegionImpl::Hash(uint32_t depth) const {
   if (this->absent_body) {
     hash ^= RotateRight64(hash, 13) * this->absent_body->Hash(depth - 1u);
   }
-  if (this->unknown_body) {
-    hash ^= RotateRight64(hash, 15) * this->unknown_body->Hash(depth - 1u);
-  }
   return hash;
 }
 
@@ -2357,10 +2202,6 @@ bool ProgramCheckRecordRegionImpl::IsNoOp(void) const noexcept {
   }
 
   if (absent_body && !absent_body->IsNoOp()) {
-    return false;
-  }
-
-  if (unknown_body && !unknown_body->IsNoOp()) {
     return false;
   }
 
@@ -2379,7 +2220,7 @@ bool ProgramCheckRecordRegionImpl::Equals(EqualitySet &eq, REGION *that_,
   }
 
   const auto that = op->AsCheckRecord();
-  if (!that) {
+  if (!that || this->predicate != that->predicate) {
     FAILED_EQ(that_);
     return false;
   }
@@ -2402,8 +2243,8 @@ bool ProgramCheckRecordRegionImpl::Equals(EqualitySet &eq, REGION *that_,
   }
   auto next_depth = depth - 1;
 
-  if (!this->body != !that->body || !this->absent_body != !that->absent_body ||
-      !this->unknown_body != !that->unknown_body) {
+  if (!this->body != !that->body ||
+      !this->absent_body != !that->absent_body) {
     FAILED_EQ(that_);
     return false;
   }
@@ -2415,9 +2256,7 @@ bool ProgramCheckRecordRegionImpl::Equals(EqualitySet &eq, REGION *that_,
 
   if ((body && !body->Equals(eq, that->body.get(), next_depth)) ||
       (absent_body &&
-       !absent_body->Equals(eq, that->absent_body.get(), next_depth)) ||
-      (unknown_body &&
-       !unknown_body->Equals(eq, that->unknown_body.get(), next_depth))) {
+       !absent_body->Equals(eq, that->absent_body.get(), next_depth))) {
     FAILED_EQ(that_);
     return false;
   }
@@ -2444,17 +2283,8 @@ const bool ProgramCheckRecordRegionImpl::MergeEqual(
     absent_body.Clear();
   }
 
-  // New parallel region for merged `unknown_body` into 'this'
-  auto new_unknown_body = prog->parallel_regions.Create(this);
-  if (auto unknown_body_ptr = unknown_body.get(); unknown_body_ptr) {
-    unknown_body_ptr->parent = new_unknown_body;
-    new_unknown_body->AddRegion(unknown_body_ptr);
-    unknown_body.Clear();
-  }
-
   body.Emplace(this, new_par);
   absent_body.Emplace(this, new_absent_body);
-  unknown_body.Emplace(this, new_unknown_body);
 
   for (auto region : merges) {
     auto merge = region->AsOperation()->AsCheckRecord();
@@ -2465,13 +2295,6 @@ const bool ProgramCheckRecordRegionImpl::MergeEqual(
       merge_body_ptr->parent = new_par;
       new_par->AddRegion(merge_body_ptr);
       merge->body.Clear();
-    }
-
-    if (auto merge_unknown_body_ptr = merge->unknown_body.get();
-        merge_unknown_body_ptr) {
-      merge_unknown_body_ptr->parent = new_unknown_body;
-      new_unknown_body->AddRegion(merge_unknown_body_ptr);
-      merge->unknown_body.Clear();
     }
 
     if (auto merge_absent_body_ptr = merge->absent_body.get();

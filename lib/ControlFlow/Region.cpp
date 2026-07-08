@@ -25,20 +25,6 @@ ProgramRegionImpl::ProgramRegionImpl(ProgramRegionImpl *parent_)
   assert(containing_procedure == parent->parent->containing_procedure);
 }
 
-// Find the nearest containing mode switch.
-ProgramModeSwitchRegionImpl *
-ProgramRegionImpl::ContainingModeSwitch(void) noexcept {
-  for (auto region = this->parent; region && region != region->parent;
-       region = region->parent) {
-    if (auto op = region->AsOperation()) {
-      if (auto ret = op->AsModeSwitch()) {
-        return ret;
-      }
-    }
-  }
-  return nullptr;
-}
-
 ProgramProcedureImpl *ProgramRegionImpl::AsProcedure(void) noexcept {
   return nullptr;
 }

@@ -107,7 +107,6 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kInductionInputs: os << "$induction_in"; break;
     case VectorKind::kInductionSwaps: os << "$induction_swap"; break;
     case VectorKind::kInductionOutputs: os << "$induction_out"; break;
-    case VectorKind::kInductionRechecks: os << "$induction_recheck"; break;
     case VectorKind::kJoinPivots: os << "$pivots"; break;
     case VectorKind::kInductiveJoinPivots: os << "$induction_pivots"; break;
     case VectorKind::kInductiveJoinPivotSwaps:
@@ -373,28 +372,6 @@ OutputStream &operator<<(OutputStream &os, ProgramLetBindingRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramModeSwitchRegion region) {
-  if (auto maybe_body = region.Body(); maybe_body) {
-    if (region.NewMode() == Mode::kBottomUpAddition) {
-      os << os.Indent() << "mode-switch-to-add\n";
-      os.PushIndent();
-      os << (*maybe_body);
-      os.PopIndent();
-    } else if (region.NewMode() == Mode::kBottomUpRemoval) {
-      os << os.Indent() << "mode-switch-to-remove\n";
-      os.PushIndent();
-      os << (*maybe_body);
-      os.PopIndent();
-    } else {
-      assert(false);
-      os << (*maybe_body);
-    }
-  } else {
-    os << os.Indent() << "empty-mode-switch";
-  }
-  return os;
-}
-
 OutputStream &operator<<(OutputStream &os, ProgramVectorLoopRegion region) {
   if (auto maybe_body = region.Body(); maybe_body) {
     os << os.Indent() << "vector-loop {";
@@ -466,48 +443,57 @@ OutputStream &operator<<(OutputStream &os, ProgramVectorSwapRegion region) {
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os,
-                         ProgramChangeTupleRegion region) {
+// Print the derivation class suffix of a counter fold.
+static OutputStream &PrintDerivClass(OutputStream &os, DerivClass c) {
+  switch (c) {
+    case DerivClass::kNonRecursive: os << "nonrecursive"; break;
+    case DerivClass::kRecursive: os << "recursive"; break;
+  }
+  return os;
+}
 
-  os << os.Indent() << "change-tuple {";
+// Print the name of a membership predicate.
+static OutputStream &PrintPredicate(OutputStream &os,
+                                    MembershipPredicate pred) {
+  switch (pred) {
+    case MembershipPredicate::kInI: os << "in-I"; break;
+    case MembershipPredicate::kInNew: os << "in-new"; break;
+    case MembershipPredicate::kSurvivesSoFar: os << "survives-so-far"; break;
+    case MembershipPredicate::kAliveAtClaim: os << "alive-at-claim"; break;
+    case MembershipPredicate::kInNewWithFrontier:
+      os << "in-new-with-frontier";
+      break;
+    case MembershipPredicate::kInNewSansFrontier:
+      os << "in-new-sans-frontier";
+      break;
+    case MembershipPredicate::kPresent: os << "present"; break;
+    case MembershipPredicate::kRecursivelySupported:
+      os << "recursively-supported";
+      break;
+  }
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os,
+                         ProgramUpdateCountRegion region) {
+
+  os << os.Indent() << "update-count " << (region.IsAdd() ? '+' : '-');
+  PrintDerivClass(os, region.DerivationClass());
+  os << " {";
 
   auto sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
     sep = ", ";
   }
-  os << "} in " << region.Table() << " from ";
+  os << "} in " << region.Table();
 
-  switch (region.FromState()) {
-    case TupleState::kPresent: os << "present to "; break;
-    case TupleState::kAbsent: os << "absent to "; break;
-    case TupleState::kUnknown: os << "unknown to "; break;
-    case TupleState::kAbsentOrUnknown: os << "absent|unknown to "; break;
-  }
-
-  switch (region.ToState()) {
-    case TupleState::kPresent: os << "present"; break;
-    case TupleState::kAbsent: os << "absent"; break;
-    case TupleState::kUnknown:
-    case TupleState::kAbsentOrUnknown: os << "unknown"; break;
-  }
-
-  if (auto maybe_body = region.BodyIfSucceeded(); maybe_body) {
+  if (auto maybe_body = region.Body(); maybe_body) {
     os << '\n';
     os.PushIndent();
-    os << os.Indent() << "if-transitioned\n";
+    os << os.Indent() << "if-crossed\n";
     os.PushIndent();
     os << (*maybe_body);
-    os.PopIndent();
-    os.PopIndent();
-  }
-
-  if (auto maybe_failed_body = region.BodyIfFailed(); maybe_failed_body) {
-    os << '\n';
-    os.PushIndent();
-    os << os.Indent() << "if-failed\n";
-    os.PushIndent();
-    os << (*maybe_failed_body);
     os.PopIndent();
     os.PopIndent();
   }
@@ -523,53 +509,33 @@ OutputStream &operator<<(OutputStream &os,
     os << sep << var;
     sep = ", ";
   }
-  os << "} = change-record {";
+  os << "} = update-count-record " << (region.IsAdd() ? '+' : '-');
+  PrintDerivClass(os, region.DerivationClass());
+  os << " {";
 
   sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
     sep = ", ";
   }
-  os << "} in " << region.Table() << " from ";
+  os << "} in " << region.Table();
 
-  switch (region.FromState()) {
-    case TupleState::kPresent: os << "present to "; break;
-    case TupleState::kAbsent: os << "absent to "; break;
-    case TupleState::kUnknown: os << "unknown to "; break;
-    case TupleState::kAbsentOrUnknown: os << "absent|unknown to "; break;
-  }
-
-  switch (region.ToState()) {
-    case TupleState::kPresent: os << "present"; break;
-    case TupleState::kAbsent: os << "absent"; break;
-    case TupleState::kUnknown:
-    case TupleState::kAbsentOrUnknown: os << "unknown"; break;
-  }
-
-  if (auto maybe_body = region.BodyIfSucceeded(); maybe_body) {
+  if (auto maybe_body = region.Body(); maybe_body) {
     os << '\n';
     os.PushIndent();
-    os << os.Indent() << "if-transitioned\n";
+    os << os.Indent() << "if-crossed\n";
     os.PushIndent();
     os << (*maybe_body);
-    os.PopIndent();
-    os.PopIndent();
-  }
-
-  if (auto maybe_failed_body = region.BodyIfFailed(); maybe_failed_body) {
-    os << '\n';
-    os.PushIndent();
-    os << os.Indent() << "if-failed\n";
-    os.PushIndent();
-    os << (*maybe_failed_body);
     os.PopIndent();
     os.PopIndent();
   }
   return os;
 }
 
-OutputStream &operator<<(OutputStream &os, ProgramCheckTupleRegion region) {
-  os << os.Indent() << "check-tuple {";
+OutputStream &operator<<(OutputStream &os, ProgramCheckMemberRegion region) {
+  os << os.Indent() << "check-member ";
+  PrintPredicate(os, region.Predicate());
+  os << " {";
   auto sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
@@ -580,7 +546,7 @@ OutputStream &operator<<(OutputStream &os, ProgramCheckTupleRegion region) {
   os.PushIndent();
   if (auto maybe_body = region.IfPresent(); maybe_body) {
     os << '\n';
-    os << os.Indent() << "if-present\n";
+    os << os.Indent() << "if-member\n";
     os.PushIndent();
     os << (*maybe_body);
     os.PopIndent();
@@ -588,13 +554,6 @@ OutputStream &operator<<(OutputStream &os, ProgramCheckTupleRegion region) {
   if (auto maybe_body = region.IfAbsent(); maybe_body) {
     os << '\n';
     os << os.Indent() << "if-absent\n";
-    os.PushIndent();
-    os << (*maybe_body);
-    os.PopIndent();
-  }
-  if (auto maybe_body = region.IfUnknown(); maybe_body) {
-    os << '\n';
-    os << os.Indent() << "if-unknown\n";
     os.PushIndent();
     os << (*maybe_body);
     os.PopIndent();
@@ -610,7 +569,9 @@ OutputStream &operator<<(OutputStream &os, ProgramCheckRecordRegion region) {
     os << sep << var;
     sep = ", ";
   }
-  os << "} = check-record {";
+  os << "} = check-member-record ";
+  PrintPredicate(os, region.Predicate());
+  os << " {";
   sep = "";
   for (auto var : region.TupleVariables()) {
     os << sep << var;
@@ -621,7 +582,7 @@ OutputStream &operator<<(OutputStream &os, ProgramCheckRecordRegion region) {
   os.PushIndent();
   if (auto maybe_body = region.IfPresent(); maybe_body) {
     os << '\n';
-    os << os.Indent() << "if-present\n";
+    os << os.Indent() << "if-member\n";
     os.PushIndent();
     os << (*maybe_body);
     os.PopIndent();
@@ -633,14 +594,15 @@ OutputStream &operator<<(OutputStream &os, ProgramCheckRecordRegion region) {
     os << (*maybe_body);
     os.PopIndent();
   }
-  if (auto maybe_body = region.IfUnknown(); maybe_body) {
-    os << '\n';
-    os << os.Indent() << "if-unknown\n";
-    os.PushIndent();
-    os << (*maybe_body);
-    os.PopIndent();
-  }
   os.PopIndent();
+  return os;
+}
+
+OutputStream &operator<<(OutputStream &os, ProgramCommitSweepRegion region) {
+  os << os.Indent() << "commit-sweep " << region.Table();
+  if (auto message = region.Message(); message) {
+    os << " publishing " << message->Name() << '/' << message->Arity();
+  }
   return os;
 }
 
@@ -846,7 +808,6 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramTestAndSetRegion)
   MAKE_VISITOR(ProgramGenerateRegion)
   MAKE_VISITOR(ProgramInductionRegion)
-  MAKE_VISITOR(ProgramModeSwitchRegion)
   MAKE_VISITOR(ProgramLetBindingRegion)
   MAKE_VISITOR(ProgramParallelRegion)
   MAKE_VISITOR(ProgramProcedure)
@@ -857,10 +818,11 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramVectorLoopRegion)
   MAKE_VISITOR(ProgramVectorSwapRegion)
   MAKE_VISITOR(ProgramVectorUniqueRegion)
-  MAKE_VISITOR(ProgramChangeTupleRegion)
-  MAKE_VISITOR(ProgramCheckTupleRegion)
+  MAKE_VISITOR(ProgramUpdateCountRegion)
+  MAKE_VISITOR(ProgramCheckMemberRegion)
   MAKE_VISITOR(ProgramChangeRecordRegion)
   MAKE_VISITOR(ProgramCheckRecordRegion)
+  MAKE_VISITOR(ProgramCommitSweepRegion)
   MAKE_VISITOR(ProgramTableJoinRegion)
   MAKE_VISITOR(ProgramTableProductRegion)
   MAKE_VISITOR(ProgramTableScanRegion)
@@ -893,7 +855,6 @@ OutputStream &operator<<(OutputStream &os, ProgramProcedure proc) {
         os << message->Name() << '/' << message->Arity() << ':';
       }
       break;
-    case ProcedureKind::kTupleFinder: os << "^find:"; break;
     case ProcedureKind::kQueryMessageInjector: os << "^inject:"; break;
   }
   os << proc.Id();
