@@ -755,12 +755,14 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
 
   // A monotone boundary: this view's table feeds a differential consumer's
   // seeds, so its rows added this batch accumulate into the table's
-  // net-additions frontier at the fold's crossing (each new row crosses at
-  // exactly one fold site of the table). A differential table needs no
-  // boundary append: its frontiers are consolidated by its own stratum's
+  // net-additions frontier. The append always sits inside the table's fold
+  // crossing — either the fold this call just made, or an ancestor fold of
+  // the same table that this walk is nested under — so only new rows
+  // accumulate; the seeds sort-unique the frontier, so one row appended at
+  // several same-model sites still seeds once. A differential table needs
+  // no boundary append: its frontiers are consolidated by its own stratum's
   // phases from the claimed queues.
-  if (any_cut_succ && parent != parent_ && table != nullptr &&
-      !TableIsDifferential(table)) {
+  if (any_cut_succ && table != nullptr && !TableIsDifferential(table)) {
     par->AddRegion(AppendViewTupleToVector(
         impl, par, view,
         TableDeltaVector(impl, context, table, VectorKind::kNetAdditions)));
@@ -790,8 +792,11 @@ void CompleteProcedure(ProgramImpl *impl, PROC *proc, Context &context,
   }
 }
 
-static void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
-                                      QueryView view, OP *parent) {
+// Map `view`'s output columns to the variables that `pred_view` has in
+// scope at `parent`: the standard per-edge variable plumbing used by both
+// the eager insertion walk and the delta-chain walk.
+void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
+                               QueryView view, OP *parent) {
   view.ForEachUse([=](QueryColumn in_col, InputColumnRole role,
                       std::optional<QueryColumn> out_col) {
     if (!out_col) {

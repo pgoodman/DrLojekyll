@@ -1403,6 +1403,12 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
   // ids the scans below hold in scope.
   std::vector<std::string> side_reads;
 
+  // Per-side pivot-equality re-checks for the delta sections: the index
+  // scans are approximate, so a joined combination requires every side's
+  // scanned key columns to equal the pivot. The body path re-checks through
+  // its TUPLECMP; the sections conjoin the equality directly.
+  std::vector<std::string> side_key_eqs;
+
   // Pivot loop.
   cc << cc.Indent() << "for (auto [" << JoinExprs(pivot_vars, ", ") << "] : "
      << VecName(region.PivotVector()) << ") {\n";
@@ -1465,6 +1471,15 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
     side_reads.push_back(member + ".InI(" + cursor + ")");
     side_reads.push_back(member + ".NetDeleted(" + cursor + ")");
 
+    std::string key_eq;
+    for (DataColumn col : indexed_cols) {
+      if (!key_eq.empty()) {
+        key_eq += " && ";
+      }
+      key_eq += row + "." + fields[col.Index()] + " == " + pivot_for_col(col);
+    }
+    side_key_eqs.push_back(key_eq.empty() ? "true" : key_eq);
+
     // Bind this table's output variables to the scanned row, positionally
     // in table column order (the IR's guard regions rely on this).
     const auto out_vars = region.OutputVariables(i);
@@ -1480,15 +1495,16 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
   }
 
   // Delta sections: each per-combination predicate is a conjunction of the
-  // sides' snapshot reads and a disjunction of their net-change reads —
-  // one-byte flag reads (differential sides) or watermark id comparisons
-  // (monotone sides) on the ids already in scope.
+  // sides' pivot-equality re-checks and snapshot reads, and a disjunction
+  // of their net-change reads — one-byte flag reads (differential sides) or
+  // watermark id comparisons (monotone sides) on the ids already in scope.
   const auto num_sides = tables.size();
   const auto emit_section = [&](ProgramRegion section, unsigned all_of,
                                 unsigned one_of) {
     cc << cc.Indent() << "if (";
     for (auto i = 0u; i < num_sides; ++i) {
-      cc << side_reads[i * 4u + all_of] << " && ";
+      cc << side_key_eqs[i] << " && " << side_reads[i * 4u + all_of]
+         << " && ";
     }
     auto sep = "(";
     for (auto i = 0u; i < num_sides; ++i) {

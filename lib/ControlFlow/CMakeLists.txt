@@ -20,6 +20,7 @@ set(ControlFlow_SRCS
     "Build/Negate.cpp"
     "Build/Procedure.cpp"
     "Build/Product.cpp"
+    "Build/Stratum.cpp"
     "Build/Tuple.cpp"
     "Build/Union.cpp"
     

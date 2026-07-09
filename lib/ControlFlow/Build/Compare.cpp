@@ -3,9 +3,11 @@
 #include "Build.h"
 
 namespace hyde {
-namespace {
 
-// Build an eager region for performing a comparison.
+// Build the comparison region for a CMP view. Returns the TUPLECMP and the
+// region under which the comparison-passing continuation nests (they differ
+// for a not-equals, whose continuation nests in the false body of the
+// equality form).
 std::pair<TUPLECMP *, OP *>
 CreateCompareRegion(ProgramImpl *impl, QueryCompare view, Context &context,
                     REGION *parent) {
@@ -82,8 +84,6 @@ CreateCompareRegion(ProgramImpl *impl, QueryCompare view, Context &context,
     return {cmp, cmp};
   }
 }
-
-}  // namespace
 
 // Build an eager region for performing a comparison.
 void BuildEagerCompareRegions(ProgramImpl *impl, QueryCompare cmp,

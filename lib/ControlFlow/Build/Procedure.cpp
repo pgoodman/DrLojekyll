@@ -762,6 +762,12 @@ PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query) {
 
   CompleteProcedure(impl, proc, context, false /* add_return */);
 
+  // The per-stratum differential phases: seed enumeration over lower
+  // strata's frontiers, claim drains, and net-frontier construction. They
+  // run after the ingest walk above (whose fold crossings park rows in the
+  // queues the drains consume) and before the commit sweeps below.
+  BuildStratumPhases(impl, context, query);
+
   // NOTE(pag): This adds in a `return-true` to `proc`.
   PublishDifferentialMessageVectors(impl, proc, context);
 

@@ -292,10 +292,19 @@ BuildNestedLoopJoin(ProgramImpl *impl, QueryJoin join, QueryView pred_view,
   return {let, parent};
 }
 
-// Build a join region given a JOIN view and a pivot vector.
-static std::pair<TABLEJOIN *, TUPLECMP *>
+}  // namespace
+
+// Build a join region given a JOIN view and a pivot vector. In the monotone
+// form (`for_delta` is `false`) the join's body is a TUPLECMP re-checking
+// the approximately-indexed scans against the pivot, and unit (condition)
+// sides contribute no scan arm. In the delta form the join has no body (the
+// caller wires the `added_body`/`removed_body` sections, whose emission
+// re-checks scanned keys against the pivot itself) and unit sides are
+// ordinary scan arms, so that the sections' per-side membership reads see
+// the unit row's id; the returned TUPLECMP is null.
+std::pair<TABLEJOIN *, TUPLECMP *>
 BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
-          SERIES *seq) {
+          SERIES *seq, bool for_delta) {
 
   // We're now either looping over pivots in a pivot vector, or there was only
   // one entrypoint to the `QueryJoin` that was followed pre-work item, and
@@ -304,10 +313,12 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
       seq, join_view, impl->next_id++);
   seq->AddRegion(join);
 
-  TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
-      join, ComparisonOperator::kEqual);
-
-  join->body.Emplace(join, cmp);
+  TUPLECMP *cmp = nullptr;
+  if (!for_delta) {
+    cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
+        join, ComparisonOperator::kEqual);
+    join->body.Emplace(join, cmp);
+  }
 
   // The JOIN internalizes the loop over its pivot vector. This is so that
   // it can have visibility into the sortedness, and choose what to do based
@@ -345,10 +356,12 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
   auto pred_view_index = 0u;
   for (QueryView pred_view : sorted_pred_views) {
 
-    // Unit sides are gated with a CHECKMEMBER by our callers; they contribute
-    // no scan arm. Their sole `bool` column is the pivot, whose variable
-    // comes from the pivot vector.
-    if (JoinedViewIsUnit(impl, pred_view)) {
+    // In the monotone form, unit sides are gated with a CHECKMEMBER by our
+    // callers; they contribute no scan arm. Their sole `bool` column is the
+    // pivot, whose variable comes from the pivot vector. The delta form
+    // keeps them as scan arms: the sections' membership reads need the unit
+    // row's id, and the all-columns "index" resolves to a point probe.
+    if (!for_delta && JoinedViewIsUnit(impl, pred_view)) {
       assert(pred_view.Columns().size() == 1u);
       continue;
     }
@@ -491,11 +504,16 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     if (InputColumnRole::kJoinPivot == role) {
       var = out_vars.Create(impl->next_id++, VariableRole::kJoinPivot);
 
+      // The delta form has no TUPLECMP: its sections re-check scanned keys
+      // against the pivot in their emitted predicates, and child regions
+      // read pivot outputs through the pivot-vector variables.
+      if (for_delta) {
+
       // If we're using an index for this JOIN, then we want to double check
       // that what we've selected is indeed what we asked for (from the
       // pivot vector). This may seem redundant but it permits index scans to
       // be approximate.
-      if (join->index_of_index[pred_view_idx]) {
+      } else if (join->index_of_index[pred_view_idx]) {
         cmp->lhs_vars.AddUse(join->pivot_vars[*(out_col->Index())]);
         cmp->rhs_vars.AddUse(var);
 
@@ -510,7 +528,7 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
 
       // For child nodes, this "hides" the variable from the pivot vector
       // iteration.
-      if (pred_view_idx == most_represented_pred_view_idx) {
+      if (!for_delta && pred_view_idx == most_represented_pred_view_idx) {
         cmp->col_id_to_var[out_col->Id()] = var;
       }
 
@@ -535,8 +553,6 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
 
   return {join, cmp};
 }
-
-}  // namespace
 
 void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
   const auto join_view = QueryJoin::From(view);
@@ -581,7 +597,8 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     seq->AddRegion(unique);
   }
 
-  auto [join, cmp] = BuildJoin(impl, join_view, swap_pivot_vec, seq);
+  auto [join, cmp] = BuildJoin(impl, join_view, swap_pivot_vec, seq,
+                               false /* for_delta */);
   OP *parent = cmp;
 
   // Figure out if any of the joined views is backed by a unit (condition)

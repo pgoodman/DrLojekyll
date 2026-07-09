@@ -1354,9 +1354,13 @@ class ProgramTableJoinRegionImpl final : public OP {
   std::vector<UseList<TABLECOLUMN>> output_cols;
 
   // Delta sections, alongside the plain `body` (which runs per joined
-  // combination of currently stored rows). Each section runs per joined
-  // combination under a named batch-delta discipline that codegen evaluates
-  // directly on the scanned row ids:
+  // combination of currently stored rows). A joined combination requires
+  // every side's scanned key columns to equal the pivot: the index scans
+  // are approximate, and where the body path re-checks through its
+  // TUPLECMP, the sections conjoin the key equality into their emitted
+  // predicates. Each section runs per joined combination under a named
+  // batch-delta discipline that codegen evaluates directly on the scanned
+  // row ids:
   //
   //   added_body:   every side is in the batch-final state (InNew) and at
   //                 least one side is a net addition of this batch — the

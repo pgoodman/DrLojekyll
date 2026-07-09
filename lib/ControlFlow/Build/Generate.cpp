@@ -3,11 +3,13 @@
 #include "Build.h"
 
 namespace hyde {
-namespace {
 
-static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
-                                      ParsedFunctor functor, Context &context,
-                                      REGION *parent, bool bottom_up) {
+// Build the generator call for a MAP view's functor application, binding
+// its bound parameters (from the data flow when `bottom_up`, from the
+// output columns otherwise) and defining its free parameters.
+GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
+                               ParsedFunctor functor, Context &context,
+                               REGION *parent, bool bottom_up) {
   std::vector<QueryColumn> input_cols;
   std::vector<QueryColumn> output_cols;
 
@@ -77,8 +79,6 @@ static GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
 
   return gen;
 }
-
-}  // namespace
 
 // Build an eager region for a `QueryMap`.
 void BuildEagerGenerateRegion(ProgramImpl *impl, QueryView pred_view,

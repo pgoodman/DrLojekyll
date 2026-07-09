@@ -355,6 +355,50 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
   return true;
 }
 
+// Map `view`'s output columns to the variables that `pred_view` has in
+// scope at `parent`: the standard per-edge variable plumbing used by both
+// the eager insertion walk and the delta-chain walk.
+void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
+                               QueryView view, OP *parent);
+
+// Build the comparison region for a CMP view. Returns the TUPLECMP and the
+// region under which the comparison-passing continuation nests (they differ
+// for a not-equals, whose continuation nests in the false body of the
+// equality form).
+std::pair<TUPLECMP *, OP *> CreateCompareRegion(ProgramImpl *impl,
+                                                QueryCompare view,
+                                                Context &context,
+                                                REGION *parent);
+
+// Build the generator call for a MAP view's functor application, binding
+// its bound parameters (from the data flow when `bottom_up`, from the
+// output columns otherwise) and defining its free parameters.
+GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
+                               ParsedFunctor functor, Context &context,
+                               REGION *parent, bool bottom_up);
+
+// Build a join region given a JOIN view and a pivot vector. In the monotone
+// form (`for_delta` is `false`) the join's body is a TUPLECMP re-checking
+// the approximately-indexed scans against the pivot, and unit (condition)
+// sides contribute no scan arm. In the delta form the join has no body (the
+// caller wires the `added_body`/`removed_body` sections, whose emission
+// re-checks scanned keys against the pivot itself) and unit sides are
+// ordinary scan arms, so that the sections' per-side membership reads see
+// the unit row's id; the returned TUPLECMP is null.
+std::pair<TABLEJOIN *, TUPLECMP *> BuildJoin(ProgramImpl *impl,
+                                             QueryJoin join_view,
+                                             VECTOR *pivot_vec, SERIES *seq,
+                                             bool for_delta);
+
+// Build the per-stratum differential phases into the entry procedure: for
+// each stratum in ascending order, the seed enumeration over lower strata's
+// consolidated frontiers (frontier-vector loops walking delta chains, and
+// dual-section TABLEJOINs fed by pivot appends), the claim drains of the
+// stratum's differential tables (delete/add queues into the batch
+// overdeletion/addition sets), and the net-frontier construction that
+// higher strata's seeds range over.
+void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query);
+
 // Build an eager region for adding data.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                       Context &context, OP *parent, TABLE *last_model);
