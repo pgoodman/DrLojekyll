@@ -269,6 +269,13 @@ static OP *EmitChainStep(ProgramImpl *impl, Context &context,
 // the table's add or delete queue for the owner stratum's claim drain.
 // Claimed rows do not walk successors: all downstream propagation is
 // higher-stratum seeds ranging over the table's net frontiers.
+//
+// The counter class is always `kNonRecursive`: `table` is a non-inductive
+// differential table (the `TableHasInductiveView` partition drops inductive
+// fold targets), and the scheduling fixpoint has lifted this fold's emission
+// stratum above every table it reads, so no fold here closes a same-stratum
+// recursion cycle. That "all reads are strictly lower strata" property is
+// assert-checked after the fixpoint runs.
 static void EmitHeadFold(ProgramImpl *impl, Context &context, QueryView view,
                          TABLE *table, bool is_add, OP *parent) {
   std::vector<QueryColumn> cols;
@@ -302,13 +309,20 @@ static void EmitHeadFold(ProgramImpl *impl, Context &context, QueryView view,
 // itself, fold at the first table (a differential join is persisted, so
 // this is normally the join's own table) and otherwise continue through
 // table-less plumbing into each eligible consumer edge.
+//
+// Each walk folds at most once: it returns at the first table it reaches, and
+// chain discovery (`DiscoverBranches`) already terminates every chain at its
+// first table boundary, so no walk traverses two table boundaries or
+// reconverges on one fold site. A single-fold guarantee is required because
+// each fold appends to the table's update-count (a load-bearing multiset
+// value): a double fold would over-count and break net-zero detection. No
+// running already-folded set is needed — the structure enforces it.
 static void EmitSectionWalk(ProgramImpl *impl, Context &context,
-                            QueryView view, bool is_add, OP *parent,
-                            TABLE *last_table) {
+                            QueryView view, bool is_add, OP *parent) {
   DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
   TABLE *const table = model->table;
 
-  if (table != nullptr && table != last_table) {
+  if (table != nullptr) {
     if (!TableHasInductiveView(table)) {
       EmitHeadFold(impl, context, view, table, is_add, parent);
     }
@@ -321,10 +335,22 @@ static void EmitSectionWalk(ProgramImpl *impl, Context &context,
     if (!FollowsDeltaEdge(succ)) {
       continue;
     }
+
+    // The scheduling fixpoint lifts a chain's emission stratum above every
+    // NEGATE'd table it reads by scanning `BranchChain::path`, but a NEGATE
+    // reached only inside a join section walk (past the kJoin terminal, not
+    // in any `path`) is outside that scan's coverage. Such a NEGATE would be
+    // emitted here without its negated table's readiness having been lifted
+    // for, so its `kInNew`/`kInI` gate could read a non-final state. This
+    // shape is out of scope: no corpus join section walks table-less plumbing
+    // at all, so none contains a NEGATE. Guard the boundary rather than
+    // silently under-lift.
+    assert(!succ.IsNegate());
+
     LET *const let = impl->operation_regions.CreateDerived<LET>(par);
     par->AddRegion(let);
     OP *const step = EmitChainStep(impl, context, view, succ, is_add, let);
-    EmitSectionWalk(impl, context, succ, is_add, step, last_table);
+    EmitSectionWalk(impl, context, succ, is_add, step);
   }
 }
 
@@ -638,6 +664,40 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     }
   }
 
+  // Cash the soundness precondition that the REDERIVE omission and the
+  // always-`kNonRecursive` head fold rest on (see Phase 8c / `EmitHeadFold`):
+  // every table an emission unit reads must be phase-final strictly before the
+  // unit runs, i.e. its final drain stratum is strictly lower than the unit's
+  // emission stratum. If it held, the emission never reads a table at its own
+  // stratum, so no fold it performs closes a same-stratum recursion cycle and
+  // the non-recursive counter class is sound. The scheduling fixpoint above
+  // establishes this by construction; the assert makes it checked rather than
+  // narrated. `ready_after(T)` is `drain_stratum[T] + 1` (0 if T is not phase
+  // owned — inductive/monotone sources are filled before any phase runs), so
+  // `ready_after(read) <= emission stratum` is exactly "read is strictly
+  // lower."
+#ifndef NDEBUG
+  for (const BranchChain &branch : branches) {
+    assert(ready_after(branch.source) <= branch.stratum);
+    for (const QueryView &view : branch.path) {
+      if (view.IsNegate()) {
+        const QueryView negated_view = QueryNegate::From(view).NegatedView();
+        DataModel *const negated_model =
+            impl->view_to_model[negated_view]->FindAs<DataModel>();
+        assert(ready_after(negated_model->table) <= branch.stratum);
+      }
+    }
+  }
+  for (const JoinEmission &emission : joins) {
+    for (QueryView side :
+         QueryJoin::From(emission.join_view).JoinedViews()) {
+      DataModel *const side_model =
+          impl->view_to_model[side]->FindAs<DataModel>();
+      assert(ready_after(side_model->table) <= emission.stratum);
+    }
+  }
+#endif  // NDEBUG
+
   // The strata that need a phase series, ascending.
   std::set<unsigned> strata;
   for (const BranchChain &branch : branches) {
@@ -733,18 +793,29 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       LET *const added = impl->operation_regions.CreateDerived<LET>(join);
       join->added_body.Emplace(join, added);
       EmitSectionWalk(impl, context, emission.join_view, true /* is_add */,
-                      added, nullptr);
+                      added);
 
       LET *const removed = impl->operation_regions.CreateDerived<LET>(join);
       join->removed_body.Emplace(join, removed);
       EmitSectionWalk(impl, context, emission.join_view, false /* is_add */,
-                      removed, nullptr);
+                      removed);
     }
 
     // Claim drains of the tables owned by this stratum, overdeletions
-    // first, then their net-frontier filters. (There is no REDERIVE step:
-    // a non-inductive table has no recursive derivations, so its recursive
-    // counter is identically zero.)
+    // first, then their net-frontier filters. There is no REDERIVE step: the
+    // partition drains only non-inductive differential tables, and the
+    // fixpoint has lifted every emission above the strata it reads (the
+    // assert-checked "reads are strictly lower" property), so no table here
+    // carries a same-stratum recursive derivation and its recursive counter
+    // is identically zero.
+    //
+    // The per-table interleaving (each table's del/add drain then del/add
+    // filter, rather than a global del-then-add pass over all tables) is
+    // unobservable while a stratum drains a single table: there is nothing to
+    // interleave against, and the spec's within-table del-before-add order is
+    // honored. A cross-table dependency would only be mis-ordered if one
+    // stratum drained two tables whose reads are not strictly lower — which
+    // the reads-are-lower assert above rules out. (Couples with that assert.)
     for (TABLE *table : phase_table_order) {
       if (drain_stratum[table] != stratum) {
         continue;

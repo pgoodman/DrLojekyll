@@ -538,3 +538,66 @@ NOT YET DONE for checkpoint (b):
 
 This notes file is stage scratch: delete it from the repo when checkpoint
 (b) lands (the durable record belongs in StackSafeNegation.plan.md).
+
+## 3b review outcomes (part 3d)
+
+Stratum.cpp reviewed against the "3b final spec" + Part-3 worklist (full
+deviation review in session scratch). Outcome: 0 provably-wrong deviations on the (b)
+corpus; 5 latent SUITE-GATE items (D1,D2,D3,D6,D9), 4 cosmetic spec gaps
+(D4,D5,D7,D8). This part hardens the file with asserts/comments only — no
+codegen change; the whole (b) corpus stays byte-identical.
+
+(a) Singleton-stratum vocabulary superseded (D1/D9). The spec's "single-view
+    (singleton) stratum" precondition — the load-bearing reason REDERIVE is
+    omitted and the head fold is always kNonRecursive — is NOT what the code
+    checks. The code partitions on `TableHasInductiveView` (non-inductive
+    differential tables) + a scheduling fixpoint, and never tests stratum
+    cardinality. These coincide on the (b) corpus. The real precondition is
+    now assert-CHECKED (Stratum.cpp, post-Phase-5 retarget, guarded
+    `#ifndef NDEBUG`): every table an emission unit reads (branch source,
+    branch-path NEGATEs, join side tables) has `ready_after(read) <= emission
+    stratum`, i.e. its drain stratum is strictly lower. That is exactly the
+    "no same-stratum recursion" property that makes kNonRecursive sound; the
+    fixpoint establishes it, the assert cashes it. The Phase-8c and
+    EmitHeadFold comments were rewritten to cite this real precondition, not
+    "singleton stratum."
+
+(b) Scheduling fixpoint is a superseding design absent from the spec (D6).
+    The spec fixes emission strata and asserts "reads are strictly lower" as
+    a static invariant; the code instead REPAIRS it by lifting drain/emission
+    strata to a fixpoint. On a spec-conforming program the fixpoint does zero
+    lifts, so codegen is identical. One coverage gap flagged: the fixpoint's
+    negated-table lift scans `BranchChain::path`, which does NOT include a
+    NEGATE reached only inside a join SECTION walk (past a kJoin terminal, via
+    EmitSectionWalk/CollectSectionTargets). Empirically probed the whole
+    corpus (168 .dr files, both dataflow-opt modes): NO join section walk
+    recurses through table-less plumbing at all (every join is persisted, so
+    the walk folds at the join view immediately), hence no join section
+    contains a NEGATE. Chosen fix: an `assert(!succ.IsNegate())` at the
+    section-walk recursion in EmitSectionWalk marking the shape out of scope
+    (does not fire on any corpus program). The alternative — extending
+    CollectSectionTargets to lift for section NEGATEs — would be a provable
+    no-op (zero recursions ⇒ zero extra lifts) but is strictly more code for
+    the same corpus behavior; the assert records the boundary minimally.
+
+(c) Spec gaps confirmed code-correct (cosmetic, code fills a spec omission):
+    - D4: EmitChainStep handles SELECT-over-INSERT (chain crossing a relation
+      boundary same-model) — spec's per-view dispatch omitted SELECT.
+    - D5: optional/negative MAP routes its continuation through the functor's
+      `empty_body` branch — spec didn't enumerate the optional-functor case.
+    - D7: inductive differential tables are seed sources (additions only,
+      filled by the induction's output loop) — a third source kind the spec's
+      seed-source paragraph under-states; correctly `+`-only gated.
+    - D8: per-branch `-`-then-`+` seed interleaving is arbitrary-but-
+      deterministic; seeds only read lower strata and write sort-uniqued
+      queues, so order is semantically irrelevant.
+
+(d) D3 resolved. EmitSectionWalk's `last_table` parameter was inert — seeded
+    nullptr, forwarded verbatim, never advanced, so the `table != last_table`
+    re-fold guard was dead. Deleted the parameter and the dead clause;
+    recorded the REAL single-fold invariant as a comment + the section-walk
+    returns at its first table, and DiscoverBranches terminates every chain at
+    its first table boundary, so no walk crosses two table boundaries or
+    reconverges on one fold site (single-fold is load-bearing: each fold
+    appends to a table's update-count multiset). No running already-folded set
+    is needed — the structure enforces it.
