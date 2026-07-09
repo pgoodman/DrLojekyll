@@ -583,9 +583,9 @@ VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
 
 // Append the tuple of `view` (its columns, or an INSERT's stored input
 // columns) to `vec` inside `parent`.
-static VECTORAPPEND *AppendViewTupleToVector(ProgramImpl *impl,
-                                             REGION *parent, QueryView view,
-                                             VECTOR *vec) {
+VECTORAPPEND *AppendViewTupleToVector(ProgramImpl *impl,
+                                      REGION *parent, QueryView view,
+                                      VECTOR *vec) {
   VECTORAPPEND *const append =
       impl->operation_regions.CreateDerived<VECTORAPPEND>(
           parent, ProgramOperation::kAppendToInductionVector);

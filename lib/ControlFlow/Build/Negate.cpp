@@ -39,6 +39,26 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
         InTryInsert(impl, context, negate_view, let, nullptr);
     (void) table;
 
+    // The negation's own table is deletion-capable (a NEGATE retracts when
+    // its negated view gains a row), so it is a differential table whose
+    // non-inductive consumers run in the table's stratum phases. Those
+    // phases drain the table's add queue, which must be seeded here at the
+    // fold's zero crossing — the eager-insertion seeder (Build.cpp) is
+    // skipped for this table because `continue_negation` already folded it,
+    // so its recursive InTryInsert is a no-op (parent == parent_).
+    if (table != nullptr && succ_parent != let &&
+        TableIsDifferential(table) &&
+        !negate_view.InductionGroupId().has_value()) {
+      PARALLEL *const par = impl->parallel_regions.Create(succ_parent);
+      succ_parent->body.Emplace(succ_parent, par);
+      par->AddRegion(AppendViewTupleToVector(
+          impl, par, negate_view,
+          TableDeltaVector(impl, context, table, VectorKind::kAddQueue)));
+      LET *const cont_let = impl->operation_regions.CreateDerived<LET>(par);
+      par->AddRegion(cont_let);
+      succ_parent = cont_let;
+    }
+
     // If this is an inductive negation, then we might defer processing its
     // outputs until we get into a successor.
     if (negate_view.InductionGroupId().has_value()) {

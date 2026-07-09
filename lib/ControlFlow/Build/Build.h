@@ -167,6 +167,11 @@ bool TableIsDifferential(TABLE *table);
 VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
                          VectorKind kind);
 
+// Append the tuple of `view` (its columns, or an INSERT's stored input
+// columns) to `vec` inside `parent`.
+VECTORAPPEND *AppendViewTupleToVector(ProgramImpl *impl, REGION *parent,
+                                      QueryView view, VECTOR *vec);
+
 OP *BuildStateCheckCaseReturnFalse(ProgramImpl *impl, REGION *parent);
 OP *BuildStateCheckCaseReturnTrue(ProgramImpl *impl, REGION *parent);
 
