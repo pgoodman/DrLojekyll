@@ -246,6 +246,11 @@ Phase construction (new file lib/ControlFlow/Build/Delta.cpp):
      outAdd only. Recursive-strata differential tables at (b): outAdd
      only (filled by induction output append); delQ declared if consumers
      exist? NO — (b): outAdd only, no del side.
+     A6 (c) forward-pointer: (c) must EXTEND this allocation for recursive
+     tables to add delQ/D/outDel + the claimed-frontier pair $t_ΔD/$t_ΔA;
+     until it does, the (c) OVERDELETE claim loop has nowhere to enqueue
+     crossings. Hard precondition, mechanical — flagged so it is not
+     discovered mid-implementation.
   3. SERIES per stratum s ascending, appended to entry body after the
      ingest PARALLEL: for each owned differential table T (single-view
      stratum only at (b)):
@@ -314,6 +319,11 @@ Dual gate chains under the join's TUPLECMP, in a PARALLEL:
   crossing -> addQ/delQ of that table. Head chain after the join =
   single-pred plumbing only (every joined view is persisted by
   FillDataModel => at most one JOIN per table-to-table segment).
+  CLASS = errata item 2 (plan.md): the RULE's fixed class, recursive iff any
+  body atom's DerivationClassInto(head) is recursive — NOT the delta
+  position's stratum. Inert at (b) singleton strata (always kNonRecursive);
+  load-bearing at (c) where a recursive rule seeded on its lower atom must
+  still fold C_r (see plan.md Q3(b), corrected 2026-07-09).
   Case matrix verified: pure add +1 once; pure delete -1 once; mixed
   add/delete same instance: NEITHER arm fires (no seed phantom pairs, no
   negative dips from seeds); both-added / both-deleted: fires once via
@@ -370,7 +380,11 @@ because the join runs once over a sort-uniqued pivot vector).
 - (c) plan: fixpoint claim-round reads (SurvivesSoFar/AliveAtClaim/
   InNewWithFrontier/InNewSansFrontier) become a third section flavor of
   the same join emission (round-relative discipline), keeping one join
-  region kind with named section disciplines.
+  region kind with named section disciplines. The round-relative discipline
+  ranges over explicit per-round CLAIMED-frontier vectors $t_ΔD/$t_ΔA (CLAIM
+  appends only successful claims; firing loops the claimed set; break tests
+  ITS emptiness; RETIRE ranges over it) — MD §5.2's Δ_D/Δ_A, NEVER the
+  drained queue $t_delta.
 - IR shape: ProgramTableJoinRegion gains AddedBody()/RemovedBody()
   optionals + impl UseRef<REGION> added_body/removed_body; Optimize.cpp
   join OptimizeImpl treats empty sections as removable bodies; Equals/
@@ -601,6 +615,17 @@ codegen change; the whole (b) corpus stays byte-identical.
     fixpoint establishes it, the assert cashes it. The Phase-8c and
     EmitHeadFold comments were rewritten to cite this real precondition, not
     "singleton stratum."
+
+    A4 (c) record (owner decision 2026-07-09): once (c) makes a recursive
+    table a drain target at its own stratum, the `ready_after(read) <=
+    emission stratum` assert at Stratum.cpp:681/687/696 would SIGABRT (it
+    passes at (b) only because TableHasInductiveView excludes recursive
+    tables from joins). Resolution: REUSE the (b) JoinEmission path and
+    SPLIT this assert by emission-site kind — seed emissions must still read
+    strictly-lower strata EXCLUDING same-SCC reads (InI batch-frozen or
+    lower-table InNew, never a drain-order dependency); claim-loop emissions
+    must have >=1 same-SCC read. The kNonRecursive soundness comment
+    survives for base-rule seeds. The split is (c) implementation work.
 
 (b) Scheduling fixpoint is a superseding design absent from the spec (D6).
     The spec fixes emission strata and asserts "reads are strictly lower" as

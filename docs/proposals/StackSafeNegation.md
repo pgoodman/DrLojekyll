@@ -294,6 +294,7 @@ Commit(sink):
   debug-assert delQ/addQ empty for every stratum
   for id in touched (deduplicated):
       debug-assert C_nr(id) >= 0 && C_r(id) >= 0
+      debug-assert (flags[id] & kDelNow) == 0 && (flags[id] & kAddNow) == 0
       was := flags[id] & kInI;  now := (counts[id] > 0)
       if was != now and this table backs a @differential transmit view:
           sink.publish(RowAt(id), /*added=*/now)

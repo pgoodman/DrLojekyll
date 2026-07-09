@@ -297,18 +297,33 @@ emitted during `kAccumulatingCycleRegions` are `cycle_appends`
 `merge.InductiveSuccessors()` from inside the fixpoint (`:833`, `:862`) —
 these are the back-edge arrivals. `InductiveSuccessors()` /
 `NonInductivePredecessors()` are direct reads of `InductionInfo`'s
-use-lists (`lib/DataFlow/Query.cpp:1256–1292`). Therefore: **an
-UPDATECOUNT emitted at a seed/init position is `kNonRecursive` (C_nr) and
-one emitted inside a stratum's fixpoint body is `kRecursive` (C_r)** — the
-class is read off the emission position that the existing
-`induction->state` machinery already distinguishes, which is itself
-equivalent to the dataflow-level rule "deriving view in the same SCC as
-the target table's views". Stratify adds only (i) the topological stratum
+use-lists (`lib/DataFlow/Query.cpp:1256–1292`). The emission-position split
+gives the class for *fixpoint-body* folds directly: **an UPDATECOUNT emitted
+inside a stratum's fixpoint body is `kRecursive` (C_r)**. For a **seed**
+fold, however, the class is the **RULE's fixed class**, not the emission
+position's stratum: `kRecursive` iff any body atom's
+`DerivationClassInto(head)` is recursive (errata item 2). Worked out on the
+recursive stratum: the base `t:edge` rule seeds `kNonRecursive` (its only
+body atom is the lower `edge`), while the recursive `t:t,edge` rule seeds
+`kRecursive` (its body atom `t(From,X)` shares `t`'s SCC) **even though the
+delta driving the seed is the lower `edge` atom**. That last case is the
+trap: the emission-position≡class equivalence **breaks** for a recursive
+rule seeded on its lower atom — a seed sitting at an init position is
+nonetheless `kRecursive` there. (Corrected 2026-07-09; the earlier wording
+said "an UPDATECOUNT emitted at a seed/init position is `kNonRecursive`"
+unconditionally, and was wrong because a recursive rule seeded on its lower
+body atom emits at a seed position but must fold `C_r` — §5.1.1's INSERT
+seed restores `C_r(t(1,5))`, not `C_nr`; folding `C_nr` there drives it
+negative and SIGABRTs at commit on any row with `C_nr > 0`.) The
+fixpoint-body case remains equivalent to the dataflow-level rule "deriving
+view in the same SCC as the target table's views". Stratify adds only (i) the topological stratum
 order over SCCs (replacing `merge_depth`'s partial order, `:538–636`),
 (ii) the in-SCC-negation diagnostic, (iii) stratum ids for tables — plus
 the DerivClass labels as a cross-check against emission position (debug
-assert in the CF build: seed-position emission ⇔ edge labeled
-kNonRecursive). One special case to preserve: non-inductive PRODUCT
+assert in the CF build: a *fixpoint-body* emission ⇒ `kRecursive`; a
+*seed* emission's class = the rule's fixed class per errata item 2, so the
+assert must split by emission-site kind, not equate seed-position with
+`kNonRecursive` — see the (c) work item's `ready_after` sub-bullet and A4). One special case to preserve: non-inductive PRODUCT
 predecessor vectors alias their swap vector (`swap_vec == vec`,
 `:112–115`, `:1064–1074`) — under the new skeleton these are exactly the
 frontier vectors that must NOT be cleared between rounds.
@@ -672,6 +687,74 @@ The full-suite gate applies only at the end.
   claim/retire calls at dequeue), `Build/Join.cpp`, `Build/Merge.cpp`,
   `Build/Induction.h`, `Database.cpp` (re-entry loop `:1678–1699`
   deleted), `Program.h` (`kInductionRechecks` deleted).
+
+  - *Seed enumerates every deriving rule, not just the JOIN-terminal one.*
+    The recursive-stratum seed builder walks **every** branch chain
+    terminating at an owned table `t` (per MD §5.2 "for each such stopped
+    firing F", ranging over all deriving rules), including non-JOIN direct
+    projections — for `tc`, the base `t:edge` `edge→UNION` TUPLE is a
+    distinct rule (DF node `v33533804992`, STRATUM 2→3) from the recursive
+    `t:t,edge` JOIN and must get its own seed fold. The base-rule seed folds
+    `kNonRecursive`; the recursive-rule seed folds `kRecursive` (per errata
+    item 2, and A2 below). Omitting the base-rule seed computes the wrong
+    golden (`t(1,2)` never removed, `t(2,5)` never added).
+  - *Per-round claimed-frontier vectors `Δ_D`/`Δ_A`; never the drained
+    queue.* The claim/retire-at-dequeue discipline uses an explicit per-round
+    claimed-frontier vector (`$t_ΔD`/`$t_ΔA`): CLAIM appends **only
+    successful claims** to it; the fixpoint firing loops **it**; the loop
+    break tests **its** emptiness (claim progress, not queue emptiness);
+    RETIRE ranges over **it**. Per MD §5.2: `Δ_D := { id ∈ N_D :
+    TryClaimDel(id) }`, "delta over Δ_D", `RetireDelFrontier(Δ_D)`. Firing
+    over the raw drained `$t_delta` re-fires an already-claimed row on any
+    re-enqueue (a diamond where round-k crossing re-enqueues a round-`<k`
+    row), double-stepping downstream `C_r` and breaking net-exactness; the
+    break testing the queue can then live-lock. This is a schema-shape change
+    ⇒ Risk #2 applies (re-run §5.1.1 by hand — done — and a
+    2-same-stratum-atom trace before code).
+  - *Recursive-stratum seed reads vs the (b) `ready_after` build assert.*
+    Once (c) makes `%table:4` a drain target at the recursive stratum, the
+    (b) `Stratum.cpp` `ready_after(read) ≤ emission stratum` assert (lines
+    681/687/**696**) — which passes today only because
+    `TableHasInductiveView` excludes recursive tables from `joins` — would
+    SIGABRT on the first recursive program in a debug build. OWNER DECISION
+    (2026-07-09): resolution (ii) — REUSE the (b) JoinEmission path and
+    **split the assert by emission-site kind**. Seed emissions must still
+    read strictly-lower strata **excluding** same-SCC reads (which are `InI`
+    batch-frozen, or lower-table `InNew`, never a drain-order dependency, so
+    they close no scheduling cycle); claim-loop emissions must have ≥1
+    same-SCC read. The `kNonRecursive` soundness comment
+    (`Stratum.cpp:670–682`) survives for base-rule seeds. The assert change
+    itself is (c) implementation work.
+  - *`kRecursivelySupported` is NEW (c) vocabulary, not builder-only work.*
+    REDERIVE reads `C_r > 0` via `check-member recursively-supported … in
+    %table:4`. This `MembershipPredicate` is named in MD §3.1 but is **not**
+    in the (b)-landed set (only `kNetDeleted`/`kNetAdded`); it is a full
+    instance of the (a)-established ten-site threading list: enum value +
+    `DiffTable` accessor + `CHECKMEMBER` printer case + codegen emitter case.
+  - *Del-side vector allocation for recursive tables.* (b) deliberately
+    allocated **`outAdd` only** for recursive tables (increment-2 pt.6,
+    increment-3 pt.2). (c) must **extend** the Context per-table vector
+    allocation to add `delQ`/`D`/`outDel` (and the claimed-frontier pair
+    `$t_ΔD`/`$t_ΔA` per A3) — not merely start writing into vectors (b) never
+    allocated; without it the OVERDELETE claim loop has nowhere to enqueue
+    crossings.
+  - *Commit assert (test hook).* Add a Commit debug-assert `kDelNow == 0 &&
+    kAddNow == 0` per touched row (alongside the existing `C_nr ≥ 0 && C_r ≥
+    0`); it catches a leaking or mis-scoped retire — the failure mode the
+    `Δ_D` discipline guards against — directly and cheaply (see MD §5.5
+    errata).
+  - *Required additional fixtures before (c) is read-complete.* `tc`, by
+    construction (one same-stratum body atom), does not exercise the
+    round-relative predicate matrix
+    (`SurvivesSoFar`/`AliveAtClaim`/`InNewWithFrontier`/`InNewSansFrontier`),
+    REDERIVE's restore-**TRUE** arm, or the BUILDFRONTIERS producer→consumer
+    seam. Mandate: nonlinear `p(X,Z):p(X,Y),p(Y,Z)` (the matrix + same-round
+    exactly-once + `Δ_D` re-enqueue stress); the `p(1)`/`p(2)`
+    self-supporting-cycle trace (`:316–337` — REDERIVE restore-TRUE +
+    `C_nr>0` firewall refusal); a recursive→downstream-differential program
+    (the BUILDFRONTIERS seam). `deep_chain_retract` remains the constant-
+    stack acceptance gate — validate the re-entry-loop deletion against it,
+    **not** `tc` (`tc` may not emit a `ProgramInductionRegion` at all).
 - **(d) Negation crossover.**
   Files: `Build/Negate.cpp` (forward CHECKMEMBER gate; inductive-negation
   path deleted — Stratify's diagnostic now dominates it), `Build.cpp`
