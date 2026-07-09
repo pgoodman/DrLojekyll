@@ -273,6 +273,18 @@ enum class VectorKind : unsigned {
   // A differential message's netted explicit removals/additions.
   kNetRemovals,
   kNetAdditions,
+
+  // A recursive stratum's per-round CLAIMED frontier (`Δ_D`/`Δ_A` in MD
+  // §5.2/§5.3): the subset of `kOverdeleteSet`/`kAdditionSet` claimed in
+  // the *current* fixpoint round only. CLAIM appends a row here on
+  // success (not the drained queue); the OVERDELETE/INSERT fixpoint's
+  // firing loop ranges over this vector, the loop's empty-check is its
+  // break condition (claim progress, not queue emptiness), and RETIRE
+  // clears the round's frontier bit over this same vector. Distinct from
+  // `kOverdeleteSet`/`kAdditionSet`, which accumulate across all rounds
+  // of the batch.
+  kClaimedDeleteFrontier,
+  kClaimedAddFrontier,
 };
 
 // A column in a table.

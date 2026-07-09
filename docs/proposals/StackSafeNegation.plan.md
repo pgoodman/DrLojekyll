@@ -725,12 +725,15 @@ The full-suite gate applies only at the end.
     same-SCC read. The `kNonRecursive` soundness comment
     (`Stratum.cpp:670–682`) survives for base-rule seeds. The assert change
     itself is (c) implementation work.
-  - *`kRecursivelySupported` is NEW (c) vocabulary, not builder-only work.*
-    REDERIVE reads `C_r > 0` via `check-member recursively-supported … in
-    %table:4`. This `MembershipPredicate` is named in MD §3.1 but is **not**
-    in the (b)-landed set (only `kNetDeleted`/`kNetAdded`); it is a full
-    instance of the (a)-established ten-site threading list: enum value +
-    `DiffTable` accessor + `CHECKMEMBER` printer case + codegen emitter case.
+  - *`kRecursivelySupported` vocabulary.* REDERIVE reads `C_r > 0` via
+    `check-member recursively-supported … in %table:4`. (Corrected
+    2026-07-09 at slice 1: the review believed this predicate was not in the
+    (b)-landed set, but the enum value, `DiffTable::RecursivelySupported`,
+    printer case, and codegen `PredicateMethod` case ALL landed at
+    checkpoint (a) — efacc67; Runtime/Table.h:334, public Program.h:607,
+    Format.cpp:476, Database.cpp:1220. Nothing constructs the CHECKMEMBER
+    yet; (c) is builder-only work for this item after all. The slice-1
+    audit found no other `MembershipPredicate` switch anywhere.)
   - *Del-side vector allocation for recursive tables.* (b) deliberately
     allocated **`outAdd` only** for recursive tables (increment-2 pt.6,
     increment-3 pt.2). (c) must **extend** the Context per-table vector

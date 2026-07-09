@@ -126,6 +126,8 @@ OutputStream &operator<<(OutputStream &os, DataVector vec) {
     case VectorKind::kAdditionSet: os << "$addition"; break;
     case VectorKind::kNetRemovals: os << "$net_removals"; break;
     case VectorKind::kNetAdditions: os << "$net_additions"; break;
+    case VectorKind::kClaimedDeleteFrontier: os << "$claimed_del"; break;
+    case VectorKind::kClaimedAddFrontier: os << "$claimed_add"; break;
   }
 
   os << ':' << vec.Id();

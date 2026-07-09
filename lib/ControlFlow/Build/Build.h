@@ -154,6 +154,12 @@ class Context {
   //                               higher strata's seeds range over
   //                               (D\A / A\D; a monotone boundary table
   //                               has only kNetAdditions).
+  //   kClaimedDeleteFrontier / kClaimedAddFrontier
+  //                               a recursive stratum's per-round CLAIMED
+  //                               subset of D / A (MD §5.2/§5.3 `Δ_D`/
+  //                               `Δ_A`): what the OVERDELETE/INSERT
+  //                               fixpoint's firing loop ranges over, its
+  //                               break tests, and RETIRE clears.
   std::unordered_map<TABLE *, std::unordered_map<unsigned, VECTOR *>>
       table_delta_vecs;
 };
@@ -162,7 +168,7 @@ class Context {
 // deletions (the codegen table-flavor rule).
 bool TableIsDifferential(TABLE *table);
 
-// The lazily created per-table delta vector of `kind` (one of the six
+// The lazily created per-table delta vector of `kind` (one of the eight
 // batch-skeleton kinds documented on `Context::table_delta_vecs`).
 VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
                          VectorKind kind);
