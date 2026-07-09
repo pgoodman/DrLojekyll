@@ -1,6 +1,6 @@
 # Stage 3 checkpoint (b) working notes (session scratch, not committed)
 
-Branch: derivation-counters. HEAD after ee61d77 (unstratified-negation
+Branch: derivation-counters. HEAD after 8d8762a (unstratified-negation
 error hardening). Suite state: monotone cases green; ALL differential
 cases red (removals are no-ops since checkpoint (a)); expected-diagnostic
 cases: aggregate_1, kvindex_1-4, evm_func_parse.
@@ -114,7 +114,7 @@ recursive w.r.t. head) — for (b) non-recursive strata it's kNonRecursive.
 6. VectorKind: kDeleteQueue, kAddQueue, kOverdeleteSet, kAdditionSet,
    kNetRemovals, kNetAdditions (+ printers/codegen vector decl sites).
 Threading recipe: exactly the sites checkpoint (a) used for UPDATECOUNT/
-CHECKMEMBER/COMMITSWEEP — see `git show d817785` per file:
+CHECKMEMBER/COMMITSWEEP — see `git show efacc67` per file:
 Program.h(pub+int), Operation.cpp, Program.cpp, Visitor.cpp, Format.cpp,
 Optimize.cpp (CLAIM: dead-body treatment like UPDATECOUNT, region not
 removable; RETIRE/NETBATCH: never no-op), Analyze.cpp (mirror how (a)
@@ -379,7 +379,7 @@ because the join runs once over a sort-uniqued pivot vector).
   monotone tables, incl. init proc) so "net-added this batch" = id >=
   sealed is well-defined all epoch.
 
-## Part-3 worklist (builder; parts 1+2 committed as f94b23a, 452c1d7)
+## Part-3 worklist (builder; parts 1+2 committed as 4374b51, 112db83)
 
 STATE: vocabulary complete (CLAIM/RETIRE/NETBATCH/is_explicit/kNet*/
 VectorKinds; TABLEJOIN added_body/removed_body emitted on scanned ids;
@@ -447,7 +447,7 @@ diff, cond_*, compare_1, select_6 (etc non-recursive) green vs goldens +
 oracle; recursive/negation-crossover cases stay red (tc_*, negate_*,
 negation_flap, deep_chain_retract, merge_5, union_sibling_diff).
 
-## 3b final spec (post-3a; 3a committed as fec8eeb)
+## 3b final spec (post-3a; 3a committed as 870395e)
 
 Chain discovery (per source TABLE P over all member non-insert views with
 full-width columns): dfs consumer edges, skipping inductive successors and
@@ -499,9 +499,9 @@ no-ops, harmless.
 
 ## HANDOFF STATE (2026-07-09, WIP commit after this section)
 
-Committed parts: 1 (vocabulary, f94b23a), 2 (TABLEJOIN delta sections +
-monotone watermark, 452c1d7), 3a (ingest netting/queue parking/boundary
-frontiers, fec8eeb). This WIP commit adds part 3b: Stratum.cpp (762 lines,
+Committed parts: 1 (vocabulary, 4374b51), 2 (TABLEJOIN delta sections +
+monotone watermark, 112db83), 3a (ingest netting/queue parking/boundary
+frontiers, 870395e). This WIP commit adds part 3b: Stratum.cpp (762 lines,
 the per-stratum seed/claim/frontier phase builder) + supporting refactors
 (de-static MapVariablesInEagerRegion/CreateCompareRegion/
 CreateGeneratorCall; BuildJoin delta variant incl. unit scan arms; EmitJoin
