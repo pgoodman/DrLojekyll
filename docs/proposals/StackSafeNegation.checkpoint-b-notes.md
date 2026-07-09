@@ -539,6 +539,46 @@ NOT YET DONE for checkpoint (b):
 This notes file is stage scratch: delete it from the repo when checkpoint
 (b) lands (the durable record belongs in StackSafeNegation.plan.md).
 
+## HANDOFF UPDATE (2026-07-09, after parts 3c/3d)
+
+Everything under "KNOWN BROKEN" and "NOT YET DONE" above is resolved except
+the (c)/(d) work itself:
+
+- negate_2 FIXED (part 3c, 7f59493): the missing kAddQueue seed at the
+  NEGATE fold in continue_negation — see that commit's message for the
+  mechanism and the byte-identity verification. NOT a Join.cpp leak; the
+  monotone (no-NEGATE) subset was never perturbed.
+- Stratum.cpp REVIEWED (part 3d, 2cbf501): 0 corpus-visible deviations;
+  latent items assert-hardened; see "3b review outcomes" below.
+- FULL-SUITE TALLY (runall.sh, this tree, all 4 modes + oracle):
+  132 cases, 113 fully green, 19 red, 482 mode-OK verdicts, all 48
+  oracle/monotone runs OK. Every red case sorted; NO unexplained (b) bug:
+  * needs-(c), recursive differential (8): tc_mixed_batch,
+    tc_nonlinear_diff (driver mismatch exit 1), transitive_closure_diff,
+    transitive_closure_diff2, deep_chain_retract, disassemble, cf15_5,
+    cf16_3 (the last two are TCs; the "cf15/16 subset" guess was right).
+  * needs-(d), negation/condition crossover (11): negate_1/3/4/5/6,
+    negation_flap, compare_4 (!tx over growing tx), cond_both_polarities,
+    cond_diff_flipflop, insert_4 (!is_on), merge_5 (NEGATEd deny views fed
+    differentially — the notes' "merge_5? (recursive)" guess was WRONG,
+    it is crossover, not recursion).
+  * cond_diff_flipflop is RUN-FAIL(134): the Table.h Commit assert
+    (0 <= nr) fires — the counters' own integrity check catching the
+    missing crossover compensation. Expected shape for mid-branch red;
+    becomes a (d) acceptance signal.
+  * Green includes the other expected-green candidates: tower_of_compares,
+    optimize_6, union_sibling_diff (notes guessed it recursive-red — its
+    unions are non-inductive after canonicalization), cf13_*/cf14_* and
+    the rest of cf15/16, cond_multi_setter, two_hop_phantom.
+- Corpus note: data/self_testing_examples/evm_array_parse.dr crashes the
+  compiler (exit 134) at HEAD and at 870395e identically (20/20 both) —
+  pre-existing on this branch, recursion-heavy program, presumably
+  mid-branch expected; not caused by 3c/3d. Sort it properly at (c).
+
+The (b) gate as defined ("monotone byte-identical; non-recursive
+differential green; recursive/crossover red until (c)/(d)") is MET modulo
+the two (c)/(d) checkpoints themselves.
+
 ## 3b review outcomes (part 3d)
 
 Stratum.cpp reviewed against the "3b final spec" + Part-3 worklist (full
