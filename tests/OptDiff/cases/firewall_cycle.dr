@@ -1,0 +1,27 @@
+; The plan.md :331-353 p(1)/p(2) self-supporting-cycle trace, transcribed
+; directly: p(X) : base(X). p(X) : p(Y), edge(Y,X). with edges 1->2 and
+; 2->1. This is the REDERIVE restore-TRUE arm plus the C_nr>0 firewall
+; refusal in ONE fixture (two scenarios via two disjoint node pairs so a
+; single oracle run ground-truths both without cross-contamination):
+;
+;   - nodes {1,2}: base(1) only. Removing base(1) must drain the WHOLE
+;     cycle to nothing (p(1) and p(2) both fully overdeleted; REDERIVE's
+;     C_r>0 check finds C_r=0 for both post-quiescence -- the cycle was
+;     entirely self-supporting, no firewall to stop the cascade).
+;   - nodes {3,4}: base(3) AND base(4) (both link-1 firewalled). Removing
+;     ONLY base(3) must leave p(3) and p(4) both present (p(4)'s own
+;     explicit base(4) support means p(4)'s C_nr firewall refuses the
+;     crossing at p(4) itself: SubDerivation(p(4), R) decrements C_r but
+;     C_nr=1 keeps total > 0, so p(4) never crosses into D, and the
+;     cascade dies at the firewall instead of reaching p(3) a second way).
+#message base(u64 X) @differential.
+#message edge(u64 From, u64 To) @differential.
+
+#local p(X).
+
+#query p_out(free u64 X).
+
+p(X) : base(X).
+p(X) : p(Y), edge(Y, X).
+
+p_out(X) : p(X).

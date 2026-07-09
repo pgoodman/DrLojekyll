@@ -1,0 +1,7 @@
+ORACLE: OK (4 batches, 1410 assertions)
+reachable	4 5
+reachable	4 6
+reachable	4 7
+reachable	5 6
+reachable	5 7
+reachable	6 7

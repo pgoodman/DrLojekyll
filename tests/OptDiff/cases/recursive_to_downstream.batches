@@ -1,0 +1,43 @@
+# Fixture (iv): recursive stratum (tc) -> downstream differential
+# consumer (marked/flagged), the BUILDFRONTIERS seam.
+#
+# Batch 1: chain 1->2->3->4 plus a side edge 10->1 (watch node reaching
+#   into the chain from outside).
+# Batch 2: watch(10) and watch(4) (watch(4) is inside the chain's tail,
+#   so flagged(4) requires BOTH marked(4) [tc(10,4) & watch(10)] AND
+#   watch(4) itself).
+#   At this point tc(10,X) holds for X in {1,2,3,4} (via 10->1->2->3->4),
+#   so marked = {1,2,3,4} (all tc-reachable from watched node 10) and
+#   flagged = {4} (the only marked node that is ALSO watched).
+# Batch 3: retract edge(2,3). This SPLITS the chain: tc(10,X) now only
+#   reaches {1,2} (10->1->2), losing tc(10,3) and tc(10,4). marked must
+#   shrink to {1,2}; flagged must become EMPTY (node 4 is no longer
+#   tc-reachable from the watched node 10, even though watch(4) itself
+#   is untouched) -- the downstream consumer's membership is driven
+#   PURELY by tc's outDel frontier for stratum-recursive tc rows
+#   tc(10,3)/tc(10,4), which a broken BUILDFRONTIERS wiring would fail to
+#   propagate (flagged would wrongly still contain 4).
+# Batch 4: re-add edge(2,3). tc(10,3)/tc(10,4) must be RE-derived (via
+#   tc's own INSERT seed reading edge's outAdd, then tc's own
+#   BUILDFRONTIERS outAdd feeding marked's seed again) and flagged must
+#   return to {4} -- confirms the seam works in BOTH directions, not just
+#   drain.
+batch
++ add_edge 1 2
++ add_edge 2 3
++ add_edge 3 4
++ add_edge 10 1
+end
+
+batch
++ watch 10
++ watch 4
+end
+
+batch
+- add_edge 2 3
+end
+
+batch
++ add_edge 2 3
+end

@@ -1,0 +1,20 @@
+; Diamond re-enqueue: a row overdeleted in claim round k re-derives
+; support for a row that was ALREADY claimed (or eligible to be claimed)
+; in an EARLIER round k' < k, stressing the Delta_D discipline
+; (plan.md :701-713, "firing over the raw drained queue re-fires an
+; already-claimed row on any re-enqueue"). Two independent recursive
+; paths converge on the same node so that removing the base fact drains
+; through the SCC in multiple rounds and the SAME row (q(4)) is reachable
+; via two different chain lengths -- one 1-hop, one 2-hop -- so its
+; overdelete claim can be attempted from two different rounds.
+#message base(u64 X) @differential.
+#message link(u64 From, u64 To) @differential.
+
+#local q(X).
+
+#query q_out(free u64 X).
+
+q(X) : base(X).
+q(Y) : q(X), link(X, Y).
+
+q_out(X) : q(X).

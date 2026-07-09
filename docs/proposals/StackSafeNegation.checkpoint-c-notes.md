@@ -125,12 +125,112 @@ Risk #2 (traces re-run by hand before code).
 
 ## Open flags / unknowns (review §6 — only running code settles these)
 
-- **FLAG-F**: `InNewWithFrontier` is textually identical to `InNew` — needs
-  a 2-same-stratum-atom hand-trace to settle typo-vs-intentional-alias.
-  Inert on tc (one same-stratum atom).
-- **FLAG-H**: whether the third (fixpoint) join-section flavor needs one
-  emission per delta position or dynamic per-side dispatch (k-emissions
-  question). Also inert on tc.
+- **FLAG-F — RESOLVED 2026-07-09** (method: positive-only equivalence oracle
+  + hand-trace). `InNewWithFrontier` is an intentional **alias** of `InNew`,
+  not a typo: `InNewWithFrontier(id) := (kInI && !kDel) || kAdd`, byte-for-byte
+  `InNew`. The name marks the INSERT fixpoint same-stratum `j < i` read site;
+  it may be implemented as a call-through to `InNew`. Both disjuncts are
+  load-bearing at that site: dropping `(kInI && !kDel)` (reading R-iv) zero-fires
+  a head whose earlier same-stratum sibling is a prior-batch `kInI` row not
+  re-added this round (fails on the `nonlin_tc_both_change` batch-4 mixed
+  old-`kInI`/new-`kAdd` case); restricting `kAdd` to `kAddNow` (reading R-ii)
+  under-counts `C_r` for a head double-derived in one round (fails the
+  per-class counter assert on the 3-hop same-round separator `+7-8 +8-9 +9-10`,
+  where C_r(7,10) truth = 2 and the retraction of edge(8,9) drains cleanly to
+  absent under R-i but drives C_r negative under R-ii). The same-round
+  exactly-once bit lives ONLY in the `j > i` cell (`InNewSansFrontier`'s
+  `!kAddNow`), never in the `j < i` cell — so `InNewWithFrontier` correctly
+  carries no `kAddNow` term. Evidence: `scratchpad/flag-f-resolution.md`
+  (full trace); confirmed by oracle `sep1`/`sep2` (334/589 assertions clean,
+  p(7,10) present then correctly absent) and the `nonlin_tc_both_change`
+  fixture (1410 assertions, monotone agrees). Was inert on tc (one same-stratum
+  atom); now exercised by `tests/OptDiff/cases/nonlin_tc_both_change`.
+- **FLAG-H — RESOLVED 2026-07-09** (method: positive-only equivalence oracle
+  + hand-trace). The third (fixpoint) join-section flavor is **k separate
+  emissions per recursive-stratum join, one per same-stratum delta position**
+  (k = number of same-stratum body atoms), each pinning the delta at its
+  position over the per-round CLAIMED frontier (`Δ_D`/`Δ_A`) and reading every
+  OTHER same-stratum atom with a predicate fixed at compile time by its static
+  position relative to the delta (`j < p` → `SurvivesSoFar`/`InNewWithFrontier`;
+  `j > p` → `AliveAtClaim`/`InNewSansFrontier`; lower `j` → `InNew`). It is NOT
+  a single emission with dynamic per-side dispatch: an `added_body`/`removed_body`-
+  style per-side-symmetric predicate double-fires a same-round double-claim
+  instance (both sides in Δ enumerated under both drivers), driving `C_r`
+  negative in OVERDELETE (commit SIGABRT) or inflating multiplicity in INSERT
+  (phantom survival on a later single retraction). The same-round exactly-once
+  guarantee is delivered structurally by the strict/permissive predicate
+  asymmetry keyed on `kDelNow`/`kAddNow` (earlier-as-delta fires via the
+  permissive later-position read; later-as-delta does not, the earlier position
+  failing the strict read) — orthogonal to, and additionally requiring, the
+  `Δ_D`/`Δ_A` claim discipline (A3) so a diamond re-enqueue of an
+  already-claimed row cannot re-fire across rounds. This is FixReads' shape in
+  the oracle (`for p : same_pos` with `FixReads(r,p,deleting)` a pure function
+  of `p`), independent of FLAG-F. Evidence: `scratchpad/flag-h-resolution.md`
+  (batch-2 both-deleted p(2,4) and batch-3 both-added p(4,6) traces); confirmed
+  by `nonlin_tc_both_change` (k=2), `diamond_reenqueue` (Δ_D cross-round axis),
+  and the `k3_join` attack case (k=3 same-round triple-claim, 460 assertions,
+  monotone agrees). Was inert on tc; now exercised by the OptDiff fixtures below.
+- **Adversarial re-check (2026-07-09): resolutions survive.** ~1040 seeded
+  stress runs (k=2/k=3, diagonal self-loops, self-supporting cycles,
+  diamonds, phantom-support pairs, REDERIVE/firewall) plus 10 hand-traced
+  attack fixtures produced zero wrong final IDBs, zero counter-exactness
+  violations, and zero aborts; every attack under the resolved semantics
+  agreed with the oracle differential + `--project-monotone`. Evidence:
+  `scratchpad/flag-attack.md`. Caveat: the oracle IS the resolved semantics
+  for the differential path, so the independent leverage is the from-scratch
+  full-join counter cross-assert (delta=-1) and the positive-only projection;
+  a bug invisible to BOTH is outside the kill criteria and unaddressed here.
+  Fidelity of the eventual `lib/` lowering to this resolved semantics is a
+  separate slice-2/4 bring-up question.
+
+### Queued proposal edit (owner review — do NOT self-apply to StackSafeNegation.md)
+
+`StackSafeNegation.md` is the authoritative spec; the FLAG-F resolution wants
+a wording annotation on the §5.1 fixpoint table so no future reader re-files
+FLAG-F. Proposed (owner to apply): change the `same j < i` INSERT cell from
+bare `InNewWithFrontier` to
+`` `InNewWithFrontier` (≡ `InNew`; the earlier-position add-side read is the
+plain final-so-far predicate — the same-round exactly-once bit lives only in
+the `j > i` cell) ``, and add one line under the table:
+
+> `InNewWithFrontier` is defined identically to `InNew` and may be implemented
+> as an alias; it is named distinctly only to mark the INSERT fixpoint `j < i`
+> read site. As in the OVERDELETE column — where the exactly-once frontier bit
+> `kDelNow` appears in the *later*-position cell (`AliveAtClaim`) — the INSERT
+> column's frontier bit `kAddNow` appears only in the *later*-position cell
+> (`InNewSansFrontier`). The earlier-position cells (`SurvivesSoFar`,
+> `InNewWithFrontier`) carry no frontier bit. Dropping the `(kInI && !kDel)`
+> disjunct from `InNewWithFrontier`, or restricting its `kAdd` disjunct to
+> `kAddNow`, are both unsound (lost derivations / under-counted `C_r` — see the
+> nonlinear both-added and two-support-retraction traces).
+
+### Promoted standing OptDiff fixtures (2026-07-09)
+
+Four fixtures committed to `tests/OptDiff/cases/` with `.dr` + `.batches` +
+`.main.cpp` (per-batch send + final state dump, tc_mixed_batch pattern) and
+`goldens/<name>.oracle.stdout` / `.monotone.stdout` authored from the
+positive-only oracle:
+
+- `nonlin_tc_both_change` — nonlinear TC, both same-stratum positions change
+  per batch. THE FLAG-F (R-iii/R-iv/R-ii kill) + FLAG-H (k=2 same-round
+  double-claim) discriminator. Final `reachable={(4,5),(4,6),(4,7),(5,6),(5,7),(6,7)}`.
+- `diamond_reenqueue` — Δ_D cross-round claim discipline; the re-enqueue axis
+  FLAG-H needs that nonlin does not cover. Final `q_out={}`.
+- `firewall_cycle` — REDERIVE drain vs `C_nr>0` firewall refusal (FLAG-E
+  adjacent, mandated (c) companion). Final `p_out={3,4}`.
+- `recursive_to_downstream` — BUILDFRONTIERS producer→consumer seam. Final
+  `flagged_out={4}`.
+
+**GOLDEN-MISSING (deliberate).** The compiled-driver goldens
+(`goldens/<name>.stdout`) are ABSENT for all four: these cases are red until
+(c) wires recursive-stratum OVERDELETE/BUILDFRONTIERS, and the drivers dump
+intermediate per-batch state that the oracle final-state truth does not
+provide, so a mechanically-correct `.stdout` cannot be derived now. They must
+be authored at slice-2/3 bring-up once the compiled binary is correct. Until
+then `runall.sh` will report `GOLDEN-MISSING` on the compiled step for these
+four — an accepted red-until-(c) verdict; the oracle/monotone goldens are the
+authoritative end-state gate meanwhile.
+
 - **Whether `deep_chain_retract` still emits a `ProgramInductionRegion`**
   under (b)'s partition — and therefore whether the re-entry-loop deletion
   is a real task or already-satisfied for the constant-stack gate. Not

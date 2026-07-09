@@ -1,0 +1,23 @@
+; Nonlinear transitive closure with a base rule, exercised so that BOTH
+; same-stratum body-atom positions of the recursive rule change in the
+; SAME batch (both-added, both-deleted, and one-added/one-deleted
+; crossings across separate batches). The FLAG-F/FLAG-H discriminator:
+; p(X,Z) : p(X,Y), p(Y,Z) has TWO same-stratum positions (p at position 0
+; and p at position 1 of the join), so a same-round double-claim of BOTH
+; positions is reachable, which is exactly the shape FLAG-H's "one
+; emission per delta position" vs "single emission, dynamic dispatch"
+; question needs, and exactly the shape that requires
+; SurvivesSoFar/AliveAtClaim (or InNewWithFrontier/InNewSansFrontier) to
+; differ from InNew/InI for a wrong resolution to be visible in the final
+; state.
+#message add_edge(u64 From, u64 To) @differential.
+#query reachable(free u64 From, free u64 To).
+#local p(From, To).
+#local edge(From, To).
+
+edge(From, To) : add_edge(From, To).
+
+p(From, To) : edge(From, To).
+p(From, To) : p(From, Y), p(Y, To).
+
+reachable(From, To) : p(From, To).

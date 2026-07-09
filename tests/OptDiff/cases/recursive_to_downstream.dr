@@ -1,0 +1,40 @@
+; Recursive stratum (tc over `edge`) feeding a DOWNSTREAM differential
+; consumer (`marked`) that joins tc's output against another
+; @differential base relation, itself feeding a further derived relation.
+; This exercises the BUILDFRONTIERS producer -> consumer seam
+; (plan.md :746-757 "a recursive->downstream-differential program"):
+; tc is stratum-recursive; its outDel/outAdd frontiers, once (c) actually
+; populates them with real net deletions (not permanently-empty, per
+; pseudo-c-spec.md FLAG-K/ #5), must be correctly consumed by a HIGHER,
+; itself-differential stratum's own seed phase. A wrong BUILDFRONTIERS
+; wiring (frontiers not populated, or populated but not consumed, or
+; consumed with the wrong sign) changes `flagged`'s final membership
+; without necessarily tripping any single-stratum counter assert, since
+; the corruption is a cross-stratum WIRING bug, not a within-stratum
+; counting bug -- exactly the class of defect the sensitivity argument
+; below calls out as requiring an END-STATE check (this fixture) rather
+; than relying on tc's own commit asserts (which see a perfectly
+; consistent tc regardless of whether its frontier is being read
+; correctly downstream).
+#message add_edge(u64 From, u64 To) @differential.
+#message watch(u64 X) @differential.
+
+#local tc(From, To).
+#local edge(From, To).
+#local marked(X).
+#local flagged(X).
+
+edge(From, To) : add_edge(From, To).
+
+tc(From, To) : edge(From, To).
+tc(From, To) : tc(From, X), tc(X, To).
+
+; Downstream differential consumer: X is marked if it is tc-reachable
+; from some watched node AND watch(X) holds too (a differential join
+; against tc's output, forcing a real dependency on tc's outDel/outAdd
+; frontiers rather than only its final row set).
+marked(X) : tc(W, X), watch(W).
+flagged(X) : marked(X), watch(X).
+
+#query flagged_out(free u64 X).
+flagged_out(X) : flagged(X).
