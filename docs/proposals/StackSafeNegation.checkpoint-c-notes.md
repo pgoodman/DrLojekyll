@@ -1,8 +1,10 @@
-# Stage 3 checkpoint (c) working notes (session scratch, not committed)
+# Stage 3 checkpoint (c) working notes (committed working ledger)
 
-Branch: derivation-counters. HEAD 500c16d (after the (b) landing + errata).
-This notes file is stage scratch: delete it from the repo when checkpoint
-(c) lands (the durable record belongs in StackSafeNegation.plan.md).
+Branch: derivation-counters. Slices 0–3 landed (slice 3 = 6faf6d9); slice 4
+(nonlinear matrix) remains — a fresh session starts at "Whole-program view"
++ "Session bootstrap" at the bottom of this file. Delete this file from the
+repo when checkpoint (c) lands (the durable record belongs in
+StackSafeNegation.plan.md).
 
 Seeded from the adversarial review of the checkpoint-(c) recursion plan
 (the projected post-(c) `tc_mixed_batch` IR, reconciled across the
@@ -143,7 +145,7 @@ Risk #2 (traces re-run by hand before code).
   absent under R-i but drives C_r negative under R-ii). The same-round
   exactly-once bit lives ONLY in the `j > i` cell (`InNewSansFrontier`'s
   `!kAddNow`), never in the `j < i` cell — so `InNewWithFrontier` correctly
-  carries no `kAddNow` term. Evidence: `scratchpad/flag-f-resolution.md`
+  carries no `kAddNow` term. Evidence: `docs/proposals/StackSafeNegation.evidence/flag-f-resolution.md`
   (full trace); confirmed by oracle `sep1`/`sep2` (334/589 assertions clean,
   p(7,10) present then correctly absent) and the `nonlin_tc_both_change`
   fixture (1410 assertions, monotone agrees). Was inert on tc (one same-stratum
@@ -168,7 +170,7 @@ Risk #2 (traces re-run by hand before code).
   `Δ_D`/`Δ_A` claim discipline (A3) so a diamond re-enqueue of an
   already-claimed row cannot re-fire across rounds. This is FixReads' shape in
   the oracle (`for p : same_pos` with `FixReads(r,p,deleting)` a pure function
-  of `p`), independent of FLAG-F. Evidence: `scratchpad/flag-h-resolution.md`
+  of `p`), independent of FLAG-F. Evidence: `docs/proposals/StackSafeNegation.evidence/flag-h-resolution.md`
   (batch-2 both-deleted p(2,4) and batch-3 both-added p(4,6) traces); confirmed
   by `nonlin_tc_both_change` (k=2), `diamond_reenqueue` (Δ_D cross-round axis),
   and the `k3_join` attack case (k=3 same-round triple-claim, 460 assertions,
@@ -179,7 +181,7 @@ Risk #2 (traces re-run by hand before code).
   attack fixtures produced zero wrong final IDBs, zero counter-exactness
   violations, and zero aborts; every attack under the resolved semantics
   agreed with the oracle differential + `--project-monotone`. Evidence:
-  `scratchpad/flag-attack.md`. Caveat: the oracle IS the resolved semantics
+  `docs/proposals/StackSafeNegation.evidence/flag-attack.md`. Caveat: the oracle IS the resolved semantics
   for the differential path, so the independent leverage is the from-scratch
   full-join counter cross-assert (delta=-1) and the positive-only projection;
   a bug invisible to BOTH is outside the kill criteria and unaddressed here.
@@ -565,3 +567,208 @@ cycle trace, goldens for the 4 GOLDEN-MISSING fixtures, cyclic
 self-support over-retention (transitive_closure_diff2, cf16_3),
 tc_nonlinear_diff's driver mismatch, plus the four carry-forward concerns
 above.
+
+## Whole-program view: the D/R/I lowering as pseudocode, slice 4 as diffs
+
+Written 2026-07-10 post-slice-3 as the session-handoff ground truth: the
+current machinery re-derived from the code (not the plan), so slice 4 can
+be expressed as *diffs against this* rather than re-excavated. Code anchors
+are post-slice-3 commit 6faf6d9. The executable spec of the slice-4 target
+semantics is the oracle's `FixReads` (`bin/Oracle/Main.cpp:1329`); the
+hand-trace evidence is under `docs/proposals/StackSafeNegation.evidence/`.
+
+### Row state and the predicate vocabulary (ALL already in IR + codegen)
+
+Per differential-table row (runtime `DiffTable`): counters `C_nr`, `C_r`
+(split derivation counters, MD §3); batch bits `kInI` (present at batch
+start), `kDel`/`kAdd` (over-deleted / added this batch), and the per-ROUND
+frontier bits `kDelNow`/`kAddNow` (claimed this claim-round, cleared by
+RETIRE). Ops: `CLAIM(row, sign)` — test-and-set, dedups on table state;
+`RETIRE(row, sign)` — clears the Now bit; `UPDATECOUNT(±1, DerivClass)` —
+fold, body fires on zero-crossing; COMMITSWEEP at batch end asserts
+`0 <= C` (Table.h:397 is the counter-exactness tripwire).
+
+`MembershipPredicate` (include/drlojekyll/ControlFlow/Program.h:611 — the
+complete FLAG-F/H vocabulary; slice 4 needs NO new predicates):
+
+    InI                  = kInI                        (frozen batch-start)
+    InNew                = (kInI && !kDel) || kAdd     (batch-final-so-far)
+    SurvivesSoFar        = kInI && !kDel
+    AliveAtClaim         = kInI && (!kDel || kDelNow)
+    InNewWithFrontier    = (kInI && !kDel) || kAdd             (≡ InNew, by design — FLAG-F)
+    InNewSansFrontier    = (kInI && !kDel) || (kAdd && !kAddNow)
+    Present              = C_nr + C_r > 0
+    RecursivelySupported = C_r > 0                     (the REDERIVE test)
+    NetDeleted           = kDel && !kAdd               (frontier filters)
+    NetAdded             = kAdd && !kDel
+
+### The generated program (entry-proc pseudocode, post-slice-3)
+
+```
+proc entry(batch):
+  ── INGEST (checkpoint b; Procedure.cpp) ──
+  for each message receive:
+    monotone msg:      fold tuple; eager walk (BuildEagerInsertionRegionsImpl,
+                       Build.cpp:754) — the walk CUTS at ANY successor with
+                       CanReceiveDeletions()            « slice 3: cut widened;
+                       a deletion-capable recursive SCC is ALWAYS D/R/I-owned »
+                       (cut boundary accumulates a net-additions frontier
+                       vector that the stratum phases consume as a source)
+    differential msg:  net removals/additions parked in the view's queues; NO walk
+
+  ── STRATUM PHASES (BuildStratumPhases, Stratum.cpp:1000) ──
+  for stratum s ascending:
+    # (1) SEED: one-shot rule firings over frontiers finalized at LOWER strata:
+    #     branch chains (EmitSeedLoop→EmitChainStep→EmitHeadFold) and
+    #     dual-section joins (EmitSectionWalk: added/removed sections with the
+    #     §5.1 SEED-position predicates). Fold class = RuleClass(...):
+    #     kRecursive iff target table is in a LINEAR recursive SCC and the
+    #     rule reads a same-SCC side, else kNonRecursive.
+    #     Zero-crossings park in the target table's del/add queues.
+
+    # (2) SINGLE-PASS tables (genuinely acyclic, OR nonlinear-SCC fallback):
+    for t in acyclic_tables@s:               # every fold kNonRecursive ⇒ C_r ≡ 0
+      ClaimDrain(t, del); ClaimDrain(t, add) # one drain settles the table
+      FrontierFilter(t, del); FrontierFilter(t, add)
+
+    # (3) LINEAR recursive SCC tables (Stratum.cpp:1630-1658):
+    OVERDELETE := claim_round_loop(del)                       # §5.2
+      └ output region: for t in scc: REDERIVE(t)              # between D and I
+    INSERT     := claim_round_loop(add)                       # §5.3 mirror
+      └ output region: for t in scc: FrontierFilter(t, del)   « slice 3: BOTH
+                       for t in scc: FrontierFilter(t, add)     frontiers here,
+                                                                after INSERT »
+
+claim_round_loop(sign):        # INDUCTION region; maintained vectors = the Δs,
+                               # so codegen's for(changed;…) IS the A3 break
+  until no row claimed this round:
+    for t in scc: clear Δ_t
+    for t in scc:                            # ClaimDrain (Stratum.cpp:606)
+      sort-unique queue_t
+      for row in queue_t:
+        if CLAIM(row, sign):                 # dedups on table state
+          append row → accumulated set (D_s / A_s)
+          append row → Δ_t                   # per-round claimed frontier
+      clear queue_t                          « slice 3: semi-naive drain; the
+                                               fire below re-appends only rows
+                                               crossing zero THIS round »
+    for j in scc_joins:  JoinFire(j, sign)   # fire over Δ — see below
+    for SCC-internal projection branches: SeedLoop over Δ, class kRecursive
+    for t in scc: Retire(Δ_t, sign)          # clears kDelNow/kAddNow row bits
+
+JoinFire(join, sign):          # EmitJoinFire (Stratum.cpp:814) — LINEAR ONLY:
+  (delta_side, lower_sides) := partition sides by same-SCC   # asserts exactly 1 same-SCC side
+  for row in Δ_delta_side:                   # loop the CLAIMED frontier
+    bind pivots from row
+    nested scan of each lower side by pivot (BuildMaybeScanPartial)
+      gated CHECKMEMBER InNew(side row)      # lower read = batch-final, both signs
+    UPDATECOUNT(sign∓, kRecursive) into join table
+      on zero-crossing: append row → join table's queue_sign
+
+REDERIVE(t):                   # EmitRederive (Stratum.cpp:712)
+  for row in D_s: if RecursivelySupported(row):    # C_r > 0 after OVERDELETE
+    append row → add queue     # INSERT re-enters it; C_nr>0-only rows are the
+                               # firewall refusals (they simply stay Present)
+
+FrontierFilter(t, del): for row in D_s: if NetDeleted(row): append → net_removals_t
+FrontierFilter(t, add): for row in A_s: if NetAdded(row):  append → net_additions_t
+```
+
+Scheduling: `ComputeRecursiveSCCs` (Stratum.cpp:128) + the stratum lift
+fixpoint place every fold above every table it reads, EXCEPT same-SCC reads
+(exempt — they are `InI`-frozen or Δ/InNew-disciplined, never a drain-order
+dependency). Nonlinear SCCs are KEPT in `recursive_sccs` for this
+scheduling (termination requires the exemption + shared-stratum pinning)
+even while the linearity gate lowers them single-pass.
+
+### Slice 4 as diffs against the pseudocode
+
+**Diff 1 — lift the linearity gate** (Stratum.cpp:1021-1052):
+
+    - nonlinear_groups := SCCs with a join having ≥2 same-SCC sides
+    - is_linear_recursive(t) := in SCC && SCC ∉ nonlinear_groups   # gate
+    - RuleClass folds nonlinear-SCC targets kNonRecursive          # fallback
+    + is_recursive(t) := in SCC                                    # gate gone
+    + RuleClass folds ALL same-SCC-reading rules kRecursive
+    + keep nonlinear_groups only as k>1 marker feeding Diff 2
+
+  Consequence: nonlinear tables move from `acyclic_tables` to `scc_tables`;
+  claim-round loops are emitted for them; their seed section walks become
+  class-R. This also RESOLVES the slice-3 carry-forward about the widened
+  Build.cpp cut (a nonlinear differential SCC fed by a monotone lower atom
+  then lands on the claim-round path, not the single-pass fallback).
+
+**Diff 2 — generalize JoinFire to k same-SCC positions** (the FLAG-H
+resolved semantics; EmitJoinFire, Stratum.cpp:814):
+
+    - assert exactly one same-SCC side; ONE emission; delta at that side
+    + same_pos := [p : side_p table in the SCC]        # k ≥ 1
+    + for p in same_pos:                               # k SEPARATE emissions
+    +   loop Δ of side_p's table (position p pins the delta)
+    +   for each OTHER same-SCC side j (read fixed by STATIC position):
+    +     j < p:  CHECKMEMBER (del ? SurvivesSoFar : InNewWithFrontier)  # permissive earlier
+    +     j > p:  CHECKMEMBER (del ? AliveAtClaim   : InNewSansFrontier) # strict later
+    +   lower sides: CHECKMEMBER InNew                 # unchanged
+    +   fold UPDATECOUNT(∓, kRecursive); crossing → queue
+
+  NOT one emission with per-side dynamic dispatch — that double-fires a
+  same-round double-claim (both sides in Δ enumerated under both drivers),
+  driving C_r negative in OVERDELETE (commit SIGABRT) or inflating
+  multiplicity in INSERT (phantom survival). Same-round exactly-once is
+  delivered STRUCTURALLY by the strict/permissive asymmetry keyed on
+  kDelNow/kAddNow: earlier-as-delta fires via the permissive later-position
+  read; later-as-delta does not, the earlier position failing the strict
+  read. k=1 must degenerate to today's exact emission (j<p and j>p both
+  empty) — the linear cases are the regression net. Builder-only diff; all
+  four matrix predicates exist through printer and codegen.
+
+**Diff 3 — seed section walks for k same-stratum atoms** (EmitSectionWalk /
+the §5.1 SEED matrix): with Diff 1 the nonlinear seed joins classify R.
+Verify the (b) dual-section seed schema against MD §5.1's k-atom cells
+(`j<i` / `j>i` seed columns) — the seed reads are `InI`-frozen so this is
+expected to already hold, but re-run the §5.1 position-order table by hand
+against a `p(X,Z):p(X,Y),p(Y,Z)` seed before trusting it (Risk #2).
+
+**Diff 4 — expected to FALL OUT (verify, don't code): cyclic self-support
+drain.** With Diffs 1+2, OVERDELETE cascades around a pure cycle: each
+retraction fold decrements the next row's C_r, so a cycle with no external
+support drains to C_r=0 everywhere (MD §8) and REDERIVE's C_r>0 test
+refuses resurrection (the firewall — machinery already present in
+EmitRederive). Acceptance: transitive_closure_diff2, cf16_3 flip green;
+firewall_cycle gets its golden. If they do NOT flip, re-run the MD §8 drain
+argument by hand before touching code — the model says this is lowering
+infidelity, not a model hole.
+
+**Diff 5 — no pseudocode change (bring-up tasks):** author compiled goldens
+for the 4 deliberately-GOLDEN-MISSING fixtures (nonlin_tc_both_change,
+diamond_reenqueue, firewall_cycle, recursive_to_downstream) from oracle
+truth per the standing policy (4-mode byte-agreement + oracle match, never
+to silence a red); sort tc_nonlinear_diff's RUN-FAIL(1) driver mismatch;
+re-check the destructive-drain assumption (no post-loop queue consumer) on
+the new nonlinear IR; decide the oracle INVARIANT-line golden skew.
+
+### Hand-trace obligations BEFORE coding Diff 2 (Risk #2)
+
+1. The nonlinear both-sides-in-Δ same-round traces (batch-2 both-deleted
+   p(2,4), batch-3 both-added p(4,6)) — re-run against the PLANNED emitted
+   IR: `evidence/flag-h-resolution.md`.
+2. The two FLAG-F kill cases (R-iv lost-derivation, R-ii under-count):
+   `evidence/flag-f-resolution.md`.
+3. The `p(1)/p(2)` self-supporting cycle REDERIVE/firewall trace
+   (.plan.md:316-337 region).
+
+### Session bootstrap (fresh-session checklist)
+
+- Read: this file top-to-bottom (slice records are the ground truth where
+  docs disagree), then `.plan.md` §(c), then MD §5–§5.3 + §8.
+- State: HEAD carries slices 0–3; suite red set = 19 names = the 21 in the
+  slice-2/3 records minus {deep_chain_retract, disassemble}; of the 19, 11
+  are needs-(d) crossover, 4 are the GOLDEN-MISSING slice-4 fixtures, and
+  {tc_nonlinear_diff, transitive_closure_diff, transitive_closure_diff2,
+  cf16_3} are the slice-4 targets.
+- Environment: `export PATH="/Users/pag/Code/.brew/bin:$PATH"` before any
+  test run (see Environment note above). Suite: `DR=build/debug/bin/drlojekyll
+  tests/OptDiff/runall.sh <workroot> [jobs] [filter]`.
+- The oracle differential path IS the resolved semantics (`FixReads`,
+  `bin/Oracle/Main.cpp:1329`); `--project-monotone` is the independent
+  positive-only cross-check.
