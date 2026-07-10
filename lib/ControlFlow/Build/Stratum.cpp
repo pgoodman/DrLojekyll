@@ -659,6 +659,24 @@ static void EmitClaimDrain(ProgramImpl *impl, Context &context, TABLE *table,
       round_append->tuple_vars.AddUse(var);
     }
     claimed_seq->AddRegion(round_append);
+
+    // Inside a claim-round loop, DRAIN the queue destructively: clear it once
+    // the round's rows have been claimed into the accumulated set and the
+    // per-round frontier `Δ`. The fixpoint fire that runs later in the same
+    // round re-appends only the rows whose folds cross zero this round, so the
+    // NEXT round's drain sees just that new work — semi-naive draining. Without
+    // the clear the queue accumulates every crossed row for the whole batch and
+    // each round re-sort-uniques and re-loops the full accumulation, an O(N^2)
+    // blow-up on a length-N recursion (e.g. `deep_chain_retract` at N=100000).
+    // Claim dedup (table state) already guarantees each row is claimed once, so
+    // dropping already-drained rows from the queue changes nothing claimed:
+    // a diamond re-enqueue of an already-claimed row is re-drained in a later
+    // round but claim skips it, exactly as when the whole queue was re-scanned.
+    VECTORCLEAR *const drain_clear =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            seq, ProgramOperation::kClearInductionVector);
+    drain_clear->vector.Emplace(drain_clear, queue);
+    seq->AddRegion(drain_clear);
   }
 }
 
@@ -1596,17 +1614,22 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     };
 
     // OVERDELETE (§5.2): the del-side claim-round fixpoint, then — in its
-    // output region, after the fixpoint quiesces — build each table's
-    // accumulated net-removal frontier (the consolidated delta higher strata's
-    // seeds range over) and run REDERIVE (every overdeleted row still
-    // recursively supported, `C_r > 0`, re-enters via the add queue; a counter
-    // read over `D_s`). REDERIVE's output feeds the INSERT add queue below.
+    // output region, after the fixpoint quiesces — run REDERIVE (every
+    // overdeleted row still recursively supported, `C_r > 0`, re-enters via the
+    // add queue; a counter read over `D_s`). REDERIVE's output feeds the INSERT
+    // add queue below, so it must run between OVERDELETE and INSERT.
+    //
+    // Note that the del-side net-removal frontier (`outDel = D_s ∧ !kAdd`) is
+    // deliberately NOT built here (contrast the add side below). Spec §5.0 puts
+    // BUILDFRONTIERS after INSERT: a row overdeleted this batch and then
+    // re-added by INSERT (its `kAdd` set) must NOT appear in `net_removals`.
+    // Building the del frontier in this output region — before INSERT can set
+    // `kAdd` — would leak such a re-added row into `net_removals`. Both signed
+    // frontiers are therefore consolidated in the INSERT loop's output region
+    // (`add_output`), after INSERT has quiesced.
     INDUCTION *const del_loop = build_claim_round_loop(true, stratum_seq);
     SERIES *const del_output = impl->series_regions.Create(del_loop);
     del_loop->output_region.Emplace(del_loop, del_output);
-    for (TABLE *table : scc_tables) {
-      EmitFrontierFilter(impl, context, table, true /* is_del */, del_output);
-    }
     for (TABLE *table : scc_tables) {
       EmitRederive(impl, context, table, del_output);
     }
@@ -1615,11 +1638,21 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     // draining the add queue — the batch's `+` seeds AND REDERIVE's output —
     // through the same claim/fire/retire discipline so that recursive
     // derivations are ADDED (their `C_r` incremented) symmetrically with the
-    // del side. Its output builds each table's accumulated net-addition
-    // frontier for higher strata.
+    // del side.
     INDUCTION *const add_loop = build_claim_round_loop(false, stratum_seq);
     SERIES *const add_output = impl->series_regions.Create(add_loop);
     add_loop->output_region.Emplace(add_loop, add_output);
+
+    // BUILDFRONTIERS (§5.0): both consolidated signed net frontiers are built
+    // HERE, after INSERT has quiesced, so that `kAdd` (set by INSERT on a
+    // re-added row) and `kDel` (set by OVERDELETE) are both final. `outDel =
+    // D_s ∧ !kAdd` (net removals) and `outAdd = A_s ∧ !kDel` (net additions);
+    // a row both overdeleted and re-added this batch passes neither filter.
+    // These are the consolidated frontiers higher strata's seed joins range
+    // over.
+    for (TABLE *table : scc_tables) {
+      EmitFrontierFilter(impl, context, table, true /* is_del */, add_output);
+    }
     for (TABLE *table : scc_tables) {
       EmitFrontierFilter(impl, context, table, false /* is_del */, add_output);
     }

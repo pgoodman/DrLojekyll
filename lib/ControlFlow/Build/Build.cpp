@@ -739,11 +739,19 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
   auto any_cut_succ = false;
   for (QueryView succ_view : successors) {
 
-    // A deletion-capable non-inductive successor is fed by its own table's
-    // stratum phases (its seeds range over this view's table's frontier
-    // vectors), never by the eager walk.
-    if (succ_view.CanReceiveDeletions() &&
-        !succ_view.InductionGroupId().has_value()) {
+    // A deletion-capable successor is fed by its own table's stratum phases
+    // (its seeds range over this view's table's frontier vectors), never by
+    // the eager walk. This holds even when the successor is inductive: a
+    // recursive SCC that can produce deletions IS a differential stratum,
+    // owned by the OVERDELETE/REDERIVE/INSERT phases, not by an eager
+    // `ProgramInductionRegion` (StackSafeNegation.md §7). Pulling such a
+    // successor into an eager induction would make its head table
+    // `TableIsInductionOwned`, causing the stratum phases to skip it and its
+    // counters to be never seeded — the recursive head then reads as absent
+    // (e.g. a linear recursion over a monotone lower atom, whose monotone
+    // predecessor's eager walk is the only path that reaches the JOIN).
+    // Monotone inductions are unaffected: they cannot receive deletions.
+    if (succ_view.CanReceiveDeletions()) {
       any_cut_succ = true;
       continue;
     }

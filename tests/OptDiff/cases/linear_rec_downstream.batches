@@ -1,0 +1,54 @@
+# LINEAR recursive -> downstream-differential seam (A4 ready_after).
+#
+# Edge topology (built in batch 1):
+#   main chain:  10 -> 1 -> 2 -> 3 -> 4
+#   diamond:     1 -> 5 -> 3         (second, edge-disjoint path 1 ~> 3)
+# So tc(10,3) and tc(10,4) each have TWO supports through node 1:
+#   1 -> 2 -> 3  AND  1 -> 5 -> 3 (then -> 4).
+#
+# Batch 1: build the topology. No watch yet, so flagged is empty.
+batch
++ add_edge 10 1
++ add_edge 1 2
++ add_edge 2 3
++ add_edge 3 4
++ add_edge 1 5
++ add_edge 5 3
+end
+
+# Batch 2: watch(10) and watch(4). tc(10,X) reaches {1,2,3,4,5}, so
+#   marked = {1,2,3,4,5} and flagged = {4} (the only marked node also
+#   watched). ADDITION direction of the seam: watch's outAdd + tc's rows
+#   create the downstream flagged row.
+batch
++ watch 10
++ watch 4
+end
+
+# Batch 3: retract edge(2,3). This is the OVERDELETE-then-REDERIVE
+#   FLAP test: tc(10,3)/tc(10,4) lose their 1->2->3 support but RETAIN
+#   the 1->5->3 support, so they survive. flagged(4) must NOT flap to
+#   empty and back -- it must stay {4} throughout. A T1 ordering bug
+#   (del-side net-removal frontier built before the INSERT re-derive)
+#   would momentarily drop tc(10,4), flap flagged(4) out, and (if the
+#   downstream consumer's seed already ran) leave flagged wrong or emit a
+#   spurious retract. Correct end state: flagged = {4}, unchanged.
+batch
+- add_edge 2 3
+end
+
+# Batch 4: retract edge(5,3) TOO. Now BOTH supports of tc(10,3)/tc(10,4)
+#   are gone; tc(10,3)/tc(10,4) genuinely retract. REMOVAL direction of
+#   the seam: tc's outDel frontier must drain downstream, so marked
+#   shrinks to {1,2,5} and flagged becomes EMPTY (node 4 no longer
+#   tc-reachable from watched 10, even though watch(4) itself is
+#   untouched). A broken drain leaves flagged wrongly = {4}.
+batch
+- add_edge 5 3
+end
+
+# Batch 5: re-add edge(2,3). tc(10,3)/tc(10,4) are RE-derived; flagged
+#   must return to {4} -- confirms the seam works in both directions.
+batch
++ add_edge 2 3
+end

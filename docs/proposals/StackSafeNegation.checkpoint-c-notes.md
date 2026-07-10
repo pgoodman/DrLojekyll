@@ -235,19 +235,24 @@ four — an accepted red-until-(c) verdict; the oracle/monotone goldens are the
 authoritative end-state gate meanwhile.
 
 - **Whether `deep_chain_retract` still emits a `ProgramInductionRegion`**
-  under (b)'s partition — and therefore whether the re-entry-loop deletion
-  is a real task or already-satisfied for the constant-stack gate. Not
-  derivable from the docs; grep the built tree.
+  — **RESOLVED 2026-07-10 (slice 3):** it DID, and that was the bug, not the
+  re-entry loop. See the slice-3 landing record: the legacy eager induction
+  wrongly claimed ownership of the differential recursion (mis-routing via
+  the monotone lower atom); post-fix the case emits zero legacy
+  `check-member present` induction loops and is fully D/R/I-owned.
 - **How much of the §(c) deletion inventory is already satisfied at (b)**
-  (FLAG-I): `BuildUnknownRecheck` / the 4-phase output region /
-  `kInductionRechecks` / the re-entry loop may already be gone by (a)/(b).
-  MODESWITCH is confirmed gone; the rest the docs disagree on — grep the
-  actual (b) tree to learn how much *smaller* (c)'s real diff is.
-- **The A4 `ready_after` decision's downstream effects** on inter-stratum
-  ordering when a recursive `t`'s frontiers feed a higher stratum — argued
-  sound (the producer→higher edge is how non-recursive producers already
-  feed higher seeds) but tc has no higher differential consumer, so the seam
-  is untested until a recursive→downstream-differential program runs.
+  (FLAG-I) — **RESOLVED 2026-07-10 (slice 3): ALL of it.** The
+  `for (bool reenterN...)` re-entry wrapper was deleted at checkpoint (a)
+  (`git log -S reenter` pins it to efacc67); `BuildUnknownRecheck`,
+  `kInductionRechecks`, MODESWITCH all grep to nothing in lib/+include/.
+  The sole surviving `for (bool changedN...)` (Database.cpp:1875) is the
+  slice-2 A3 Δ-emptiness break and stays. Nothing to delete at (c).
+- **The A4 `ready_after` decision's downstream effects** — **RESOLVED
+  2026-07-10 (slice 3)** for the LINEAR shape: the standing fixture
+  `linear_rec_downstream` crosses the producer→downstream-differential seam
+  in both directions plus the overdelete-then-rederive no-flap survivor,
+  green in all 4 modes and oracle-matched. The NONLINEAR seam
+  (`recursive_to_downstream`) stays GOLDEN-MISSING until slice 4.
 - **Multiset exactness under long batch sequences** — the counters lens's
   multi-batch corruption traces are hand-derived on ≤3 batches; net-exactness
   over arbitrary batch streams is a fuzz/differential-vs-oracle property.
@@ -430,3 +435,133 @@ non-standard prefix `/Users/pag/Code/.brew` was unlinked). coreutils is now
 installed and symlinked (`/Users/pag/Code/.brew/bin/{timeout,gtimeout}`);
 diffrun.sh/runall.sh fail with DR-FAIL(127) without it. Fresh shells may
 need `export PATH="/Users/pag/Code/.brew/bin:$PATH"`.
+
+## Slice 3 landing record (2026-07-10 — committed; deviations ratified)
+
+The slice-3 diff sits uncommitted: `lib/ControlFlow/Build/Build.cpp` +
+`lib/ControlFlow/Build/Stratum.cpp` (+56/−15 across the two), plus two new
+standing OptDiff cases with all goldens (6 files under cases/, 6 under
+goldens/). Method: two workflows (the
+first blocked on a discovered pre-existing defect, the second fixed it) —
+opus implementers, opus fixture author, independent opus adversarial
+spec-fidelity reviewer, sonnet full-suite gate. Converged round 1:
+**review = approve, 0 blockers; gate = pass, zero regressions.**
+
+### What landed
+
+- **T1, frontier ordering (Stratum.cpp SCC block):** the del-side
+  net-removal frontier build MOVED out of the OVERDELETE loop's output
+  region into the INSERT loop's output region — `del_output` now holds ONLY
+  REDERIVE; both signed frontier filters sit together in `add_output`
+  (is_del=true then is_del=false), matching spec §5.0
+  (OVERDELETE→REDERIVE→INSERT→BUILDFRONTIERS). Closes the slice-2 reviewer's
+  "known-wrong ordering" concern: an overdeleted-then-re-added row now has
+  kAdd final before outDel's !kAdd test. Reviewer hand-traced t(1,5) in
+  tc_mixed_batch (in both D_s and A_s ⇒ excluded from BOTH frontiers,
+  correctly stays present) and confirmed no net_removals consumer sits
+  between the old and new build points.
+- **T2 resolved as FLAG-I already-satisfied + a real routing bug found
+  instead.** The re-entry loop was deleted at (a); see the RESOLVED flags
+  above. The actual reason `deep_chain_retract` was red: **mis-routing.** In
+  `BuildEagerInsertionRegionsImpl` (Build.cpp:754 post-diff), the eager walk
+  launched by a MONOTONE receive (`next`) hit the differential recursive
+  JOIN successor and — because the cut excluded views with an
+  `InductionGroupId` — built a legacy eager `ProgramInductionRegion` whose
+  fixpoint is the old monotone `check-member present` loop. That made the
+  head's table `TableIsInductionOwned`, so `BuildStratumPhases` skipped it;
+  the base seed folded into other tables and the gate table was never
+  written ⇒ fixpoint fired 0 times ⇒ count=0. DataFlow partitioning was
+  ruled out (identical SET/DEPTH tags vs the working all-differential dbl
+  shape); isolation fixtures proved the discriminator is the
+  monotone-vs-differential JOIN input, NOT head arity. FIX: widen the cut to
+  plain `if (succ_view.CanReceiveDeletions())` — a deletion-capable
+  recursive SCC is ALWAYS owned by D/R/I (MD §7), and monotone inductions
+  are unaffected (they cannot receive deletions). Only ADDS cuts, never
+  removes one.
+- **Semi-naive claim-drain (Stratum.cpp `EmitClaimDrain`, VECTORCLEAR at
+  ~675):** pre-existing O(N²) — the claim round re-sort-unique-scanned the
+  entire never-cleared add/delete queue every round. Now the drained queue
+  is destructively cleared inside the claim-round loop (only there;
+  acyclic single-pass drains untouched); the fire re-appends only
+  newly-crossed rows. Claim-set-identical (CLAIM dedups on table state, so
+  diamond re-enqueues stay no-ops). deep_chain at depth 16000: 29s → 0.22s.
+- **Fixtures (all goldens authored: compiled + oracle + monotone each,
+  compiled only after 4-mode byte-agreement AND oracle match):**
+  `linear_rec_downstream` — the LINEAR A4-seam case (one same-SCC atom,
+  IR-confirmed live on the claim-round machinery: 94 claim/rederive markers,
+  zero legacy induction loops); chain 10→1→2→3→4 plus diamond 1→5→3; its 5
+  batches exercise removal-direction drain, addition-direction rederive, and
+  the batch-3 no-flap survivor (which is also the runtime discriminator for
+  T1). `tc_double_derive` — the notes' double-derivation repro promoted
+  verbatim (the A2 discriminator; seeded t={(1,2),(1,3),(2,3)}, after
+  t={(1,2)}).
+
+### Verification evidence
+
+- Build green all 4 opt modes, no new warnings.
+- **The slice acceptance gate: met.** `deep_chain_retract` green vs its
+  untouched committed golden (depth 6000) in all 4 modes; at kChainDepth=
+  100000 (scratch driver): `after seed: count=100001 min=0 max=100000`,
+  `after retract: count=0`, exit 0, default 8 MB stack, ~0.3 s release /
+  0.65 s debug with asserts + `DiffTable::DebugValidateCounts` clean; flat
+  scaling 0.24/0.26/0.29 s at depth 25k/50k/100k (drain fix is O(N)).
+- **`disassemble` flips green too** (all 4 modes, stable) — a real-world
+  program with the same monotone-lower-atom differential recursion.
+- Full suite: red set = 19 names = the 21-name slice-2 baseline −
+  {deep_chain_retract, disassemble}; **zero new regressions**; every
+  remaining red has a per-mode-identical verdict KIND to baseline
+  (cond_diff_flipflop still RUN-FAIL(134), tc_nonlinear_diff still
+  RUN-FAIL(1)); the 4 deliberate GOLDEN-MISSING fixtures stay red until
+  slice 4. Filtered runall.sh over the two new cases: SUITE: PASS, 12/12
+  verdicts (4 modes + oracle + monotone each).
+- ctest: PointsTo + Runtime pass; MiniDisassembler.DifferentialUpdatesWork
+  still fails but is pre-existing on the baseline compiler; the fix ADVANCES
+  it (0-vs-1 → 1-vs-6 rows materialized). Corpus: 144 compile runs, only the
+  known feature-gap diagnostics + the pre-existing evm_array_parse 134.
+- tc_mixed_batch byte-exact all 4 modes; dbl repro debug-clean; cf15_5 and
+  two_hop_phantom spot-checked green.
+
+### Deviations — RATIFIED by owner 2026-07-10
+
+1. **The 100k gate required an edit inside slice-2 machinery** (the
+   `EmitClaimDrain` destructive clear). Pure performance; reviewer verified
+   the clear sits between drain and fire (nothing appends in that window)
+   and the claim set is provably identical. Flagged only because it touches
+   a slice-2 anchor rather than pure routing.
+2. **Do NOT bump the committed deep_chain_retract to 100000 yet.** Its
+   golden is depth-dependent (kChainDepth in the driver main.cpp:16). Now
+   that the case is green, options: bless a depth-100000 golden, or keep the
+   reduced committed depth and carry the 100k driver as the standing
+   acceptance-gate artifact (the plan's original intent, .plan.md:362).
+3. `disassemble` flips green as a side effect (strictly good news; recorded
+   so the red-set arithmetic is explained: 21 − 2 = 19).
+
+### Reviewer concerns (approve verdict; carry into slice 4)
+
+- **Nonlinear seam of the widened cut:** a NONLINEAR differential SCC
+  reached via a monotone lower atom now routes to the single-pass
+  linearity-gate fallback instead of the eager induction. No failing case
+  exists (nonlinear cases unchanged vs baseline), but slice 4's matrix work
+  must revisit this path deliberately.
+- **The destructive drain assumes no post-loop queue consumer.** True today
+  in all emitted IR (the queue is used only inside the claim-round loop);
+  revisit if a future emission adds one.
+- **Oracle-binary/golden format skew (PRE-EXISTING, suite-wide, not slice
+  3):** the current drlojekyll-oracle emits a final
+  `INVARIANT: differential-final == monotone-projection (N relations)` line
+  that NO committed *.oracle.stdout contains (including tc_mixed_batch's).
+  runall.sh's oracle checks still pass, so its comparison tolerates it, but
+  a raw byte-compare diverges everywhere. Needs one decision: regenerate all
+  oracle goldens with the line, or suppress the line in the oracle.
+- **MiniDisassembler follow-up:** the disassemble OptDiff golden is green,
+  so the remaining MiniDisassembler driver gap is likely its own
+  expectations or a distinct differential path — sort at slice 4 or (d).
+
+### Slice 4 scope (unchanged from the plan, plus carry-forwards)
+
+Nonlinear matrix bring-up (`p(X,Z):p(X,Y),p(Y,Z)`, FLAG-F/G/H predicate
+matrix, the third join-section flavor), the `p(1)/p(2)` self-supporting
+cycle trace, goldens for the 4 GOLDEN-MISSING fixtures, cyclic
+self-support over-retention (transitive_closure_diff2, cf16_3),
+tc_nonlinear_diff's driver mismatch, plus the four carry-forward concerns
+above.

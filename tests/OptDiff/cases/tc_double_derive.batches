@@ -1,0 +1,14 @@
+# A2 double-derivation repro (verbatim from
+# docs/proposals/StackSafeNegation.checkpoint-c-notes.md "Double-derivation
+# repro"). Seed makes t(1,3) double-derived -- base edge(1,3) AND recursive
+# t(1,2),edge(2,3). The batch removes BOTH supports; expected final
+# t = {(1,2)}.
+batch
++ edge_msg 1 2
++ edge_msg 2 3
++ edge_msg 1 3
+end
+batch
+- edge_msg 1 3
+- edge_msg 2 3
+end

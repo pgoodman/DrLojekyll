@@ -1,0 +1,42 @@
+; LINEAR analogue of recursive_to_downstream (the A4 ready_after seam test).
+; A LINEAR transitive-closure recursion feeding a HIGHER differential
+; stratum consumer, so net-removal AND net-addition frontiers cross the
+; producer -> consumer seam.
+;
+; The recursion is LINEAR: the recursive rule has EXACTLY ONE same-SCC body
+; atom (tc), the other (edge) is a lower stratum. This matters: the
+; linearity gate at lib/ControlFlow/Build/Stratum.cpp ~1010 routes a rule
+; with >=2 same-SCC sides (as in recursive_to_downstream's tc(From,X),
+; tc(X,To)) to the single-pass fallback, which would make this fixture
+; inert. The linear shape keeps tc on the claim-round D/R/I path this
+; fixture is meant to exercise.
+;
+; Downstream consumer: marked(X) := tc reachable from a watched node AND
+; watch(X); flagged(X) := marked(X) AND watch(X). A broken BUILDFRONTIERS
+; wiring (recursive-stratum outDel/outAdd not populated, or consumed with
+; the wrong sign) changes flagged's final membership WITHOUT tripping any
+; single-stratum counter assert -- a cross-stratum WIRING bug -- so this
+; needs an END-STATE oracle comparison.
+;
+; The batches exercise all three seam directions: a removal retracting
+; downstream rows (drain), an addition re-creating them (fill), and an
+; OVERDELETE-then-REDERIVE survivor whose downstream row must NOT flap
+; (the discriminator for the T1 frontier-ordering fix).
+#message add_edge(u64 From, u64 To) @differential.
+#message watch(u64 X) @differential.
+
+#local tc(From, To).
+#local edge(From, To).
+#local marked(X).
+#local flagged(X).
+
+edge(From, To) : add_edge(From, To).
+
+tc(From, To) : edge(From, To).
+tc(From, To) : tc(From, X), edge(X, To).
+
+marked(X) : tc(W, X), watch(W).
+flagged(X) : marked(X), watch(X).
+
+#query flagged_out(free u64 X).
+flagged_out(X) : flagged(X).
