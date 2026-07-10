@@ -1,0 +1,32 @@
+; Phantom-drift kill fixture (linear transitive closure, same program as
+; tc_double_derive). This is the standing regression for the slice-4 claim
+; gates (include/drlojekyll/Runtime/Table.h): a phantom join instance whose
+; transient +1 (seed section, run before OVERDELETE) crosses zero and is
+; enqueued, but whose compensating fixpoint -1 never crosses (kInI=0), must
+; NOT be claimed and propagated -- the signed claim gate (TryClaimAdd
+; requires Total>0) drops the dead entry, killing the drift.
+;
+; Batch 2 is MD 5.1.1's batch: -edge(1,2), +edge(2,5). The phantom pair on
+; join instance (X=2,From=1,To=5) [t(1,2) deleted x edge(2,5) added] would,
+; without the gate, leak one +1 into the witness count of t(1,5). Batch 3
+; then removes t(1,5)'s only real support edge(4,5): if the drift were real,
+; t(1,5) would survive batch 3 immortally. Truth: t(1,5) dies.
+;
+; End state per batch (positive-only equivalence oracle):
+;   seeded      t = {(1,2),(1,4),(4,5),(1,5)}
+;   after batch2 t = {(1,4),(2,5)}
+;   after batch3 t = {(1,4),(2,5)}
+; (goldens/tc_phantom_claim.oracle.stdout / .monotone.stdout).
+#message edge_msg(u64 From, u64 To) @differential.
+
+#local edge(From, To).
+#local t(From, To).
+
+#query t_out(free u64 From, free u64 To).
+
+edge(From, To) : edge_msg(From, To).
+
+t(From, To) : edge(From, To).
+t(From, To) : t(From, X), edge(X, To).
+
+t_out(From, To) : t(From, To).

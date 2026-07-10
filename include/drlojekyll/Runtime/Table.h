@@ -342,10 +342,27 @@ class DiffTable : public RowStore<Row> {
     return (f & kDel) && !(f & kAdd);
   }
 
-  // Net addition this batch: claimed into A and never overdeleted into D.
+  // Net addition this batch: a genuine batch-start-to-end presence GAIN.
+  //
+  //   NetAdded := kAdd && !kDel && !kInI
+  //
+  // The `!kInI` conjunct (beyond the symmetric `!kDel`) restores "frontier =
+  // presence gain", matching `Commit`'s `was != now` publication. Without it a
+  // row that carried `kAdd` but was already present at batch start leaks into
+  // `net_additions`, and a downstream seed section then double-counts an
+  // already-present instance. Such a leak is reachable: two base rules firing
+  // same-batch `-e1(k)`/`+e2(k)` can gate-drop the delete claim on a present
+  // row (see `TryClaimDel`), leaving `kAdd` set on a row whose presence never
+  // changed — `kAdd && !kDel` alone would admit it. `!kInI` rejects it.
+  //
+  // `NetDeleted` needs no mirror `!kInI`: a spurious `kDel` on an absent row
+  // is unreachable — a gate-dropped del never sets `kDel` (`TryClaimDel`
+  // returns before the flag write), and a claimed del that ends present is
+  // re-added by REDERIVE/INSERT, which sets `kAdd`, so `kDel && !kAdd` already
+  // excludes it.
   bool NetAdded(uint32_t id) const noexcept {
     const uint8_t f = flags[id];
-    return (f & kAdd) && !(f & kDel);
+    return (f & kAdd) && !(f & kDel) && !(f & kInI);
   }
 
   // Claim `id` into the overdeletion set D and the current delete frontier
@@ -355,7 +372,24 @@ class DiffTable : public RowStore<Row> {
     if (f & kDel) {
       return false;
     }
-    assert(CountNr(counts[id]) <= 0);
+
+    // Stale-entry gate. A queue entry is a zero-crossing recorded at FOLD
+    // time; the claim re-tests the crossing condition at CLAIM time because
+    // the two need not agree. The landed lowering hoists every seed fold —
+    // both base-rule signs and both dual-section signs — ahead of the
+    // OVERDELETE loop (contrast MD §5.0/§5.2, which interleaves `-` seeds INTO
+    // OVERDELETE and `+` seeds into INSERT to keep each phase sign-monotone).
+    // Under that spec order a queued crossing is still valid at claim time; the
+    // hoist breaks it, so a later same-batch `+` seed fold can cancel a `-`
+    // entry between its fold and this claim (a phantom pair whose atoms fold
+    // out of order). Re-testing `C_nr <= 0` drops the canceled entry; any
+    // genuine later re-crossing re-enqueues the row, so nothing is lost. See
+    // MD §5.2/§5.3 phase-monotonicity — this gate restores, at claim time, the
+    // invariant the spec's phase order provides structurally. (`C_nr`, not
+    // `Total`: a `-` fold's own crossing rule is `kInI && C_nr <= 0`.)
+    if (0 < CountNr(counts[id])) {
+      return false;
+    }
     Touch(id);
     flags.Set(id, static_cast<uint8_t>(flags[id] | kDel | kDelNow));
     return true;
@@ -365,6 +399,23 @@ class DiffTable : public RowStore<Row> {
   bool TryClaimAdd(uint32_t id) {
     const uint8_t f = flags[id];
     if (f & kAdd) {
+      return false;
+    }
+
+    // Stale-entry gate (see TryClaimDel). An up-crossing enqueued at fold time
+    // may have been canceled by a later same-batch `-` fold — a phantom pair
+    // on an instance that never became present, its `+` seed hoisted ahead of
+    // the OVERDELETE `-` fold that undoes it. Claiming it would propagate a
+    // `+1` with no compensating `-1` (an unconditional per-Δ-row projection
+    // then inflates a downstream witness count). Re-test presence (`Total > 0`)
+    // at claim time; any genuine later re-crossing re-enqueues the row.
+    //
+    // This does NOT wrongly drop a REDERIVE-queued row: REDERIVE enqueues on
+    // `C_r > 0` and every `C_nr` seed fold is hoisted ahead of OVERDELETE, so
+    // `C_nr` is frozen `>= 0` before the del loop and only `C_r` moves during
+    // INSERT — `Total` never undershoots a genuinely present row at its add
+    // claim. See MD §5.2/§5.3 phase-monotonicity.
+    if (Total(counts[id]) <= 0) {
       return false;
     }
     Touch(id);

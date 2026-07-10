@@ -1,0 +1,14 @@
+# Two-base-rule flip feeding a downstream stratum: the NetAdded-refinement
+# discriminator (T2). p has two base rules keyed on src's Which column; the
+# same-batch flip -src(1,5)/+src(2,5) leaves p(5)'s presence unchanged. The
+# downstream q(X) : p(X), r(X) must keep q(5) exactly once (no spurious
+# re-derivation from a leaked net_additions frontier).
+# Truth: after seed q={5}; after flip q={5}.
+batch
++ r 5
++ src 1 5
+end
+batch
+- src 1 5
++ src 2 5
+end

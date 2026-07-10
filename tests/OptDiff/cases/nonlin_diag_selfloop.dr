@@ -1,0 +1,31 @@
+; Nonlinear TC diagonal self-loop: the exactly-once + termination witness
+; for the slice-4 nonlinear JoinFire (Diff 2). The recursive rule
+; p(X,Z) : p(X,Y), p(Y,Z) has TWO same-stratum positions, and a single
+; self-loop edge(a,a) makes p(a,a) tie BOTH positions to the SAME row
+; (Y=a): the p(a,a) x p(a,a) self-join instance. The FLAG matrix's
+; diagonal p(a,a) self-tie is evaluated on the SCANNED occurrence whose
+; own Now bit breaks the tie, so the instance must fire EXACTLY ONCE per
+; claim round -- never zero (would strand p(a,a) uncounted) and never
+; twice (would drive C_r to 2 and, on retraction, undershoot to -1 ->
+; commit SIGABRT).
+;
+; Batch 1 adds edge(a,a): p(a,a) is base-derived once AND recursively
+; self-derivable (p(a,a),p(a,a)); the recursion must reach a fixpoint
+; (terminate) with p(a,a) present. Batch 2 removes edge(a,a): the whole
+; self-supporting diagonal cycle must drain to empty (C_r reaches 0, no
+; firewall -- edge(a,a) was the sole external support).
+;
+; End state (positive-only equivalence oracle):
+;   after add p = {(7,7)}; after remove p = {} (empty).
+; (goldens/nonlin_diag_selfloop.oracle.stdout / .monotone.stdout).
+#message add_edge(u64 From, u64 To) @differential.
+#query reachable(free u64 From, free u64 To).
+#local p(From, To).
+#local edge(From, To).
+
+edge(From, To) : add_edge(From, To).
+
+p(From, To) : edge(From, To).
+p(From, To) : p(From, Y), p(Y, To).
+
+reachable(From, To) : p(From, To).

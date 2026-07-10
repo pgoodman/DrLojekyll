@@ -1,0 +1,17 @@
+# Phantom-drift kill fixture (linear tc; tc_double_derive program). Batch 2
+# is MD 5.1.1's batch (-edge(1,2), +edge(2,5)); the phantom join instance
+# (X=2,From=1,To=5) transiently crosses zero on the + seed section. Batch 3
+# removes edge(4,5), t(1,5)'s only real support -- t(1,5) must die.
+# Truth: seeded t={(1,2),(1,4),(4,5),(1,5)}; final t={(1,4),(2,5)}.
+batch
++ edge_msg 1 2
++ edge_msg 1 4
++ edge_msg 4 5
+end
+batch
+- edge_msg 1 2
++ edge_msg 2 5
+end
+batch
+- edge_msg 4 5
+end

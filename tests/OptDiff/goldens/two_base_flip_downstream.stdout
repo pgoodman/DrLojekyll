@@ -1,0 +1,4 @@
+after seed:
+q(5)
+after flip:
+q(5)

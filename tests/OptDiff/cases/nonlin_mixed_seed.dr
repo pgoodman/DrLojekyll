@@ -1,0 +1,34 @@
+; Mixed nonlinear join: ONE join node with TWO same-stratum positions AND a
+; strictly-lower differential side sharing the same pivot. The recursive rule
+; p(From,To) : p(From,Y), p(Y,To), gate(Y) joins all three atoms on Y, so the
+; DF builder emits a single JOIN whose sides are p (same-SCC, position 0),
+; p (same-SCC, position 1), and gate (lower). This is the combination the
+; slice-4 review flagged as untested: the dual-section SEED (delta over
+; gate's consolidated frontier, both same-SCC sides read at their
+; batch-start-equivalent state) coexists with the k=2 claim-round fire
+; (matrix predicates on the other p side, gate read at InNew) on the SAME
+; join. A wrong seed-side read discipline (MD 5.1's k-atom seed cells)
+; either double-fires an instance also fired by the k=2 fire (C_r drift ->
+; commit SIGABRT or phantom survival) or drops one (lost derivation).
+;
+; Semantics: p = edge U {(a,c) : p(a,b), p(b,c), b in gate}.
+;
+; End state (positive-only equivalence oracle) per batch:
+;   b1 (edges 1-2,2-3,3-4; gates 2,3): p = edges + (1,3),(2,4),(1,4)
+;   b2 (-gate 2):                      p = edges + (2,4)
+;   b3 (+gate 2):                      p = edges + (1,3),(2,4),(1,4)
+;   b4 (-edge 3-4):                    p = {(1,2),(2,3),(1,3)}
+#message edge_msg(u64 From, u64 To) @differential.
+#message gate_msg(u64 N) @differential.
+#query out(free u64 From, free u64 To).
+#local edge(From, To).
+#local gate(N).
+#local p(From, To).
+
+edge(From, To) : edge_msg(From, To).
+gate(N) : gate_msg(N).
+
+p(From, To) : edge(From, To).
+p(From, To) : p(From, Y), p(Y, To), gate(Y).
+
+out(From, To) : p(From, To).

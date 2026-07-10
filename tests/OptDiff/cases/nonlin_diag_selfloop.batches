@@ -1,0 +1,12 @@
+# Nonlinear TC diagonal self-loop: the exactly-once + termination witness.
+# A single self-loop edge(7,7) ties both same-stratum join positions to the
+# same p(7,7) row; the self-join instance must fire exactly once per round.
+# Batch 1 adds edge(7,7) (p(7,7) present, recursion terminates); batch 2
+# removes it (the self-supporting diagonal drains to empty).
+# Truth: after add reachable={(7,7)}; after remove reachable={}.
+batch
++ add_edge 7 7
+end
+batch
+- add_edge 7 7
+end

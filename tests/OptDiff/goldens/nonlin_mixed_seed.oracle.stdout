@@ -1,0 +1,4 @@
+ORACLE: OK (5 batches, 1435 assertions)
+out	1 2
+out	1 3
+out	2 3

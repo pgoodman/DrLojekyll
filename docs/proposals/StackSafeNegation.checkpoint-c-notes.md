@@ -1,10 +1,11 @@
 # Stage 3 checkpoint (c) working notes (committed working ledger)
 
-Branch: derivation-counters. Slices 0–3 landed (slice 3 = 6faf6d9); slice 4
-(nonlinear matrix) remains — a fresh session starts at "Whole-program view"
-+ "Session bootstrap" at the bottom of this file. Delete this file from the
-repo when checkpoint (c) lands (the durable record belongs in
-StackSafeNegation.plan.md).
+Branch: derivation-counters. Slices 0–4 landed (slice 3 = 6faf6d9; slice 4 =
+uncommitted working-tree diff, see the "Slice 4 landing record" at the very
+bottom — it supersedes the "Slice 4 as diffs" plan sections where they
+disagree). Remaining before (c) closes: the needs-(d) crossover set only.
+Delete this file from the repo when checkpoint (c) lands (the durable
+record belongs in StackSafeNegation.plan.md).
 
 Seeded from the adversarial review of the checkpoint-(c) recursion plan
 (the projected post-(c) `tc_mixed_batch` IR, reconciled across the
@@ -626,12 +627,13 @@ proc entry(batch):
     #     rule reads a same-SCC side, else kNonRecursive.
     #     Zero-crossings park in the target table's del/add queues.
 
-    # (2) SINGLE-PASS tables (genuinely acyclic, OR nonlinear-SCC fallback):
+    # (2) SINGLE-PASS tables (genuinely acyclic ONLY « slice 4: the
+    #     nonlinear-SCC fallback is GONE; every recursive SCC is D/R/I »):
     for t in acyclic_tables@s:               # every fold kNonRecursive ⇒ C_r ≡ 0
       ClaimDrain(t, del); ClaimDrain(t, add) # one drain settles the table
       FrontierFilter(t, del); FrontierFilter(t, add)
 
-    # (3) LINEAR recursive SCC tables (Stratum.cpp:1630-1658):
+    # (3) recursive SCC tables « slice 4: linear AND nonlinear »:
     OVERDELETE := claim_round_loop(del)                       # §5.2
       └ output region: for t in scc: REDERIVE(t)              # between D and I
     INSERT     := claim_round_loop(add)                       # §5.3 mirror
@@ -656,14 +658,19 @@ claim_round_loop(sign):        # INDUCTION region; maintained vectors = the Δs,
     for SCC-internal projection branches: SeedLoop over Δ, class kRecursive
     for t in scc: Retire(Δ_t, sign)          # clears kDelNow/kAddNow row bits
 
-JoinFire(join, sign):          # EmitJoinFire (Stratum.cpp:814) — LINEAR ONLY:
-  (delta_side, lower_sides) := partition sides by same-SCC   # asserts exactly 1 same-SCC side
-  for row in Δ_delta_side:                   # loop the CLAIMED frontier
-    bind pivots from row
-    nested scan of each lower side by pivot (BuildMaybeScanPartial)
-      gated CHECKMEMBER InNew(side row)      # lower read = batch-final, both signs
-    UPDATECOUNT(sign∓, kRecursive) into join table
-      on zero-crossing: append row → join table's queue_sign
+JoinFire(join, sign):          # EmitJoinFire « slice 4: k same-SCC positions »
+  same_pos := [p : side_p table in the join's SCC]   # k ≥ 1, raw JoinedViews() order
+  for p in same_pos:                         # k SEPARATE emissions
+    for row in Δ of side_p's table:          # loop the CLAIMED frontier
+      bind side_p's columns + pivots from row
+      scan each OTHER same-SCC side j by pivot, gated CHECKMEMBER
+        j < p: (del ? SurvivesSoFar : InNewWithFrontier)   # permissive earlier
+        j > p: (del ? AliveAtClaim   : InNewSansFrontier)  # strict later
+      nested scan of each lower side by pivot (BuildMaybeScanPartial)
+        gated CHECKMEMBER InNew(side row)    # lower read = batch-final, both signs
+      UPDATECOUNT(sign∓, kRecursive) into join table
+        on zero-crossing: append row → join table's queue_sign
+  # k=1 degenerates byte-identically to the slice-2 linear emission.
 
 REDERIVE(t):                   # EmitRederive (Stratum.cpp:712)
   for row in D_s: if RecursivelySupported(row):    # C_r > 0 after OVERDELETE
@@ -677,9 +684,12 @@ FrontierFilter(t, add): for row in A_s: if NetAdded(row):  append → net_additi
 Scheduling: `ComputeRecursiveSCCs` (Stratum.cpp:128) + the stratum lift
 fixpoint place every fold above every table it reads, EXCEPT same-SCC reads
 (exempt — they are `InI`-frozen or Δ/InNew-disciplined, never a drain-order
-dependency). Nonlinear SCCs are KEPT in `recursive_sccs` for this
-scheduling (termination requires the exemption + shared-stratum pinning)
-even while the linearity gate lowers them single-pass.
+dependency). « slice 4: the linearity gate is deleted; nonlinear SCCs lower
+to the same claim-round path. A join whose EVERY side is same-SCC has NO
+seed (no lower delta position, MD §5.1) — its seed emission is suppressed
+entirely; a MIXED join (lower + ≥2 same-SCC sides sharing the pivot) keeps
+the dual-section seed, whose same-SCC reads at seed time are extensionally
+InI (flags untouched until the loops run). »
 
 ### Slice 4 as diffs against the pseudocode
 
@@ -761,14 +771,161 @@ the new nonlinear IR; decide the oracle INVARIANT-line golden skew.
 
 - Read: this file top-to-bottom (slice records are the ground truth where
   docs disagree), then `.plan.md` §(c), then MD §5–§5.3 + §8.
-- State: HEAD carries slices 0–3; suite red set = 19 names = the 21 in the
-  slice-2/3 records minus {deep_chain_retract, disassemble}; of the 19, 11
-  are needs-(d) crossover, 4 are the GOLDEN-MISSING slice-4 fixtures, and
-  {tc_nonlinear_diff, transitive_closure_diff, transitive_closure_diff2,
-  cf16_3} are the slice-4 targets.
+- State « superseded by the slice-4 landing record below »: HEAD commit
+  carries slices 0–3; the WORKING TREE carries slice 4 (uncommitted). Suite
+  red set = the 11 needs-(d) crossover names only; every slice-4 target and
+  fixture is green.
 - Environment: `export PATH="/Users/pag/Code/.brew/bin:$PATH"` before any
   test run (see Environment note above). Suite: `DR=build/debug/bin/drlojekyll
   tests/OptDiff/runall.sh <workroot> [jobs] [filter]`.
 - The oracle differential path IS the resolved semantics (`FixReads`,
   `bin/Oracle/Main.cpp:1329`); `--project-monotone` is the independent
   positive-only cross-check.
+
+## Slice 4 landing record (2026-07-10 — UNCOMMITTED, pending owner review)
+
+The slice-4 diff sits uncommitted: `include/drlojekyll/Runtime/Table.h`
+(+54/−3), `lib/ControlFlow/Build/Stratum.cpp` (481 lines changed), ONE
+authorized re-bless (`tests/OptDiff/goldens/transitive_closure_diff.stdout`,
++8/−8), plus 4 new standing OptDiff cases with full goldens and compiled
+goldens for the 4 previously GOLDEN-MISSING fixtures. Method: pre-code IR
+dump + critical evaluation in-session (found F17 below BEFORE any nonlinear
+code), then two workflows — (1) verification: three opus hand-trace agents
+(the mandated FLAG-H / FLAG-F / p(1)-p(2)-cycle traces, re-run against the
+HIERARCHICAL planned IR) + a sonnet mechanical touch-list audit, all four
+sound; (2) implementation: opus implementer, independent opus adversarial
+spec-fidelity reviewer, sonnet full-suite gates, opus fixture author.
+Converged round 1: **review = approve, 0 blockers; all gates pass, zero
+regressions.**
+
+### F17 — the pre-implementation discovery (gates slice 4; fixed first)
+
+Hand-tracing MD §5.1.1 through the LANDED linear IR exposed a real,
+pre-existing, all-modes, cross-batch-latent bug (FINDINGS.md F17): the
+lowering hoists ALL seeds before OVERDELETE (spec §5.0 interleaves − seeds
+into OVERDELETE, + seeds into INSERT), so a phantom pair's `+` up-crossing
+enqueues, and `TryClaimAdd` (which tested only `kAdd`) claimed the
+count-canceled row and propagated a phantom `+1` witness downstream with no
+compensating `−1`. Killed by a 3-batch linear-tc fixture (now standing case
+`tc_phantom_claim`): t(1,5)'s witness count drifts 1→2 in the §5.1.1 batch
+and the row becomes immortal. FIX (Table.h): **signed claim gates** —
+`TryClaimDel` requires `C_nr ≤ 0` at claim time (assert demoted to gate),
+`TryClaimAdd` requires `Total > 0`; a stale entry whose crossing was
+canceled intra-batch is dropped (any later genuine crossing re-enqueues).
+Companion: **NetAdded gained `!kInI`** (frontier = genuine presence gain) —
+without it a gate-dropped del claim leaves a spurious net-addition on a
+presence-unchanged row (two-base-rule −e1/+e2 flip), double-counting one
+stratum down (standing discriminator `two_base_flip_downstream`). Soundness
+of both traced adversarially: C_nr is frozen ≥0 before OVERDELETE (every NR
+fold is a hoisted seed; loop bodies fold only C_r), so REDERIVE rows always
+pass the add gate; the del gate only drops rows the firewall protects
+anyway. The gates ALONE flipped `transitive_closure_diff2` and `cf16_3`
+green — the "cyclic self-support over-retention" carried since slice 2 was
+F17, not a drain infidelity.
+
+### What landed (Diffs 1–5 against the whole-program view)
+
+- **Diff 1 (gate lift):** `nonlinear_groups` and `is_linear_recursive`
+  DELETED; `is_recursive` = SCC membership; `RuleClass` lost the nonlinear
+  kNonRecursive override; nonlinear SCC tables now enter `scc_tables` and
+  the claim-round loops. Scheduling unchanged (nonlinear SCCs were already
+  in `recursive_sccs`; no lift divergence).
+- **Diff 2 (k-emission JoinFire):** one loop-scan-fold unit per same-SCC
+  position in RAW `JoinedViews()` order (never `SortedPredecessors` — its
+  EquivalenceSetId tiebreak is not mode-stable), other same-SCC sides read
+  by the §5.1 fixpoint matrix keyed on static position (j<p permissive
+  `SurvivesSoFar`/`InNewWithFrontier`; j>p strict
+  `AliveAtClaim`/`InNewSansFrontier`), lower sides at `InNew`, folds
+  ∓recursive into the join's instance table. k=1 degenerates
+  byte-identically (verified: linear IR unchanged vs HEAD).
+- **Diff 3 (seeds):** all-same-SCC joins (no lower side) get NO seed —
+  emission suppressed (was dead-by-construction; now structural). Mixed
+  joins (≥1 lower + ≥2 same-SCC sides on one pivot) keep the dual-section
+  seed: at seed time same-SCC flags are untouched, so the sections'
+  `InNew`/`InI` reads are extensionally the §5.1 seed-schema reads.
+  Verified empirically by new case `nonlin_mixed_seed`
+  (`p(F,T) : p(F,Y), p(Y,T), gate(Y)` — one join, 2 same-SCC sides + a
+  lower differential side; 5 batches incl. both gate signs; 4-mode
+  byte-agreement + oracle-agreed, 1435 assertions).
+- **Diff 4 (cycle drain): fell out un-coded** as the plan predicted —
+  transitive_closure_diff2 + cf16_3 flipped green (via F17's gates),
+  firewall_cycle and the diagonal drain traced and green.
+- **Diff 5 (bring-up):** tc_nonlinear_diff's RUN-FAIL(1) was NOT a driver
+  bug — the driver is a randomized self-checking oracle (in-driver NaiveTC
+  recompute) that was correctly reporting the broken nonlinear fallback;
+  green now, driver untouched. transitive_closure_diff's stale golden
+  (pinned the F16 wrong output, per the FINDINGS F16 forecast) re-blessed
+  after 4-mode byte-agreement + oracle verification — the ONE pre-existing
+  golden edit, flagged for owner ratification. Compiled goldens authored
+  for all 4 GOLDEN-MISSING fixtures from oracle truth.
+- **Fixtures added (standing):** `tc_phantom_claim` (F17 kill),
+  `nonlin_diag_selfloop` (diagonal p(a,a) self-tie: exactly-once +
+  termination + self-support drain), `two_base_flip_downstream` (NetAdded
+  `!kInI` discriminator), `nonlin_mixed_seed` (mixed-join seed × k=2 fire),
+  each with compiled + oracle + monotone goldens (oracle goldens strip the
+  oracle's INVARIANT line, matching all 30 committed oracle goldens).
+
+### Verification evidence
+
+- Full suite red set = EXACTLY the 11 needs-(d) crossover names
+  {compare_4, cond_both_polarities, cond_diff_flipflop, insert_4, merge_5,
+  negate_1, negate_3, negate_4, negate_5, negate_6, negation_flap}; comm
+  against the rebuilt 19-name HEAD baseline (fresh worktree build) shows
+  zero new regressions and exactly {cf16_3, transitive_closure_diff2,
+  transitive_closure_diff, tc_nonlinear_diff} + the 4 GOLDEN-MISSING
+  flipped green. Suite run 3× on fresh workroots, identical.
+- Hand-trace obligations (Risk #2) discharged BEFORE Diff-2 code, against
+  the PLANNED hierarchical IR: FLAG-H both-deleted p(2,4) / both-added
+  p(4,6) + diagonal + cross-round diamond; FLAG-F R-iv and R-ii kill cases;
+  the p(1)/p(2) REDERIVE/firewall cycle. All sound. Two findings of note:
+  (a) in the hierarchical shape the head's C_r is 0/1 (witness chain), so
+  the oracle's flat C_r=#instances equals it only on
+  Present()/RecursivelySupported() — never port flat counter assertions to
+  table-4 level; (b) the R-ii kill re-localizes to an instance-level DEBUG
+  commit assert (an IDB-only oracle cannot see it) — the sep2-style
+  discriminator must run debug builds.
+- Reviewer hand-verified the emitted nonlinear IR against the planned shape
+  element-by-element in all 4 modes, and re-ran the phantom kill against
+  BOTH binaries (HEAD baseline retains t(1,5); fixed tree kills it).
+- deep_chain_retract at kChainDepth=100000: exit 0 in all 4 modes under
+  `ulimit -s 1024` (1 MB stack — constant-stack proven, not just
+  no-overflow), ~0.45 s.
+- ctest: PointsTo + Runtime pass; MiniDisassembler.DifferentialUpdatesWork
+  still red, pre-existing, unchanged failure signature. data/ corpus 4-mode
+  sweep: only the known feature-gap diagnostics + pre-existing
+  evm_array_parse 134.
+
+### Deviations — OWNER TO RATIFY at commit time
+
+1. **transitive_closure_diff.stdout re-blessed** (a committed golden edit
+   outside the --bless flow). The old golden pinned F16's wrong output (per
+   the FINDINGS F16 entry, which forecast exactly this re-bless); the new
+   output is oracle-verified and 4-mode byte-identical. .oracle/.monotone
+   goldens unchanged.
+2. **T6 hardening assert skipped** (frozen-C_nr invariant): every in-loop
+   UPDATECOUNT already passes a literal `DerivClass::kRecursive`, so the
+   invariant is pinned structurally; a runtime assert would need new
+   threaded state for no coverage gain.
+3. **New oracle goldens strip the oracle's trailing INVARIANT line** to
+   match the 30 committed ones — the I9 format-skew decision (regenerate
+   all with the line vs suppress it in the oracle) is still open and now
+   slightly more entrenched on the strip side.
+
+### Carried-forward concerns (for needs-(d) and beyond)
+
+- **Oracle/runtime claim-semantics split (latent):** the oracle
+  (bin/Oracle/Main.cpp:1285) still HARD-FAILS on a del claim with C_nr>0
+  while the runtime now gate-drops. They agree everywhere today because the
+  oracle uses the spec's interleaved phase order (its queue entries are
+  never stale). If the oracle ever adopts the hoisted order, or a case
+  produces an oracle-visible stale claim, this surfaces as ORACLE-FAIL.
+  Decide at (d) whether the oracle should mirror the gates.
+- **cond_diff_flipflop's RUN-FAIL(134)** aborts at the Commit `0 <= nr`
+  tripwire — the same stale-crossing family as F17 but on the negation
+  crossover path; expected to be fixed by (d)'s crossover machinery (its
+  gates-era output diverges earlier than the abort, so (d) has real work).
+- **negation_flap.stdout** remains on the (d) reviewed re-bless list
+  (ingest-netting decision), per FINDINGS F16's note.
+- **MiniDisassembler.DifferentialUpdatesWork**: unchanged by slice 4; its
+  gap is its own expectations or a distinct differential path — sort at (d)
+  or (e).

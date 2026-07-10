@@ -1,0 +1,33 @@
+; Two-base-rule flip feeding a downstream stratum: the discriminator for the
+; slice-4 NetAdded frontier refinement (T2, include/drlojekyll/Runtime/Table.h
+; NetAdded := kAdd && !kDel && !kInI).
+;
+; p has TWO base rules, keyed on the discriminator column Which of a single
+; @differential message src. The same-batch flip -src(1,k)/+src(2,k) moves
+; p(k)'s support from rule 1 to rule 2 WITHOUT changing p(k)'s presence. The
+; del claim on p(k) is gate-dropped (the row is still present via rule 2),
+; which leaves kAdd set on a row whose presence never changed. A downstream
+; stratum q(X) : p(X), r(X) joins p against another @differential base r and
+; consumes p's net_additions frontier at seed time. If NetAdded were the bare
+; kAdd && !kDel, the unchanged p(k) would LEAK into net_additions and q's seed
+; section would re-derive / double-count q(k) (spurious). The !kInI conjunct
+; restores "frontier = genuine presence gain" so p(k) -- present at batch
+; start -- is NOT re-emitted, and q(k) stays exactly once.
+;
+; End state (positive-only equivalence oracle):
+;   after seed q = {5}; after flip q = {5} (unchanged, present via rule 2).
+; (goldens/two_base_flip_downstream.oracle.stdout / .monotone.stdout).
+#message src(u64 Which, u64 X) @differential.
+#message r(u64 X) @differential.
+
+#local p(X).
+#local q(X).
+
+#query q_out(free u64 X).
+
+p(X) : src(1, X).
+p(X) : src(2, X).
+
+q(X) : p(X), r(X).
+
+q_out(X) : q(X).
