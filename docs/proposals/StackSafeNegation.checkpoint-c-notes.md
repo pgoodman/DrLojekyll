@@ -98,7 +98,8 @@ Risk #2 (traces re-run by hand before code).
    `$t_ΔD`/`$t_ΔA` for recursive tables). Pure additive plumbing, no
    behavior change. Verify: build green all 4 opt modes; grep new
    predicate/vector through printer + codegen; OptDiff still byte-identical.
-2. **Correctness core — OVERDELETE + REDERIVE for tc:** emit the base-rule
+2. **[DONE 2026-07-10 — see "Slice 2 landing record" below; uncommitted]**
+   **Correctness core — OVERDELETE + REDERIVE for tc:** emit the base-rule
    seed (A1, class NR), the recursive-rule seed (A2, class **R**), the
    claim-round loop firing/breaking/retiring over `$t_ΔD` (A3), and REDERIVE
    over `$t_D` reading `kRecursivelySupported`. Route the seed join per A4
@@ -109,7 +110,9 @@ Risk #2 (traces re-run by hand before code).
    trace (the one-batch repro that distinguishes correct-R from wrong-NR —
    drives `C_nr` to −1 → commit SIGABRT under the bug; highest-value single
    test for A2/A3).
-3. **INSERT + BUILDFRONTIERS + delete the add-only loop:** mirror the
+3. **[RESHAPED by slice 2 — the INSERT claim loop already landed there; the
+   remaining slice-3 scope is listed in the landing record below]**
+   **INSERT + BUILDFRONTIERS + delete the add-only loop:** mirror the
    OVERDELETE claim loop for the add side; wire BUILDFRONTIERS into the
    existing `outDel`/`outAdd`; only now delete `EmitInduction`'s
    `for(bool changed…)` re-entry loop — but first confirm against
@@ -259,3 +262,171 @@ still read strictly-lower strata **excluding** same-SCC reads (which are
 so they close no scheduling cycle); claim-loop emissions must have ≥1
 same-SCC read. The `kNonRecursive` soundness comment (`Stratum.cpp:670–682`)
 survives for base-rule seeds. The assert split is (c) implementation work.
+
+## Slice 2 landing record (2026-07-10 — UNCOMMITTED, pending owner review)
+
+The slice-2 diff sits uncommitted in `lib/ControlFlow/Build/Stratum.cpp`
+(+884/−88, the only changed file; goldens untouched). Method: workflow with
+an opus implementer, an independent adversarial opus spec-fidelity reviewer
+(re-derived requirements from these docs, audited the diff, hand-traced
+double-derivation and a diamond re-enqueue through the actual emitted IR),
+and a sonnet full-suite regression gate. Converged on round 3:
+**review = approve, 0 blockers; suite = zero regressions vs the HEAD
+baseline; 2 cases newly green.**
+
+### What landed (anchors are post-diff Stratum.cpp)
+
+- `EmitClaimDrain` (~588): claim's `if-claimed` body appends the row to BOTH
+  the accumulated set (`kOverdeleteSet`/`kAdditionSet` = `D_s`/`A_s`) and the
+  per-round claimed frontier (`kClaimedDeleteFrontier`/`kClaimedAddFrontier`
+  = `Δ`).
+- `EmitRetireFrontier` (~668): first RETIRE call site; ranges over `Δ`.
+- `EmitRederive` (~685): loop over `D_s` → CHECKMEMBER
+  `kRecursivelySupported` → append to the add queue. First builder use of the
+  predicate (IR/printer/codegen landed at (a)).
+- `EmitJoinFire` (~789): the fixpoint fire. For a linear recursive JOIN,
+  deltas over the same-SCC side's `Δ`, scans each lower atom by pivot via
+  `BuildMaybeScanPartial` gated at `kInNew` (MD §5.1 fixpoint schema, lower
+  `j<i` → `InNew`, both signs), folds `∓recursive` into the join's table.
+  `is_del`-parameterized (serves OVERDELETE and INSERT).
+- `build_claim_round_loop` (~1517): one signed claim-round fixpoint realized
+  as an INDUCTION region whose tested `vectors` are exactly the per-round `Δ`
+  frontiers, so codegen's `for (changed; …)` IS the Δ-emptiness break (A3),
+  not queue-emptiness. Round body: clear Δ → drain+claim (→Δ+accumulated) →
+  fire over Δ (join fire + projection re-fire) → retire Δ.
+- SCC block (~1598): OVERDELETE loop → output region builds net-removal
+  frontiers + REDERIVE → INSERT loop (mirror) → output builds net-addition
+  frontiers.
+- Round-0 same-SCC internal projection seeds are SKIPPED (they fire only
+  inside the loop, over `Δ`); seeding them over the accumulated net frontier
+  double-counted every internal derivation per round (real double-decrement
+  bug found and fixed during bring-up).
+- A4 assert split by emission-site kind, per the owner decision above; the
+  stale "no REDERIVE / recursive counter identically zero" doc comment is
+  rescoped to single-pass tables.
+
+### Verification evidence
+
+- Build green, all 4 opt modes; no new warnings.
+- IR diff: every `+`/`!` line of the corrected CF-IR shape (above, lines
+  44–79) accounted for in the emitted tc IR.
+- §5.1.1 gate: `tc_mixed_batch` (which IS the §5.1.1 fixture — its .batches
+  is exactly `−edge(1,2), +edge(2,5)` on `edge={(1,2),(1,4),(4,5)}`) now
+  passes its committed golden BYTE-EXACT in all 4 modes; was GOLDEN-DIVERGE
+  at baseline. `t(1,5)` (untouched-support survivor) correctly present.
+- Double-derivation gate (the A2 discriminator): scratch fixture below runs
+  clean (`t={(1,2)}` final, oracle-agreed). Mutation test: flipping the
+  recursive seed's class to kNonRecursive and rebuilding reproduces
+  `Assertion failed: (0 <= nr), Table.h:397` — the predicted C_nr→−1 commit
+  SIGABRT — proving the gate has teeth; flip reverted (git-verified clean).
+- Full OptDiff: 21 red case-names (from 22 at baseline); FIXED =
+  {cf15_5, tc_mixed_batch}; NEW regressions = ∅ (comm-diff of red-set names);
+  every remaining red byte-identical in per-mode verdict to baseline.
+  490/490 oracle+monotone sub-checks OK. ctest identical to baseline
+  (MiniDisassembler's pre-existing failure only). data/ corpus: 0 hangs,
+  0 crashes, only the 4 known feature-gap diagnostics.
+
+### Deviations from the slice plan — OWNER TO RATIFY at commit time
+
+1. **The INSERT claim-round loop landed in slice 2** (plan said "do not
+   touch INSERT beyond the seed"). Forced by coupling: with A2 correctly
+   class-R, OVERDELETE emits `-recursive` folds whose derivations only
+   INSERT-side recursion ever creates; without the symmetric add loop those
+   counters go negative → commit SIGABRT (observed on cf15_5/cf16_3 in fix
+   round 2). The add loop is the structural mirror
+   (`build_claim_round_loop(is_del=false)`), no new primitives, and is what
+   makes tc_mixed_batch's golden actually pass. Alternative (strict split):
+   revert A2 to kNonRecursive everywhere = HEAD behavior, abandoning the
+   slice's point.
+2. **Linearity gate** (~1010, `nonlinear_groups`/`is_linear_recursive`):
+   SCCs with ≥2 same-SCC join sides (`p(X,Z):p(X,Y),p(Y,Z)`) stay in
+   `recursive_sccs` for scheduling (same-SCC read exemption + shared-stratum
+   pinning are termination requirements) but are FOLDED kNonRecursive and
+   lowered single-pass (pre-A2 fallback). Without it the scheduling lift
+   fixpoint diverged (compiler hang). Consequence: the resolved FLAG-F/H
+   matrix semantics are exercised by NO green fixture until slice 4; the
+   nonlinear cases match baseline exactly (GOLDEN-DIVERGE/MISSING, no crash).
+3. **A4's "reuse the (b) JoinEmission path" held only for the round-0 seed
+   join.** The fixpoint fire needed new machinery (`EmitJoinFire`): the seed
+   join's `all-in-i`/`all-in-new` section predicates are the wrong read
+   discipline for a fire that deltas over `Δ` while reading the lower atom
+   at `InNew`.
+
+### Reviewer concerns (approve verdict; carry into slice 3)
+
+- **Frontier ordering (slice 3's first task):** the del-side net-removal
+  frontier is built inside the OVERDELETE induction's output region, BEFORE
+  the INSERT loop runs, so `NetDeleted = kDel && !kAdd` is evaluated before
+  INSERT can set kAdd on a re-added row. Spec §5.0 puts BUILDFRONTIERS after
+  INSERT. A row overdeleted-then-re-added within one batch would leak into
+  `net_removals`. No observable failure exists today (linear tc never
+  overdeletes a re-added row — instrumented: tc_mixed_batch's D_s = {t(1,2)}
+  only; the cyclic case that would trip it is behind the linearity gate),
+  but it is known-wrong ordering. The add-side frontier is correctly placed
+  (after INSERT).
+- **INDUCTION-as-loop-vehicle idiom:** the claim-round loop is an INDUCTION
+  region with empty `views`/`view_to_add_vec`, carrying only the Δ vectors.
+  Verified the CF optimizer leaves it intact (null-init hoist + no-op output
+  clear are both no-ops here) and codegen emits the exact loop shape. Worth
+  a dedicated loop-until-Δ-empty region if the pattern proliferates.
+- **Cyclic self-supporting recursion still over-retains**
+  (`transitive_closure_diff2`, `cf16_3` — GOLDEN-DIVERGE, == baseline, no
+  crash). Per MD §8 a pure cycle must drain to C_r=0 when external support
+  is gone, so this is lowering infidelity (or the linearity gate's fallback),
+  not a model hole — but it is NOT solved by slice 2. Owner call whether it
+  gates checkpoint (c) or lands with slice 4's matrix.
+
+### Reshaped slice-3 scope (what actually remains)
+
+1. Move del-side BUILDFRONTIERS after the INSERT loop (ordering fix above).
+2. Confirm `deep_chain_retract` still emits a `ProgramInductionRegion`
+   (slice-2 evidence: Induction.cpp untouched, the re-entry loop survives),
+   then delete the add-only re-entry loop; acceptance gate:
+   `deep_chain_retract` at N=100000 in constant stack.
+3. A LINEAR recursive→downstream-differential fixture for the A4
+   `ready_after` seam (`recursive_to_downstream` covers the seam but is
+   nonlinear, hence red until slice 4).
+
+### Double-derivation repro (scratch; volatile — preserved here verbatim)
+
+The A2 discriminator fixture (`dbl.dr` / `dbl.batches` / `dbl.main.cpp`,
+tc_mixed_batch driver pattern). Worth promoting to a standing OptDiff case
+at slice-3/4 bring-up.
+
+`dbl.dr`:
+```
+#message edge_msg(u64 From, u64 To) @differential.
+#local edge(From, To).
+#local t(From, To).
+#query t_out(free u64 From, free u64 To).
+edge(From, To) : edge_msg(From, To).
+t(From, To) : edge(From, To).
+t(From, To) : t(From, X), edge(X, To).
+t_out(From, To) : t(From, To).
+```
+
+`dbl.batches` (seed makes `t(1,3)` double-derived — base `edge(1,3)` AND
+recursive `t(1,2),edge(2,3)`; the batch removes both supports; expected
+final `t={(1,2)}`):
+```
+batch
++ edge_msg 1 2
++ edge_msg 2 3
++ edge_msg 1 3
+end
+batch
+- edge_msg 1 3
+- edge_msg 2 3
+end
+```
+
+Driver: tc_mixed_batch's `main.cpp` pattern with `t_out_ff()` dumped sorted
+after seed and after the batch (`seeded:` / `after:` labels).
+
+### Environment note
+
+`timeout`/`gtimeout` were missing from PATH (macOS; Homebrew at the
+non-standard prefix `/Users/pag/Code/.brew` was unlinked). coreutils is now
+installed and symlinked (`/Users/pag/Code/.brew/bin/{timeout,gtimeout}`);
+diffrun.sh/runall.sh fail with DR-FAIL(127) without it. Fresh shells may
+need `export PATH="/Users/pag/Code/.brew/bin:$PATH"`.
