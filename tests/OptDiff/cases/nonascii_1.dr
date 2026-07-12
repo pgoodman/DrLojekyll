@@ -1,0 +1,11 @@
+; A non-ASCII byte (a UTF-8 section sign) inside this comment: §
+; Expected: a rendered "Invalid character in stream" diagnostic, exit 1, in
+; all 4 modes. Before the F21 fix the display layer swapped out its error
+; stream on exhaustion, so the lexer saw a clean end-of-file and everything
+; after the bad byte silently vanished (exit 0, empty program) — the
+; checkpoint-(d) authoring gotcha where a comment's section sign collapsed a
+; whole fixture to empty IR with no diagnostic.
+#message m(i32 X).
+#local p(i32 X).
+p(X) : m(X).
+#query qp(free i32 X) : p(X).

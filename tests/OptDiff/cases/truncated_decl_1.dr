@@ -1,0 +1,8 @@
+; A file that ends mid-declaration: name parsed, no parameter list, no
+; period. Expected: a rendered "Incomplete message declaration" diagnostic,
+; exit 1, in all 4 modes. Before the F21 fix the incomplete-declaration
+; error paths dereferenced the never-created declaration object (SIGSEGV,
+; exit 139) — reachable from any truncated file, and from any non-ASCII
+; byte cutting the token stream short mid-declaration (#local and #functor
+; had the same defect; #query already degraded cleanly).
+#message m

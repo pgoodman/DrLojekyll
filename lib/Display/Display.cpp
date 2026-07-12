@@ -137,10 +137,19 @@ bool DisplayImpl::TryReadChar(uint64_t index, char *ch_out) {
   } while (stream->ReadData(&data_read));
 
   // Swap out the old stream, ideally closing file descriptors that may be
-  // left open.
-  auto new_stream = new display::StringViewStream(data);
-  new_stream->MarkAsDone();
-  stream.reset(new_stream);
+  // left open — but ONLY on a clean end-of-data. An error stream (invalid
+  // character above, or an underlying read failure) must survive this
+  // exhaustion-reporting call: the lexer discovers the error by calling
+  // TryGetErrorMessage() only AFTER TryReadChar() fails, and replacing the
+  // stream here destroyed the message before anyone could read it — the
+  // lexer then reported a clean end-of-file and everything after the bad
+  // byte silently vanished (a '\xc2\xa7' in a comment used to swallow the
+  // whole rest of the file with exit 0).
+  if (!stream->TryGetErrorMessage(nullptr)) {
+    auto new_stream = new display::StringViewStream(data);
+    new_stream->MarkAsDone();
+    stream.reset(new_stream);
+  }
 
   return false;
 }

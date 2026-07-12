@@ -851,11 +851,18 @@ void ParserImpl::ParseLocalExport(
   }
 
   if (state != 9) {
-    context->error_log.Append(scope_range, next_pos)
-        << "The " << local->KindName()
-        << " declaration for '" << local->name << "/"
-        << local->parameters.Size()
-        << "' must end with a period";
+    // `local` is null when the token stream ended before the parameter
+    // list was parsed (a truncated file, or a display error such as a
+    // non-ASCII byte cutting the stream short).
+    auto err = context->error_log.Append(scope_range, next_pos);
+    if (local) {
+      err << "The " << local->KindName() << " declaration for '"
+          << local->name << "/" << local->parameters.Size()
+          << "' must end with a period";
+    } else {
+      err << "Incomplete declaration; the declaration must end with a "
+          << "period";
+    }
     RemoveDecl(local);
 
   // Add the local/export to the module.

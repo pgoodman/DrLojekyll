@@ -476,9 +476,14 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
     }
   }
 
-  functor->parsed_tokens.swap(parsed_tokens);
+  // `functor` is null when the token stream ended before the parameter
+  // list was parsed (a truncated file, or a display error such as a
+  // non-ASCII byte cutting the stream short).
+  if (functor) {
+    functor->parsed_tokens.swap(parsed_tokens);
+  }
 
-  if (state != 10) {
+  if (state != 10 || !functor) {
     context->error_log.Append(scope_range, next_pos)
         << "Incomplete functor declaration; the declaration must end "
         << "with a period";

@@ -244,9 +244,15 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
   }
 
   if (state != 6) {
-    context->error_log.Append(scope_range, next_pos)
-        << "Incomplete message declaration; the declaration '" << name
-        << "/" << message->parameters.Size() << "' must end with a period";
+    // `message` is null when the token stream ended before the parameter
+    // list was parsed (a truncated file, or a display error such as a
+    // non-ASCII byte cutting the stream short).
+    auto err = context->error_log.Append(scope_range, next_pos);
+    err << "Incomplete message declaration; the declaration '" << name;
+    if (message) {
+      err << "/" << message->parameters.Size();
+    }
+    err << "' must end with a period";
 
     RemoveDecl(message);
 
