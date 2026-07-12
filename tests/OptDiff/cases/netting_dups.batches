@@ -1,0 +1,60 @@
+# Ingest-netting multiplicity contract (OQ3, decided 2026-07-11): per
+# batch, dedup each side, annihilate the adds/removes intersection. Mirrors
+# netting_dups.main.cpp batch for batch.
+batch
++ m 1
+end
+# Duplicate retractions must not outvote the add: no-op, out stays {1}.
+batch
++ m 2
+- m 2
+- m 2
+end
+# Duplicate adds must not outvote the retraction: no-op, out stays {1}.
+batch
++ m 3
++ m 3
+- m 3
+end
+# Same shapes against the PRESENT row 1: presence unchanged.
+batch
++ m 1
+- m 1
+- m 1
+end
+batch
++ m 1
++ m 1
+- m 1
+end
+# Control: genuine retraction.
+batch
+- m 1
+end
+# Plain annihilating pair on an absent row.
+batch
++ m 4
+- m 4
+end
+# Control: genuine add of the same row.
+batch
++ m 4
+end
+# Owner's framing, second clause: the annihilating m-pair has no effect
+# through the explicit channel; s(5) keeps exactly what `other` proves.
+batch
++ other 5
+end
+batch
++ m 5
+- m 5
+end
+# Annihilated pairs leave no explicit residue: retracting the alternate
+# support takes 5 down.
+batch
++ m 5
+- m 5
+end
+batch
+- other 5
+end

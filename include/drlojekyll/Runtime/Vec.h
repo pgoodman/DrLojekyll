@@ -154,34 +154,43 @@ class Vec {
 template <typename T>
 void NetBatch(Vec<T> &adds, Vec<T> &removes) {
   Vec<T> distinct(adds.allocator);
-  Vec<int64_t> nets(adds.allocator);
+  Vec<int64_t> flags(adds.allocator);  // Bit 0: in `adds`; bit 1: in `removes`.
 
-  const auto fold = [&](const T &row, int64_t delta) {
+  const auto fold = [&](const T &row, int64_t flag) {
     for (size_t i = 0u; i < distinct.Size(); ++i) {
       if (distinct[i] == row) {
-        nets.Set(i, nets[i] + delta);
+        flags.Set(i, flags[i] | flag);
         return;
       }
     }
     distinct.Add(row);
-    nets.Add(delta);
+    flags.Add(flag);
   };
 
   for (const T &row : adds) {
-    fold(row, +1);
+    fold(row, 1);
   }
   for (const T &row : removes) {
-    fold(row, -1);
+    fold(row, 2);
   }
 
+  // Per-batch explicit-op contract (MD §5.0/§5.5, Open Question 3 —
+  // decided): SET semantics with annihilation. Each vector is deduplicated
+  // (assert/retract are idempotent, so multiplicity within a batch is
+  // meaningless), and a row in BOTH vectors — the adds∩removes
+  // intersection — is dropped from both: the unordered pair is DEFINED as
+  // annihilating, leaving the row's presence unchanged. This forecloses the
+  // arithmetic-netting hazard where duplicated retractions outvote an add
+  // within one batch ({+x, −x, −x} is a no-op, not a removal).
   adds.Clear();
   removes.Clear();
   for (size_t i = 0u; i < distinct.Size(); ++i) {
-    if (nets[i] > 0) {
+    if (flags[i] == 1) {
       adds.Add(distinct[i]);
-    } else if (nets[i] < 0) {
+    } else if (flags[i] == 2) {
       removes.Add(distinct[i]);
     }
+    // flags[i] == 3: annihilated (present in both vectors).
   }
 }
 

@@ -370,3 +370,53 @@ from oracle truth only after this was settled.
   empty IR, no diagnostic). Consider a diagnostic at (e) or later.
 - (e) scope unchanged: commit sweep hardening / publish / query filter /
   final deletion sweep per plan.md; do not scope-creep backward into (d).
+### Addendum (2026-07-11): OQ3 decided — ingest netting is now SET
+### semantics with annihilation (owner decision, in-session)
+
+Owner reviewed the arithmetic netting contract post-landing and rejected
+its multiplicity-sensitivity (duplicated retractions within one batch could
+outvote an add: {+x, −x, −x} netted to a removal). DECIDED contract: per
+batch, each explicit vector is deduplicated and the adds∩removes
+intersection is dropped from BOTH sides — the unordered pair is DEFINED as
+annihilating. Owner's normative framing (signed off 2026-07-11, explicitly
+including the present-row boundary case): the intersection has NO effect on
+IDB state through the explicit channel — the row keeps exactly the presence
+the rest of the program can prove for it (surviving explicit support from
+earlier epochs, or alternate rule derivations; the explicit bit is one
+derivation among many, and Present = C_nr + C_r > 0 counts them
+independently). Assert/retract are idempotent, matching the cross-batch
+kExplicit bit discipline; within a batch no relative order exists between
+the two vectors, so annihilation is the unique order-free resolution
+(recorded rationale + rejected alternatives — arithmetic sign-of-net,
+add-wins/remove-wins bias, ordered-op-log LWW — in MD §11 OQ3).
+
+Changed: NetBatch (include/drlojekyll/Runtime/Vec.h) from sign-of-count to
+two presence bits; the oracle's two netting sites (bin/Oracle/Main.cpp
+ApplyBatch ingest + RunMonotoneProjection ground truth) mirrored; MD
+§5.0/§5.5/§11-OQ3 text; the Vec.NetBatchNetsAddsAgainstRemoves runtime
+unit test re-pinned to the new contract. NO golden churn: for
+non-duplicated ops the two contracts coincide, so negation_flap's D4
+re-bless stands unchanged (verified: 15-name netting-sensitive targeted run
+green pre-fixture).
+
+New standing case: netting_dups (.dr/.main.cpp/.batches + all three
+goldens, 4-mode byte-identical, oracle OK 350 assertions + INVARIANT,
+monotone-projection agreed) — pins {+x,−x,−x} and {+x,+x,−x} as no-ops
+against both absent and present rows, with single-op controls.
+
+Verification: full suite SUITE: PASS (149 cases); ctest 3/3.
+
+Also recorded for ratification context (root cause of the multiplicity
+deviation, found in-session 2026-07-10): merge_5's forward fold count of 2
+is an ARTIFACT of duplicate entries in the pred model's member-view list —
+TABLE::GetOrCreate (lib/ControlFlow/Data.cpp:231-283) pushes on every call
+and relies on sort + adjacent std::unique to dedup, but the depth-keyed
+comparator interleaves distinct equal-depth views (the two b-pred TUPLEs,
+kept deliberately distinct by the group_ids CSE guard, View.cpp:1455)
+between the identity duplicates, so unique removes nothing. Proposed
+follow-up (owner-approved direction, not yet landed): IDENTITY-based dedup
+in GetOrCreate — never equality-based, which would collapse the
+group_ids-protected self-join/cross-product sides (View.cpp:1461
+node_pairs example) — after which crossover multiplicity is structurally 1
+and the multiplicity field demotes to a debug assert. Do as its own commit
+with the full suite as the net.

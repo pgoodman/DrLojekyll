@@ -117,7 +117,14 @@ TEST(Vec, NetBatchNetsAddsAgainstRemoves) {
   hyde::rt::Vec<PairRow> adds(hyde::rt::MallocAllocator());
   hyde::rt::Vec<PairRow> removes(hyde::rt::MallocAllocator());
 
-  // Nets: {1,1} = +2, {2,2} = 0, {3,3} = -1, {4,4} = +1, {5,5} = -2.
+  // Set semantics with annihilation (MD sec 5.0/5.5, OQ3): each side is
+  // deduplicated and the adds-intersect-removes set is dropped from both,
+  // so duplicate ops are meaningless and a row on both sides is a no-op.
+  //   {1,1}: adds x2              -> add (dedup'd)
+  //   {2,2}: adds x1, removes x1  -> annihilates
+  //   {3,3}: adds x1, removes x2  -> annihilates (removes can't outvote)
+  //   {4,4}: adds x1              -> add
+  //   {5,5}: removes x2           -> remove (dedup'd)
   adds.Add({1u, 1u});
   adds.Add({2u, 2u});
   adds.Add({1u, 1u});
@@ -131,15 +138,14 @@ TEST(Vec, NetBatchNetsAddsAgainstRemoves) {
 
   hyde::rt::NetBatch(adds, removes);
 
-  // One copy per positive-net row, in first-appearance order.
+  // One copy per add-only row, in first-appearance order.
   ASSERT_EQ(adds.Size(), 2u);
   ASSERT_TRUE(adds[0] == (PairRow{1u, 1u}));
   ASSERT_TRUE(adds[1] == (PairRow{4u, 4u}));
 
-  // One copy per negative-net row; zero-net rows vanish from both.
-  ASSERT_EQ(removes.Size(), 2u);
-  ASSERT_TRUE(removes[0] == (PairRow{3u, 3u}));
-  ASSERT_TRUE(removes[1] == (PairRow{5u, 5u}));
+  // One copy per remove-only row; both-sides rows vanish from both.
+  ASSERT_EQ(removes.Size(), 1u);
+  ASSERT_TRUE(removes[0] == (PairRow{5u, 5u}));
 }
 
 TEST(Vec, NetBatchOnEmptyVectorsIsANoOp) {

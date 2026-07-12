@@ -1,0 +1,25 @@
+; Ingest-netting contract (StackSafeNegation.md sec 5.0/5.5, Open Question
+; 3 -- decided 2026-07-11): per batch, each explicit vector is deduplicated
+; and the adds-intersect-removes set annihilates (dropped from BOTH sides,
+; presence unchanged). This case pins multiplicity-insensitivity: duplicate
+; ops within one batch are meaningless, so excess retractions can never
+; outvote an add ({+x,-x,-x} is a no-op, not a removal) and excess adds can
+; never outvote a retraction ({+y,+y,-y} is a no-op, not an add). Both
+; polarities are exercised against absent AND present rows, with single-op
+; control batches proving genuine adds/removes still land.
+; The owner's normative framing (OQ3 sign-off): the intersection has NO
+; effect on IDB state through the explicit channel -- the row keeps exactly
+; the presence the rest of the program can prove for it. The second message
+; `other` gives s(X) an alternate derivation, so an annihilating m-pair
+; must neither kill a row `other` holds up nor resurrect one `other` drops
+; in the same batch.
+#message m(i32 X) @differential.
+#message other(i32 X) @differential.
+
+#local s(i32 X).
+
+#query out(free i32 X).
+
+s(X) : m(X).
+s(X) : other(X).
+out(X) : s(X).

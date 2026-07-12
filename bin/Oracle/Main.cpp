@@ -1575,10 +1575,13 @@ class Oracle {
       FireInitRules();
     }
 
-    // Ingest netting: each row's explicit adds net against its explicit
-    // removes within the batch; the sign of the arithmetic net decides
-    // (a +1/−1 pair cancels — deterministic; diverges from the current
-    // compiler's dequeue-order-dependent outcome).
+    // Ingest netting (§5.0/§5.5, Open Question 3 — decided): SET semantics
+    // with annihilation, mirroring the runtime's NetBatch. Each side is
+    // deduplicated (assert/retract are idempotent; multiplicity within a
+    // batch is meaningless) and a row appearing on BOTH sides annihilates —
+    // its presence is unchanged. Deterministic; diverges from the old
+    // compiler's dequeue-order-dependent outcome AND from arithmetic
+    // netting ({+x, −x, −x} is a no-op here, not a removal).
     struct NetKey {
       unsigned msg;
       Row row;
@@ -1591,25 +1594,25 @@ class Oracle {
         return RowHash{}(k.row) * 31 + k.msg;
       }
     };
-    std::unordered_map<NetKey, int64_t, NetKeyHash> net;
+    std::unordered_map<NetKey, unsigned, NetKeyHash> net;  // 1: add, 2: remove.
     std::vector<NetKey> order;
     for (const auto &op : ops) {
       NetKey k{op.msg, op.row};
       auto it = net.find(k);
       if (it == net.end()) {
-        net.emplace(k, op.add ? 1 : -1);
+        net.emplace(k, op.add ? 1u : 2u);
         order.push_back(k);
       } else {
-        it->second += op.add ? 1 : -1;
+        it->second |= op.add ? 1u : 2u;
       }
     }
     for (const auto &k : order) {
-      const int64_t n = net[k];
-      if (n == 0) {
-        continue;  // Same-batch add+remove nets to zero at ingest.
+      const unsigned n = net[k];
+      if (n == 3u) {
+        continue;  // Same-batch add+remove annihilates at ingest.
       }
       for (auto *vm : msgs[k.msg].receives) {
-        if (n > 0) {
+        if (n == 1u) {
           AddExplicit(vm, k.row);
         } else {
           SubExplicit(vm, k.row);
@@ -2029,12 +2032,13 @@ int RunStress(Oracle &oracle, uint64_t seed, uint64_t rounds) {
 //
 // A fact survives iff its net add/remove state across the sequence is
 // present. Netting is per batch (matching §5.0 ingest netting) over a
-// set-semantics presence bit: within a batch, adds and removes of one row
-// net arithmetically; a positive net makes the fact present, a negative
-// net absent, a zero net leaves it unchanged. So an add later cancelled by
-// a remove, or an add+remove in one batch, does NOT survive. This is
-// exactly the state the incremental path's `kExplicit` bit reaches, which
-// is why the projection equals the differential final materialization.
+// set-semantics presence bit: within a batch each side is deduplicated and
+// a row appearing on BOTH sides annihilates (presence unchanged); a row on
+// the add side only becomes present, on the remove side only absent. So an
+// add paired with a remove in one batch does NOT change the fact's state,
+// regardless of duplicate-op multiplicity. This is exactly the state the
+// incremental path's `kExplicit` bit reaches, which is why the projection
+// equals the differential final materialization.
 
 int RunMonotoneProjection(
     Oracle &oracle, const std::vector<std::vector<Oracle::BatchOp>> &batches) {
@@ -2054,28 +2058,28 @@ int RunMonotoneProjection(
   std::unordered_map<NetKey, bool, NetKeyHash> present;
   std::vector<NetKey> present_order;  // deterministic surviving-set walk
   for (const auto &ops : batches) {
-    std::unordered_map<NetKey, int64_t, NetKeyHash> net;
+    std::unordered_map<NetKey, unsigned, NetKeyHash> net;  // 1: add, 2: remove.
     std::vector<NetKey> order;
     for (const auto &op : ops) {
       NetKey k{op.msg, op.row};
       auto it = net.find(k);
       if (it == net.end()) {
-        net.emplace(k, op.add ? 1 : -1);
+        net.emplace(k, op.add ? 1u : 2u);
         order.push_back(k);
       } else {
-        it->second += op.add ? 1 : -1;
+        it->second |= op.add ? 1u : 2u;
       }
     }
     for (const auto &k : order) {
-      const int64_t n = net[k];
-      if (n == 0) {
-        continue;  // Net-zero within the batch: presence unchanged.
+      const unsigned n = net[k];
+      if (n == 3u) {
+        continue;  // Annihilated within the batch: presence unchanged.
       }
-      auto [it, inserted] = present.emplace(k, n > 0);
+      auto [it, inserted] = present.emplace(k, n == 1u);
       if (inserted) {
         present_order.push_back(k);
       } else {
-        it->second = n > 0;
+        it->second = (n == 1u);
       }
     }
   }
