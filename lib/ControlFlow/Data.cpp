@@ -228,8 +228,25 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
   }
 #endif
 
+  // Register `view` as a member of the table AT MOST ONCE, by IDENTITY
+  // (QueryView::operator== is pointer equality, Util/Node.h) — never by
+  // structural equality: CSE deliberately leaves distinct-but-structurally-
+  // equal views sharing one data model (the group_ids guard,
+  // lib/DataFlow/View.cpp:1455 — e.g. the two SELECT sides of a self
+  // cross-product like `node_pairs(A,B) : node(A), node(B).`, or merge_5's
+  // two b-pred TUPLEs), and every distinct member must stay: each roots its
+  // own branch chain (Stratum.cpp DiscoverBranches), and a structural dedup
+  // would collapse a self-join to a pass-through TUPLE via the trivial-join
+  // fold (lib/DataFlow/Join.cpp:449). Guarding the push matters because the
+  // depth-keyed sort below interleaves distinct equal-depth views between
+  // identity duplicates, so the adjacent std::unique that used to follow it
+  // removed nothing — duplicated member lists doubled the forward branch
+  // chains rooted at this table (FINDINGS F19; merge_5).
   const auto old_size = model->table->views.size();
-  model->table->views.push_back(view);
+  if (std::find(model->table->views.begin(), model->table->views.end(),
+                view) == model->table->views.end()) {
+    model->table->views.push_back(view);
+  }
 
   view.SetTableId(model->table->id);
 
@@ -279,8 +296,10 @@ DataTableImpl *DataTableImpl::GetOrCreate(ProgramImpl *impl, Context &,
               }
             });
 
-  auto it = std::unique(model->table->views.begin(), model->table->views.end());
-  model->table->views.erase(it, model->table->views.end());
+  // (No dedup here: the identity guard above makes duplicates impossible.
+  // The adjacent std::unique this replaced could not have worked anyway —
+  // it only removes ADJACENT duplicates, and the sort's tie order is not
+  // identity-keyed.)
 
   // Add additional names to the columns; this is helpful in debugging
   // output.

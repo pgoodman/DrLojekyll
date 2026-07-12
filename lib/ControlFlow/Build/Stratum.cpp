@@ -76,7 +76,6 @@ struct CrossoverEmission {
   TABLE *pred_table;      // The data predecessor's table (scanned).
   QueryView pred_view;    // `QueryView(negate).Predecessors()[0]`.
   bool negated_differential;  // Whether the `+` arm exists.
-  unsigned multiplicity;  // Forward fold count to match (>= 1).
 
   // Starts at the negate view's stratum and is lifted by the scheduling
   // fixpoint above both read tables' readiness.
@@ -85,14 +84,13 @@ struct CrossoverEmission {
   CrossoverEmission(QueryNegate negate_, TABLE *negate_table_,
                     TABLE *negated_table_, TABLE *pred_table_,
                     QueryView pred_view_, bool negated_differential_,
-                    unsigned multiplicity_, unsigned stratum_)
+                    unsigned stratum_)
       : negate(negate_),
         negate_table(negate_table_),
         negated_table(negated_table_),
         pred_table(pred_table_),
         pred_view(pred_view_),
         negated_differential(negated_differential_),
-        multiplicity(multiplicity_),
         stratum(stratum_) {}
 };
 
@@ -1366,20 +1364,16 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   // crossover (R1). Each crossover's emission stratum is registered with the
   // scheduling fixpoint below.
   //
-  // Discovered per non-@never `QueryNegate` (from `query.Negations()`) — but
-  // with the crossover's fold MULTIPLICITY matched to the forward pass's, so a
-  // row derived several ways retracts exactly. `Predecessors()[0]` is the data
-  // pred (audit-confirmed); `FillDataModel` materializes the pred and negated
-  // tables. A @never negate never retracts, so it gets no crossover (R1).
-  //
-  // Forward multiplicity: a negate over a MONOTONE negated view is reached by
-  // the EAGER walk (`BuildEagerNegateRegion`, once per eager predecessor
-  // arrival), so its forward fold count is the negate's predecessor count. A
-  // negate over a DIFFERENTIAL negated view is cut from the eager walk
-  // (Build.cpp) and reached by STRATUM branch chains (`EmitSeedLoop` folds
-  // once per chain into the negate's table); a union-shared negate (merge_5)
-  // is reached by several chains, so its forward fold count is the number of
-  // such branches. Either way the crossover emits that many arm-pairs.
+  // Exactly ONE arm-pair per negate, because the forward pass folds into the
+  // negate's table exactly once per pred-row event: a negate has exactly one
+  // data predecessor (QueryNegateImpl links a single incoming view,
+  // lib/DataFlow/Link.cpp), a differential pred is always table-backed
+  // (FillDataModel persists every negate feeder), so a stratum branch chain
+  // into the negate can only root at that one materialized pred view — and
+  // identity-deduped member lists (Data.cpp GetOrCreate) guarantee each root
+  // is discovered once. Asserted below. (Before that dedup, duplicated
+  // member lists doubled the chains and the crossover carried a compensating
+  // fold multiplicity; FINDINGS F19 / merge_5.)
   std::vector<CrossoverEmission> crossovers;
   for (QueryNegate negate : query.Negations()) {
     if (negate.HasNeverHint()) {
@@ -1399,30 +1393,33 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     assert(negated_table != nullptr);
     assert(pred_table != nullptr);
 
-    // Count the stratum branch chains that fold into this negate's table
-    // (target == negate_table, terminal == this negate). Zero for an
-    // eager-reached (monotone-negated) negate — then the forward count is the
-    // number of eager predecessor arrivals (the negate's predecessors other
-    // than the negated view).
-    unsigned multiplicity = 0u;
+#ifndef NDEBUG
+    // The forward fold count into the negate's table: the stratum branch
+    // chains that terminate at this negate (differential-negated), or — when
+    // there are none — the eager walk's arrivals through the negate's data
+    // predecessors (monotone-negated). Structurally 1 either way (see the
+    // discovery comment above); a 2 here means a duplicated member list
+    // slipped past GetOrCreate's identity guard.
+    unsigned forward_folds = 0u;
     for (const BranchChain &branch : branches) {
       if (!branch.ends_at_join && branch.target == negate_table &&
           !branch.path.empty() && branch.path.back() == negate_view) {
-        ++multiplicity;
+        ++forward_folds;
       }
     }
-    if (multiplicity == 0u) {
+    if (forward_folds == 0u) {
       for (QueryView p : negate_view.Predecessors()) {
         if (p != negated_view) {
-          ++multiplicity;
+          ++forward_folds;
         }
       }
     }
-    assert(multiplicity != 0u);
+    assert(forward_folds == 1u);
+#endif
 
     crossovers.emplace_back(negate, negate_table, negated_table, pred_table,
                             pred_view, TableIsDifferential(negated_table),
-                            multiplicity, negate_view.Stratum().value_or(0u));
+                            negate_view.Stratum().value_or(0u));
   }
 
   // The tables whose claim drains and frontier filters the phases own. A
@@ -1841,15 +1838,15 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       assert(drain_stratum.count(x.negate_table) &&
              drain_stratum.find(x.negate_table)->second >= stratum);
 
-      // Emit `multiplicity` arm-pairs, matching the forward pass's fold count
-      // into the negate table so a multiply-derived row retracts exactly.
-      for (unsigned m = 0u; m < x.multiplicity; ++m) {
-        EmitCrossover(impl, context, recursive_sccs, x, false /* is_add */,
+      // ONE arm-pair, matching the forward pass's single fold into the
+      // negate table (single data pred + identity-deduped member lists —
+      // asserted at discovery), so a retraction reaches its zero crossing in
+      // exactly one fold.
+      EmitCrossover(impl, context, recursive_sccs, x, false /* is_add */,
+                    stratum_seq);
+      if (x.negated_differential) {
+        EmitCrossover(impl, context, recursive_sccs, x, true /* is_add */,
                       stratum_seq);
-        if (x.negated_differential) {
-          EmitCrossover(impl, context, recursive_sccs, x, true /* is_add */,
-                        stratum_seq);
-        }
       }
     }
 
