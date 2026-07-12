@@ -1,0 +1,24 @@
+# Negate multiplicity (analysis sec 4.5 R9, Q5): one negated key A gates
+# several pred rows (A,B*). Gaining seen(A) must retract EVERY (A,B) row;
+# losing it must re-derive them all.
+#
+# Batch 1: feed (1,10),(1,11),(1,12) [key 1, three rows] and (2,20) [key 2].
+#          No block. out = {(1,10),(1,11),(1,12),(2,20)}.
+# Batch 2: block 1. All three key-1 rows die; key 2 survives.
+#          out = {(2,20)}.  (three `-` crossover folds)
+# Batch 3: unblock 1. All three key-1 rows re-derived.
+#          out = {(1,10),(1,11),(1,12),(2,20)}.  (three `+` crossover folds)
+batch
++ feed 1 10
++ feed 1 11
++ feed 1 12
++ feed 2 20
+end
+
+batch
++ block 1
+end
+
+batch
+- block 1
+end

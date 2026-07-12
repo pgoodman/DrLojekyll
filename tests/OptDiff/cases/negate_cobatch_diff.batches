@@ -1,0 +1,33 @@
+# Differential co-batch negate (analysis sec 4.5 R9): one @differential
+# message feeds both pred (Tag 0) and negated (Tag 1); one epoch carries
+# both changes. Four keys, one per F-A mixed case.
+#
+# Batch 1 (setup): establish the pre-states each case flips FROM.
+#   key 20: blk(20) present (case 2 will remove it while adding pr(20)).
+#   key 30: pr(30,300) present, no blk (case 3 will remove pr, add blk(30));
+#           out(30,300) is live here.
+#   key 40: pr(40,400) present AND blk(40) present (case 4 removes both);
+#           out(40,400) absent here (blocked).
+# After batch 1: out = {(30,300)}.
+batch
++ sig 1 20 0
++ sig 0 30 300
++ sig 0 40 400
++ sig 1 40 0
+end
+# Batch 2 (the co-batch): all four F-A cases fire in ONE epoch.
+#   case 1 (key 10): +pr(10,100) AND +blk(10)   -> out(10) net 0 (absent).
+#   case 2 (key 20): +pr(20,200) AND -blk(20)   -> out(20,200) born (+1).
+#   case 3 (key 30): -pr(30,300) AND +blk(30)   -> out(30,300) dies (-1).
+#   case 4 (key 40): -pr(40,400) AND -blk(40)   -> out(40) net 0 (absent).
+# After batch 2: out = {(20,200)}.
+batch
++ sig 0 10 100
++ sig 1 10 0
++ sig 0 20 200
+- sig 1 20 0
+- sig 0 30 300
++ sig 1 30 0
+- sig 0 40 400
+- sig 1 40 0
+end

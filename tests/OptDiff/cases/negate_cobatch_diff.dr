@@ -1,0 +1,28 @@
+; Differential co-batch negate fixture (checkpoint (d), analysis sec 4.5 R9).
+;
+; ONE @differential message `sig(Tag, A, B)` feeds BOTH the pred relation
+; (Tag 0 -> pr) AND the negated relation (Tag 1 -> blk), so a single epoch
+; can carry changes to BOTH sides at once. This is the runtime-expressible
+; co-batch (unlike the monotone two-message shape, where each message is its
+; own epoch): both crossover arms live because blk is @differential, and one
+; epoch can present r-add/r-remove x k-gain/k-loss in every combination.
+;
+; The four F-A mixed same-batch cases (analysis sec 2), r = pred row (pr),
+; k = negated key (blk), required net counts:
+;   (1) r added,   k gained: 0   (phantom pair: forward blocked, X- fires)
+;   (2) r added,   k lost:   +1  (forward fires, X blocked)
+;   (3) r removed, k gained: -1  (forward retract, X blocked)
+;   (4) r removed, k lost:   0   (churn pair)
+;
+; out(A,B) is the observable: a pr(A,B) row published iff blk(A) absent.
+#message sig(u64 Tag, u64 A, u64 B) @differential.
+
+#local pr(u64 A, u64 B).
+#local blk(u64 A).
+
+#query out(free u64 A, free u64 B).
+
+pr(A, B) : sig(0, A, B).
+blk(A) : sig(1, A, _).
+
+out(A, B) : pr(A, B), !blk(A).

@@ -1,0 +1,26 @@
+; Monotone co-batch negate fixture (checkpoint (d), analysis sec 4.5 R9,
+; F-A case 1). negate_1 shape: a MONOTONE negated view (seen has no @never,
+; feed/unsee non-differential), so only the `-` crossover arm exists.
+;
+; The load-bearing batch co-changes BOTH the pred row (feed(1,10) -> copy)
+; AND the negated key (unsee(1) -> seen) in a SINGLE epoch. Under F-A
+; convention A the forward firing is gated ABSENT-in-InI (seen(1) absent at
+; batch start -> the forward +1 fires into out) while the `-` crossover
+; scans the pred at InNew (copy(1,10) present by then -> a -1 fold), so the
+; instance nets to ZERO and both stale crossings are claim-gate-dropped:
+; out(1,10) must NEVER appear. A later batch that adds feed(2,20) without a
+; matching unsee(2) confirms the ordinary (non-co-batch) forward path still
+; publishes out(2,20). Latency probe: a subsequent unsee(2) (seen GAINS a
+; key that already has a live pred row) must retract out(2,20) via the `-`
+; crossover -- this is the standalone crossover-delete site, decoupled from
+; the co-batch netting.
+#message feed(i32 A, i32 B).
+#message unsee(i32 A).
+
+#local copy(i32 A, i32 B).
+#local seen(i32 A).
+
+#query out(free i32 A, free i32 B) : copy(A, B), !seen(A).
+
+copy(A, B) : feed(A, B).
+seen(A) : unsee(A).

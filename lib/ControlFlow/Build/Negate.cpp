@@ -46,9 +46,15 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
     // fold's zero crossing — the eager-insertion seeder (Build.cpp) is
     // skipped for this table because `continue_negation` already folded it,
     // so its recursive InTryInsert is a no-op (parent == parent_).
+    //
+    // A recursive (InductionGroupId) negate does NOT reach here: it can
+    // produce deletions ⇒ its eager successor edge is cut (Build.cpp), so the
+    // eager walk stops before this negate and its differential phases (D/R/I)
+    // own it. The old InductionGroupId branch (an eager-induction defer via
+    // GetOrInitInduction) was therefore dead — verified 0/178 corpus files
+    // reached it, IR byte-identical without it — and is removed (D5', R8-iv).
     if (table != nullptr && succ_parent != let &&
-        TableIsDifferential(table) &&
-        !negate_view.InductionGroupId().has_value()) {
+        TableIsDifferential(table)) {
       PARALLEL *const par = impl->parallel_regions.Create(succ_parent);
       succ_parent->body.Emplace(succ_parent, par);
       par->AddRegion(AppendViewTupleToVector(
@@ -59,18 +65,6 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
       succ_parent = cont_let;
     }
 
-    // If this is an inductive negation, then we might defer processing its
-    // outputs until we get into a successor.
-    if (negate_view.InductionGroupId().has_value()) {
-      INDUCTION *const induction =
-          GetOrInitInduction(impl, negate_view, context, succ_parent);
-      if (NeedsInductionCycleVector(negate_view)) {
-        AppendToInductionInputVectors(impl, negate_view, negate_view, context,
-                                      succ_parent, induction);
-        return;
-      }
-    }
-
     BuildEagerInsertionRegions(impl, negate_view, context, succ_parent,
                                negate_view.Successors(), last_table);
   };
@@ -79,6 +73,16 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
   // negated view's table (unit condition relations included — the token row
   // `(true)` is a row like any other). The tuple flows through the negation
   // only when the negated key is absent.
+  //
+  // The read is POSITION-KEYED, not count-based (D1'', R1): a `!` negate reads
+  // the negated table batch-frozen (`kInI`, the §5.4 seed schema — the eager
+  // gate runs mid-ingest where the count-based `kPresent`/`kInNew` depends on
+  // parallel arm order, but `kInI` is the sealed watermark, order-independent;
+  // D2' seals the negated table per batch so this read is well-defined). A
+  // @never negate keeps `kPresent`: it never retracts, gets no crossover, and
+  // its negated table is not sealed — so its gate stays count-based. Because
+  // the two predicates now differ, a `!` and a @never gate over the SAME
+  // negated table are NOT CSE'd (R8-i).
   DataModel *const negated_model =
       impl->view_to_model[negated_view]->FindAs<DataModel>();
   TABLE *const negated_table = negated_model->table;
@@ -86,7 +90,8 @@ void BuildEagerNegateRegion(ProgramImpl *impl, QueryView pred_view,
 
   CHECKMEMBER *const gate = BuildCheckMember(
       impl, parent, negated_table, negated_view_cols,
-      MembershipPredicate::kPresent,
+      negate.HasNeverHint() ? MembershipPredicate::kPresent
+                            : MembershipPredicate::kInI,
       [](ProgramImpl *, REGION *) -> REGION * { return nullptr; },
       [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
         OP *const let = impl_->operation_regions.CreateDerived<LET>(in_check);

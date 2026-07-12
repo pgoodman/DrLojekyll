@@ -1,0 +1,22 @@
+# Monotone co-batch negate (analysis sec 4.5 R9, F-A case 1).
+#
+# Batch 1: co-change pred row feed(1,10) AND negated key unsee(1) in ONE
+#   epoch. Forward +1 (seen(1) absent-in-InI) and the `-` crossover -1
+#   (copy(1,10) present-in-InNew) net to zero; both stale crossings are
+#   claim-gate-dropped. out stays EMPTY.
+# Batch 2: feed(2,20) with no matching unsee(2): ordinary forward path
+#   publishes out(2,20). out = {(2,20)}.
+# Batch 3: unsee(2): seen gains a key with a live pred row -> `-` crossover
+#   retracts out(2,20). out = {} (empty).
+batch
++ feed 1 10
++ unsee 1
+end
+
+batch
++ feed 2 20
+end
+
+batch
++ unsee 2
+end

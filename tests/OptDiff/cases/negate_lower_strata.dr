@@ -1,0 +1,31 @@
+; Lower-stratum negated view fixture (checkpoint (d), analysis sec 4.5 R9).
+;
+; The negated view (blk) sits STRICTLY LOWER in the stratification than the
+; pred row it gates: the pred (mid) is derived through an EXTRA hop
+; (raw -> step -> mid) so mid's stratum is above blk's. The oracle picks
+; per-rule atom order by strata (Convention B: negated-atom-first when the
+; negated view is lower), while the runtime uses global convention A. This
+; fixture pins the A-vs-B OBSERVATIONAL EQUIVALENCE: both must produce the
+; same published out set on every batch, including the differential blk flip.
+;
+; raw(K, V)   : feed(K, V).            base
+; step(K, V)  : raw(K, V).             extra hop (lifts mid a stratum)
+; mid(K, V)   : step(K, V).            the pred, now strictly above blk
+; blk(K)      : block(K).              the negated view (lower stratum)
+; out(K, V)   : mid(K, V), !blk(K).    negate: pred above, negated below
+#message feed(u64 K, u64 V).
+#message block(u64 K) @differential.
+
+#local raw(u64 K, u64 V).
+#local step(u64 K, u64 V).
+#local mid(u64 K, u64 V).
+#local blk(u64 K).
+
+#query out(free u64 K, free u64 V).
+
+raw(K, V) : feed(K, V).
+step(K, V) : raw(K, V).
+mid(K, V) : step(K, V).
+blk(K) : block(K).
+
+out(K, V) : mid(K, V), !blk(K).

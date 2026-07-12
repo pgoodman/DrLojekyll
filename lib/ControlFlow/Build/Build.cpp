@@ -545,6 +545,26 @@ bool TableIsDifferential(TABLE *table) {
   return false;
 }
 
+// Populate `context.monotone_negated_tables`: the model table of each
+// non-@never negate's negated view, when that table is MONOTONE (D2'). A
+// differential negated table already carries both frontiers from its own
+// stratum phases, so it is excluded; a @never negate never retracts and has no
+// crossover, so its negated table stays a plain monotone gate (kPresent).
+void FindMonotoneNegatedTables(ProgramImpl *impl, Context &context,
+                               Query query) {
+  for (QueryNegate negate : query.Negations()) {
+    if (negate.HasNeverHint()) {
+      continue;
+    }
+    TABLE *const negated_table =
+        impl->view_to_model[negate.NegatedView()]->FindAs<DataModel>()->table;
+    assert(negated_table != nullptr);
+    if (!TableIsDifferential(negated_table)) {
+      context.monotone_negated_tables.insert(negated_table);
+    }
+  }
+}
+
 // The lazily created per-table delta vector of `kind` (one of the six
 // batch-skeleton kinds documented on `Context::table_delta_vecs`).
 VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
@@ -770,7 +790,19 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
   // several same-model sites still seeds once. A differential table needs
   // no boundary append: its frontiers are consolidated by its own stratum's
   // phases from the claimed queues.
-  if (any_cut_succ && table != nullptr && !TableIsDifferential(table)) {
+  //
+  // The second disjunct (D2', R7): a MONOTONE table that is the negated view
+  // of a non-@never negate ALSO accumulates its gained keys into
+  // net-additions — the `-` crossover arm's source — even when it has no cut
+  // successor (a negate is NOT among the negated view's Successors(); the
+  // crossover is the sole consumer). Creating the frontier auto-enrolls the
+  // table in the Seal commit-sweep (Procedure.cpp), which the eager gate's new
+  // InI read (Negate.cpp) also requires — one atomic provisioning (R1).
+  // Duplicate appends across same-model sites are harmless: seeds sort-unique.
+  const bool is_monotone_negated =
+      table != nullptr && context.monotone_negated_tables.count(table) != 0u;
+  if (table != nullptr && !TableIsDifferential(table) &&
+      (any_cut_succ || is_monotone_negated)) {
     par->AddRegion(AppendViewTupleToVector(
         impl, par, view,
         TableDeltaVector(impl, context, table, VectorKind::kNetAdditions)));
@@ -1015,6 +1047,11 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // Now that we've identified our inductions, we can fill our data model,
   // i.e. assign persistent tables to each disjoint set of views.
   FillDataModel(query, program, context);
+
+  // Identify the monotone negated tables that need a net-additions frontier
+  // and Seal enrollment for the negation crossover (D2'), before the eager
+  // insertion walk (which appends into that frontier) runs.
+  FindMonotoneNegatedTables(program, context, query);
 
   // Build bottom-up procedures starting from message receives.
   PROC *const entry_proc = BuildEntryProcedure(program, context, query);

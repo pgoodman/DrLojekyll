@@ -1,0 +1,28 @@
+# Lower-stratum negated view (analysis sec 4.5 R9): blk strictly below mid
+# (mid derived via raw->step->mid). Pins A-vs-B observational equivalence
+# across a differential blk flip.
+#
+# Batch 1: feed three keys; block key 2. out = {(1,10),(3,30)}
+#          (mid={(1,10),(2,20),(3,30)}, blk={2}).
+# Batch 2: block key 1 too. out = {(3,30)}.
+# Batch 3: unblock key 2. out = {(2,20),(3,30)}.
+# Batch 4: same-batch flap +block 3 / -block 3 (nets zero). out unchanged.
+batch
++ feed 1 10
++ feed 2 20
++ feed 3 30
++ block 2
+end
+
+batch
++ block 1
+end
+
+batch
+- block 2
+end
+
+batch
++ block 3
+- block 3
+end

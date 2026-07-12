@@ -1,3 +1,3 @@
 initial (items 1,2,3; blocker 2): visible: 1 3
 after add+remove blocker(3): visible: 1 3
-after add+remove blocker(2): visible: 1 2 3
+after add+remove blocker(2): visible: 1 3

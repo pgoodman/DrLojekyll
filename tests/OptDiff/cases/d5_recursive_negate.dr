@@ -1,0 +1,36 @@
+; D5 recursive-negate fixture (checkpoint (d), analysis sec 4.5 R9).
+;
+; A negate lives INSIDE a recursive SCC: reach's inductive rule carries
+; !dead(Y). This is the shape the D5' deletion argument claims is
+; unreachable through BuildEagerNegateRegion (the negate CanProduceDeletions,
+; so the eager walk cuts before it) and instead exercises:
+;   - the R2 fixpoint-context negate gate (kInNew both signs on refire), and
+;   - the recursive crossover class (RuleClass over the negate's own table,
+;     folded from the differential `dead` frontier),
+; because `dead` is @differential (both crossover arms live).
+;
+; reach(X)   : src(X).                         base
+; reach(Y)   : reach(X), edge(X, Y), !dead(Y). inductive, negate on the cycle
+;
+; Chain src=1, edges 1->2->3->4. With dead empty, reach = {1,2,3,4}.
+; Flipping dead(3) on kills reach(3) AND (transitively) reach(4): a negated
+; key deletion must propagate through the recursive SCC, not just one hop.
+; Flipping dead(3) back off must re-derive both.
+;
+; Oracle-verified end states (analysis sec 4.5 R9):
+;   after batch 1: reach = {1,2,3,4}
+;   after batch 2: reach = {1,2}          (+dead 3 kills 3 and 4)
+;   after batch 3: reach = {1,2,3,4}      (-dead 3 restores both)
+;   after batch 4: reach = {1,2,3,4}      (churn: +dead 3 / -dead 3 nets zero)
+#message src(u64 X).
+#message edge(u64 From, u64 To).
+#message dead(u64 X) @differential.
+
+#local reach(X).
+
+#query reach_out(free u64 X).
+
+reach(X) : src(X).
+reach(Y) : reach(X), edge(X, Y), !dead(Y).
+
+reach_out(X) : reach(X).

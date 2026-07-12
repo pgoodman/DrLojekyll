@@ -162,7 +162,26 @@ class Context {
   //                               break tests, and RETIRE clears.
   std::unordered_map<TABLE *, std::unordered_map<unsigned, VECTOR *>>
       table_delta_vecs;
+
+  // The MONOTONE tables that are the negated view of at least one non-@never
+  // negate (D2'). A monotone negated table has no per-batch frontier machinery
+  // of its own, but the negation crossover needs its GAINED keys as a
+  // net-additions source, and its InI gate (Negate.cpp) needs the table sealed
+  // per batch. Both are provisioned by giving such a table a kNetAdditions
+  // frontier: the eager fold into it appends its crossed rows (extending the
+  // monotone-boundary idiom, Build.cpp), which auto-enrolls it in the Seal
+  // commit-sweep (Procedure.cpp). Populated once by `FindMonotoneNegatedTables`
+  // before the eager insertion walk runs; a @never negated table is excluded
+  // (it never retracts, so it has no crossover and keeps its kPresent gate).
+  std::unordered_set<TABLE *> monotone_negated_tables;
 };
+
+// Populate `context.monotone_negated_tables` from `query.Negations()`: the
+// model table of each non-@never negate's negated view that is MONOTONE
+// (differential negated tables already carry both frontiers). Called once
+// before the eager insertion walk.
+void FindMonotoneNegatedTables(ProgramImpl *impl, Context &context,
+                               Query query);
 
 // A table is differential when any of its member views can produce
 // deletions (the codegen table-flavor rule).

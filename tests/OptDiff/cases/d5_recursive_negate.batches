@@ -1,0 +1,26 @@
+# D5 recursive-negate: negate on a recursive SCC over a @differential
+# negated view. src=1, chain 1->2->3->4.
+#
+# Batch 1: seed the chain and the source. reach = {1,2,3,4}.
+# Batch 2: +dead 3. Kills reach(3) and (transitively) reach(4). reach = {1,2}.
+# Batch 3: -dead 3. Restores reach(3) and reach(4). reach = {1,2,3,4}.
+# Batch 4: same-batch flap +dead 3 / -dead 3 (nets zero). reach = {1,2,3,4}.
+batch
++ src 1
++ edge 1 2
++ edge 2 3
++ edge 3 4
+end
+
+batch
++ dead 3
+end
+
+batch
+- dead 3
+end
+
+batch
++ dead 3
+- dead 3
+end

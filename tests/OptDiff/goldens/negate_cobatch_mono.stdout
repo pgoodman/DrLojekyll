@@ -1,0 +1,5 @@
+initial: out:
+after feed(1,10): out: (1,10)
+after unsee(1): out:
+after feed(2,20): out: (2,20)
+after unsee(2): out:

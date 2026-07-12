@@ -1,0 +1,31 @@
+; Downstream-differential negate fixture (checkpoint (d), analysis sec 4.5
+; R9). A MONOTONE-negated negate (seen has no @never, feed/unsee are
+; non-differential, so only the `-` crossover arm exists) whose OUTPUT feeds
+; a FURTHER differential rule one stratum down:
+;
+;   copy(A, B) : feed(A, B).
+;   seen(A)    : unsee(A).
+;   out(A, B)  : copy(A, B), !seen(A).       monotone-negated negate
+;   flag(A, B) : out(A, B), active(A).       downstream differential join
+;
+; `active` is @differential, so flag's stratum consumes out's net_additions
+; frontier at seed time. This discriminates the R3 seed-before-drain
+; ordering: a crossover fold emitted AFTER the claim drains could let a
+; phantom `+` be claimed on `out` and leak a spurious NetAdded frontier
+; entry, which the downstream flag rule would DOUBLE-COUNT (out(A,B) already
+; present but re-emitted). The observable is flag's membership: it must
+; track out x active exactly, with no double-count survivors.
+#message feed(u64 A, u64 B).
+#message unsee(u64 A).
+#message active(u64 A) @differential.
+
+#local copy(u64 A, u64 B).
+#local seen(u64 A).
+#local out(u64 A, u64 B).
+
+#query flag_out(free u64 A, free u64 B).
+
+copy(A, B) : feed(A, B).
+seen(A) : unsee(A).
+out(A, B) : copy(A, B), !seen(A).
+flag_out(A, B) : out(A, B), active(A).

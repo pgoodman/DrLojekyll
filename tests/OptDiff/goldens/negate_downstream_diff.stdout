@@ -1,0 +1,4 @@
+after feed+active(1,2): flag_out: (1,10) (2,20)
+after unsee(1): flag_out: (2,20)
+after active flip: flag_out:
+after feed(3,30): flag_out: (3,30)

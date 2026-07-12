@@ -51,6 +51,51 @@ struct JoinEmission {
         stratum(stratum_) {}
 };
 
+// One negation-crossover emission (the §5.4 crossover, D1'): the dual of the
+// forward pass. The forward pass folds a pred-row delta into the negate's
+// table gated on the negated key's absence; the crossover folds the SAME
+// negate row when the NEGATED key crosses, sign-DUALIZED — a negated-view
+// GAIN retracts the negate output (the `-` arm, over the negated table's
+// net-additions frontier — always present), a negated-view LOSS re-derives it
+// (the `+` arm, over net-removals — only when the negated table is
+// differential). Each arm loops the negated frontier, scans the pred table by
+// the shared key, reads the pred at `kInNew` (R4), and folds one signed count
+// into the negate's OWN table (R6), whose queue crossing rides the existing
+// claim drain / frontier filters already emitted for that table.
+//
+// Discovered one per non-@never `QueryNegate` (a @never negate never
+// retracts, so it has no crossover — R1). Registered with the scheduling
+// fixpoint like a branch (R3): its emission stratum is lifted above both the
+// negated table's and the pred table's readiness, and the negate table's
+// drain stratum is lifted to it, so the crossover is emitted in the seed
+// block BEFORE the negate table's claim drains.
+struct CrossoverEmission {
+  QueryNegate negate;
+  TABLE *negate_table;    // The negate view's own (differential) table.
+  TABLE *negated_table;   // The negated view's model table (the crossover src).
+  TABLE *pred_table;      // The data predecessor's table (scanned).
+  QueryView pred_view;    // `QueryView(negate).Predecessors()[0]`.
+  bool negated_differential;  // Whether the `+` arm exists.
+  unsigned multiplicity;  // Forward fold count to match (>= 1).
+
+  // Starts at the negate view's stratum and is lifted by the scheduling
+  // fixpoint above both read tables' readiness.
+  unsigned stratum;
+
+  CrossoverEmission(QueryNegate negate_, TABLE *negate_table_,
+                    TABLE *negated_table_, TABLE *pred_table_,
+                    QueryView pred_view_, bool negated_differential_,
+                    unsigned multiplicity_, unsigned stratum_)
+      : negate(negate_),
+        negate_table(negate_table_),
+        negated_table(negated_table_),
+        pred_table(pred_table_),
+        pred_view(pred_view_),
+        negated_differential(negated_differential_),
+        multiplicity(multiplicity_),
+        stratum(stratum_) {}
+};
+
 // A table's differential phases are owned by an induction when a
 // `ProgramInductionRegion` was actually built for one of its member views
 // (i.e. the view is keyed in `context.view_to_induction`, populated by
@@ -347,11 +392,22 @@ static void CollectSectionTargets(ProgramImpl *impl, Context &context,
 // Emit the per-view plumbing of one delta-chain step arriving at `view`
 // from `pred_view`, mirroring the eager walk's per-node regions: variable
 // mapping for forwarding views, a TUPLECMP for a CMP, a generator call for
-// a MAP, and the dualized forward gate for a NEGATE. Returns the region
-// under which the rest of the chain nests.
+// a MAP, and the position-keyed forward gate for a NEGATE. Returns the
+// region under which the rest of the chain nests.
+//
+// `in_fixpoint` selects the negate gate's read predicate by EMISSION CONTEXT,
+// not by sign (the F-A consistency theorem, analysis §2, R2): a chain emitted
+// as a SEED (`in_fixpoint == false`) reads the negated table batch-frozen
+// (`kInI`) for BOTH signs — the same fixed read the crossover's exactly-once
+// accounting is proved against (§5.1 seed table 1, oracle SeedReads:1312-1323,
+// position-keyed and sign-independent); a chain RE-FIRED inside a recursive
+// SCC's claim-round loop (`in_fixpoint == true`) reads `kInNew` for BOTH signs
+// (§5.1 fixpoint table 2, oracle FixReads:1334-1335). The old sign-keyed read
+// (`is_add ? kInNew : kInI`) is incompatible with the crossover: it lost/
+// double-counted the mixed same-batch pred×negated cases (analysis §2).
 static OP *EmitChainStep(ProgramImpl *impl, Context &context,
                          QueryView pred_view, QueryView view, bool is_add,
-                         OP *parent) {
+                         bool in_fixpoint, OP *parent) {
 
   // A SELECT is reached from an INSERT into its relation; bind the SELECT's
   // columns to the INSERT's stored columns, whose variables are in scope.
@@ -390,11 +446,14 @@ static OP *EmitChainStep(ProgramImpl *impl, Context &context,
     return gen;
   }
 
-  // The forward pass of negation maintenance, dualized per sign: a `+` walk
-  // continues only when the negated key is absent from the negated table's
-  // batch-final state (`InNew`), a `-` walk only when it was absent from
-  // the batch-start state (`InI`). The negated table is phase-final here:
-  // its stratum is strictly lower than the chain's emission stratum.
+  // The forward pass of negation maintenance, position-keyed per emission
+  // context (R2): a SEED-context walk (`!in_fixpoint`) reads the negated
+  // table batch-frozen (`kInI`) for BOTH signs; a fixpoint-refire walk
+  // (`in_fixpoint`, the recursive-SCC claim-round re-fire) reads the
+  // batch-final-so-far state (`kInNew`) for BOTH signs. The negated table is
+  // phase-final here: its stratum is strictly lower than the chain's emission
+  // stratum (seed context), or it is a same-SCC lower-position read the
+  // claim-round loop keeps final (fixpoint context).
   if (view.IsNegate()) {
     const auto negate = QueryNegate::From(view);
     const QueryView negated_view = negate.NegatedView();
@@ -416,7 +475,7 @@ static OP *EmitChainStep(ProgramImpl *impl, Context &context,
     OP *continuation = nullptr;
     CHECKMEMBER *const gate = BuildCheckMember(
         impl, parent, negated_table, negated_view_cols,
-        is_add ? MembershipPredicate::kInNew : MembershipPredicate::kInI,
+        in_fixpoint ? MembershipPredicate::kInNew : MembershipPredicate::kInI,
         [](ProgramImpl *, REGION *) -> REGION * { return nullptr; },
         [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
           continuation = impl_->operation_regions.CreateDerived<LET>(in_check);
@@ -522,7 +581,8 @@ static void EmitSectionWalk(ProgramImpl *impl, Context &context,
 
     LET *const let = impl->operation_regions.CreateDerived<LET>(par);
     par->AddRegion(let);
-    OP *const step = EmitChainStep(impl, context, view, succ, is_add, let);
+    OP *const step =
+        EmitChainStep(impl, context, view, succ, is_add, false, let);
     EmitSectionWalk(impl, context, succ, is_add, deriv_class, step);
   }
 }
@@ -531,10 +591,14 @@ static void EmitSectionWalk(ProgramImpl *impl, Context &context,
 // binding the branch's member view's columns, followed by the chain's
 // plumbing, ending at a head fold or at a pivot append into the join's
 // delta pivot vector (`join_pivot_vec`, null for head chains).
+// `in_fixpoint` marks a seed emitted INSIDE a recursive-SCC claim-round loop
+// (the same-SCC internal re-fire): it selects the fixpoint-context negate
+// gate (`kInNew`) for any NEGATE on the chain (R2). A base/lower-stratum seed
+// passes `false`, reading batch-frozen `kInI`.
 static void EmitSeedLoop(ProgramImpl *impl, Context &context,
                          const BranchChain &branch, bool is_add,
                          DerivClass deriv_class, VECTOR *vec,
-                         VECTOR *join_pivot_vec, SERIES *seq) {
+                         VECTOR *join_pivot_vec, bool in_fixpoint, SERIES *seq) {
   const QueryView member = branch.path[0];
 
   VECTORLOOP *const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
@@ -572,7 +636,9 @@ static void EmitSeedLoop(ProgramImpl *impl, Context &context,
       return;
     }
 
-    parent = EmitChainStep(impl, context, pred_view, view, is_add, parent);
+    parent =
+        EmitChainStep(impl, context, pred_view, view, is_add, in_fixpoint,
+                      parent);
     pred_view = view;
   }
 
@@ -584,6 +650,158 @@ static void EmitSeedLoop(ProgramImpl *impl, Context &context,
   DataModel *const model = impl->view_to_model[head]->FindAs<DataModel>();
   assert(model->table != nullptr);
   EmitHeadFold(impl, context, head, model->table, is_add, deriv_class, parent);
+}
+
+// Emit one arm of a negation crossover (D1', §5.4). `is_add` picks the sign:
+// the `+` arm folds a `+recursive`/`+nonrecursive` count when the negated key
+// is LOST (over the negated table's net-removals frontier), the `-` arm folds
+// the dual when the negated key is GAINED (over net-additions). Shape:
+//
+//   vector-unique  <negated frontier>
+//   vector-loop {negated cols} over <negated frontier>
+//     scan pred where pred.key = negated key  ->  {rest of pred row}
+//       check-member in-new {pred row} in pred_table
+//         if-member
+//           update-count ±class {negate outputs} in negate_table
+//             if-crossed -> append into negate_table add/delete queue
+//
+// The negated frontier row binds the negated view's columns; those bind BOTH
+// the negate's key output columns (`NegatedColumns()`, index-aligned to the
+// negated view) AND the pred's key input columns (`InputColumns()`, the pred
+// contribution to the same key), which are the scan's available columns. Zero
+// key columns (a unit-relation negation) degenerates to a full pred scan.
+static void EmitCrossover(ProgramImpl *impl, Context &context,
+                          const RecursiveSccMap &sccs,
+                          const CrossoverEmission &x, bool is_add,
+                          SERIES *seq) {
+  const QueryNegate negate = x.negate;
+  const QueryView negated_view = negate.NegatedView();
+  const unsigned num_key = negate.NumInputColumns();
+
+  // Sort-unique the consumed frontier (mirrors `seed_vector`): a monotone
+  // boundary's net-additions can be appended at several same-model fold sites
+  // (R7), and each frontier row must drive the crossover once.
+  VECTOR *const frontier = TableDeltaVector(
+      impl, context, x.negated_table,
+      is_add ? VectorKind::kNetRemovals : VectorKind::kNetAdditions);
+  VECTORUNIQUE *const unique =
+      impl->operation_regions.CreateDerived<VECTORUNIQUE>(
+          seq, ProgramOperation::kSortAndUniqueInductionVector);
+  unique->vector.Emplace(unique, frontier);
+  seq->AddRegion(unique);
+
+  // Loop over the negated frontier, binding the negated view's columns.
+  VECTORLOOP *const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+      impl->next_id++, seq, ProgramOperation::kLoopOverInductionVector);
+  seq->AddRegion(loop);
+  loop->vector.Emplace(loop, frontier);
+  for (auto col : negated_view.Columns()) {
+    VAR *const var = loop->defined_vars.Create(impl->next_id++,
+                                               VariableRole::kVectorVariable);
+    var->query_column = col;
+    loop->col_id_to_var.emplace(col.Id(), var);
+  }
+
+  // Bind the negate's key output columns and the pred's key input columns from
+  // the negated view's columns (the shared key). `NegatedColumns()[i]` is the
+  // negate output at the negated view's column `i`; `NthInputColumn(i)` is the
+  // pred column contributing that same key position. This is the REVERSE of
+  // `BuildEagerNegateRegion`'s / `EmitChainStep`'s key mapping: there the
+  // negate output defines the negated view column; here the negated view
+  // column (from the frontier) defines both the negate output and the pred
+  // input.
+  std::vector<QueryColumn> avail;
+  {
+    auto i = 0u;
+    for (QueryColumn out_col : negate.NegatedColumns()) {
+      const auto j = *(out_col.Index());
+      const auto neg_col = negated_view.NthColumn(j);
+      VAR *const key_var = loop->VariableFor(impl, neg_col);
+      loop->col_id_to_var[out_col.Id()] = key_var;
+
+      // The pred column contributing this key position. A constant key column
+      // (a condition / all-constant-key negate, negate_3) does not constrain
+      // the pred scan — it is already fixed — so it is bound but NOT an
+      // available scan column; a zero-real-key negate degenerates to a full
+      // pred scan (the unit-relation case, cond_*).
+      const QueryColumn pred_key_col = negate.NthInputColumn(i++);
+      if (!pred_key_col.IsConstant()) {
+        loop->col_id_to_var[pred_key_col.Id()] = key_var;
+        avail.push_back(pred_key_col);
+      }
+    }
+    assert(i == num_key);
+    (void) num_key;
+  }
+
+  // The fold's rule class: recursive iff the negate's table shares a recursive
+  // SCC with a read table. The negated table contributes nothing today
+  // (Stratify forbids a same-SCC negated view — a negated predicate cannot be
+  // recursively derived from the negation's own result), passed belt-and-
+  // braces per R5; a same-SCC PRED (a recursive negate, the D5 shape) makes
+  // the crossover fold `kRecursive`.
+  const DerivClass deriv_class =
+      RuleClass(sccs, x.negate_table, {x.pred_table, x.negated_table});
+
+  SERIES *const body_seq = impl->series_regions.Create(loop);
+  loop->body.Emplace(loop, body_seq);
+
+  std::vector<QueryColumn> negate_cols;
+  for (auto col : negate.Columns()) {
+    negate_cols.push_back(col);
+  }
+
+  // The fold + if-crossed queue append into the negate's own table (R6),
+  // nested under `parent` (the pred-membership gate).
+  const auto emit_fold = [&](REGION *parent) -> REGION * {
+    UPDATECOUNT *const fold = BuildUpdateCount(
+        impl, x.negate_table, parent, negate_cols, is_add, deriv_class);
+
+    VECTOR *const queue = TableDeltaVector(
+        impl, context, x.negate_table,
+        is_add ? VectorKind::kAddQueue : VectorKind::kDeleteQueue);
+    VECTORAPPEND *const append =
+        impl->operation_regions.CreateDerived<VECTORAPPEND>(
+            fold, ProgramOperation::kAppendToInductionVector);
+    append->vector.Emplace(append, queue);
+    for (auto col : negate_cols) {
+      append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+    }
+    fold->body.Emplace(fold, append);
+    return fold;
+  };
+
+  // Scan the pred table by the bound key (the §3.4 index request; zero bound
+  // columns — a unit relation — degenerates to a full scan), then read the
+  // scanned pred row at `kInNew` (R4: the readiness lift makes InNew
+  // batch-final for a lower pred; for a same-SCC pred the seed-time flags are
+  // untouched so InNew ≡ InI extensionally). The pred row's non-key columns
+  // bind the negate's copied output columns.
+  BuildMaybeScanPartial(
+      impl, x.pred_view, avail, x.pred_table, body_seq,
+      [&](REGION *in_scan, bool) -> REGION * {
+        std::vector<QueryColumn> pred_cols;
+        for (auto col : x.pred_view.Columns()) {
+          pred_cols.push_back(col);
+        }
+        return BuildCheckMember(
+            impl, in_scan, x.pred_table, pred_cols, MembershipPredicate::kInNew,
+            [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
+
+              // Bind the negate's copied (attached) output columns from the
+              // scanned pred row: `CopiedColumns()` are the negate outputs for
+              // the attached pred columns (`InputCopiedColumns()`), in order.
+              // The key outputs are already bound on the loop.
+              auto attached_it = negate.InputCopiedColumns().begin();
+              for (QueryColumn out_col : negate.CopiedColumns()) {
+                const QueryColumn attached = *attached_it++;
+                in_check->col_id_to_var[out_col.Id()] =
+                    in_check->VariableFor(impl_, attached);
+              }
+              return emit_fold(in_check);
+            },
+            [](ProgramImpl *, REGION *) -> REGION * { return nullptr; });
+      });
 }
 
 // Emit one claim drain: sort-unique the queue of rows whose folds crossed
@@ -1039,7 +1257,6 @@ static void EmitJoinFire(ProgramImpl *impl, Context &context,
 // overdeletion/addition sets), and the net-frontier construction that
 // higher strata's seeds range over.
 void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
-  (void) query;
 
   // The recursive-SCC membership of every table (empty for programs with no
   // stratum-phase-owned recursion). Drives the rule-class of folds into
@@ -1142,6 +1359,72 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     }
   }
 
+  // The negation crossovers (D1'/§5.4), one per non-@never negate. Discovered
+  // here from `query.Negations()` (the audit confirmed `Predecessors()[0]` is
+  // the DATA pred, and `FillDataModel` materializes the pred and negated
+  // tables for every negate). A @never negate never retracts, so it has no
+  // crossover (R1). Each crossover's emission stratum is registered with the
+  // scheduling fixpoint below.
+  //
+  // Discovered per non-@never `QueryNegate` (from `query.Negations()`) — but
+  // with the crossover's fold MULTIPLICITY matched to the forward pass's, so a
+  // row derived several ways retracts exactly. `Predecessors()[0]` is the data
+  // pred (audit-confirmed); `FillDataModel` materializes the pred and negated
+  // tables. A @never negate never retracts, so it gets no crossover (R1).
+  //
+  // Forward multiplicity: a negate over a MONOTONE negated view is reached by
+  // the EAGER walk (`BuildEagerNegateRegion`, once per eager predecessor
+  // arrival), so its forward fold count is the negate's predecessor count. A
+  // negate over a DIFFERENTIAL negated view is cut from the eager walk
+  // (Build.cpp) and reached by STRATUM branch chains (`EmitSeedLoop` folds
+  // once per chain into the negate's table); a union-shared negate (merge_5)
+  // is reached by several chains, so its forward fold count is the number of
+  // such branches. Either way the crossover emits that many arm-pairs.
+  std::vector<CrossoverEmission> crossovers;
+  for (QueryNegate negate : query.Negations()) {
+    if (negate.HasNeverHint()) {
+      continue;
+    }
+    const QueryView negate_view(negate);
+    const QueryView negated_view = negate.NegatedView();
+    const QueryView pred_view = negate_view.Predecessors()[0];
+
+    TABLE *const negate_table =
+        impl->view_to_model[negate_view]->FindAs<DataModel>()->table;
+    TABLE *const negated_table =
+        impl->view_to_model[negated_view]->FindAs<DataModel>()->table;
+    TABLE *const pred_table =
+        impl->view_to_model[pred_view]->FindAs<DataModel>()->table;
+    assert(negate_table != nullptr);
+    assert(negated_table != nullptr);
+    assert(pred_table != nullptr);
+
+    // Count the stratum branch chains that fold into this negate's table
+    // (target == negate_table, terminal == this negate). Zero for an
+    // eager-reached (monotone-negated) negate — then the forward count is the
+    // number of eager predecessor arrivals (the negate's predecessors other
+    // than the negated view).
+    unsigned multiplicity = 0u;
+    for (const BranchChain &branch : branches) {
+      if (!branch.ends_at_join && branch.target == negate_table &&
+          !branch.path.empty() && branch.path.back() == negate_view) {
+        ++multiplicity;
+      }
+    }
+    if (multiplicity == 0u) {
+      for (QueryView p : negate_view.Predecessors()) {
+        if (p != negated_view) {
+          ++multiplicity;
+        }
+      }
+    }
+    assert(multiplicity != 0u);
+
+    crossovers.emplace_back(negate, negate_table, negated_table, pred_table,
+                            pred_view, TableIsDifferential(negated_table),
+                            multiplicity, negate_view.Stratum().value_or(0u));
+  }
+
   // The tables whose claim drains and frontier filters the phases own. A
   // table's drain stratum starts at its owner stratum and is lifted below
   // to the stratum of the latest fold into it.
@@ -1153,7 +1436,8 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       drain_stratum.emplace(table, TableOwnerStratum(table));
     }
   }
-  if (branches.empty() && joins.empty() && phase_table_order.empty()) {
+  if (branches.empty() && joins.empty() && phase_table_order.empty() &&
+      crossovers.empty()) {
     return;
   }
 
@@ -1256,6 +1540,21 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       }
     }
 
+    // The negation crossovers (R3): lift each above both read tables'
+    // readiness (the negated frontier it loops and the pred table it scans at
+    // `kInNew`), then lift the negate table's drain stratum to it, so the
+    // crossover's fold into the negate table lands in the seed block strictly
+    // before that table's claim drains. Same-SCC reads are exempt
+    // (`ready_across`): a recursive negate's same-SCC pred read is a lower
+    // `kInNew` the claim-round loop keeps final, closing no scheduling cycle.
+    for (CrossoverEmission &x : crossovers) {
+      unsigned stratum = x.stratum;
+      stratum = std::max(stratum, ready_across(x.negate_table, x.negated_table));
+      stratum = std::max(stratum, ready_across(x.negate_table, x.pred_table));
+      lift(x.stratum, stratum, changed);
+      lift(drain_stratum[x.negate_table], x.stratum, changed);
+    }
+
     // Pin every table of a recursive SCC to a single shared drain stratum:
     // the max over its members. The SCC drains as one fixpoint, so its seed,
     // join, claim-round loop, REDERIVE and frontier build all run in the one
@@ -1344,6 +1643,10 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     assert(!RecursiveSCC(recursive_sccs, head).has_value() ||
            has_same_scc_read);
   }
+  for (const CrossoverEmission &x : crossovers) {
+    assert(ready_across(x.negate_table, x.negated_table) <= x.stratum);
+    assert(ready_across(x.negate_table, x.pred_table) <= x.stratum);
+  }
 #endif  // NDEBUG
 
   // The strata that need a phase series, ascending.
@@ -1356,6 +1659,9 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   }
   for (TABLE *table : phase_table_order) {
     strata.insert(drain_stratum[table]);
+  }
+  for (const CrossoverEmission &x : crossovers) {
+    strata.insert(x.stratum);
   }
 
   // Nest the entry procedure's body (the ingest walk, which parks every
@@ -1455,11 +1761,11 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
           !TableIsInductionOwned(context, source)) {
         EmitSeedLoop(impl, context, branch, false /* is_add */, branch_class,
                      seed_vector(source, VectorKind::kNetRemovals),
-                     join_pivot_vec, stratum_seq);
+                     join_pivot_vec, false /* in_fixpoint */, stratum_seq);
       }
       EmitSeedLoop(impl, context, branch, true /* is_add */, branch_class,
                    seed_vector(source, VectorKind::kNetAdditions),
-                   join_pivot_vec, stratum_seq);
+                   join_pivot_vec, false /* in_fixpoint */, stratum_seq);
     }
 
     // Dual-section joins: the sort-uniqued pivot vector makes the join
@@ -1516,6 +1822,35 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       join->removed_body.Emplace(join, removed);
       EmitSectionWalk(impl, context, emission.join_view, false /* is_add */,
                       join_class, removed);
+    }
+
+    // Negation crossovers (D1'/§5.4): emitted in the SEED BLOCK, BEFORE the
+    // claim drains below (R3 — a crossover fold after claim-add would let a
+    // phantom `+` be claimed and, on a non-terminal negate, leak a NetAdded
+    // frontier entry downstream). The `-` arm (negated key gained) fires
+    // always over the negated table's net-additions frontier; the `+` arm
+    // (negated key lost) only when the negated table is differential.
+    for (const CrossoverEmission &x : crossovers) {
+      if (x.stratum != stratum) {
+        continue;
+      }
+
+      // The fold target (the negate's own table) drains at or after this
+      // stratum — the scheduling fixpoint lifted it to `x.stratum` (mirrors
+      // the seed source-drain assert).
+      assert(drain_stratum.count(x.negate_table) &&
+             drain_stratum.find(x.negate_table)->second >= stratum);
+
+      // Emit `multiplicity` arm-pairs, matching the forward pass's fold count
+      // into the negate table so a multiply-derived row retracts exactly.
+      for (unsigned m = 0u; m < x.multiplicity; ++m) {
+        EmitCrossover(impl, context, recursive_sccs, x, false /* is_add */,
+                      stratum_seq);
+        if (x.negated_differential) {
+          EmitCrossover(impl, context, recursive_sccs, x, true /* is_add */,
+                        stratum_seq);
+        }
+      }
     }
 
     // Partition this stratum's phase tables into single-pass (genuinely
@@ -1655,7 +1990,7 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
                        DerivClass::kRecursive,
                        TableDeltaVector(impl, context, branch.source,
                                         frontier_kind),
-                       nullptr, round_seq);
+                       nullptr, true /* in_fixpoint */, round_seq);
         }
       }
       for (TABLE *table : scc_tables) {

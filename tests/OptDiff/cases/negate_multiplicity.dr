@@ -1,0 +1,23 @@
+; Negate multiplicity fixture (checkpoint (d), analysis sec 4.5 R9, Q5).
+;
+; The negate keys on A only, but several distinct pred rows (A, B1), (A, B2)
+; ... share that key. Gaining the negated key seen(A) must retract EVERY
+; matching pred row (several `-` crossover folds must land, one per pred
+; ROW), and losing it must re-derive them all. The pred's extra column B is
+; carried DOWNSTREAM (out(A,B) : mid(A,B)) so the multiplicity is observable:
+; a wrong per-KEY (rather than per-ROW) crossover would drop the wrong count.
+;
+; mid(A, B) : feed(A, B), !seen(A).
+; out(A, B) : mid(A, B).
+; seen(A)   : block(A).                (differential, so both arms live)
+#message feed(u64 A, u64 B).
+#message block(u64 A) @differential.
+
+#local mid(u64 A, u64 B).
+#local seen(u64 A).
+
+#query out(free u64 A, free u64 B).
+
+seen(A) : block(A).
+mid(A, B) : feed(A, B), !seen(A).
+out(A, B) : mid(A, B).

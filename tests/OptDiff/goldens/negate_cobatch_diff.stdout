@@ -1,0 +1,3 @@
+initial: out:
+after setup: out: (30,300)
+after co-batch (cases 1-4): out: (20,200)
