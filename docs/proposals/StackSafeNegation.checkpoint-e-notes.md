@@ -127,7 +127,13 @@ LEFT (the real (e) work, pending re-derivation):
   context-keyed negate-gate rule, OQ3 annihilation contract); FINDINGS.md
   round entry if the session finds anything.
 - OUT OF SCOPE: Stage 5 (differential @product), subgraphs/demand
-  (see push-method/SLDMagic session memory), perf roadmap.
+  (see push-method/SLDMagic session memory), perf roadmap, and
+  aggregating functors / KV indices — DESIGN NOW RECORDED in
+  docs/proposals/AggregatingFunctors.md (two-level group-by; KV index =
+  degenerate aggregate; gated on the delta-relational IR). The E3 docs
+  sweep SHOULD update the feature-gap wording (CLAUDE.md "Known feature
+  gaps", MD §11 OQ12) to point at that ledger — pointer updates only, no
+  implementation.
 
 ## 3. Path forward as diffs against §1 — SEED HYPOTHESIS, re-derive first
 
