@@ -233,3 +233,155 @@ explicitly recorded won't-fix).
   test run. Suite: DR=build/debug/bin/drlojekyll tests/OptDiff/runall.sh
   <workroot> [jobs] [filter]. macOS bash 3.2 — no declare -A. Fixture
   files must be ASCII-only (lexer truncates silently at non-ASCII).
+
+## Checkpoint (e) landing record (2026-07-12) — STAGE 3 CLOSED
+
+Commits: E0 = 0b74d97 (identity dedup + multiplicity→assert, own commit as
+mandated); F21 = ae3e728 (display error surfacing + parser SIGSEGV fixes +
+2 expected-diagnostic cases); Stage-4 docs = f69ad4e; this record + the
+next-epoch seed ledger (docs/proposals/PerfRoadmap.md) land together.
+
+Method: the slice-4/(d) method executed in full. Pre-code: fresh IR dumps
+(merge_5, negate_4, ALL 149 cases + 30 corpus files as a masked-stanza
+duplicate-emission scan — merge_5 was the ONLY program with duplicated
+emissions), §1 re-derived against the code inline, then workflow 1 (opus E0
+adversarial critique with empirical probes; opus post-E0 merge_5 IR +
+full 3-round hand-trace; sonnet 12-check ALREADY-DONE audit — all three
+returned clean with the corrections below), then inline implementation with
+the full gate battery, then workflow 2 (opus docs writer, reviewed by hand
+against Program.h/Format.cpp/Table.h — every name spot-checked).
+
+### E0 (commit 0b74d97)
+
+As seeded, with the critique's refinements: identity-guarded push in
+GetOrCreate (comment cites the group_ids guard and the trivial-join fold),
+dead std::unique deleted, CrossoverEmission.multiplicity field + replay
+loop deleted, construction-site debug assert (forward fold count == 1;
+proof: a negate has exactly one data predecessor, Link.cpp:314-321 +
+predecessors.Unique(); every differential negate feeder is table-backed so
+chains terminate rather than fan through; empirically multiplicity==1
+across suite + corpus post-dedup, incl. two hand-built table-less-
+confluence probes). Evidence: SUITE: PASS with ALL 656 runtime stdouts
+byte-identical to the pre-E0 baseline; ctest 3/3; corpus sweep unchanged;
+deep_chain_retract full-depth under ulimit -s 1024 re-verified post-E0
+(byte-identical). FINDINGS F19.
+
+TWO SEED-HYPOTHESIS CORRECTIONS (ratified by evidence, no scope change):
+- "Expect IR shrinkage on any dup-member program / only merge_5" was HALF
+  right: normalized IR changed in 26 cases. Duplicate-STANZA removal is
+  merge_5-only for update-count stanzas, but duplicated member lists also
+  doubled JOIN-PIVOT APPEND loops in ~16 recursive cases (benign pre-E0:
+  pivot vectors are sort-uniqued before the join fires) — E0 removes those
+  too. The rest is unstable-sort tie reorder + id renumber (kcfa_tiny:
+  0 net lines, pure reorder, non-sorting driver still byte-identical —
+  the sharpest golden-invariance witness). Golden churn: ZERO, as claimed.
+- The doubling never propagated past the negate tables' own counters
+  (unions read vector-unique'd frontiers), which is why goldens, the
+  oracle (compares stdout only; models per-instance counters = 1), and
+  DebugValidateCounts (coherence-only, no magnitude recount — recorded
+  explicitly) all stayed silent pre-E0. Post-E0 runtime counters move
+  TOWARD the oracle's per-instance model.
+
+### E1 — inventory verification (all confirmed)
+
+Deletion grep: zero hits beyond the parser's Language::kUnknown enum.
+Publish split, Present(id) cursors, DebugValidateCounts wiring: as §2
+claimed, with file:line evidence in the session audit. PUBLISH-ORDER
+DECISION (closing the plan.md contemplation): the commit sweep needs NO
+sort — three fresh full-suite runs (two pre-E0, one post) produced 656/656
+byte-identical runtime stdouts; determinism is already a property of the
+sweep's table/touched order. Recorded observation (pre-existing, out of
+scope): compiler ENTITY IDS are invocation-environment-sensitive (argv/cwd
+shift heap layout → pointer-keyed tie order), so generated-code TEXT is
+not run-stable across differing invocations while behavior and stdout are;
+any future IR-diff methodology must normalize ids or pin the invocation.
+
+### E2 — merge-criteria residue
+
+Stage-0 sentinels identified and green in-suite: tc_mixed_batch,
+two_hop_phantom, negation_flap (+ deep_chain_retract as the stack gate),
+each with full golden triads. 30-seed randomized mixed add/remove stress
+vs from-scratch recomputation (tc_nonlinear_diff's driver with seed bound
+30): 0/30 mismatches in ALL 4 modes, outputs 4-mode byte-identical — run
+as a scratch driver at HEAD+E0; the standing 12-seed case remains the
+in-suite gate (deviation (4) below).
+
+### E3 — Stage 4 docs (commit f69ad4e)
+
+docs/ControlFlowIR.md and docs/RuntimeAndCodegen.md rewritten present-
+tense (region catalog, row-state/counter model, stratum phases, dual-role
+INDUCTION, UPDATECOUNT termination invariant via PathTransitionsTable,
+real dump excerpt); CLAUDE.md invariants updated per the §3 E3 list (split
+dataflow/differential; UPDATECOUNT form; membership-predicate discipline;
+F17 gates; F18 context-keyed negate gates; ONE crossover arm-pair;
+OQ3 annihilation; identity member lists); feature-gap wording in CLAUDE.md
+and MD §11 item 12 now points at docs/proposals/AggregatingFunctors.md
+(pointers only — no aggregate work done, per the gate). MiniDisassembler
+stale-red purge: the audit found ZERO stale references in live guidance
+(CLAUDE.md/runall.sh never tracked it as red); the (d)-notes carried-
+forward items are hereby closed by this record — historical landing-record
+prose stays as accurate history. Docs-writer corrections verified against
+code: PathTransitionsTable SURVIVES (now walks AsUpdateCount/
+AsChangeRecord); Induction.cpp still owns MONOTONE recursion in full
+(differential recursion is stratum-phase-owned, TableIsInductionOwned is
+the line); CHANGERECORD/CHECKRECORD survive as record-flavored counter
+fold / membership gate.
+
+### E4 — decisions CLOSED
+
+- I9 (oracle INVARIANT line): CLOSED — there is nothing to suppress or
+  strip. The line goes to STDERR (bin/Oracle/Main.cpp:2158) and
+  diffrun.sh redirects stdout/stderr to separate files, comparing ONLY
+  stdout against goldens; stderr-for-diagnostics is ratified as the
+  contract. No oracle change, no golden regeneration; the 41 committed
+  .oracle goldens stand.
+- Non-ASCII lexer truncation: upgraded from "consider a diagnostic" to a
+  bug fix, F21 (commit ae3e728). The (d) gotcha's mechanism was NOT in the
+  lexer: DisplayImpl::TryReadChar installs a proper ErrorStream on any
+  byte outside ' '..'~' but its exhaustion path replaced it with a clean
+  replay stream, destroying the message inside the very call that reports
+  exhaustion — the lexer's kInvalidStreamOrDisplay path was dead code, so
+  the file tail vanished silently (exit 0). Investigation also found a
+  SIGSEGV family reachable from PLAIN ASCII: files ending mid-declaration
+  crashed the incomplete-declaration error paths of #message / #local /
+  #export / #functor (null decl deref; #query already degraded cleanly).
+  Both fixed; standing cases nonascii_1 + truncated_decl_1 in runall.sh's
+  expected-diagnostic list (suite is now 151 cases). The §5 "fixture files
+  must be ASCII-only" gotcha stays as authoring guidance, but the failure
+  mode is now a loud diagnostic, not silence.
+
+### Deviations for ratification
+
+1. E0's "IR shrinkage only in merge_5" premise corrected as above; the
+   load-bearing claim (zero golden churn) held exactly.
+2. F21's scope exceeded the seeded "small Lex change or won't-fix": the
+   real defect was in lib/Display + three lib/Parse null-guards, and it
+   fixed a crash class (exit-139 on truncated ASCII files), not just the
+   silent truncation. New-case authoring (2 diagnostic cases) is within
+   the standing golden policy; no golden changed.
+3. F20 (GetOrCreate comparator typo, Data.cpp: b_order reads
+   a.InductionDepth()) recorded, deliberately NOT fixed: correcting it
+   would arm an untested assert(false); needs its own invariant proof
+   first. FINDINGS carries the full rationale.
+4. The 30-seed stress ran as a scratch driver (results above), not a new
+   standing case — the plan's merge criterion asks for the run, and the
+   12-seed tc_nonlinear_diff remains the permanent in-suite gate. Promote
+   to 30 seeds in-suite later if wanted (costs ~2.5x case runtime).
+5. The E1 id-nondeterminism observation is recorded (above and in
+   PerfRoadmap.md §1) rather than fixed — pre-existing, golden-invisible,
+   and out of (e) scope.
+
+### Stage 3 merge criteria — final checklist (plan.md:776-788)
+
+ctest 3/3 (MiniDisassembler GREEN) ✓; suite SUITE: PASS — 151 cases × 4
+modes + oracle + monotone variants ✓; Stage-0 mixed-batch sentinels green
+✓; full-depth deep_chain_retract constant-stack (ulimit -s 1024,
+re-verified post-E0) ✓; 30-seed randomized stress vs oracle 0/30 ✓;
+DebugValidateCounts wired into debug OptDiff runs ✓; goldens byte-
+identical throughout — zero blesses this session ✓; deletion greps empty ✓.
+
+STAGE 3 IS CLOSED. Next epoch per the recorded sequencing: bench harness /
+perf — seed ledger committed at docs/proposals/PerfRoadmap.md (bench
+harness → runtime data structures → delta-relational IR; aggregates gate
+on the IR per AggregatingFunctors.md §4). Stage 5 (differential @product)
+remains open and independent.
