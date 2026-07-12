@@ -48,23 +48,28 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, ~128 corner-case programs) has one
+(`<name>.dr` + `<name>.main.cpp`, ~150 corner-case programs) has one
 committed expected output in `tests/OptDiff/goldens/<name>.stdout`, and the
 4 optimization modes are just execution variants — EVERY mode's stdout is
 byte-compared against the same golden (cross-mode agreement is implied).
+A case with a `<name>.batches` sidecar additionally runs the
+derivation-counter oracle (`bin/Oracle`, built as `drlojekyll-oracle`) and
+the monotone projection, each against its own golden
+(`<name>.oracle.stdout` / `<name>.monotone.stdout`).
 
 - One case: `tests/OptDiff/diffrun.sh <case.dr> <driver.cpp> <workdir>`
   (env: `DR=` compiler path, `TIMEOUT=` seconds).
 - Full suite: `DR=build/debug/bin/drlojekyll tests/OptDiff/runall.sh
   <workroot> [jobs] [name-filter-regex]` — must end `SUITE: PASS`.
-  Expected-diagnostic cases (aggregate_1, kvindex_1–4, evm_func_parse) are
-  encoded in runall.sh.
+  Expected-diagnostic cases (aggregate_1, kvindex_1–4, evm_func_parse,
+  nonascii_1, truncated_decl_1) are encoded in runall.sh.
 - Blessing: goldens change ONLY via explicit
   `runall.sh --bless <workroot> [filter]` after reviewing a run's outputs —
   never automatically on failure, and never to make a red case green.
 
 `tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with
-repros (F1–F15 all fixed as of July 2026).
+repros (F1–F19 and F21 fixed as of July 2026; F20 is an open record-only
+latent-comparator note).
 
 Manual compile of generated code (driver pattern in any `cases/*.main.cpp`):
 
@@ -88,36 +93,63 @@ signatures before writing a driver.
   optimization pass carries a doc comment: algorithm, pseudocode, ASCII
   before/after diagram.
 - Control-flow IR: regions in `lib/ControlFlow/Program.h` (SERIES/PARALLEL/
-  INDUCTION/LET/TUPLECMP/CHANGETUPLE/...); built by `lib/ControlFlow/Build/`,
-  optimized by `lib/ControlFlow/Optimize.cpp` (per-region `OptimizeImpl`
-  overloads, same doc-comment convention).
-- Core invariants: no view is ever its own direct user (asserted in
-  `RelabelGroupIDs`); every inductive back-edge append must be dominated by a
-  state transition on the union's table (termination of generated fixpoints);
-  a source-less forwarding cycle is unsatisfiable, collected by dead-flow
-  elimination; `QueryImpl` owns no conditions — zero-arity predicates desugar
-  in `BuildClause` into unit relations (1 bool column, `is_condition`, sole
-  possible row `(true)`) and every inter-view dependency is a column edge;
-  canonicalization never severs the last input-column edge to an incoming
-  view (keep-last-edge rule); a JOIN pivot whose non-user side is a unit
-  relation is never removed, and CSE never folds a unit SELECT into a
-  non-unit one; a unit relation contains at most the row `(true)` — only the
-  desugarer creates its INSERTs, and they insert only the token; zero-pivot
-  JOINs appear only under `@product`.
+  INDUCTION/LET/TUPLECMP/UPDATECOUNT/CHECKMEMBER/COMMITSWEEP/CLAIM/...);
+  built by `lib/ControlFlow/Build/`, optimized by
+  `lib/ControlFlow/Optimize.cpp` (per-region `OptimizeImpl` overloads, same
+  doc-comment convention). Differential maintenance is per-stratum
+  OVERDELETE → REDERIVE → INSERT with split per-row derivation counters
+  (see `docs/proposals/StackSafeNegation.md`).
+- Core invariants (dataflow): no view is ever its own direct user (asserted
+  in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
+  collected by dead-flow elimination; `QueryImpl` owns no conditions —
+  zero-arity predicates desugar in `BuildClause` into unit relations (1 bool
+  column, `is_condition`, sole possible row `(true)`) and every inter-view
+  dependency is a column edge; canonicalization never severs the last
+  input-column edge to an incoming view (keep-last-edge rule); a JOIN pivot
+  whose non-user side is a unit relation is never removed, and CSE never
+  folds a unit SELECT into a non-unit one; a unit relation contains at most
+  the row `(true)` — only the desugarer creates its INSERTs, and they insert
+  only the token; zero-pivot JOINs appear only under `@product`; a table's
+  member-view list holds each view at most once, by IDENTITY — never dedup
+  it structurally (distinct-but-equal views sharing a model are intentional,
+  the group_ids CSE guard).
+- Core invariants (differential): every inductive back-edge fold is an
+  `UPDATECOUNT` whose propagation body is dominated by its zero crossing
+  (termination of generated fixpoints); differential rows carry split SIGNED
+  counters (`C_nr`/`C_r`; presence = total > 0) that may dip below zero only
+  mid-batch — the commit sweep asserts both ≥ 0 per class and publishes only
+  `was != now`; generated code reads a differential table ONLY through the
+  named membership predicates (`in-I`, `in-new`, the fixpoint-round forms,
+  `recursively-supported`, `present`), placed by the seed/fixpoint delta
+  schemas (seed: lower position `j < i` reads InNew, `j > i` reads InI;
+  fixpoint rounds use the claim-relative matrix — StackSafeNegation.md
+  §5.1); claim gates re-test at dequeue (`TryClaimDel`: C_nr ≤ 0,
+  `TryClaimAdd`: total > 0 — F17); negate gates are CONTEXT-keyed, never
+  sign-keyed (seed context: key absent in InI for BOTH signs; fixpoint
+  refire: absent in InNew for both signs; `@never` gates on Present — F18);
+  each non-@never negate has exactly ONE crossover arm-pair, folding into
+  the negate's own table, emitted seed-before-drain; explicit message
+  batches net with SET semantics — each side deduplicated, adds∩removes
+  annihilates, leaving presence exactly what the rest of the program proves
+  (OQ3).
 - Union sinking (`do_sink` in `QueryImpl::Optimize`) is commented out —
   `lib/DataFlow/Merge.cpp` sinking code is currently unreachable.
 
 ## Known feature gaps (clean diagnostics)
 
-Aggregates, KV indices (mutable params), cross-products over differential
-(deletable) data, impure functors (control-flow build), and unstratified
-negation — a negated predicate recursively derived from the negation's own
-result (rejected by the dataflow Stratify pass in all modes). Corpus files
-exercising these: `data/examples/average_weight.dr`,
-`pairwise_average_weight.dr` (KV indices), `conditions_to_bools.dr` (an
-explicit `@product` join of two deletable locals),
-`data/self_testing_examples/evm_func_parse.dr` (unstratified negation).
-Every other file under `data/` compiles in all 4 modes.
+Aggregates and KV indices (mutable params) — design recorded in
+`docs/proposals/AggregatingFunctors.md` (two-level group-by; a KV index is
+the degenerate aggregate), gated on the delta-relational IR per that
+ledger's sequencing; cross-products over differential (deletable) data
+(Stage 5 of `StackSafeNegation.plan.md`); impure functors (control-flow
+build); and unstratified negation — a negated predicate recursively derived
+from the negation's own result (rejected by the dataflow Stratify pass in
+all modes). Corpus files exercising these:
+`data/examples/average_weight.dr`, `pairwise_average_weight.dr` (KV
+indices), `conditions_to_bools.dr` (an explicit `@product` join of two
+deletable locals), `data/self_testing_examples/evm_func_parse.dr`
+(unstratified negation). Every other file under `data/` compiles in all 4
+modes.
 
 ## Gotchas
 

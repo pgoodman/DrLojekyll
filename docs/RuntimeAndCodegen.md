@@ -20,19 +20,47 @@ Four headers plus one source file:
   ADL-visible `uint64_t DrHash(const T &)`.
 - **`Vec.h`** — `Vec<T>`: a flat growable array of trivially copyable rows
   with `Add`, `Clear`, `Swap`, `SortAndUnique`, and range-`for` iteration.
-  Move-only.
-- **`Table.h`** — `Table<Row>`: an append-only row log (row ids are stable
-  `uint32_t` offsets) plus an open-addressing hash set for row-by-value
-  lookup. Each row carries a 2-bit `TupleState` (`kAbsent`/`kPresent`/
-  `kUnknown`); rows are never physically removed, so retraction and
-  re-derivation are state flips. `Index<Key>` is a secondary index mapping a
-  key struct to a chain of row ids threaded through a per-row `next` array —
-  no per-key allocation. Generated code updates indexes explicitly when an
-  insertion reports `added_row`.
+  Move-only. The free function `NetBatch(adds, removes)` nets a differential
+  message's explicit adds against its removes within one batch with **set
+  semantics and annihilation**: each vector is deduplicated (assert/retract are
+  idempotent) and any row appearing in both is dropped from both (the
+  unordered add∕remove pair is defined to annihilate), so `{+x, −x, −x}` is a
+  no-op rather than a removal.
+- **`Table.h`** — an append-only `RowStore<Row>` (row ids are stable
+  `uint32_t` offsets, plus an open-addressing hash set for row-by-value lookup)
+  shared by two flavors:
+  - `Table<Row>` — **monotone**, insert-only: a stored row is present forever.
+    Its only batch state is a sealed row-id watermark, so `InI(id)` ("present
+    at batch start") is one id comparison against `sealed`; `Seal()` advances
+    it. This lets a monotone table answer the same frozen-vs-current membership
+    reads a differential table does when it sits at a read position of a delta
+    join.
+  - `DiffTable<Row>` — **differential**: two packed signed derivation counters
+    per row (`C_nr` low, `C_r` high, in one 64-bit word) plus a per-row flags
+    byte (`RowFlags`: `kInI`, `kDel`/`kAdd`, `kDelNow`/`kAddNow`, `kExplicit`,
+    `kTouched`) and a `touched` vector of the ids changed this batch. Counter
+    folds (`AddDerivation`/`SubDerivation`, `AddExplicit`/`SubExplicit`) return
+    a `Delta` whose `crossed` flag reports a zero crossing. The named
+    **membership predicates** (`Present`, `InI`, `InNew`, `SurvivesSoFar`,
+    `AliveAtClaim`, `RecursivelySupported`, `NetDeleted`, `NetAdded`, ...) are
+    single flag-byte or counter reads. `TryClaimDel`/`TryClaimAdd` are the
+    dedup-and-stale-gate CASes into the batch overdeletion/addition set;
+    `RetireDel`/`RetireAdd` clear the current-round frontier bit. `Commit(sink)`
+    ends the epoch: for each touched row it publishes the net 0/1 presence
+    change against `kInI` to `sink`, re-seals `kInI`, and clears the scratch
+    flags; `DebugValidateCounts()` then asserts per-class non-negativity and
+    snapshot coherence.
+
+  `Index<Key>` is a secondary index mapping a key struct to a chain of row ids
+  threaded through a per-row `next` array — no per-key allocation. It is
+  append-only: generated code links each fresh row id (a `TryAdd`/fold whose
+  `added` is true) once, in row-id order, and readers filter liveness through
+  the owning table's membership predicates.
 
 Cursors iterate by row id and re-read through the container on each step, so
 tables and indexes may be mutated while a scan over them is live (an
-invariant the generated fixpoint code relies on).
+invariant the generated fixpoint code relies on). A query cursor filters its
+results through the backing table's `Present(id)` predicate.
 
 ## Generated code
 
