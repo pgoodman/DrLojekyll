@@ -1,0 +1,16 @@
+batch
++ n_in 1
+end
+
+batch
++ n_in 2
+end
+
+batch
+- n_in 1
+end
+
+batch
++ n_in 3
+- n_in 2
+end

@@ -1,0 +1,35 @@
+# retract-one-side, same-batch +a/-b phantom, same-batch +a/+b, ingest annihilation, re-add
+batch
++ a_in 1
++ b_in 10
+end
+
+batch
++ a_in 2
+end
+
+batch
+- b_in 10
+end
+
+batch
++ a_in 3
+- a_in 2
+end
+
+batch
++ a_in 4
++ b_in 20
+end
+
+batch
++ a_in 5
+- a_in 5
+end
+
+batch
+- a_in 1
+- a_in 3
+- a_in 4
+- b_in 20
+end

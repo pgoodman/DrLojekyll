@@ -1,0 +1,10 @@
+; Mixed: a_local monotone (add-only message), b_local differential.
+#message a_in(u32 X).
+#message b_in(u32 Y) @differential.
+#local a_local(u32 X).
+#local b_local(u32 Y).
+a_local(X) : a_in(X).
+b_local(Y) : b_in(Y).
+#message pair(u32 X, u32 Y) @differential @product
+    : a_local(X)
+    , b_local(Y).

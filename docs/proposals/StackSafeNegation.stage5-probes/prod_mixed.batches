@@ -1,0 +1,17 @@
+batch
++ a_in 1
++ b_in 10
+end
+batch
++ a_in 2
+end
+batch
+- b_in 10
+end
+batch
++ b_in 20
+- b_in 20
+end
+batch
++ b_in 30
+end

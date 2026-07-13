@@ -1,0 +1,7 @@
+; Differential self-product.
+#message n_in(u32 X) @differential.
+#local node(u32 X).
+node(X) : n_in(X).
+#message pairs(u32 A, u32 B) @differential @product
+    : node(A)
+    , node(B).
