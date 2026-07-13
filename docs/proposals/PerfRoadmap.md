@@ -105,6 +105,20 @@ Seed design (critique before building):
   strategies) starts only after §3 Q1 has numbers; the delta-relational IR
   epoch follows per AggregatingFunctors.md §4 (aggregates are its first
   operator family — do not start aggregates from here).
+- Candidate join substrate for the data-structures epoch (owner-flagged
+  2026-07-12): rntz's seekable iterators with worst-case-optimal fair
+  intersection (https://gist.github.com/rntz/9c10db3d5d77fa3d5095cf5a4c2e0476)
+  — a `Seek` trait (monotone-test `seek()`) over sorted data, galloping
+  (exponential-probe + binary) search, composable `Join` with fair
+  scheduling; the leapfrog-triejoin shape, extensible to multi-way WCOJ.
+  Today's TABLEJOIN scans one index chain per pivot; this is the classic
+  upgrade. The gist's own honesty note — the composable form ran ~2× slower
+  than hand-optimized intersection — is precisely a §3 Q1/COST question:
+  the harness must price the abstraction on OUR workloads (and against the
+  current chain scans) before any adoption. Note the fit constraint: our
+  Index chains are insertion-ordered, not sorted — a seekable substrate
+  implies sorted (or trie-shaped) index storage, which is exactly a
+  data-structures-epoch decision, not a drop-in.
 - Out of scope for this epoch: Stage 5 differential @product (independent,
   can interleave), subgraphs/demand, any parallelism (MD §7 Stage 6).
 
