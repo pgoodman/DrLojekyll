@@ -126,6 +126,29 @@ one-pager (@-pragma grammar + init/fold/unfold/merge/emit contract +
 manifest fields); a wasm whole-module build spike (one OptDiff case,
 byte-compared) once the bench harness exists.
 
+## 4.1 Surface syntax of `mutable(...)` — OPEN, owner to decide
+
+Owner review (2026-07-12): Peter flagged `@mutable` params as "seem
+problematic" without remembering their purpose. Assessment recorded: the
+purpose is keyed upsert-with-user-merge (a lattice-column: non-mutable
+columns are the key, the merge functor folds old/new cell values —
+average_weight.dr's edge_weight). The hazards are real and are exactly what
+this ledger's design already defuses: order-dependence (fixed by mandatory
+declared algebra + property checks, §3), undefined retraction (fixed by the
+state-cell story + @invertible/@recompute, §2), row-model violation (fixed
+by engine-owned state beside the tables, §3), and duplication of
+aggregation (fixed by KV-index-=-degenerate-aggregate, §2).
+
+The remaining decision is SURFACE SYNTAX only: (a) keep `mutable(f)` as
+sugar desugaring to a degenerate aggregate when this epoch lands (the
+KVINDEX dataflow node then becomes a desugaring candidate for deletion;
+merge functors must carry declared algebra or be rejected), or (b) delete
+the syntax and force the `over (...) {...}` aggregate form for keyed
+values. Recommendation on record: (a) — the problems are semantics
+problems this design solves, not syntax problems, and the upsert form is
+the ergonomic shape the disassembly workloads want. Decide at epoch start;
+nothing before then depends on it.
+
 ## 5. For the implementing session
 
 Method: the checkpoint method (F17/F18 precedent). Re-derive this file
