@@ -801,14 +801,25 @@ except the Stage-0-audited publish cases, which get exactly one reviewed
 
 ## Stage 5 — close the differential `@product` gap
 
+**LANDED 2026-07-13 (acyclic case) on differential-product — see
+`StackSafeNegation.stage5-notes.md`'s landing record.** The lowering that
+landed is the seed schema with an empty pivot, emitted as dedicated
+per-side signed frontier arms (`ProductEmission`/`EmitProductArms`,
+Stratum.cpp) rather than through the (b)/(c) chain emission; the Q3(b)
+`swap_vec == vec` seam dissolved (no `kProductInput` anywhere on the
+differential path). The diagnostic survives NARROWED to on-cycle products
+only (exact `ViewSelfReachable` fence — the group-id proxy is wrong, F22).
+Suite 155 (product_conds/diff/mixed/self), conditions_to_bools compiling
+in all 4 modes and struck from CLAUDE.md's gap list.
+
 1. The product delta rule is the seed/fixpoint schema with an empty pivot;
    lift the diagnostic at `lib/ControlFlow/Build/Build.cpp:2024–2030`
    ("Cross-products over differential (deletable) data") and make the
    0-pivot differential join flow through the (b)/(c) emission (the
    `swap_vec == vec` non-inductive-product-predecessor frontier semantics
-   from Q3(b) is the piece to get right).
+   from Q3(b) is the piece to get right). ✓ (as amended above)
 2. Promote `data/examples/conditions_to_bools.dr` into the compiling
-   corpus (acceptance test) and strike it from CLAUDE.md's gap list.
+   corpus (acceptance test) and strike it from CLAUDE.md's gap list. ✓
 
 ## Known risks the executing workflow must respect
 

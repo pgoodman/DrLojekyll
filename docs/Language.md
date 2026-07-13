@@ -337,13 +337,17 @@ q(X, Y) : prod(X, Y).
 
 ## Known feature gaps
 
-These forms parse and pass semantic analysis but abort in the control-flow
-build (`assert` + `TODO`), so no program using them compiles end-to-end:
+These forms parse and pass semantic analysis but are rejected by
+`Program::Build`'s pre-pass with a clean diagnostic, so no program using
+them compiles end-to-end:
 
 - **Aggregates** (`aggregate`/`summary` functors, `over`).
 - **KV indices** — `mutable(merge_functor)` parameters on locals/exports.
-- Cross-products in differential removal paths, and (as noted above)
-  `@impure` functors are rejected at parse time.
+- Cross-products over deletable data **inside recursive cycles** (a
+  `@product` body atom recursively derived from the product's own result).
+  Acyclic differential cross-products — including `@differential @product`
+  messages — compile and are incrementally maintained.
+- `@impure` functors (as noted above, rejected at parse time).
 
 ## Worked example
 

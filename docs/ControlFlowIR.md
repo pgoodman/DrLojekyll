@@ -461,16 +461,22 @@ remain only as internal backstops the pre-pass dominates.
 - **Aggregates** (`QueryView::IsAggregate`) and **KV indices** (`IsKVIndex`,
   `mutable`-attributed parameters) — design recorded in
   `docs/proposals/AggregatingFunctors.md`, gated on the delta-relational IR.
-- **Differential cross-products** — a pivot-less JOIN over deletable data;
+- **Differential cross-products inside recursive cycles** — a pivot-less
+  JOIN over deletable data lying on a dataflow cycle (fenced by exact
+  self-reachability, `ViewSelfReachable`). The ACYCLIC case is lowered: one
+  signed frontier arm per side and sign in the seed block (position-keyed
+  `in-new`/`in-I` reads, one `update-count` fold into the product's own
+  table), draining through the standard claim gates and frontier filters —
   Stage 5 of `docs/proposals/StackSafeNegation.plan.md`.
 - **Impure functors** — only pure functors are lowered.
 
 Unstratified negation — a negated predicate recursively derived from the
 negation's own result — is rejected earlier, by the dataflow Stratify pass, in
 all modes. Corpus files exercising these: `data/examples/average_weight.dr`,
-`pairwise_average_weight.dr` (KV indices), `conditions_to_bools.dr`
-(differential cross-product), `data/self_testing_examples/evm_func_parse.dr`
-(unstratified negation).
+`pairwise_average_weight.dr` (KV indices),
+`data/self_testing_examples/evm_func_parse.dr` (unstratified negation);
+`conditions_to_bools.dr` (an acyclic differential cross-product) compiles as
+of Stage 5 and is pinned in-suite by the `product_*` OptDiff cases.
 
 ## Reading a program dump
 

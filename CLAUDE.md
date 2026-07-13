@@ -128,10 +128,16 @@ signatures before writing a driver.
   sign-keyed (seed context: key absent in InI for BOTH signs; fixpoint
   refire: absent in InNew for both signs; `@never` gates on Present — F18);
   each non-@never negate has exactly ONE crossover arm-pair, folding into
-  the negate's own table, emitted seed-before-drain; explicit message
-  batches net with SET semantics — each side deduplicated, adds∩removes
-  annihilates, leaving presence exactly what the rest of the program proves
-  (OQ3).
+  the negate's own table, emitted seed-before-drain; an ACYCLIC differential
+  @product emits one signed frontier arm per side×sign (monotone sides have
+  no `-` arm) — position-keyed sign-INDEPENDENT non-delta reads (`j < i`
+  InNew, `j > i` InI), one fold into the product's own table, every arm
+  seed-before-drain (the claim gates' phantom drop depends on that order);
+  on-cycle differential products are rejected by exact self-reachability
+  (`ViewSelfReachable`, NOT `InductionGroupId` — a fully interior join loses
+  its group id, F22); explicit message batches net with SET semantics — each
+  side deduplicated, adds∩removes annihilates, leaving presence exactly what
+  the rest of the program proves (OQ3).
 - Union sinking (`do_sink` in `QueryImpl::Optimize`) is commented out —
   `lib/DataFlow/Merge.cpp` sinking code is currently unreachable.
 
@@ -141,15 +147,17 @@ Aggregates and KV indices (mutable params) — design recorded in
 `docs/proposals/AggregatingFunctors.md` (two-level group-by; a KV index is
 the degenerate aggregate), gated on the delta-relational IR per that
 ledger's sequencing; cross-products over differential (deletable) data
-(Stage 5 of `StackSafeNegation.plan.md`); impure functors (control-flow
-build); and unstratified negation — a negated predicate recursively derived
-from the negation's own result (rejected by the dataflow Stratify pass in
-all modes). Corpus files exercising these:
+INSIDE RECURSIVE CYCLES (the acyclic case landed as Stage 5 of
+`StackSafeNegation.plan.md`; the fence is `ViewSelfReachable` in
+`Program::Build`'s pre-pass); impure functors (control-flow build); and
+unstratified negation — a negated predicate recursively derived from the
+negation's own result (rejected by the dataflow Stratify pass in all
+modes). Corpus files exercising these:
 `data/examples/average_weight.dr`, `pairwise_average_weight.dr` (KV
-indices), `conditions_to_bools.dr` (an explicit `@product` join of two
-deletable locals), `data/self_testing_examples/evm_func_parse.dr`
-(unstratified negation). Every other file under `data/` compiles in all 4
-modes.
+indices), `data/self_testing_examples/evm_func_parse.dr` (unstratified
+negation). Every other file under `data/` — including
+`conditions_to_bools.dr`, the acyclic differential @product example —
+compiles in all 4 modes.
 
 ## Gotchas
 

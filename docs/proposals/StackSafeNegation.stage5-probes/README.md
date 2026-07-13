@@ -16,10 +16,12 @@ and never runs the CF-build F14 pre-pass):
   data/examples/conditions_to_bools.dr (+enable 1 / +enable 2 /
   idempotent re-add). ORACLE: OK (727 assertions); monotone = 2.
 
-These become the standing OptDiff fixtures (product_diff, product_mixed,
-product_self, product_conds) per stage5-notes.md section 6: add drivers
-with a custom DatabaseLog printing per-batch published deltas; author the
-oracle/monotone golden pair from oracle truth any time; bless the stdout
-golden only AFTER the compiler change lands (the oracle does not model
-publishing). Run: build/debug/bin/drlojekyll-oracle <dr> <batches>
-[--project-monotone] or --stress <seed> <rounds>.
+These became the standing OptDiff fixtures (product_diff, product_mixed,
+product_self, product_conds) at the Stage-5 landing (2026-07-13) — see
+tests/OptDiff/cases/ and stage5-notes.md's landing record. The drivers
+observe the published delta stream by overriding the (now-virtual)
+DatabaseLog methods; cross-message oracle batches split into one runtime
+epoch per message (the runtime has one entry point per message), and the
+same-epoch double flip lives in product_conds' second database instance
+and product_self's mixed batch. Run: build/debug/bin/drlojekyll-oracle
+<dr> <batches> [--project-monotone] or --stress <seed> <rounds>.

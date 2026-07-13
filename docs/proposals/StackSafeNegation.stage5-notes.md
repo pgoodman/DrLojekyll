@@ -313,3 +313,140 @@ returning — it was never completed and must be RE-RUN before code.
 - End state: implementation + fixtures + docs committed on
   differential-product; a landing record appended HERE with deviations
   for ratification; FINDINGS.md updated if the session finds anything.
+
+## Landing record (2026-07-13) — STAGE 5 CLOSED (acyclic differential @product)
+
+Commits on differential-product: implementation + fixtures + docs (this
+session; the diagnostic narrowing and EmitProductArms land in ONE commit —
+the re-run review's audit observed the half-landed intermediate state and
+flagged it as the worst possible split: accepted programs with silently
+empty published output).
+
+Method: §7's mandate executed in full. Pre-code: the whole-program
+pseudocode was re-derived from Stratum.cpp/Build.cpp/Procedure.cpp/Table.h
+and §2 checked against it (placement, P1 drains, commit-sweep publishing all
+confirmed); the artifact-level adversarial review that died on an API error
+was RE-RUN as a 6-agent workflow (5 opus lenses — fence, exactly-once,
+scheduling, emitter/FillDataModel, independent oracle-refereed hand-traces —
++ 1 sonnet mechanical consumer audit); the planned CF IR was written
+concretely for conditions_to_bools AND prod_self and the same-batch double
+flip / self-product mixed batch / prod_mixed exactly-once were hand-traced
+with the claim gates in force (all verified against the oracle by an
+independent tracer). Only then was §4 implemented.
+
+### Corrections to the reviewed seed (found pre-code, as §7 anticipated)
+
+- **C2 / F22 (the big one): §4a's fence is WRONG, and §5's "Fence
+  correction" bullet is hereby RETRACTED.** `IdentifyInductions` RESETS
+  `induction_info` on a JOIN with no non-inductive predecessors and no
+  non-inductive successors, so a 0-pivot join fully interior to a recursive
+  cycle (`t(X,Y) : t(X,_A), t(_B,Y).` over deletable support) has NO group
+  id and would slip the reviewed fence — and then hang the compiler (the
+  product scheduling clause's strict ready_after lift ratchets X ≥ X+1
+  against the SCC drain pin). The landed fence is EXACT self-reachability
+  (`ViewSelfReachable`, ControlFlow Build.cpp): visited-set DFS over
+  `Successors()` (covers the INSERT→SELECT hop; the negated-edge omission is
+  safe because such a cycle is unstratified negation, rejected by Stratify —
+  recorded at the fence). The discovery asserts (`!InductionGroupId`,
+  `!RecursiveSCC(product_table)`) are belt-and-braces only — the latter is a
+  PARTIAL tripwire (an interior join's table can be un-anchored), the DFS is
+  the sole guard. FINDINGS F22.
+- **C1: DiscoverBranches must skip 0-pivot joins** — §4 never said so. Once
+  the diagnostic narrows, the walk reaches the product join and would
+  assert (`0 < NumPivotColumns()`) / fabricate a JoinEmission with an empty
+  pivot vector. The IsJoin() branch now records nothing for 0 pivots; the
+  arms own all propagation into the product table, and the product table's
+  own downstream is ordinary branch discovery FROM it (audit-confirmed the
+  skip is complete: JoinEmissions are built only from ends_at_join chains).
+- §4b's empirical hedge DROPPED as unnecessary (review-proved): the product
+  view ALWAYS gets a table via the every-predecessor rule — its successor
+  chain (TUPLE before the transmit INSERT, or any other consumer) is
+  deletion-receiving. No FillDataModel change; a discovery assert stands.
+- §1's hand-derived DF IR: two refinements from the real -dot-out (post-
+  narrowing): the condition tests desugar to unit-relation pivot JOINs (not
+  bare CMP chains), and a TUPLE sits between the product JOIN and the
+  transmit INSERT (Procedure.cpp asserts it). Neither changes the design;
+  the product view is table-backed (%table:22 in the ctb dump) and the
+  emitted arms match §3's IR shape exactly, including the sign-independent
+  in-I/in-new split.
+
+### Implementation (as §4c, with review refinements)
+
+`ProductEmission` + `EmitProductArms` in Stratum.cpp, modeled on
+EmitJoinFire's scan_next (NOT EmitCrossover — T1): per side×sign frontier
+arms (monotone sides have no − arm), full scans via BuildMaybeScanPartial
+with zero bound columns, position-keyed sign-independent CHECKMEMBER
+(j<i kInNew, j>i kInI), ONE UPDATECOUNT into the product's own table with
+if-crossed queue appends; product outputs bound in a single innermost
+ForEachUse pass (valid precisely because 0 pivots ⇒ every role is
+kJoinNonPivot — no loop-level pivot-availability obligation); frontier
+provisioning routed through the stratum's seed_vector dedup (a self-product's
+two positions share vectors). Scheduling: strict ready_after lift over every
+side + drain_stratum[product] lift (T2; deliberately NOT ready_across — a
+fence miss diverges loudly rather than mis-scheduling); mirror readiness
+asserts; emission spliced after crossovers, before the acyclic drains.
+RuleClass asserted kNonRecursive. No Product.cpp change, no :774 cut change,
+kProductInput = 0 hits in all four cases' emitted IR (Q3(b) seam dissolved,
+verified). k=1 unreachable (a genuine @product has ≥2 views).
+
+### Deviations for ratification
+
+1. **DatabaseLog methods are now `virtual` (+ virtual dtor)** — CodeGen
+   Database.cpp. §6's "custom DatabaseLog printing per-batch published
+   deltas" was unimplementable: the generated struct had non-virtual empty
+   inline methods and the commit sweep calls it directly, so NO driver could
+   observe published deltas. Behavior-neutral for every existing case
+   (empty defaults unchanged; generated-code text changes are not golden-
+   compared); enables the product_* drivers' PrintLog subclass.
+2. **Fixture epoch adaptation**: the runtime has one entry point per
+   message, so prod_diff/prod_mixed's cross-message oracle batches split
+   into per-message runtime epochs in the drivers (negate_cobatch_mono
+   precedent, documented in each driver). The same-EPOCH double flip (T1
+   discriminator) is carried by product_conds (second database instance,
+   both conditions in one Vec — publishes exactly {-(false,false),
+   +(true,true)}, no transient) and product_self's mixed batch b4. Noted:
+   prod_diff's b4 (+a3/−a2) fires ZERO product folds as scripted (empty
+   other side) — the product-level phantom guards are product_self b4 and
+   product_conds' db2 batch, per the trace lens. product_self b3 pins the
+   both-sides-deleted single-minus property (a double-decrement would trip
+   the debug commit asserts).
+3. **F23 recorded, not fixed** (FINDINGS): pre-existing SIGSEGV in
+   `QueryImpl::EliminateDeadFlows` on a mixed-cycle differential product in
+   opt mode — reproduces at the 730b843 baseline (crashes in Query::Build,
+   upstream of Stage 5); nodf mode reaches the narrowed diagnostic cleanly.
+4. The suggested side-phantom regression case (a SIDE row's del-drop+add
+   with two supporting rules — the NetAdded `!kInI` dependency) is NOT
+   added this stage (§6 fixed the case list at 4; the dependency is
+   documented in the review ledger). Candidate for the bench epoch's
+   fixture sweep if wanted.
+
+### Gates (all green)
+
+SUITE: PASS (155 cases) — 151 + product_conds/product_diff/product_mixed/
+product_self, each with full golden triads (oracle/monotone authored from
+oracle truth pre-landing and byte-identical to the post-landing run; stdout
+blessed only after 4-mode byte-agreement, all four cases 4-mode
+byte-identical). Pre-existing goldens: ZERO modified (git-clean); all 572
+pre-existing runtime stdouts byte-identical to the fresh zero-red baseline
+run taken at session start (comm-equivalent, both directions). ctest 3/3.
+data/ corpus 4-mode sweep: conditions_to_bools flips to compiling in all 4
+modes; average_weight, pairwise_average_weight, evm_func_parse unchanged
+clean diagnostics; evm_array_parse's pre-existing 134 unchanged. Post-
+landing checks: kProductInput grep zero on the differential path (all 4
+IRs); -dot-out diff vs §1 done (refinements above); oracle triads in-suite
++ --stress spot checks clean (product_diff 42/200: 173907 assertions OK;
+product_self 7/150; product_mixed 3/150). Fence probes: interior-cycle
+repro rejected with the narrowed diagnostic in all modes it reaches
+(F23 shape crashes earlier in opt, pre-existing).
+
+Docs swept: CLAUDE.md (differential invariants gained the product-arm rule
++ the ViewSelfReachable fence; gap list narrowed to on-cycle,
+conditions_to_bools struck), ControlFlowIR.md known gaps, Language.md
+(stale "assert + TODO" wording replaced; cross-product gap narrowed),
+plan.md Stage-5 checkoff, probes README updated to point at the landed
+fixtures.
+
+STAGE 5 IS CLOSED (acyclic). The on-cycle differential product remains the
+recorded gap (fence + diagnostic; EmitJoinFire generalization to 0 pivots
+is the future path). Next epoch per the recorded sequencing: the bench
+harness / perf epoch, seeded at docs/proposals/PerfRoadmap.md.
