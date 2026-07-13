@@ -98,7 +98,10 @@ int main() {
 
   // Part 2: randomized batches vs. from-scratch oracle.
   const uint64_t kNodes = 4;
-  for (uint64_t seed = 1; seed <= 12; ++seed) {
+  // 30 seeds: the Stage-3 merge criterion's randomized breadth, pinned
+  // in-suite at the (e) ratification pass (was 12; driver runtime is
+  // negligible next to the per-mode clang compile).
+  for (uint64_t seed = 1; seed <= 30; ++seed) {
     rng_state = seed * 0x9e3779b97f4a7c15ull + 1;
 
     DatabaseFunctors functors;
