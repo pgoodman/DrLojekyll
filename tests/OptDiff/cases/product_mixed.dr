@@ -1,0 +1,15 @@
+; Stage-5 standing fixture: monotone x differential @product. Pins: the
+; monotone side (a_local, add-only message) has a + arm only, its frontier
+; is the eager walk's boundary net-additions vector (which also enrolls its
+; table in the commit-sweep Seal); the differential side's arms scan the
+; monotone side (InI = the sealed row-id watermark, InNew = log presence).
+
+#message a_in(u32 X).
+#message b_in(u32 Y) @differential.
+#local a_local(u32 X).
+#local b_local(u32 Y).
+a_local(X) : a_in(X).
+b_local(Y) : b_in(Y).
+#message pair(u32 X, u32 Y) @differential @product
+    : a_local(X)
+    , b_local(Y).

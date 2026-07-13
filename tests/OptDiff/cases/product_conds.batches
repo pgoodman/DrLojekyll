@@ -1,0 +1,15 @@
+# conditions_to_bools probe: enable_feature is ADD-ONLY.
+# batch 1: foo turns on
+batch
++ enable_feature 1
+end
+
+# batch 2: bar turns on
+batch
++ enable_feature 2
+end
+
+# batch 3: idempotent re-add of foo -> no change
+batch
++ enable_feature 1
+end

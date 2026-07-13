@@ -1,0 +1,6 @@
+init: +(false,false)
+b1 +enable(1): +(true,false) -(false,false)
+b2 +enable(2): +(true,true) -(true,false)
+b3 +enable(1) again:
+db2 init: +(false,false)
+db2 b1 +enable(1)+enable(2): +(true,true) -(false,false)

@@ -94,6 +94,45 @@ struct CrossoverEmission {
         stratum(stratum_) {}
 };
 
+// One differential-@product emission (Stage 5): the four (2k, minus the
+// missing `-` arms of monotone sides) signed frontier arms of an ACYCLIC
+// 0-pivot join over deletable data. Each arm is one seed-schema firing of
+// the product rule with the delta at side position `i` (MD §5.1 with an
+// empty pivot): loop side i's net frontier, nested FULL scans of every
+// other side j — read POSITION-KEYED and SIGN-INDEPENDENT (`j < i` at
+// `kInNew`, `j > i` at `kInI`) — and ONE signed fold into the product
+// view's own table, whose crossing parks in that table's add/delete queue.
+// The product table then drains through the STANDARD claim drains and
+// frontier filters; `TryClaimAdd`'s `Total > 0` re-test is what drops the
+// mixed-sign phantom `+` (an instance in neither the old nor the new
+// materialization), which is sound only because every arm fold is emitted
+// in the seed block strictly before the product table's drains (the
+// scheduling fixpoint lifts the drain stratum to the emission's).
+//
+// Discovered one per differential 0-pivot join. The Build.cpp pre-pass
+// fence (`ViewSelfReachable`) guarantees the join is on NO dataflow cycle,
+// so every side is strictly lower (the seed schema applies, never the
+// fixpoint schema), the fold class is `kNonRecursive`, and the scheduling
+// lift terminates. Sides need NOT be distinct tables: a self-product's two
+// positions loop one table's frontier vectors and scan that same table.
+struct ProductEmission {
+  QueryView product_view;
+  TABLE *product_table;
+  std::vector<QueryView> sides;          // `JoinedViews()` order = positions.
+  std::vector<TABLE *> side_tables;      // All non-null (FillDataModel).
+  std::vector<bool> side_differential;   // Whether side i has a `-` arm.
+
+  // Starts at the join view's stratum and is lifted by the scheduling
+  // fixpoint above every side table's readiness.
+  unsigned stratum;
+
+  ProductEmission(QueryView product_view_, TABLE *product_table_,
+                  unsigned stratum_)
+      : product_view(product_view_),
+        product_table(product_table_),
+        stratum(stratum_) {}
+};
+
 // A table's differential phases are owned by an induction when a
 // `ProgramInductionRegion` was actually built for one of its member views
 // (i.e. the view is keyed in `context.view_to_induction`, populated by
@@ -330,17 +369,23 @@ static void DiscoverBranches(ProgramImpl *impl, Context &context, TABLE *source,
 
     if (succ.IsJoin()) {
 
-      // Differential cross-products are rejected with a diagnostic before
-      // the control-flow build starts.
-      assert(0u < QueryJoin::From(succ).NumPivotColumns());
-      assert(succ.Stratum().has_value());
+      // A differential 0-pivot join (an acyclic @product — the on-cycle
+      // shape is rejected with a diagnostic before the control-flow build
+      // starts) is NOT a pivot chain terminal: all propagation into its
+      // table is owned by its `ProductEmission` arms, which loop the sides'
+      // net frontiers directly. Recording a chain here would fabricate a
+      // `JoinEmission` with an empty pivot vector. The product table's own
+      // downstream propagation is ordinary branch discovery FROM it.
+      if (0u < QueryJoin::From(succ).NumPivotColumns()) {
+        assert(succ.Stratum().has_value());
 
-      BranchChain branch;
-      branch.source = source;
-      branch.path = path;
-      branch.ends_at_join = true;
-      branch.stratum = *(succ.Stratum());
-      branches.push_back(std::move(branch));
+        BranchChain branch;
+        branch.source = source;
+        branch.path = path;
+        branch.ends_at_join = true;
+        branch.stratum = *(succ.Stratum());
+        branches.push_back(std::move(branch));
+      }
 
     } else if (table != nullptr && table != source) {
 
@@ -1245,6 +1290,160 @@ static void EmitJoinFire(ProgramImpl *impl, Context &context,
   }
 }
 
+// Emit the signed frontier arms of one differential @product (see
+// `ProductEmission`). Modeled on `EmitJoinFire`'s per-position scan_list —
+// NOT on `EmitCrossover`'s single fixed `kInNew` read: the non-delta reads
+// must be POSITION-keyed (`j < i` → `kInNew`, `j > i` → `kInI`) and
+// sign-independent, or a same-batch both-sides change double-counts (the
+// F18-class trap; the same-batch double-flip fixture is the discriminator).
+// Shape of one arm (sign ±, delta at side i):
+//
+//   vector-unique  <side i net-additions|net-removals>     « seed_vector »
+//   vector-loop {side i cols} over that frontier
+//     scan side j₁ FULL (zero bound columns)
+//       check-member (j₁<i ? in-new : in-I) {side j₁ row}
+//         ... every other side, ascending position order ...
+//           update-count ±nonrecursive {product row} in product table
+//             if-crossed → append into product table's add/delete queue
+//
+// The product outputs are bound in ONE pass at the innermost level via
+// `ForEachUse`: with zero pivots every output has exactly one input column
+// (`kJoinNonPivot`, Query.cpp), so there is no loop-level pivot-availability
+// obligation forcing `EmitJoinFire`'s split binding, and every input — the
+// loop's delta side and each scan's side — is lexically in scope there.
+//
+// `seed_vector` is the caller's per-stratum frontier provisioning (sort-
+// unique each consumed frontier once per stratum series); a self-product's
+// two positions consume the same vectors, so the dedup matters there.
+static void EmitProductArms(
+    ProgramImpl *impl, Context &context, const RecursiveSccMap &sccs,
+    const ProductEmission &p,
+    const std::function<VECTOR *(TABLE *, VectorKind)> &seed_vector,
+    SERIES *seq) {
+  const QueryJoin join = QueryJoin::From(p.product_view);
+  const size_t num_sides = p.sides.size();
+
+  // The acyclic fence admitted this join, so the fold's rule class is
+  // non-recursive; `RuleClass` re-derives it against the SCC map as a
+  // tripwire (a `kRecursive` here means an on-cycle product slipped the
+  // `ViewSelfReachable` pre-pass fence).
+  const DerivClass deriv_class =
+      RuleClass(sccs, p.product_table, p.side_tables);
+  assert(deriv_class == DerivClass::kNonRecursive);
+
+  std::vector<QueryColumn> product_cols;
+  for (auto col : p.product_view.Columns()) {
+    product_cols.push_back(col);
+  }
+
+  for (size_t i = 0u; i < num_sides; ++i) {
+    for (const bool is_add : {true, false}) {
+
+      // A monotone side never loses rows: no `-` arm.
+      if (!is_add && !p.side_differential[i]) {
+        continue;
+      }
+
+      VECTOR *const frontier = seed_vector(
+          p.side_tables[i],
+          is_add ? VectorKind::kNetAdditions : VectorKind::kNetRemovals);
+
+      // Loop the delta side's frontier, binding its member view's columns.
+      VECTORLOOP *const loop =
+          impl->operation_regions.CreateDerived<VECTORLOOP>(
+              impl->next_id++, seq, ProgramOperation::kLoopOverInductionVector);
+      seq->AddRegion(loop);
+      loop->vector.Emplace(loop, frontier);
+      for (auto col : p.sides[i].Columns()) {
+        VAR *const var = loop->defined_vars.Create(
+            impl->next_id++, VariableRole::kVectorVariable);
+        var->query_column = col;
+        loop->col_id_to_var.emplace(col.Id(), var);
+      }
+
+      // The innermost fold: bind every product output from its (single)
+      // input column, fold one signed count into the product's own table,
+      // and park the crossing in the matching queue.
+      const auto emit_fold = [&](SERIES *inner_seq) {
+        join.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                            std::optional<QueryColumn> out_col) {
+          if (out_col) {
+            assert(role == InputColumnRole::kJoinNonPivot);
+            (void) role;
+            inner_seq->col_id_to_var.emplace(
+                out_col->Id(), inner_seq->VariableFor(impl, in_col));
+          }
+        });
+
+        UPDATECOUNT *const fold = BuildUpdateCount(
+            impl, p.product_table, inner_seq, product_cols, is_add,
+            deriv_class);
+        inner_seq->AddRegion(fold);
+
+        VECTOR *const queue = TableDeltaVector(
+            impl, context, p.product_table,
+            is_add ? VectorKind::kAddQueue : VectorKind::kDeleteQueue);
+        VECTORAPPEND *const append =
+            impl->operation_regions.CreateDerived<VECTORAPPEND>(
+                fold, ProgramOperation::kAppendToInductionVector);
+        append->vector.Emplace(append, queue);
+        for (auto col : product_cols) {
+          append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+        }
+        fold->body.Emplace(fold, append);
+      };
+
+      // Nested full scans of every other side, ascending position order,
+      // each gated on its position-relative membership predicate.
+      std::vector<size_t> scan_positions;
+      for (size_t j = 0u; j < num_sides; ++j) {
+        if (j != i) {
+          scan_positions.push_back(j);
+        }
+      }
+
+      std::function<void(size_t, SERIES *)> scan_next =
+          [&](size_t idx, SERIES *parent_seq) {
+            if (idx == scan_positions.size()) {
+              emit_fold(parent_seq);
+              return;
+            }
+            const size_t j = scan_positions[idx];
+            const QueryView side = p.sides[j];
+            TABLE *const side_table = p.side_tables[j];
+            const MembershipPredicate pred = (j < i)
+                                                 ? MembershipPredicate::kInNew
+                                                 : MembershipPredicate::kInI;
+
+            std::vector<QueryColumn> avail;  // Zero bound columns: full scan.
+            BuildMaybeScanPartial(
+                impl, side, avail, side_table, parent_seq,
+                [&](REGION *in_scan, bool) -> REGION * {
+                  std::vector<QueryColumn> side_cols;
+                  for (auto col : side.Columns()) {
+                    side_cols.push_back(col);
+                  }
+                  return BuildCheckMember(
+                      impl, in_scan, side_table, side_cols, pred,
+                      [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
+                        SERIES *const next_seq =
+                            impl_->series_regions.Create(in_check);
+                        scan_next(idx + 1u, next_seq);
+                        return next_seq;
+                      },
+                      [](ProgramImpl *, REGION *) -> REGION * {
+                        return nullptr;
+                      });
+                });
+          };
+
+      SERIES *const body_seq = impl->series_regions.Create(loop);
+      loop->body.Emplace(loop, body_seq);
+      scan_next(0u, body_seq);
+    }
+  }
+}
+
 }  // namespace
 
 // Build the per-stratum differential phases into the entry procedure: for
@@ -1422,6 +1621,40 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
                             negate_view.Stratum().value_or(0u));
   }
 
+  // The differential @product emissions (Stage 5), one per ACYCLIC 0-pivot
+  // join over deletable data — the exact set the narrowed Build.cpp pre-pass
+  // admits (its `ViewSelfReachable` fence rejects every on-cycle one, so
+  // both tripwires below are structural). Every side table is non-null: the
+  // join persists all its joined views (FillDataModel), and the product view
+  // itself is persisted by the every-predecessor rule (its successor chain
+  // is deletion-receiving).
+  std::vector<ProductEmission> products;
+  for (QueryJoin join : query.Joins()) {
+    const QueryView join_view(join);
+    if (join.NumPivotColumns() || !join_view.CanReceiveDeletions()) {
+      continue;
+    }
+    assert(!join_view.InductionGroupId().has_value());
+
+    DataModel *const join_model =
+        impl->view_to_model[join_view]->FindAs<DataModel>();
+    TABLE *const product_table = join_model->table;
+    assert(product_table != nullptr);
+    assert(!RecursiveSCC(recursive_sccs, product_table).has_value());
+
+    ProductEmission p(join_view, product_table,
+                      join_view.Stratum().value_or(0u));
+    for (QueryView side : join.JoinedViews()) {
+      TABLE *const side_table =
+          impl->view_to_model[side]->FindAs<DataModel>()->table;
+      assert(side_table != nullptr);
+      p.sides.push_back(side);
+      p.side_tables.push_back(side_table);
+      p.side_differential.push_back(TableIsDifferential(side_table));
+    }
+    products.push_back(std::move(p));
+  }
+
   // The tables whose claim drains and frontier filters the phases own. A
   // table's drain stratum starts at its owner stratum and is lifted below
   // to the stratum of the latest fold into it.
@@ -1434,7 +1667,7 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     }
   }
   if (branches.empty() && joins.empty() && phase_table_order.empty() &&
-      crossovers.empty()) {
+      crossovers.empty() && products.empty()) {
     return;
   }
 
@@ -1552,6 +1785,25 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       lift(drain_stratum[x.negate_table], x.stratum, changed);
     }
 
+    // The product arms: lift each above EVERY side table's readiness (the
+    // strict `ready_after`, deliberately not the SCC-exempt `ready_across` —
+    // the acyclic fence guarantees no same-SCC side, so a would-be ratchet
+    // here means a fence miss and should diverge loudly in development, not
+    // mis-schedule silently), then lift the product table's drain stratum to
+    // the emission's, so every arm fold lands in the seed block strictly
+    // before that table's claim drains (the phantom-`+` drop via
+    // `TryClaimAdd`'s `Total > 0` re-test depends on this order). The lift
+    // terminates: dataflow is acyclic through the product, so nothing
+    // downstream of the product table can re-lift a side's drain.
+    for (ProductEmission &p : products) {
+      unsigned stratum = p.stratum;
+      for (TABLE *side_table : p.side_tables) {
+        stratum = std::max(stratum, ready_after(side_table));
+      }
+      lift(p.stratum, stratum, changed);
+      lift(drain_stratum[p.product_table], p.stratum, changed);
+    }
+
     // Pin every table of a recursive SCC to a single shared drain stratum:
     // the max over its members. The SCC drains as one fixpoint, so its seed,
     // join, claim-round loop, REDERIVE and frontier build all run in the one
@@ -1644,6 +1896,14 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     assert(ready_across(x.negate_table, x.negated_table) <= x.stratum);
     assert(ready_across(x.negate_table, x.pred_table) <= x.stratum);
   }
+  for (const ProductEmission &p : products) {
+    for (TABLE *side_table : p.side_tables) {
+
+      // Strictly-lower readiness for EVERY side (no SCC exemption — the
+      // acyclic fence rules same-SCC sides out entirely).
+      assert(ready_after(side_table) <= p.stratum);
+    }
+  }
 #endif  // NDEBUG
 
   // The strata that need a phase series, ascending.
@@ -1659,6 +1919,9 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   }
   for (const CrossoverEmission &x : crossovers) {
     strata.insert(x.stratum);
+  }
+  for (const ProductEmission &p : products) {
+    strata.insert(p.stratum);
   }
 
   // Nest the entry procedure's body (the ingest walk, which parks every
@@ -1848,6 +2111,26 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
         EmitCrossover(impl, context, recursive_sccs, x, true /* is_add */,
                       stratum_seq);
       }
+    }
+
+    // Differential @product arms (Stage 5): emitted in the SEED BLOCK, after
+    // the crossovers and strictly BEFORE the claim drains below — every arm
+    // fold must land ahead of the product table's own drains for the claim
+    // gates' phantom drop to be sound (see `ProductEmission`). The sides'
+    // frontiers are complete: the scheduling fixpoint lifted this emission
+    // above every side table's drain stratum.
+    for (const ProductEmission &p : products) {
+      if (p.stratum != stratum) {
+        continue;
+      }
+
+      // The fold target drains at or after this stratum (mirrors the
+      // crossover's seed-before-drain assert).
+      assert(drain_stratum.count(p.product_table) &&
+             drain_stratum.find(p.product_table)->second >= stratum);
+
+      EmitProductArms(impl, context, recursive_sccs, p, seed_vector,
+                      stratum_seq);
     }
 
     // Partition this stratum's phase tables into single-pass (genuinely

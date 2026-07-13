@@ -1,0 +1,19 @@
+; Stage-5 standing fixture: differential @product over two condition-derived
+; locals (data/examples/conditions_to_bools.dr near-clone). Pins the two
+; single-flip batches (position-keyed non-delta reads, both directions) and
+; the idempotent re-add (empty frontiers, no publish). The driver adds a
+; second database instance for the SAME-EPOCH double flip (T1: both
+; conditions flipping in one batch must publish no transient row).
+
+#message enable_feature(u32 X).
+foo : enable_feature(1).
+bar : enable_feature(2).
+#local foo_enabled(bool X)
+    : X=true, foo
+    : X=false, !foo.
+#local bar_enabled(bool X)
+    : X=true, bar
+    : X=false, !bar.
+#message enabled_features(bool FooEnabled, bool BarEnabled) @differential @product
+    : foo_enabled(FooEnabled)
+    , bar_enabled(BarEnabled).

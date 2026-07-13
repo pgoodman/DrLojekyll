@@ -1,0 +1,13 @@
+; Stage-5 standing fixture: differential SELF-product -- both joined views
+; are distinct (group_ids-protected) readers of ONE table. Pins: side
+; non-distinctness in the emitter (both arm positions loop the same table's
+; frontier vectors and scan the same table), and the same-EPOCH mixed batch
+; (+3/-2: the position-keyed reads deliver exactly-once across the shared
+; table with no special-casing).
+
+#message n_in(u32 X) @differential.
+#local node(u32 X).
+node(X) : n_in(X).
+#message pairs(u32 A, u32 B) @differential @product
+    : node(A)
+    , node(B).

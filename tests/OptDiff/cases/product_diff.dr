@@ -1,0 +1,20 @@
+; Stage-5 standing fixture: differential @product with @differential message
+; inputs on BOTH sides. Pins retract-one-side, the same-SIDE mixed batch
+; (+a3/-a2: both signed arms of one side firing in one epoch), ingest
+; annihilation (+a5/-a5, OQ3 set-semantics netting), and the full drain to
+; empty. NOTE: the compiled runtime has one entry point per message, so the
+; oracle's cross-message batches split into one epoch per message in the
+; driver (a_in first, then b_in); the oracle referees the combined epoch.
+
+#message a_in(u32 X) @differential.
+#message b_in(u32 Y) @differential.
+
+#local a_local(u32 X).
+#local b_local(u32 Y).
+
+a_local(X) : a_in(X).
+b_local(Y) : b_in(Y).
+
+#message pair(u32 X, u32 Y) @differential @product
+    : a_local(X)
+    , b_local(Y).

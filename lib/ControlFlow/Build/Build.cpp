@@ -156,6 +156,48 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   }
 }
 
+// Whether `view` lies on a dataflow cycle: DFS over `Successors()` with a
+// visited set, true iff the walk re-reaches `view`. Used as the Stage-5
+// differential-@product fence: an ACYCLIC 0-pivot differential join is
+// lowered by the stratum phases' product arms (`EmitProductArms`), while an
+// on-cycle one is rejected — `EmitJoinFire` is not generalized to 0 pivots,
+// and the scheduling fixpoint's product clause (a strict `ready_after` lift
+// on every side) would ratchet forever against the SCC drain-stratum pin if
+// a same-SCC side slipped through.
+//
+// The test must be reachability, NOT `InductionGroupId().has_value()`: a
+// JOIN fully interior to a recursive cycle (no non-inductive predecessors
+// and no non-inductive successors, e.g. `t(X,Y) : t(X,A), t(B,Y).`) has its
+// induction info RESET by `IdentifyInductions` (lib/DataFlow/Induction.cpp)
+// and carries no group id despite being on the cycle.
+//
+// `Successors()` covers every stored dataflow edge, including the
+// INSERT→SELECT relation hop. The one edge it omits is the DataFlow-internal
+// negated-view→NEGATE coupling — safe here because a cycle closed only
+// through a negated edge is unstratified negation, already rejected by the
+// dataflow Stratify pass before `Program::Build` runs.
+static bool ViewSelfReachable(QueryView view) {
+  std::unordered_set<QueryView> seen;
+  std::vector<QueryView> stack;
+  for (QueryView succ : view.Successors()) {
+    stack.push_back(succ);
+  }
+  while (!stack.empty()) {
+    const QueryView v = stack.back();
+    stack.pop_back();
+    if (v == view) {
+      return true;
+    }
+    if (!seen.insert(v).second) {
+      continue;
+    }
+    for (QueryView succ : v.Successors()) {
+      stack.push_back(succ);
+    }
+  }
+  return false;
+}
+
 // Building the data model means figuring out which `QueryView`s can share the
 // same backing storage. This doesn't mean that all views will be backed by
 // such storage, but when we need backing storage, we can maximally share it
@@ -995,10 +1037,15 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
     }
   }
   for (auto join : query.Joins()) {
-    if (!join.NumPivotColumns() && QueryView(join).CanReceiveDeletions()) {
+    if (!join.NumPivotColumns() && QueryView(join).CanReceiveDeletions() &&
+        ViewSelfReachable(QueryView(join))) {
+
+      // The ACYCLIC differential @product is lowered by the stratum phases
+      // (`EmitProductArms`, Stratum.cpp); only the on-cycle shape remains a
+      // gap (see `ViewSelfReachable` above).
       log.Append()
-          << "Cross-products over differential (deletable) data are not yet "
-             "supported";
+          << "Cross-products over differential (deletable) data inside "
+             "recursive cycles are not yet supported";
     }
   }
   if (num_errors != log.Size()) {

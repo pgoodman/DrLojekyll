@@ -718,16 +718,20 @@ void Generator::EmitFunctorsDecl(void) {
 
 void Generator::EmitLogDecl(void) {
   EmitInlines(hh, "c++:database:log:prologue");
-  hh << "// Receives published messages. The default methods do nothing.\n"
+  hh << "// Receives published messages. The default methods do nothing;\n"
+     << "// they are virtual so a driver can observe the published delta\n"
+     << "// stream (a @differential message publishes one call per net\n"
+     << "// presence change at each batch's commit sweep).\n"
      << "struct DatabaseLog {\n";
   hh.PushIndent();
+  hh << hh.Indent() << "virtual ~DatabaseLog(void) = default;\n";
   EmitInlines(hh, "c++:database:log:definition:prologue");
   for (ParsedMessage message : Messages(module)) {
     if (!message.IsPublished()) {
       continue;
     }
-    hh << hh.Indent() << "void " << message.Name() << "_" << message.Arity()
-       << "(";
+    hh << hh.Indent() << "virtual void " << message.Name() << "_"
+       << message.Arity() << "(";
     for (ParsedParameter param : ParsedDeclaration(message).Parameters()) {
       hh << TypeName(module, param.Type()) << " "
          << Sanitize(ToString(param.Name())) << ", ";
