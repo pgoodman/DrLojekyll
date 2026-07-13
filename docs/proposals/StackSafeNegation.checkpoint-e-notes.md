@@ -385,3 +385,43 @@ perf — seed ledger committed at docs/proposals/PerfRoadmap.md (bench
 harness → runtime data structures → delta-relational IR; aggregates gate
 on the IR per AggregatingFunctors.md §4). Stage 5 (differential @product)
 remains open and independent.
+
+### Ratification addendum (2026-07-12, owner-delegated: "you own them all")
+
+The owner reviewed the five deviations (with fresh evidence gathered for
+the review: the 26-case IR-churn classification with oracle coverage, an
+instrumented F20 reachability probe, and driver timings) and delegated all
+five decisions. Outcomes:
+
+1. E0 IR-churn premise correction — RATIFIED as landed. Final
+   classification: 18 shrunk cases (duplicate emissions removed; 17/18
+   oracle-refereed, the exception `disassemble` 4-mode byte-identical) + 8
+   reorder cases. ATTRIBUTION CORRECTION discovered during the F20 work:
+   the reorder class is confounded with a pre-existing run-to-run
+   emission-order instability — 4 of those cases (kcfa_tiny,
+   kcfa_tiny_merged, cond_in_induction, cf14_2) produce different -ir-out
+   text across two consecutive runs of ONE binary with ONE invocation
+   (per-process ASLR through a pointer-keyed container in induction
+   emission). Only the shrinkage class is definitively E0-attributable;
+   golden-invariance conclusions are unaffected (stdout 656/656 stable).
+2. F21 scope — RATIFIED as landed (the crash class made won't-fix
+   untenable; only already-broken inputs changed behavior).
+3. F20 — FLIPPED to FIXED (commit 88bbea1) on the probe's strength: the
+   comparator was temporarily instrumented and all 179 programs × 4 modes
+   (748 compiles) showed ZERO both-inductive differing-depth pairs sharing
+   a table; the corrected branch is a no-op on all evidence and the
+   assert(false) is now a live tripwire. SUITE: PASS (151); ctest 3/3;
+   zero golden churn.
+4. 30-seed stress — FLIPPED to PROMOTED in-suite (commit 595ffe3): the
+   deviation record's "~2.5x case runtime" cost claim is RETRACTED
+   (measured: 30 ms vs 15 ms driver runtime; case cost is the clang
+   compiles). tc_nonlinear_diff's seed bound is now 30, with ONE reviewed
+   bless whose diff is exactly the 18 forecast "seed N OK" lines (4-mode
+   byte-identical pre-bless; .oracle/.monotone goldens unchanged).
+   SUITE: PASS (151).
+5. Generated-text reproducibility — DEFERRED with a named trigger,
+   recorded in PerfRoadmap.md §1 (sharpened by the finding in item 1:
+   the instability is run-to-run for inductive programs, not merely
+   invocation-sensitive). Trigger: wanting bit-stable generated artifacts
+   (build caching, distributed sources, bit-stable wasm module) pulls the
+   pointer-keyed-container hunt into the early bench epoch.

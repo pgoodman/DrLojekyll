@@ -36,12 +36,21 @@ building anything.
   pure cycles (MD §11 OQ7), phantom-pair churn on mixed batches, per-RMW
   crossing checks, touched-vector growth (OQ6 dedup question), commit-sweep
   scans, sort-unique passes on every frontier hop.
-- Reproducibility wrinkle (recorded at (e)): compiler ENTITY IDS are
-  invocation-environment-sensitive (argv/cwd shift heap layout → pointer-
-  keyed tie orders), so generated-code TEXT is not run-stable, though
-  runtime behavior and stdout are (656/656 byte-stable across fresh suite
-  runs). Bench comparisons must key on program SEMANTICS (case + mode), not
-  generated-text hashes.
+- Reproducibility wrinkle (recorded at (e), sharpened at the ratification
+  pass): generated-code TEXT is not run-stable. Entity ids shift with the
+  invocation environment (argv/cwd shift heap layout → pointer-keyed tie
+  orders), and — stronger — INDUCTIVE programs reorder emissions across
+  consecutive runs of ONE binary with ONE invocation (per-process ASLR
+  through a pointer-keyed container in induction emission; e.g. kcfa_tiny,
+  cond_in_induction, cf14_2). Runtime behavior and stdout are unaffected
+  (656/656 byte-stable across full suite runs). Bench comparisons must key
+  on program SEMANTICS (case + mode), never generated-text hashes.
+  OWNER-DELEGATED DECISION (2026-07-12): deferred to this epoch with a
+  named trigger — if bit-stable generated artifacts become wanted (build
+  caching, distributing generated sources, a bit-stable wasm whole-module
+  artifact), hunting the pointer-keyed containers becomes an early
+  harness-epoch work item; otherwise this stays a recorded methodology
+  caveat.
 
 ## 2. The bench harness (this epoch's deliverable)
 
