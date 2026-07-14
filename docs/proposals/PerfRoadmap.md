@@ -129,7 +129,17 @@ Seed design (critique before building):
   implies sorted (or trie-shaped) index storage, which is exactly a
   data-structures-epoch decision, not a drop-in.
 - Out of scope for this epoch: Stage 5 differential @product (independent,
-  can interleave), subgraphs/demand, any parallelism (MD §7 Stage 6).
+  can interleave; CLOSED 2026-07-13), subgraphs/demand, any parallelism
+  (MD §7 Stage 6).
+- RESEQUENCED (owner, 2026-07-13, at the Stage-5 close): the
+  generated-surface redesign — docs/proposals/GeneratedSurface.md: free
+  functions + hidden friends over a sealed state struct, log/functors by
+  deduction (retires Stage 5's `virtual DatabaseLog` stopgap), epoch 0 as
+  an explicit entry point — runs BEFORE this bench epoch. Rationale: bench
+  drivers are written against the generated surface; write them once,
+  against the shape we keep. That epoch is behavior-neutral (zero golden
+  churn) and must record the header-only compile-time delta this epoch
+  will care about.
 
 ## 5. Session bootstrap (fresh-session checklist)
 
