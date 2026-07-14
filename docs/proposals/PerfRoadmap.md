@@ -616,3 +616,199 @@ SUITE PASS 155 ZERO golden churn (semantics-neutral epoch), ctest 3/3,
 BASELINE.md updated with per-diff deltas, landing record appended HERE
 with deviations for ratification. Environment: as §6.4 (PATH, bash
 3.2, ${=var}, never rebuild mid-suite, never time concurrently).
+
+## 9. Landing record (2026-07-14) — DATA-STRUCTURES EPOCH CLOSED
+
+Branch `data-structures` off main b077449. Commits: bdfe0f8 (D3),
+4ab436e (D1), 4bd6fc5 (DrTest ordered asserts, owner-requested),
+98e6ab6 (D2), 9b64958 (compaction seam counters), 7751a18 (BASELINE
+runs 2–5), plus this docs/close commit. Method executed per §8.4: fleet
+re-verification of the §8.1–8.3 seed BEFORE building (4 agents — the
+precedent held, errata below), 3-judge adversarial critique of D1–D3
+with binding resolutions, hand-written output states golden-verified
+BEFORE generalizing (post-D1 artifacts for transitive_closure_diff +
+d5_recursive_negate; post-D2 prototype runtime + emitted blocks, driven
+at drift scale), 2-reviewer approval of the hand artifacts, then one
+diff at a time with full gates between (SUITE PASS 155 zero golden
+churn, ctest 3/3, seam ON/OFF gates, per-diff bench with chained
+befores). Implementation order D3 → D1 → D2 (deviation 1).
+
+### Seed errata found by the pre-code re-verification (precedent held)
+
+- E-7 (the real defect): §8-adjacent session ledger classified
+  Stratum.cpp:830/1271/1426 CHECKMEMBERs as vec-driven. WRONG: all
+  three sit inside BuildMaybeScanPartial TABLESCANs of the SAME table
+  (live at the deep_chain artifact's fixpoint loops) — D1's scope
+  stack had to instrument EmitScan, not just EmitJoin, or it would
+  silently miss elisions.
+- E-8: the D2 all-flags-clear-on-dead-rows argument must be BY
+  CONSTRUCTION (Commit's clears + the kExplicit⇒C_nr≥1 pairing), not
+  by DebugValidateCounts — the validator is doubly NDEBUG-gated and
+  never runs in bench builds.
+- E-9: "pass the indices to the table" cannot work for the D2 rebuild:
+  Index stores no per-row key; the projection exists only at generated
+  Add sites. The rebuild walk must be EMITTED (it is).
+- E-10: monotone tables must never compact for TWO reasons — no deaths
+  AND `sealed` is an id-order watermark any renumbering corrupts.
+- E-11: no cursor-invalidation contract existed anywhere; the
+  append-only log made epoch-spanning cursors accidentally stable.
+  Exhaustive scan: no driver (153 OptDiff + 5 bench) holds a cursor
+  across an entry call.
+
+### What landed
+
+D1 (emission-only re-Find elision): Generator row-binding scope stack;
+differential body-path gates read the predicate on the scan cursor id;
+monotone Present/InNew gates inside a same-table scan elide to constant
+truth. Preconditions recorded in the code comment (value→id is a
+function; tuple order == physical column order via same-DataModel
+column-position compatibility; globally-unique var names). Conservative
+everywhere else. Re-emitted transitive_closure_diff is byte-identical
+to the hand-verified target.
+D2 (dead-row compaction): stable in-place densify + slot re-insert in
+RowStore; num_live accounting in Commit; two-arm trigger (dead ≥ live
+AND ≥ 4096-row floor keeping the whole suite below trigger; pre-Rehash
+mostly-dead arm); emitted per-table sweep tail (Clear + rebuild walk
+under codegen-known key projections); Index::Clear; Vec::Truncate;
+HYDE_RT_COMPACT_ALWAYS test-only override; two Runtime unit tests
+(positive and negative space); cursor contracts documented in
+GeneratedSurface.md (invalidation-by-entry-call; keyed-cursor order
+unspecified).
+D3 (SortAndUnique ≤1 guard): the identity boundary; counters pre-guard.
+
+### The numbers (details in bench/BASELINE.md runs 2–5)
+
+DRIFT (the epoch's mandate): 16.85x → 1.78x over 2000 churn batches;
+2000-epoch total 13.18s → 2.77s; steady-state churn is no longer
+quadratic-in-history. RE-FIND (the 7–9 finds/fold): tc finds −39.7%,
+pure_cycle −25.2%, member_checks unchanged (the predicted mechanism
+split); wall tc −17.8%, pure_cycle −10.3% (interleaved A/B). tc
+flagship after D2: another −31.8% (compaction pays off within 200
+churn batches). PER-ROUND (D3): retract −1.5%/reseed −3.0% — the
+pre-registered −8..−25% MISSED; per-round cascade cost is
+claim/retire/filter Finds, not sort dispatch (the values→ids vec
+plumbing, D1b, is the recorded follow-on if deep_chain matters).
+COST honesty: D2 is neutral (±1%, A/B) where history stays live
+(pure_cycle, deep_chain); the engine still loses to from-scratch
+inside the run-1 grid — these diffs move constants, not the verdict;
+the crossover extrapolation improves with the tc epoch wall −38%.
+
+### Deviations for ratification
+
+1. Implementation order D3→D1→D2 (critique panel: cleanest first-blood
+   attribution; counter signatures disjoint; seam-gate count equal).
+2. D3's pre-registered magnitude missed low (kept: zero-risk, measured
+   positive, one line).
+3. METHODOLOGY: interleaved-binary A/B added as normative for per-diff
+   wall deltas <10% (±2–6% between-run thermal confound measured; the
+   canary catches within-run drift only). BASELINE.md addendum.
+4. Cursor contracts (invalidation + keyed-order-unspecified) documented
+   in GeneratedSurface.md rather than enforced at runtime (enforcement
+   would tax every next(); no driver violates them — exhaustive scan).
+5. K=1 trigger accepted with ~1.78x residual (predicted ~2x; the
+   steady-state footprint floor is 2x live BY CONSTRUCTION). K<1
+   (dead ≥ live/2) is the recorded knob if a lower residual is wanted
+   at more frequent compactions.
+6. The reviewer-recommended permanent CompactOracle ctest target was
+   NOT added; coverage landed as the two Runtime unit tests + the
+   compact-always oracle recipe (recorded in the D2 commit; tcd + d5
+   compiled ±HYDE_RT_COMPACT_ALWAYS, dbg+opt, goldens byte-compared).
+   Authoring the dedicated ctest is recorded follow-up.
+7. Two D1 shapes remain corpus-unwitnessed: a product-body CHECKMEMBER
+   (no EmitProduct staging path emits one anywhere; a false elision
+   there is a compile error by construction) and a keyed_probe side
+   feeding a body CHECKMEMBER. Both conservative by the match rule;
+   witness cases are recorded follow-up.
+8. DrTest gained ASSERT_LT/LE/GT/GE + unprintable-safe Show
+   (owner-requested mid-epoch; TigerBeetle-style intent-communicating
+   asserts, groundwork for property testing).
+9. FINDINGS.md UNCHANGED: every gate and oracle agreed — the epoch
+   exposed no correctness bug.
+
+### D4/D5 residue (gated decisions, NOT closed work)
+
+D4 (probe/layout, seam-A/B per variant, needs a fresh post-D2 counter
+profile): load-factor sweep (max load is 8/9, ugliest right before
+each doubling); FUSED COUNTS+FLAGS WORD (2×28-bit signed counters + 8
+flag bits in the one u64 — halves the fold path's dependent loads at
+same footprint; referee pure_cycle's 532k folds/epoch); cheaper row
+hash (4 HashMix ≈ 8 imuls per 2-col row; distribution is fine, the
+target is instruction count); i8-counters-with-sidecar REJECTED as
+default (derivation counts are data-dependent-unbounded, MD §11 OQ5
+stands). D5 (seekable/WCOJ, §4): decision inputs now on record —
+post-D1 chains no longer pay a re-Find per hit, post-D2 chains are
+dead-free after compaction, and CompactRowsInPlace is the natural
+place to establish SORTED layout if pricing ever favors it. Priced
+adoption deferred until a workload's join profile demands it.
+
+EPOCH CLOSED. Next per §4/AggregatingFunctors §4: DELTA-RELATIONAL IR
+(§10 seed below). The pure-cycle 63x amplification remains the standing
+differential-semantics question (MD §10 weight escape) — untouched by
+this epoch, as expected (D2 measured neutral there).
+
+## 10. Epoch-start addendum (2026-07-14, at the data-structures close):
+## the delta-relational IR epoch's seed
+## (SINGLE-PASS SEED by the closing session; the precedent stands —
+## E-1..E-11 across four epochs — re-verify before building anything)
+
+### 10.0 Why this epoch (the two forcing functions, both measured)
+
+- Q5 (BASELINE.md): drlojekyll's OWN compile time is superlinear in
+  rule count (52ms at 2 rules → 7.81s at 128) while generated text and
+  clang stay ~linear — the compiler's pass structure, not codegen
+  volume, dominates at scale.
+- AggregatingFunctors §4: aggregates (GROUP-UPDATE/state-cell) are the
+  first operator family whose delta semantics the §5.1 counter schemas
+  cannot express — landing them without the IR means a third hand-built
+  emission web the IR would then rewrite.
+
+### 10.1 What it replaces (verify from code before trusting)
+
+The per-shape scalar emission web in lib/ControlFlow/Build/: the
+seed/fixpoint delta schemas (StackSafeNegation §5.1) exist only as
+hand-coded region-tree builders — Stratum.cpp (~1500 lines: seed folds,
+claim drains, frontier filters, crossover arm-pairs, product arms),
+Induction.cpp (fixpoint rounds, claim-relative matrix), Negate.cpp,
+Join.cpp (dual-section joins). Every sign×position×claim-context
+combination is a separate code path; the F17/F18/F22 class of bug
+lived in exactly this web. The delta-relational IR makes sign,
+position (InNew/InI read placement), and claim context ATTRIBUTES of
+first-class delta operators, so lowering is generic per operator and
+the schemas become data.
+
+### 10.2 Path sketch (as diffs; the implementing session re-derives)
+
+    1. Re-derive the emission web + the Q5 profile FROM CODE (which
+       pass is superlinear? profile drlojekyll on the progsize curve
+       first — the IR must fix the measured hot pass, not a guessed
+       one).
+    2. Define the delta-operator vocabulary against the §5.1 schemas
+       (seed-fold, claim-drain, frontier-filter, rederive-bridge,
+       crossover-pair, product-arm, commit-sweep) with sign/position/
+       claim attributes; goldens are the semantic net (155, 4 modes).
+    3. Rebuild Program::Build's stratum machinery on the vocabulary,
+       one operator family at a time, byte-identical goldens
+       throughout (the generated-code SHAPE may change only via
+       reviewed --bless with the oracle as referee — decide the
+       golden policy at epoch start; zero churn is NOT automatic
+       here, unlike the data-structures epoch).
+    4. Aggregates land as the inaugural new operator family
+       (AggregatingFunctors §2/§3); KV indices = degenerate aggregate;
+       the mutable(...) surface decision (§4.1) gates at THIS epoch's
+       start.
+
+### 10.3 Bootstrap (next session)
+
+Branch: delta-relational-ir off main once data-structures merges. Read
+IN ORDER: this file §9+§10; AggregatingFunctors.md END TO END (§4.1
+needs an owner decision at epoch start); StackSafeNegation.md §5
+(the schemas becoming data) + §11 OQ4/OQ9; bench/BASELINE.md Q5 +
+runs 2–5; IdeasTriage.md #6 (JOIN group_ids reshape belongs INSIDE
+this rebuild). Code: lib/ControlFlow/Build/ end to end (the object
+being replaced), lib/DataFlow/Optimize.cpp (the superlinearity
+suspect pool), the Q5 progsize generator in bench/runbench.sh.
+Method: the checkpoint method — profile FIRST (10.2 step 1), seed
+re-verification (the E-1..E-11 precedent), design critique, hand-write
+the target IR for ONE real case before generalizing. Gates: as this
+epoch, PLUS an explicit golden policy decided with the owner before
+any emission change. Environment: as §6.4/§8.4.
