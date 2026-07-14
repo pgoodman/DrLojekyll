@@ -414,6 +414,41 @@ class Generator {
   std::unordered_set<unsigned> effects_in_progress;
 
   unsigned next_ins_id{0};
+
+  // Row-binding scope stack. While a join-side or table-scan body is being
+  // emitted, one entry records (table id, the scanned row's bound variable
+  // names in physical column order, the cursor variable holding that row's
+  // id). A CHECKMEMBER whose (table, tuple exprs) exactly equals a live
+  // entry reads its membership predicate directly on the cursor id: the
+  // value-keyed re-Find is redundant because FindOrAdd is the runtime's
+  // only writer (value -> id is a function) and the tuple was bound
+  // verbatim from RowAt(cursor). Preconditions this match rests on, both
+  // re-verified at the epoch seed review: a CHECKMEMBER's tuple order
+  // equals physical column order (same-DataModel views are column-position
+  // compatible), and variable names are globally unique (two live scans of
+  // one table — a self-join — cannot false-match each other's entry).
+  // Entries are pushed ONLY by EmitJoin and EmitScan and only for dense
+  // full-column bindings; EmitProduct must never push (its staging loop
+  // rebinds the scans' variable names after the cursors are dead), and
+  // vector-loop-driven reads never match (their variables are bound from a
+  // Vec, not a scan). Mismatches of any kind keep the Find: conservative.
+  struct RowScopeEntry {
+    unsigned table_id;
+    std::vector<std::string> var_names;
+    std::string cursor;
+  };
+  std::vector<RowScopeEntry> row_scope;
+
+  // Innermost live binding for (table, exprs), or null.
+  const RowScopeEntry *FindRowScope(unsigned table_id,
+                                    const std::vector<std::string> &exprs) {
+    for (auto it = row_scope.rbegin(); it != row_scope.rend(); ++it) {
+      if (it->table_id == table_id && it->var_names == exprs) {
+        return &*it;
+      }
+    }
+    return nullptr;
+  }
 };
 
 void Generator::ComputeNames(void) {
@@ -1729,7 +1764,14 @@ void Generator::EmitCheckMember(ProgramCheckMemberRegion region) {
   EmitComment(region);
   const auto table = region.Table();
   const auto member = table_member[table.Id()];
-  const auto row = RowExpr(VarExprs(region.TupleVariables()));
+  const auto exprs = VarExprs(region.TupleVariables());
+  const auto row = RowExpr(exprs);
+
+  // A live same-table row binding makes the value-keyed Find redundant:
+  // the predicate reads the scan's cursor id directly, and a monotone
+  // existence test degenerates to constant truth (the row was just read
+  // from the append-only log). See RowScopeEntry for the preconditions.
+  const RowScopeEntry *const scope = FindRowScope(table.Id(), exprs);
 
   // Differential table: the named predicate applied to the row's id (a
   // missing row satisfies no predicate). Monotone table: current-state
@@ -1742,16 +1784,30 @@ void Generator::EmitCheckMember(ProgramCheckMemberRegion region) {
     switch (region.Predicate()) {
       case MembershipPredicate::kPresent:
       case MembershipPredicate::kInNew:
+        if (scope) {
+          // Tautology: emit the surviving branch bare (an absent-only
+          // gate emits nothing).
+          if (present) {
+            EmitRegion(*present);
+          }
+          return;
+        }
         cond = member + ".Find(" + row + ") != ::hyde::rt::kNoRow";
         scoped = false;
         break;
       case MembershipPredicate::kInI:
       case MembershipPredicate::kNetAdded:
       case MembershipPredicate::kNetDeleted:
+        // Watermark reads keep the scoped Find: rewriting them onto the
+        // cursor is safe in principle but has no corpus witness.
         break;
       default:
         Unsupported("a fixpoint-round membership read on a monotone table");
     }
+  } else if (scope) {
+    cond = member + "." + PredicateMethod(region.Predicate()) + "(" +
+           scope->cursor + ")";
+    scoped = false;
   }
   if (scoped) {
     cc << cc.Indent() << "{\n";
@@ -1894,6 +1950,11 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
   const auto id = region.Id();
   const auto pivot_vars = VarExprs(region.OutputPivotVariables());
 
+  // Row-binding scope: one entry per scanned side, live for the body and
+  // the delta sections (all emitted inside the scan loops), restored
+  // before returning so no entry outlives its cursor.
+  const auto saved_row_scope = row_scope.size();
+
   // Per-side membership reads for the delta sections, applied to the row
   // ids the scans below hold in scope.
   std::vector<std::string> side_reads;
@@ -1979,9 +2040,18 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
     // in table column order (the IR's guard regions rely on this).
     const auto out_vars = region.OutputVariables(i);
     assert(out_vars.size() == region.SelectedColumns(i).size());
+    std::vector<std::string> bound_names;
+    bound_names.reserve(out_vars.size());
     for (auto k = 0u; k < out_vars.size(); ++k) {
-      cc << cc.Indent() << "const auto " << VarName(out_vars[k]) << " = "
+      bound_names.push_back(VarName(out_vars[k]));
+      cc << cc.Indent() << "const auto " << bound_names.back() << " = "
          << row << "." << fields[k] << ";\n";
+    }
+
+    // Dense full-column bindings only; a partial cover can never satisfy
+    // a full-arity CHECKMEMBER tuple.
+    if (bound_names.size() == fields.size()) {
+      row_scope.push_back({table.Id(), std::move(bound_names), cursor});
     }
   }
 
@@ -2019,6 +2089,8 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
   if (removed_body) {
     emit_section(*removed_body, 2u /* InI */, 3u /* NetDeleted */);
   }
+
+  row_scope.resize(saved_row_scope);
 
   for (auto i = 0u; i < depth; ++i) {
     cc.PopIndent();
@@ -2121,6 +2193,20 @@ void Generator::EmitScan(ProgramTableScanRegion region) {
     }
   };
 
+  // Row-binding scope: live for the scan body, restored before returning.
+  // (Consulted only when a CHECKMEMBER is emitted, i.e. inside the body.)
+  const auto saved_row_scope = row_scope.size();
+  {
+    std::vector<std::string> bound_names;
+    bound_names.reserve(out_vars.size());
+    for (DataVariable var : out_vars) {
+      bound_names.push_back(VarName(var));
+    }
+    if (bound_names.size() == fields.size()) {
+      row_scope.push_back({table.Id(), std::move(bound_names), cursor});
+    }
+  }
+
   // A keyed scan is only possible when the region binds a value for every
   // key column; a rescan with no (or partial) inputs walks the whole table.
   const auto input_vars = VarExprs(region.InputVariables());
@@ -2172,6 +2258,7 @@ void Generator::EmitScan(ProgramTableScanRegion region) {
     bind_outputs();
     EmitRegion(*body);
   }
+  row_scope.resize(saved_row_scope);
   cc.PopIndent();
   cc << cc.Indent() << "}\n";
 }
