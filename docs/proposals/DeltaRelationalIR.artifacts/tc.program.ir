@@ -1,0 +1,296 @@
+const u64 @0 = 0
+
+const bool @1 = false
+
+const bool @2 = true
+
+global u64 @22
+
+create %table:4[u64,u64]
+  u64	%col:5	; From, X
+  u64	%col:6	; To, X
+
+  %index:7[u64,u64] on %col:5, %col:6
+  %index:80[u64,_] on %col:5
+  %index:87[_,u64] on %col:6
+
+create %table:8[u64,u64,u64]
+  u64	%col:9	; X
+  u64	%col:10	; From
+  u64	%col:11	; To
+
+  %index:12[u64,u64,u64] on %col:9, %col:10, %col:11
+
+create %table:13[u64,u64]
+  u64	%col:14	; From
+  u64	%col:15	; To
+
+  %index:16[u64,u64] on %col:14, %col:15
+
+create %table:17[u64,u64]
+  u64	%col:18	; From
+  u64	%col:19	; To
+
+  %index:20[u64,u64] on %col:18, %col:19
+
+init proc ^init:3()
+  vector-define $empty:197<u64,u64>
+  seq
+    call ^entry:21($empty:197<u64,u64>, $empty:197<u64,u64>)
+    return-false
+
+proc ^entry:21($param:23<u64,u64>, $param:24<u64,u64>)
+  vector-define $add_queue:28<u64,u64>
+  vector-define $delete_queue:32<u64,u64>
+  seq
+    par
+      vector-loop {@From:26, @To:27} over $param:23<u64,u64>
+        update-count-explicit +nonrecursive {@From:26, @To:27} in %table:13[u64,u64]
+          if-crossed
+            vector-append {@From:26, @To:27} into $add_queue:28<u64,u64>
+      vector-loop {@From:30, @To:31} over $param:24<u64,u64>
+        update-count-explicit -nonrecursive {@From:30, @To:31} in %table:13[u64,u64]
+          if-crossed
+            vector-append {@From:30, @To:31} into $delete_queue:32<u64,u64>
+    vector-clear $param:23<u64,u64>
+    vector-clear $param:24<u64,u64>
+    call ^flow:198($add_queue:28<u64,u64>, $delete_queue:32<u64,u64>)
+    return-false
+
+proc ^receive:add_edge/2:192($param:193<u64,u64>, $param:194<u64,u64>)
+  seq
+    net-batch $param:193<u64,u64> $param:194<u64,u64>
+    call ^entry:21($param:193<u64,u64>, $param:194<u64,u64>)
+    return-true
+
+proc ^flow:198($add_queue:28<u64,u64>, $delete_queue:32<u64,u64>)
+  vector-define $overdelete:34<u64,u64>
+  vector-define $addition:38<u64,u64>
+  vector-define $net_removals:42<u64,u64>
+  vector-define $net_additions:46<u64,u64>
+  vector-define $delete_queue:53<u64,u64>
+  vector-define $add_queue:57<u64,u64>
+  vector-define $claimed_del:59<u64,u64>
+  vector-define $claimed_del:60<u64,u64,u64>
+  vector-define $claimed_del:61<u64,u64>
+  vector-define $overdelete:62<u64,u64>
+  vector-define $delete_queue:66<u64,u64,u64>
+  vector-define $overdelete:67<u64,u64,u64>
+  vector-define $delete_queue:72<u64,u64>
+  vector-define $overdelete:73<u64,u64>
+  vector-define $add_queue:111<u64,u64,u64>
+  vector-define $add_queue:116<u64,u64>
+  vector-define $claimed_add:121<u64,u64>
+  vector-define $claimed_add:122<u64,u64,u64>
+  vector-define $claimed_add:123<u64,u64>
+  vector-define $addition:124<u64,u64>
+  vector-define $addition:128<u64,u64,u64>
+  vector-define $addition:133<u64,u64>
+  vector-define $net_removals:166<u64,u64>
+  vector-define $net_removals:170<u64,u64,u64>
+  vector-define $net_removals:175<u64,u64>
+  vector-define $net_additions:179<u64,u64>
+  vector-define $net_additions:183<u64,u64,u64>
+  vector-define $net_additions:188<u64,u64>
+  seq
+    @22 += 1
+    vector-unique $delete_queue:32<u64,u64>
+    vector-loop {@36, @37} over $delete_queue:32<u64,u64>
+      claim-del {@36, @37} in %table:13[u64,u64]
+        if-claimed
+          vector-append {@36, @37} into $overdelete:34<u64,u64>
+    vector-unique $add_queue:28<u64,u64>
+    vector-loop {@40, @41} over $add_queue:28<u64,u64>
+      claim-add {@40, @41} in %table:13[u64,u64]
+        if-claimed
+          vector-append {@40, @41} into $addition:38<u64,u64>
+    vector-loop {@44, @45} over $overdelete:34<u64,u64>
+      check-member net-deleted {@44, @45} in %table:13[u64,u64]
+        if-member
+          vector-append {@44, @45} into $net_removals:42<u64,u64>
+    vector-loop {@48, @49} over $addition:38<u64,u64>
+      check-member net-added {@48, @49} in %table:13[u64,u64]
+        if-member
+          vector-append {@48, @49} into $net_additions:46<u64,u64>
+    vector-unique $net_removals:42<u64,u64>
+    vector-loop {@From:51, @To:52} over $net_removals:42<u64,u64>
+      update-count -nonrecursive {@From:51, @To:52} in %table:4[u64,u64]
+        if-crossed
+          vector-append {@From:51, @To:52} into $delete_queue:53<u64,u64>
+    vector-unique $net_additions:46<u64,u64>
+    vector-loop {@From:55, @To:56} over $net_additions:46<u64,u64>
+      update-count +nonrecursive {@From:55, @To:56} in %table:4[u64,u64]
+        if-crossed
+          vector-append {@From:55, @To:56} into $add_queue:57<u64,u64>
+    induction
+      empty-init
+      fixpoint-loop testing $claimed_del:59<u64,u64>, $claimed_del:60<u64,u64,u64>, $claimed_del:61<u64,u64>
+        seq
+          vector-clear $claimed_del:59<u64,u64>
+          vector-clear $claimed_del:60<u64,u64,u64>
+          vector-clear $claimed_del:61<u64,u64>
+          vector-unique $delete_queue:53<u64,u64>
+          vector-loop {@64, @65} over $delete_queue:53<u64,u64>
+            claim-del {@64, @65} in %table:4[u64,u64]
+              if-claimed
+                seq
+                  vector-append {@64, @65} into $overdelete:62<u64,u64>
+                  vector-append {@64, @65} into $claimed_del:59<u64,u64>
+          vector-clear $delete_queue:53<u64,u64>
+          vector-unique $delete_queue:66<u64,u64,u64>
+          vector-loop {@69, @70, @71} over $delete_queue:66<u64,u64,u64>
+            claim-del {@69, @70, @71} in %table:8[u64,u64,u64]
+              if-claimed
+                seq
+                  vector-append {@69, @70, @71} into $overdelete:67<u64,u64,u64>
+                  vector-append {@69, @70, @71} into $claimed_del:60<u64,u64,u64>
+          vector-clear $delete_queue:66<u64,u64,u64>
+          vector-unique $delete_queue:72<u64,u64>
+          vector-loop {@75, @76} over $delete_queue:72<u64,u64>
+            claim-del {@75, @76} in %table:17[u64,u64]
+              if-claimed
+                seq
+                  vector-append {@75, @76} into $overdelete:73<u64,u64>
+                  vector-append {@75, @76} into $claimed_del:61<u64,u64>
+          vector-clear $delete_queue:72<u64,u64>
+          vector-loop {@From:78, @X:79} over $claimed_del:59<u64,u64>
+            scan-index select {@X:82, @To:83} from %table:4[u64,u64] where {@X:79} in %index:80[u64,_]
+              if-compare {@X:82} = {@X:79}
+                if-true
+                  check-member alive-at-claim {@X:82, @To:83} in %table:4[u64,u64]
+                    if-member
+                      update-count -recursive {@X:79, @From:78, @To:83} in %table:8[u64,u64,u64]
+                        if-crossed
+                          vector-append {@X:79, @From:78, @To:83} into $delete_queue:66<u64,u64,u64>
+          vector-loop {@X:85, @To:86} over $claimed_del:59<u64,u64>
+            scan-index select {@From:89, @X:90} from %table:4[u64,u64] where {@X:85} in %index:87[_,u64]
+              if-compare {@X:90} = {@X:85}
+                if-true
+                  check-member survives-so-far {@From:89, @X:90} in %table:4[u64,u64]
+                    if-member
+                      update-count -recursive {@X:85, @From:89, @To:86} in %table:8[u64,u64,u64]
+                        if-crossed
+                          vector-append {@X:85, @From:89, @To:86} into $delete_queue:66<u64,u64,u64>
+          vector-loop {@X:92, @From:93, @To:94} over $claimed_del:60<u64,u64,u64>
+            update-count -recursive {@From:93, @To:94} in %table:17[u64,u64]
+              if-crossed
+                vector-append {@From:93, @To:94} into $delete_queue:72<u64,u64>
+          vector-loop {@From:96, @To:97} over $claimed_del:61<u64,u64>
+            update-count -recursive {@From:96, @To:97} in %table:4[u64,u64]
+              if-crossed
+                vector-append {@From:96, @To:97} into $delete_queue:53<u64,u64>
+          vector-loop {@99, @100} over $claimed_del:59<u64,u64>
+            retire-del {@99, @100} in %table:4[u64,u64]
+          vector-loop {@102, @103, @104} over $claimed_del:60<u64,u64,u64>
+            retire-del {@102, @103, @104} in %table:8[u64,u64,u64]
+          vector-loop {@106, @107} over $claimed_del:61<u64,u64>
+            retire-del {@106, @107} in %table:17[u64,u64]
+      output
+        seq
+          vector-loop {@109, @110} over $overdelete:62<u64,u64>
+            check-member recursively-supported {@109, @110} in %table:4[u64,u64]
+              if-member
+                vector-append {@109, @110} into $add_queue:57<u64,u64>
+          vector-loop {@113, @114, @115} over $overdelete:67<u64,u64,u64>
+            check-member recursively-supported {@113, @114, @115} in %table:8[u64,u64,u64]
+              if-member
+                vector-append {@113, @114, @115} into $add_queue:111<u64,u64,u64>
+          vector-loop {@118, @119} over $overdelete:73<u64,u64>
+            check-member recursively-supported {@118, @119} in %table:17[u64,u64]
+              if-member
+                vector-append {@118, @119} into $add_queue:116<u64,u64>
+    induction
+      empty-init
+      fixpoint-loop testing $claimed_add:121<u64,u64>, $claimed_add:122<u64,u64,u64>, $claimed_add:123<u64,u64>
+        seq
+          vector-clear $claimed_add:121<u64,u64>
+          vector-clear $claimed_add:122<u64,u64,u64>
+          vector-clear $claimed_add:123<u64,u64>
+          vector-unique $add_queue:57<u64,u64>
+          vector-loop {@126, @127} over $add_queue:57<u64,u64>
+            claim-add {@126, @127} in %table:4[u64,u64]
+              if-claimed
+                seq
+                  vector-append {@126, @127} into $addition:124<u64,u64>
+                  vector-append {@126, @127} into $claimed_add:121<u64,u64>
+          vector-clear $add_queue:57<u64,u64>
+          vector-unique $add_queue:111<u64,u64,u64>
+          vector-loop {@130, @131, @132} over $add_queue:111<u64,u64,u64>
+            claim-add {@130, @131, @132} in %table:8[u64,u64,u64]
+              if-claimed
+                seq
+                  vector-append {@130, @131, @132} into $addition:128<u64,u64,u64>
+                  vector-append {@130, @131, @132} into $claimed_add:122<u64,u64,u64>
+          vector-clear $add_queue:111<u64,u64,u64>
+          vector-unique $add_queue:116<u64,u64>
+          vector-loop {@135, @136} over $add_queue:116<u64,u64>
+            claim-add {@135, @136} in %table:17[u64,u64]
+              if-claimed
+                seq
+                  vector-append {@135, @136} into $addition:133<u64,u64>
+                  vector-append {@135, @136} into $claimed_add:123<u64,u64>
+          vector-clear $add_queue:116<u64,u64>
+          vector-loop {@From:138, @X:139} over $claimed_add:121<u64,u64>
+            scan-index select {@X:141, @To:142} from %table:4[u64,u64] where {@X:139} in %index:80[u64,_]
+              if-compare {@X:141} = {@X:139}
+                if-true
+                  check-member in-new-sans-frontier {@X:141, @To:142} in %table:4[u64,u64]
+                    if-member
+                      update-count +recursive {@X:139, @From:138, @To:142} in %table:8[u64,u64,u64]
+                        if-crossed
+                          vector-append {@X:139, @From:138, @To:142} into $add_queue:111<u64,u64,u64>
+          vector-loop {@X:144, @To:145} over $claimed_add:121<u64,u64>
+            scan-index select {@From:147, @X:148} from %table:4[u64,u64] where {@X:144} in %index:87[_,u64]
+              if-compare {@X:148} = {@X:144}
+                if-true
+                  check-member in-new-with-frontier {@From:147, @X:148} in %table:4[u64,u64]
+                    if-member
+                      update-count +recursive {@X:144, @From:147, @To:145} in %table:8[u64,u64,u64]
+                        if-crossed
+                          vector-append {@X:144, @From:147, @To:145} into $add_queue:111<u64,u64,u64>
+          vector-loop {@X:150, @From:151, @To:152} over $claimed_add:122<u64,u64,u64>
+            update-count +recursive {@From:151, @To:152} in %table:17[u64,u64]
+              if-crossed
+                vector-append {@From:151, @To:152} into $add_queue:116<u64,u64>
+          vector-loop {@From:154, @To:155} over $claimed_add:123<u64,u64>
+            update-count +recursive {@From:154, @To:155} in %table:4[u64,u64]
+              if-crossed
+                vector-append {@From:154, @To:155} into $add_queue:57<u64,u64>
+          vector-loop {@157, @158} over $claimed_add:121<u64,u64>
+            retire-add {@157, @158} in %table:4[u64,u64]
+          vector-loop {@160, @161, @162} over $claimed_add:122<u64,u64,u64>
+            retire-add {@160, @161, @162} in %table:8[u64,u64,u64]
+          vector-loop {@164, @165} over $claimed_add:123<u64,u64>
+            retire-add {@164, @165} in %table:17[u64,u64]
+      output
+        seq
+          vector-loop {@168, @169} over $overdelete:62<u64,u64>
+            check-member net-deleted {@168, @169} in %table:4[u64,u64]
+              if-member
+                vector-append {@168, @169} into $net_removals:166<u64,u64>
+          vector-loop {@172, @173, @174} over $overdelete:67<u64,u64,u64>
+            check-member net-deleted {@172, @173, @174} in %table:8[u64,u64,u64]
+              if-member
+                vector-append {@172, @173, @174} into $net_removals:170<u64,u64,u64>
+          vector-loop {@177, @178} over $overdelete:73<u64,u64>
+            check-member net-deleted {@177, @178} in %table:17[u64,u64]
+              if-member
+                vector-append {@177, @178} into $net_removals:175<u64,u64>
+          vector-loop {@181, @182} over $addition:124<u64,u64>
+            check-member net-added {@181, @182} in %table:4[u64,u64]
+              if-member
+                vector-append {@181, @182} into $net_additions:179<u64,u64>
+          vector-loop {@185, @186, @187} over $addition:128<u64,u64,u64>
+            check-member net-added {@185, @186, @187} in %table:8[u64,u64,u64]
+              if-member
+                vector-append {@185, @186, @187} into $net_additions:183<u64,u64,u64>
+          vector-loop {@190, @191} over $addition:133<u64,u64>
+            check-member net-added {@190, @191} in %table:17[u64,u64]
+              if-member
+                vector-append {@190, @191} into $net_additions:188<u64,u64>
+    commit-sweep %table:4[u64,u64] publishing found_path/2
+    commit-sweep %table:8[u64,u64,u64]
+    commit-sweep %table:13[u64,u64]
+    commit-sweep %table:17[u64,u64]
+    return-true
+

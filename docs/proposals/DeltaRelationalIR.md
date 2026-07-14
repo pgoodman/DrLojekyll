@@ -16,12 +16,12 @@ scratchpad (`r0/curve.tsv`, `r0/prof/*.sample.txt`).
 
 ### 1.1 The curve (median dr_wall, ms)
 
-    rules   debug/opt  debug/none  release/opt  release/none
-       2        43.3       43.8        25.3         25.2
-       8        52.4       59.2        26.6         27.6
-      32       189.5      237.6        43.8         48.1
-      64      1014.9     1097.3       143.2        157.3
-     128      7832.5     7132.2      1077.0        850.2
+    rules  dbg/opt  dbg/nodf  dbg/nocf  dbg/none  rel/opt  rel/nodf  rel/nocf  rel/none
+       2      43.3      44.9      44.5      43.8     25.3      26.1      25.5      25.2
+       8      52.4      59.5      52.4      59.2     26.6      27.8      26.7      27.6
+      32     189.5     254.6     179.4     237.6     43.8      50.2      40.5      48.1
+      64    1014.9    1162.1     989.6    1097.3    143.2     162.4     141.3     157.3
+     128    7832.5    7404.9    7594.9    7132.2   1077.0     892.1    1013.9     850.2
 
 - Reproduces Q5 (recorded 7.81s@128 debug ≈ measured 7.83s).
 - SUPERLINEARITY IS NOT A DEBUG ARTIFACT: release grows 26ms→1.08s over
@@ -331,3 +331,109 @@ nodf mode (release 696 samples):
     family, then R3. R0's re-ranking demotes "the IR fixes Q5" to "the
     IR must not regress Q5"; the IR's carry is aggregates + the
     F17/F18/F22 bug-class + the unified access operator.
+
+## 6. Hand-written artifacts + adversarial critique (2026-07-14; 3 opus
+## writers, 3 opus judges + 1 sonnet mechanical auditor; binding
+## resolutions adopted)
+
+Artifacts (committed in DeltaRelationalIR.artifacts/, with the pinned
+program.ir identity targets): tc.drir.md (transitive_closure_diff — the
+full differential recursive-SCC family), d5_recursive_negate.drir.md
+(negate-on-cycle, both crossover arms, REDERIVE, deferred SCC filters),
+average_weight.post-r3.drir.md (R3 DESIGN TARGET ONLY — per the coverage
+judge, NOT coverage evidence for the R1 vocabulary; its old()/valued
+sealed reads and value-fold are R3's separate matrix extension).
+
+### 6.1 Binding resolutions (blockers first)
+
+- B-1 (ACCESS shape): "bound-prefix" is WRONG — every real access binds
+  an arbitrary column SET, canonicalized by GetOrCreateIndex's
+  SortAndUnique (Data.cpp:349) into index.KeyColumns() order; scattered
+  bound sets are live in-corpus (reaching_to keys on the SECOND column).
+  ACCESS carries `bound-cols` (canonical column-id set == the index
+  identity rule), never prefix contiguity. TABLEPRODUCT staging is OUT
+  of ACCESS's scope (it is frontier×scan staging, not membership).
+  Section walks carry the pivot-re-test structure explicitly.
+- B-2 (RQ5b hash discipline): today's HashInit bucketing is non-lossy
+  vs Equals for 7 of 10 node kinds, but Join/Merge/KVIndex Equals do
+  NOT check the deletion flags HashInit encodes — a deep hash keyed on
+  "exactly what Equals checks" could ADMIT A NEW MERGE today's pass
+  misses, changing the merge set. Resolution: the deep hash KEEPS
+  can_receive/produce_deletions for all kinds (matches today's merge
+  set byte-for-byte); add the regression assert that no unit SELECT is
+  ever bucketed with a non-unit view. Merge-ORDER invisibility at
+  goldens rests on the keyed-cursor sort contract — recorded as the
+  load-bearing premise (review gate on new drivers stands).
+- B-3 (silent-breakage cluster): five construction properties enforced
+  today only by code structure or NDEBUG asserts become ALWAYS-ON
+  DR-IR construction asserts (TigerBeetle-style, positive+negative
+  space): (1) exactly ONE crossover arm-pair folds into each non-@never
+  negate's table (lift Stratum.cpp:1591 out of #ifndef NDEBUG); (2) no
+  minus arm for monotone product sides + every product fold
+  kNonRecursive; (3) RETIRE strictly after all same-round fires;
+  sort-unique is a PER-VECTOR attribute asserted at placement; (4)
+  seed-before-drain as a checkable ordering attribute on CROSSOVER/
+  PRODUCT_ARM; (5) member-view identity (no structural dedup of the
+  table member list). Plus: the F17 claim gate is MANDATORY DATA on
+  CLAIM_DRAIN (C_nr<=0 / total>0 carried and asserted, never a
+  template flourish); the F18 negate gate is an ACCESS attribute keyed
+  on CONTEXT {eager, seed, fixpoint} × hint {normal, @never}, NEVER
+  sign-derived.
+- RQ5a depth: delete the passes AND the QueryColumnImpl/QueryImpl
+  members AND the Query.cpp accessors (the taint UseLists are STRONG
+  Use edges — write-only mutations of the DefUse graph; full removal
+  forecloses the phantom-strong-use hazard returning). Format.cpp's
+  commented consumers cite the git history instead.
+
+### 6.2 Coverage holes the artifact set exposed (R1 must witness these)
+
+- Off-cycle stratified negate: the seed-context kInI forward gate
+  (E-13's cell) is UNEXERCISED by d5rn (whole positive path on-cycle).
+  Need a corpus witness + artifact before R2 lowers negates.
+- @never negate (kPresent) and the monotone-negated EAGER path: the
+  negate has THREE lowering sites today (EmitChainStep fixpoint gate,
+  crossover arms, and Negate.cpp:93's eager gate) — §5 named only
+  CROSSOVER. Vocabulary v2 adds NEGATE_GATE{context, hint}.
+- Differential @product arms: no artifact exercises them (conditions_
+  to_bools.dr is the corpus witness to draft against before R2 touches
+  products).
+
+### 6.3 Vocabulary v2 (writers' gaps folded in; supersedes §5's list)
+
+    ACCESS(table, bound-cols, pred, context)      « B-1; yields id+row;
+      lowerings: point-test | keyed section walk (with pivot re-test) |
+      full scan; position/seek reserved for the D5 substrate decision »
+    NEGATE_GATE(negate, context∈{eager,seed,fixpoint}, hint)   « 6.2 »
+    PIVOT_ASSEMBLE(join, sources...)  « the union of a join's delta
+      sources into ONE shared kJoinPivots vec (sort-unique attribute);
+      same-SCC seed suppression is an EXPLICIT construction rule here »
+    SEED_FOLD / FIXPOINT_FIRE / CHAIN_FOLD        « CHAIN_FOLD = the
+      claimed-frontier -> projection/merge-arm -> head folds the tc
+      artifact mis-modeled as seeds (G7) »
+    CROSSOVER(negate) as an ARM-PAIR object (one per negate, B-3.1)
+    PRODUCT_ARM(product, side, sign)              « minus iff side
+      differential, B-3.2 »
+    CLAIM_DRAIN(table, sign, form∈{single-pass, in-round}, gate=DATA,
+      dual-append targets explicit)               « F17; tc G10 »
+    RETIRE(band, after=fires)                     « B-3.3 »
+    REDERIVE(table) / FRONTIER_FILTER(table, sign, deferral∈{immediate,
+      add-loop-output})                           « E-17 contract »
+    FIXPOINT_ROUND(scc) as a STRUCTURED REGION (induction shell:
+      vector-swap discipline, round vecs, retire bands — tc G4)
+    COMMIT_SWEEP(table, flavor∈{diff: commit+validate+compact+reindex,
+      monotone: seal}, publish-target?)           « d5rn gap; tc G9:
+      table-id order is the identity contract »
+    Vectors carry {kind, sort-unique?} as attributes (tc G6); tables
+    carry the member-relation LIST (many relations per table, d5rn);
+    monotone tables participate in differential arms via watermark
+    NetAdded — the guard disjunction is part of SEED_FOLD's shape.
+
+### 6.4 Mechanical audit results
+
+Region-kind + predicate census of both program.ir files vs the traces:
+complete except the ^receive:* net-batch procedures (d5rn trace) and
+one vector-clear line — both recorded, neither a vocabulary hole (the
+ingest band was §5-covered via NET_BATCH). §1.1's table now carries all
+4 modes (the RQ5a prediction's 892ms cell is rel/nodf@128). Taint API
+grep confirmed: no consumer anywhere beyond the two commented
+Format.cpp lines.
