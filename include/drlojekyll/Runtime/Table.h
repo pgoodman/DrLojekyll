@@ -99,6 +99,54 @@ class RowStore {
     }
   }
 
+  size_t SlotCapacity(void) const noexcept {
+    return slot_capacity;
+  }
+
+  // Densify the row log in place, dropping every row for which `dead(id)`
+  // holds. STABLE: surviving rows keep their relative order, so full-scan
+  // cursor enumeration of live rows is unchanged. Calls
+  // `moved(old_id, new_id)` for every surviving row (including
+  // old_id == new_id) so derived classes keep their side arrays in
+  // lockstep. Rebuilds the id set in place: every stale slot is reset and
+  // every surviving id re-inserted; no allocation happens anywhere here
+  // (capacities only shrink — under Arena a reallocation would leak, and
+  // the in-place pass is one streaming scan over parallel arrays).
+  // Returns the new row count. Row ids are RENUMBERED: the caller owns
+  // invalidating and rebuilding every structure keyed by old ids.
+  template <typename DeadPred, typename Moved>
+  uint32_t CompactRowsInPlace(DeadPred &&dead, Moved &&moved) {
+    const uint32_t n = NumRows();
+    uint32_t w = 0u;
+    for (uint32_t r = 0u; r < n; ++r) {
+      if (dead(r)) {
+        continue;
+      }
+      if (w != r) {
+        rows.Set(w, rows[r]);
+        hashes.Set(w, hashes[r]);
+      }
+      moved(r, w);
+      ++w;
+    }
+    rows.Truncate(w);
+    hashes.Truncate(w);
+    for (size_t i = 0u; i < slot_capacity; ++i) {
+      slots[i] = kNoRow;
+    }
+    for (uint32_t id = 0u; id < w; ++id) {
+      const uint64_t hash = hashes[id];
+      for (size_t i = hash & (slot_capacity - 1u);;
+           i = (i + 1u) & (slot_capacity - 1u)) {
+        if (slots[i] == kNoRow) {
+          slots[i] = id;
+          break;
+        }
+      }
+    }
+    return w;
+  }
+
   // Finds `row`, storing it as a fresh log entry if it was never seen.
   // Returns the row id and whether a fresh entry was created.
   std::pair<uint32_t, bool> FindOrAdd(const Row &row) {
@@ -481,6 +529,15 @@ class DiffTable : public RowStore<Row> {
       if (was != now) {
         HYDE_RT_BENCH_COUNT(commit_publishes);
         sink(this->RowAt(id), now);
+        // Net live-row accounting for the compaction trigger: num_live
+        // counts rows holding kInI after this sweep. Rows never touched
+        // keep their status; dead-from-birth rows (appended by a fold
+        // that never crossed) never increment it.
+        if (now) {
+          ++num_live;
+        } else {
+          --num_live;
+        }
       }
       f &= static_cast<uint8_t>(~(kDel | kAdd | kDelNow | kAddNow | kTouched));
       if (now) {
@@ -491,6 +548,57 @@ class DiffTable : public RowStore<Row> {
       flags.Set(id, f);
     }
     touched.Clear();
+  }
+
+  // Whether the dead-row share justifies a compaction. Two arms:
+  // (a) dead >= live with an absolute floor (steady-state footprint and
+  // probe-chain inflation both capped at ~2x live; the floor keeps every
+  // small program — the whole correctness suite — below the trigger);
+  // (b) a mostly-dead table about to Rehash: compact + reslot in place
+  // instead of doubling a slot array full of dead ids. (7/8 is a
+  // deliberate conservative under-approximation of the 8/9 grow test: a
+  // mid-batch crossing Rehashes first and compacts next epoch.)
+  // HYDE_RT_COMPACT_ALWAYS is a test-only override: any dead row
+  // triggers, so a compact-always/compact-never pair of binaries over one
+  // batch stream is a correctness oracle for the renumbering (published
+  // deltas and drains must agree).
+  bool NeedsCompaction(void) const noexcept {
+    const uint32_t n = this->NumRows();
+    const uint32_t dead = n - num_live;
+#ifdef HYDE_RT_COMPACT_ALWAYS
+    return dead != 0u;
+#else
+    return dead != 0u &&
+           ((dead >= num_live && dead >= 4096u) ||
+            (n >= (this->SlotCapacity() * 7u) / 8u && dead >= n / 2u));
+#endif
+  }
+
+  // Drop every dead row (Total <= 0) and renumber. Call ONLY at the epoch
+  // boundary, immediately after `Commit` (touched is empty; a dead row
+  // has EVERY flag clear BY CONSTRUCTION: Commit clears the scratch mask
+  // and kInI-when-dead, and kExplicit implies C_nr >= 1 via the
+  // AddExplicit/SubExplicit pairing, so kExplicit rows are alive).
+  // Returns true iff rows moved: the caller MUST then Clear() and rebuild
+  // every index over this table (the index key projection lives only in
+  // generated code). kInI/kExplicit travel with the row; no watermark
+  // exists on a differential table, so nothing else remaps.
+  bool CompactDead(void) {
+    if (!NeedsCompaction()) {
+      return false;
+    }
+    const uint32_t w = this->CompactRowsInPlace(
+        [this](uint32_t id) { return Total(counts[id]) <= 0; },
+        [this](uint32_t old_id, uint32_t new_id) {
+          if (old_id != new_id) {
+            counts.Set(new_id, counts[old_id]);
+            flags.Set(new_id, flags[old_id]);
+          }
+        });
+    counts.Truncate(w);
+    flags.Truncate(w);
+    assert(w == num_live);
+    return true;
   }
 
   // Debug-build coherence validation, called by the generated commit sweep
@@ -595,6 +703,7 @@ class DiffTable : public RowStore<Row> {
   Vec<uint64_t> counts;   // 8 B/row, persistent (two packed int32).
   Vec<uint8_t> flags;     // 1 B/row storage; batch-transient meaning.
   Vec<uint32_t> touched;  // Ids whose counts/flags changed this batch.
+  uint32_t num_live{0u};  // Rows holding kInI; maintained by Commit.
 };
 
 // A secondary index over a table: maps a key (a generated aggregate of the
@@ -631,6 +740,20 @@ class Index {
     Slot &slot = FindOrCreateSlot(key);
     next.Set(id, slot.head);
     slot.head = id;
+  }
+
+  // Reset to empty after the owning table compacts: every chain is keyed
+  // by stale row ids. Slot storage and the next-chain capacity are
+  // retained (no allocation); the generated rebuild walk re-Adds every
+  // surviving row in ascending new-id order, which reverses chain order —
+  // enumeration order through an index is unspecified.
+  void Clear(void) {
+    for (size_t i = 0u; i < slot_capacity; ++i) {
+      slots[i].used = false;
+      slots[i].head = kNoRow;
+    }
+    num_keys = 0u;
+    next.Clear();
   }
 
   // First row id for `key`, or `kNoRow`. Iterate with `Next`.

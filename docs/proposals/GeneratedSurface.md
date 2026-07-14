@@ -594,3 +594,23 @@ deduction.
 EPOCH CLOSED. Next epoch per the recorded sequencing: the bench harness
 (PerfRoadmap.md §5 bootstrap), writing its drivers once against THIS
 surface and measuring it.
+
+## Driver-facing cursor contracts (added 2026-07-14, data-structures
+## epoch, D2 — made load-bearing by dead-row compaction)
+
+Two contracts that were previously accidental properties of the
+append-only row log, now normative (the log compacts at a dead-row
+threshold, renumbering row ids):
+
+1. **Cursor invalidation.** Any entry-point call (`init` or any message)
+   invalidates every open query cursor. A cursor must be fully drained
+   (or dropped) before the next entry call. There is no runtime
+   enforcement — enforcement would tax every `next()` — and no driver in
+   the corpus (153 OptDiff + 5 bench, exhaustively scanned at the D2
+   review) holds a cursor across a mutation.
+2. **Keyed-cursor enumeration order is unspecified** and may change
+   across entry-point calls (an index rebuild after compaction reverses
+   chain order). Full-scan (`_ff`) cursors enumerate live rows in a
+   stable order across compactions (the densify is stable), but drivers
+   must not rely on any cursor order: every corpus driver that prints a
+   keyed drain sorts first, and new drivers must too (review gate).

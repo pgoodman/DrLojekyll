@@ -495,6 +495,108 @@ TEST(Index, ManyKeysRehash) {
   }
 }
 
+TEST(DiffTable, CompactDeadRenumbersAndFindStable) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+  RecordingSink sink;
+  constexpr uint32_t kN = 6000u;   // Past the 4096 dead-row floor.
+  constexpr uint32_t kLive = 100u;
+
+  for (uint32_t i = 0u; i < kN; ++i) {
+    t.AddDerivation({i, i + 1u}, DerivClass::kNonRecursive);
+  }
+  t.Commit(sink);
+  ASSERT_FALSE(t.NeedsCompaction());
+
+  // Kill everything but the last kLive rows.
+  for (uint32_t i = 0u; i < kN - kLive; ++i) {
+    t.SubDerivation({i, i + 1u}, DerivClass::kNonRecursive);
+  }
+  t.Commit(sink);
+  t.DebugValidateCounts();
+
+  ASSERT_TRUE(t.NeedsCompaction());
+  ASSERT_TRUE(t.CompactDead());
+  ASSERT_EQ(t.NumRows(), kLive);
+  t.DebugValidateCounts();
+
+  // Every survivor is findable at its NEW id with its state intact; every
+  // dead row is gone from the id set.
+  for (uint32_t i = kN - kLive; i < kN; ++i) {
+    const uint32_t id = t.Find({i, i + 1u});
+    ASSERT_NE(id, hyde::rt::kNoRow);
+    ASSERT_LT(id, kLive);
+    ASSERT_EQ(t.RowAt(id), (PairRow{i, i + 1u}));
+    ASSERT_TRUE(t.Present(id));
+    ASSERT_TRUE(t.InI(id));
+  }
+  ASSERT_EQ(t.Find({0u, 1u}), hyde::rt::kNoRow);
+
+  // The next epoch behaves normally on the renumbered space: a re-added
+  // dead value is a FRESH log entry, a survivor folds at its new id.
+  auto re = t.AddDerivation({0u, 1u}, DerivClass::kNonRecursive);
+  ASSERT_TRUE(re.crossed);
+  ASSERT_TRUE(re.added_row);
+  ASSERT_EQ(re.id, kLive);
+  auto s = t.SubDerivation({kN - 1u, kN}, DerivClass::kNonRecursive);
+  ASSERT_TRUE(s.crossed);
+  t.Commit(sink);
+  t.DebugValidateCounts();
+}
+
+TEST(Index, RebuildAfterCompactPreservesLookup) {
+  DiffPairs t(hyde::rt::MallocAllocator());
+  hyde::rt::Index<KeyX> by_x(hyde::rt::MallocAllocator());
+  RecordingSink sink;
+  constexpr uint32_t kKeys = 10u;
+  constexpr uint32_t kPerKey = 1000u;
+  constexpr uint32_t kSurvivorsPerKey = 10u;
+
+  for (uint32_t x = 0u; x < kKeys; ++x) {
+    for (uint32_t y = 0u; y < kPerKey; ++y) {
+      auto d = t.AddDerivation({x, y}, DerivClass::kNonRecursive);
+      if (d.added_row) {
+        by_x.Add({x}, d.id);
+      }
+    }
+  }
+  // One fully-dying key.
+  auto dk = t.AddDerivation({99u, 0u}, DerivClass::kNonRecursive);
+  by_x.Add({99u}, dk.id);
+  t.Commit(sink);
+
+  for (uint32_t x = 0u; x < kKeys; ++x) {
+    for (uint32_t y = kSurvivorsPerKey; y < kPerKey; ++y) {
+      t.SubDerivation({x, y}, DerivClass::kNonRecursive);
+    }
+  }
+  t.SubDerivation({99u, 0u}, DerivClass::kNonRecursive);
+  t.Commit(sink);
+
+  // The generated sweep-tail pattern: compact, then Clear + rebuild every
+  // index under its key projection in ascending new-id order.
+  ASSERT_TRUE(t.CompactDead());
+  by_x.Clear();
+  for (uint32_t id = 0u; id < t.NumRows(); ++id) {
+    by_x.Add({t.RowAt(id).x}, id);
+  }
+
+  for (uint32_t x = 0u; x < kKeys; ++x) {
+    std::set<uint32_t> ys;
+    for (uint32_t id = by_x.First({x}); id != hyde::rt::kNoRow;
+         id = by_x.Next(id)) {
+      ASSERT_TRUE(t.Present(id));
+      ASSERT_EQ(t.RowAt(id).x, x);
+      ys.insert(t.RowAt(id).y);
+    }
+    ASSERT_EQ(ys.size(), kSurvivorsPerKey);
+    for (uint32_t y = 0u; y < kSurvivorsPerKey; ++y) {
+      ASSERT_TRUE(ys.contains(y));
+    }
+  }
+  ASSERT_EQ(by_x.First({99u}), hyde::rt::kNoRow);
+  t.DebugValidateCounts();
+}
+
 TEST(Hash, DistinctRowsDistinctHashes) {
   // Not a strong property test; a sanity check that the mixer isn't degenerate.
   std::set<uint64_t> hashes;

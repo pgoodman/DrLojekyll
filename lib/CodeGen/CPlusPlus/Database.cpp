@@ -1881,6 +1881,47 @@ void Generator::EmitCommitSweep(ProgramCommitSweepRegion region) {
   cc << "#ifndef NDEBUG\n";
   cc << cc.Indent() << member << ".DebugValidateCounts();\n";
   cc << "#endif\n";
+
+  // Dead-row compaction, strictly after the validator (it is written
+  // against the pre-compaction id space). Renumbering invalidates every
+  // index over the table; the rebuild walk re-Adds each surviving row
+  // under the index's key projection — the projection lives only here,
+  // the runtime stores no per-row key. Tables compact independently;
+  // the trigger keeps every suite-sized program below threshold.
+  std::vector<DataIndex> live_indices;
+  for (DataIndex index : table.Indices()) {
+    if (index_member.contains(index.Id())) {
+      live_indices.push_back(index);
+    }
+  }
+  if (live_indices.empty()) {
+    cc << cc.Indent() << member << ".CompactDead();\n";
+    return;
+  }
+  const auto cid = "cid" + std::to_string(next_ins_id++);
+  const auto crow = "crow" + std::to_string(next_ins_id++);
+  cc << cc.Indent() << "if (" << member << ".CompactDead()) {\n";
+  cc.PushIndent();
+  for (DataIndex index : live_indices) {
+    cc << cc.Indent() << index_member[index.Id()] << ".Clear();\n";
+  }
+  cc << cc.Indent() << "for (uint32_t " << cid << " = 0u; " << cid << " < "
+     << member << ".NumRows(); ++" << cid << ") {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto &" << crow << " = " << member << ".RowAt("
+     << cid << ");\n";
+  for (DataIndex index : live_indices) {
+    std::vector<std::string> key_exprs;
+    for (DataColumn col : index.KeyColumns()) {
+      key_exprs.push_back(crow + "." + fields[col.Index()]);
+    }
+    cc << cc.Indent() << index_member[index.Id()] << ".Add("
+       << RowExpr(key_exprs) << ", " << cid << ");\n";
+  }
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
 }
 
 void Generator::EmitClaim(ProgramClaimRegion region) {

@@ -91,6 +91,13 @@ class Vec {
     count = 0u;
   }
 
+  // Drop the tail; `n` must not exceed the current size. Capacity is
+  // retained (compaction must not allocate).
+  void Truncate(size_t n) noexcept {
+    assert(n <= count);
+    count = n;
+  }
+
   void Swap(Vec &that) noexcept {
     std::swap(allocator, that.allocator);
     std::swap(items, that.items);
