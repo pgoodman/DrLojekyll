@@ -100,9 +100,20 @@ class Vec {
 
   // Sorts and deduplicates. Rows are compared bytewise via a caller-supplied
   // ordering, or `operator<`/`operator==` when `T` provides them.
+  //
+  // The <= 1 early return is the exact identity boundary (a 0/1-element
+  // range is already sorted and unique; std::unique's return makes the
+  // count re-store idempotent), and it matters: deep inductive cascades
+  // sort mostly-empty round queues (~0.3 elements per call measured), and
+  // std::sort is not inlined at this call site, so each elided call drops
+  // a full out-of-line sort frame. The counters stay ahead of the guard —
+  // they are call-site volume, not sorts executed.
   void SortAndUnique(void) {
     HYDE_RT_BENCH_COUNT(sort_calls);
     HYDE_RT_BENCH_COUNT_N(sort_elems, count);
+    if (count <= 1u) {
+      return;
+    }
     std::sort(items, items + count);
     count = static_cast<size_t>(
         std::unique(items, items + count) - items);
