@@ -317,3 +317,194 @@ pre-code re-verification has caught a real defect in its seed).
   code shape section, CLAUDE.md's "Generated API" paragraph) committed;
   a landing record appended HERE with deviations for ratification;
   FINDINGS.md updated if anything is found; build-time delta recorded.
+
+## D. Re-verification record (2026-07-13, this epoch's pre-code pass —
+## the mandated fleet review of the §A–§C single-pass seed)
+
+Method executed as bootstrapped: §A re-derived from Database.cpp @93c1810
+by an independent opus pass + the real booleans_diff/product_conds
+artifacts read end to end; full driver-usage matrix (155 drivers + 2
+ctest); build-contract audit; 5-lens adversarial critique (4 opus + 1
+sonnet) with compiled probes on clang 21 AND gcc 16; §C′ hand artifacts
+written, compiled against the untouched runtime on BOTH compilers, and
+byte-compared to committed goldens (all three: BYTE-IDENTICAL). The
+precedent held again: the seed contained real defects (below).
+
+### §A errata (all verified; §A text above left as recorded)
+
+- E1. The header also emits 4 std includes (cstdint/optional/tuple/
+  vector) @2074-2077; the .cpp emits tuple/utility. §A omitted both.
+- E2. Tup shape structs have NO Hash method (operator<=> only); Hash
+  lives on Row/Key structs. §A conflated them.
+- E3. There are TWO log call sites: the publish region @1032 AND the
+  commit sweep @1316-1325. §A's ":1028" anchor is stale (off by 4).
+- E4. The `<msg>_input` alias rule is VectorParameters().size()==1, not
+  "monotone" per se (equivalent in effect today).
+- E5. The cursor is a NESTED struct `Database::<q>_cursor` holding a
+  MUTABLE `Database &db`, bound values, `uint32_t pos`; `next()` is
+  defined out-of-line in the .cpp and reaches state via `db.<member>`
+  (nested-class private access).
+- E6. Queries with a forcing function CALL A PROC (mutating) — §B's
+  `const Database &` for query friends is WRONG; forced queries also
+  need Log/Functors under deduction. Corpus-wide exactly ONE forced
+  query exists: force.dr's get_next_id_bf (merge_5/
+  recursive_to_downstream/view_3 match a text grep but do NOT force).
+- E7. §C erratum: booleans_diff emits NO cursor (its only query is
+  all-bound). A third hand artifact (cf13_1: full-scan cursor +
+  Present filter) pins the cursor shape.
+- E8. `Database`/`DatabaseLog`/`DatabaseFunctors` are FIXED identifiers
+  regardless of #database (only namespace + filenames change).
+- E9. 16 inline-hook stages exist (6 top-level, 4 functors, 4 log, 2
+  namespace-adjacent); all positions preserved. No corpus file uses
+  them.
+
+### Empirical resolutions of the open questions (probes committed to the
+### session record; clang 21 + gcc 16 agree on every one)
+
+- OQ-S2 RESOLVED: in-class friend TEMPLATES calling detail functions
+  defined after the class work (instantiation-point lookup). BUT
+  (i) non-template friends do NOT see post-class names, and (ii) a call
+  with NO dependent argument binds at phase 1 even inside a template —
+  and procs that need neither Log nor Functors are PLAIN functions, so
+  their call sites have no dependent args. Therefore the FORWARD
+  DECLARATIONS of all detail procs are emitted BEFORE the class and are
+  MANDATORY (probe: a driver Log in a foreign namespace breaks the
+  ADL-only fallback on both compilers). Missing-log-method error
+  quality: 3-frame instantiation chain ending "no member named X in
+  'BadLog'" — acceptable, no requires machinery.
+- OQ-S4 RESOLVED: cursors stay NESTED; next() moves IN-CLASS (probed:
+  nested member bodies see later-declared enclosing members). No
+  befriending, no relocation; artifact reading order preserved.
+- OQ-S3 RESOLVED: TWO files stay. datalog.h carries everything;
+  datalog.cpp becomes an anchor TU (banner + include). compile_datalog
+  byproducts, LIBRARY_NAME static-lib, diffrun.sh/runall.sh compile
+  lines, and the CLAUDE.md recipe survive verbatim. macOS ar/ranlib
+  emit no warning on the symbol-less archive (probed).
+- OQ-S1 RESOLVED: global namespace stays the default; #database
+  namespace support unchanged; no new namespace. Hidden friends are
+  ADL-only — qualified calls (points_to::init(...)) are ILL-FORMED
+  (probed): the sweep rule is "types may be qualified; calls never".
+- Deduced returns: NOT needed in the detail region — procs keep their
+  concrete `bool` returns (they all return bool today); `auto` stays
+  only on the friend entry points. Decision 3's auto-return device is
+  retired for the guts.
+- ODR: detail procs must not be `static` (IFNDR when a driver includes
+  datalog.h from two TUs). Plain procs are `inline`; Log-needing procs
+  are templates (external linkage). Mixed-NDEBUG two-TU link probed
+  clean (`initialized_` store is unconditional; only the assert
+  compiles out).
+
+### Adversarial-critique corrections adopted (fleet findings)
+
+- MESSAGE-HANDLER TWIN (the round's F17-class catch): force.dr's
+  kQueryMessageInjector detail proc CALLS the kMessageHandler proc
+  (inject_20 → trigger_generate_next_id_1). Entry points therefore
+  cannot absorb handler bodies into friends: EVERY message handler
+  emits as a detail twin (id-suffixed name) carrying today's body, and
+  the hidden-friend entry is a thin wrapper assembling `db.` refs and
+  delegating. EmitCall routes kMessageHandler callees to the twin.
+- READ/WRITE-SET WALKER: a full region-tree walk (WalkRegion skeleton)
+  collecting DataVariable uses (IsGlobal → globals), region
+  tables/indices, PLUS per-written-table index maintenance
+  (EmitIndexAdds implies the table's indices), PLUS allocator seeded
+  unconditionally (it is emitted as a literal string, invisible to the
+  IR — booleans_diff's init_3 touches no table yet needs it). The
+  proc call graph is a strict DAG corpus-wide (recursion lives inside
+  INDUCTION regions), so the transitive closure is one topological
+  pass. Parameter order: allocator, [Log, Functors,] tables/indices/
+  globals by Id(), then vectors/scalars in today's order —
+  deterministic against the known pointer-keyed-container id drift.
+- QUERY ASSERTS: queries assert `initialized_` too (uniform contract;
+  contract-lens F6). Entry points and init assert as designed.
+- DRIVER SWEEP is NOT regex-able: the rewrite is keyed on symbol KIND
+  (message vs plain query vs forced query vs cursor), which lives in
+  the generated artifact, not the driver text; and 6 drivers spell the
+  receiver `d.` inside generic lambdas. Sweep = python script that
+  parses each case's generated header for the symbol table, then
+  rewrites token-aware; hand-port list: compare_3/4/6 (pointer-to-
+  member dispatch → generic lambdas over ADL calls), cf15_1/2/3 +
+  compare_1/5/6 (requires-detection: `requires { d.q(); }` →
+  `requires { q_(d); }`-form, probed working, PLUS the const hazard:
+  detection on a const db is silently false — bind non-const
+  everywhere), force (the one forced query gains log/functors),
+  product_* (PrintLog drops base/override), ctest ×2 (unqualified ADL
+  calls; namespaced types stay qualified). SKIP set: the expected-
+  diagnostic cases (aggregate_1, kvindex_1-4, evm_func_parse,
+  nonascii_1, truncated_decl_1) never compile a driver.
+- EPOCH-0 INSERTION RULE (unconditional): `init(db, log, functors);` on
+  the line immediately after EVERY Database construction, before ANY
+  use of db or read of its log, threading the log/functors objects in
+  scope for THAT instance (product_conds: per-block log, shared
+  functors — its `init:` golden line is NON-empty: `+(false,false)`).
+  Construction-site counts: tc_nonlinear_diff 2 sites, product_ind 1
+  site (helper fn), product_conds 2 sites.
+- DOCS SWEEP SCOPE (wider than the seed's list): RuntimeAndCodegen.md
+  (":3-4/:97 'template-free' headline now false; generated-code shape
+  section), Architecture.md (:38, :226, worked example :264-303),
+  Language.md (worked example + query/functor code-shape prose),
+  CLAUDE.md ("Generated API" paragraph + manual compile recipe note),
+  plus the @inline-functor caveat (verbatim user C++ now lands inside a
+  template body — two-phase-lookup semantics change for a feature with
+  ZERO corpus coverage; documented, not blocking).
+- MULTI-HEADER-SAME-TU non-regression: two default-namespace generated
+  headers in one TU are ALREADY impossible today (Tup_* redefinition),
+  and two different `class Database` definitions in one program are
+  already an ODR violation across TUs — the free-function move does not
+  regress anything; -first-id + #database namespaces remain the
+  multi-database mechanism.
+
+### C′. The hand-written target artifacts (committed)
+
+docs/proposals/GeneratedSurface.artifacts/{booleans_diff,product_conds,
+cf13_1}/{datalog.h,datalog.cpp,main.cpp} — written by hand against the
+ground-truth emitter output, compiled with clang 21 AND gcc 16 against
+the UNTOUCHED runtime, stdout BYTE-IDENTICAL to the committed goldens
+(3/3 artifacts × 2 compilers). booleans_diff pins: plain-inline procs
+(no Log/Functors anywhere), the all-bound query, unnamed unused friend
+params. product_conds pins: Log-templated procs, the commit-sweep
+publish through a deduced log, TWO instances with per-block logs,
+explicit init with a NON-empty `init:` publication. cf13_1 pins: the
+nested cursor with in-class next() and the Present filter, and a
+query-factory assert. Sealed boundary probed: driver access to
+db.<table> fails to compile (private). Detail bodies are TOKEN-
+IDENTICAL to today's emitted bodies (member names become parameter
+names of identical spelling) — the emitter conversion for procedure
+BODIES is a signature/wrapper change only.
+NOTE: the artifacts inline the message-handler bodies into the friends
+(valid for these three cases: nothing calls their handlers); the
+EMITTER emits the handler twin split per the injector finding above.
+A round-2 adversarial review of the artifacts (independent opus pass,
+mechanical diffs/greps + fresh compiles on both compilers) verified:
+body token-fidelity vs ground truth, exact read/write sets (flow_251
+correctly excludes table_41/48), design conformance, driver-port
+fidelity, and the break attempts (two-TU different-log ODR probe,
+double-init and entry-before-init asserts firing, move-from-twice
+preservation, foreign-namespace log per F-B2). Its two findings were
+APPLIED: the init friend now delegates to the init_3 detail (uniform
+emitter rule; init_3 not dead), and ALL query entry points assert
+initialized_ (the D-e decision: uniform asserts). Artifacts re-verified
+byte-identical after both fixes (3 cases x 2 compilers).
+
+### Staging plan (supersedes the seed's Method bullet 4 granularity)
+
+- Stage A (emitter-only, driver-INVISIBLE, suite green): procedure
+  bodies move to detail functions with explicit read/write-set
+  parameters INSIDE datalog.cpp; class/ctor/methods/virtual log all
+  unchanged; methods become thin wrappers passing member log/functors
+  (virtual dispatch preserved). Gates run in full.
+- Stage B (atomic emitter+driver commit): the surface flip — sealed
+  struct, hidden friends, de-virtualized DatabaseLog, explicit init,
+  header-only move with anchor TU — plus the full driver sweep (155
+  cases + 2 ctest). Nothing compiles half-way, so emitter and drivers
+  land together; the suite gates the commit.
+  (The critique's dual-surface 3-commit alternative was evaluated and
+  REJECTED: a 1-arg ctor cannot coexist with reference members bound
+  by the 3-arg ctor without converting members to pointers — churn
+  that defeats the purpose; and a no-op transitional init() risks
+  masking real init omissions in the sweep.)
+- Stage C (docs): the widened docs sweep above + CLAUDE.md.
+
+Gates unchanged (§Gates): zero golden churn, ctest 3/3, corpus 4-mode
+sweep, F22 fence probes, build wall time before/after (baseline
+recorded this session: SUITE PASS 155, wall 1:53.60 at 8 jobs, fresh
+zero-red run at branch start; ctest 3/3 at 59.15s).
