@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "BenchCounters.h"
 #include "Hash.h"
 #include "Vec.h"
 
@@ -81,11 +82,13 @@ class RowStore {
 
  protected:
   uint32_t FindWithHash(const Row &row, uint64_t hash) const noexcept {
+    HYDE_RT_BENCH_COUNT(finds);
     if (!slot_capacity) {
       return kNoRow;
     }
     for (size_t i = hash & (slot_capacity - 1u);;
          i = (i + 1u) & (slot_capacity - 1u)) {
+      HYDE_RT_BENCH_COUNT(probe_steps);
       const uint32_t id = slots[i];
       if (id == kNoRow) {
         return kNoRow;
@@ -133,6 +136,8 @@ class RowStore {
   }
 
   void Rehash(void) {
+    HYDE_RT_BENCH_COUNT(rehash_events);
+    HYDE_RT_BENCH_COUNT_N(rehash_rows, NumRows());
     const size_t new_capacity = slot_capacity ? slot_capacity * 2u : 64u;
     auto new_slots = allocator.AllocateArray<uint32_t>(new_capacity);
     for (size_t i = 0u; i < new_capacity; ++i) {
@@ -186,6 +191,7 @@ class Table : public RowStore<Row> {
 
   // Always true for stored rows.
   bool Present(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(present_checks);
     assert(id < this->NumRows());
     (void) id;
     return true;
@@ -193,11 +199,13 @@ class Table : public RowStore<Row> {
 
   // Batch-start state (the frozen "I"): the row's id predates the seal.
   bool InI(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     return id < sealed;
   }
 
   // Final-so-far: a stored monotone row is present forever.
   bool InNew(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     assert(id < this->NumRows());
     (void) id;
     return true;
@@ -205,11 +213,13 @@ class Table : public RowStore<Row> {
 
   // Net addition this batch: the row arrived after the seal.
   bool NetAdded(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     return id >= sealed;
   }
 
   // Net deletion is impossible on a monotone relation.
   bool NetDeleted(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     assert(id < this->NumRows());
     (void) id;
     return false;
@@ -297,22 +307,26 @@ class DiffTable : public RowStore<Row> {
 
   // Batch-start state (the frozen "I").
   bool InI(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     return 0 != (flags[id] & kInI);
   }
 
   // Final-so-far: (kInI && !kDel) || kAdd.
   bool InNew(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     const uint8_t f = flags[id];
     return ((f & kInI) && !(f & kDel)) || (f & kAdd);
   }
 
   // Fixpoint-round reads; "frontier" = the claim round now draining.
   bool SurvivesSoFar(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     const uint8_t f = flags[id];
     return (f & kInI) && !(f & kDel);
   }
 
   bool AliveAtClaim(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     const uint8_t f = flags[id];
     return (f & kInI) && (!(f & kDel) || (f & kDelNow));
   }
@@ -322,22 +336,26 @@ class DiffTable : public RowStore<Row> {
   }
 
   bool InNewSansFrontier(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     const uint8_t f = flags[id];
     return ((f & kInI) && !(f & kDel)) || ((f & kAdd) && !(f & kAddNow));
   }
 
   // Post-commit presence: counts > 0.
   bool Present(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(present_checks);
     return Total(counts[id]) > 0;
   }
 
   // C_r > 0: the REDERIVE survival test after OVERDELETE quiesces.
   bool RecursivelySupported(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     return CountR(counts[id]) > 0;
   }
 
   // Net deletion this batch: claimed into D and never re-claimed into A.
   bool NetDeleted(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     const uint8_t f = flags[id];
     return (f & kDel) && !(f & kAdd);
   }
@@ -361,6 +379,7 @@ class DiffTable : public RowStore<Row> {
   // re-added by REDERIVE/INSERT, which sets `kAdd`, so `kDel && !kAdd` already
   // excludes it.
   bool NetAdded(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(member_checks);
     const uint8_t f = flags[id];
     return (f & kAdd) && !(f & kDel) && !(f & kInI);
   }
@@ -368,6 +387,7 @@ class DiffTable : public RowStore<Row> {
   // Claim `id` into the overdeletion set D and the current delete frontier
   // round. Returns false if already claimed this batch (dequeue dedup).
   bool TryClaimDel(uint32_t id) {
+    HYDE_RT_BENCH_COUNT(claim_calls_del);
     const uint8_t f = flags[id];
     if (f & kDel) {
       return false;
@@ -388,8 +408,10 @@ class DiffTable : public RowStore<Row> {
     // invariant the spec's phase order provides structurally. (`C_nr`, not
     // `Total`: a `-` fold's own crossing rule is `kInI && C_nr <= 0`.)
     if (0 < CountNr(counts[id])) {
+      HYDE_RT_BENCH_COUNT(stale_drops_del);
       return false;
     }
+    HYDE_RT_BENCH_COUNT(claims_del);
     Touch(id);
     flags.Set(id, static_cast<uint8_t>(flags[id] | kDel | kDelNow));
     return true;
@@ -397,6 +419,7 @@ class DiffTable : public RowStore<Row> {
 
   // Claim `id` into the addition set A and the current insert frontier round.
   bool TryClaimAdd(uint32_t id) {
+    HYDE_RT_BENCH_COUNT(claim_calls_add);
     const uint8_t f = flags[id];
     if (f & kAdd) {
       return false;
@@ -416,8 +439,10 @@ class DiffTable : public RowStore<Row> {
     // INSERT — `Total` never undershoots a genuinely present row at its add
     // claim. See MD §5.2/§5.3 phase-monotonicity.
     if (Total(counts[id]) <= 0) {
+      HYDE_RT_BENCH_COUNT(stale_drops_add);
       return false;
     }
+    HYDE_RT_BENCH_COUNT(claims_add);
     Touch(id);
     flags.Set(id, static_cast<uint8_t>(flags[id] | kAdd | kAddNow));
     return true;
@@ -426,12 +451,14 @@ class DiffTable : public RowStore<Row> {
   // Clear one row's kDelNow bit: the row leaves the current delete
   // frontier round.
   void RetireDel(uint32_t id) {
+    HYDE_RT_BENCH_COUNT(retires);
     flags.Set(id, static_cast<uint8_t>(flags[id] & ~kDelNow));
   }
 
   // Clear one row's kAddNow bit: the row leaves the current insert
   // frontier round.
   void RetireAdd(uint32_t id) {
+    HYDE_RT_BENCH_COUNT(retires);
     flags.Set(id, static_cast<uint8_t>(flags[id] & ~kAddNow));
   }
 
@@ -441,6 +468,7 @@ class DiffTable : public RowStore<Row> {
   // non-negative per class. Then forget the touched set.
   template <typename Sink>
   void Commit(Sink &&sink) {
+    HYDE_RT_BENCH_COUNT_N(commit_visits, touched.Size());
     for (uint32_t id : touched) {
       const uint64_t w = counts[id];
       const int32_t nr = CountNr(w);
@@ -451,6 +479,7 @@ class DiffTable : public RowStore<Row> {
       const bool was = 0 != (f & kInI);
       const bool now = (static_cast<int64_t>(nr) + static_cast<int64_t>(r)) > 0;
       if (was != now) {
+        HYDE_RT_BENCH_COUNT(commit_publishes);
         sink(this->RowAt(id), now);
       }
       f &= static_cast<uint8_t>(~(kDel | kAdd | kDelNow | kAddNow | kTouched));
@@ -516,7 +545,9 @@ class DiffTable : public RowStore<Row> {
 
   // Record `id` in the touched set exactly once per batch.
   void Touch(uint32_t id) {
+    HYDE_RT_BENCH_COUNT(touch_calls);
     if (!(flags[id] & kTouched)) {
+      HYDE_RT_BENCH_COUNT(touch_appends);
       flags.Set(id, static_cast<uint8_t>(flags[id] | kTouched));
       touched.Add(id);
     }
@@ -533,6 +564,11 @@ class DiffTable : public RowStore<Row> {
   // The counter read-modify-write: one signed +/-1 on one class, with the
   // crossing decision taken from this fold's own before/after snapshot.
   Delta FoldAt(uint32_t id, DerivClass c, int32_t delta) {
+    if (0 < delta) {
+      HYDE_RT_BENCH_COUNT(folds_plus);
+    } else {
+      HYDE_RT_BENCH_COUNT(folds_minus);
+    }
     Touch(id);
     const uint64_t before = counts[id];
     int32_t nr = CountNr(before);
@@ -588,6 +624,7 @@ class Index {
 
   // Links `id` under `key`. Row ids must be added in increasing order.
   void Add(const Key &key, uint32_t id) {
+    HYDE_RT_BENCH_COUNT(idx_adds);
     while (next.Size() <= id) {
       next.Add(kNoRow);
     }
@@ -598,6 +635,7 @@ class Index {
 
   // First row id for `key`, or `kNoRow`. Iterate with `Next`.
   uint32_t First(const Key &key) const noexcept {
+    HYDE_RT_BENCH_COUNT(idx_first);
     if (!slot_capacity) {
       return kNoRow;
     }
@@ -614,6 +652,7 @@ class Index {
   }
 
   uint32_t Next(uint32_t id) const noexcept {
+    HYDE_RT_BENCH_COUNT(idx_hops);
     return next[id];
   }
 
@@ -647,6 +686,7 @@ class Index {
   }
 
   void Rehash(void) {
+    HYDE_RT_BENCH_COUNT(idx_rehash_events);
     const size_t new_capacity = slot_capacity ? slot_capacity * 2u : 64u;
     auto new_slots = allocator.AllocateArray<Slot>(new_capacity);
     for (size_t i = 0u; i < new_capacity; ++i) {

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "Allocator.h"
+#include "BenchCounters.h"
 
 namespace hyde::rt {
 
@@ -100,6 +101,8 @@ class Vec {
   // Sorts and deduplicates. Rows are compared bytewise via a caller-supplied
   // ordering, or `operator<`/`operator==` when `T` provides them.
   void SortAndUnique(void) {
+    HYDE_RT_BENCH_COUNT(sort_calls);
+    HYDE_RT_BENCH_COUNT_N(sort_elems, count);
     std::sort(items, items + count);
     count = static_cast<size_t>(
         std::unique(items, items + count) - items);
@@ -153,11 +156,13 @@ class Vec {
 // (`adds` scanned first, then `removes`).
 template <typename T>
 void NetBatch(Vec<T> &adds, Vec<T> &removes) {
+  HYDE_RT_BENCH_COUNT(netbatch_calls);
   Vec<T> distinct(adds.allocator);
   Vec<int64_t> flags(adds.allocator);  // Bit 0: in `adds`; bit 1: in `removes`.
 
   const auto fold = [&](const T &row, int64_t flag) {
     for (size_t i = 0u; i < distinct.Size(); ++i) {
+      HYDE_RT_BENCH_COUNT(netbatch_compares);
       if (distinct[i] == row) {
         flags.Set(i, flags[i] | flag);
         return;
