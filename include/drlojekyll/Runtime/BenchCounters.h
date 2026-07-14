@@ -47,7 +47,9 @@
   X(sort_calls)            /* Vec::SortAndUnique calls */ \
   X(sort_elems)            /* pre-sort element counts (call site) */ \
   X(netbatch_calls)        /* NetBatch invocations */ \
-  X(netbatch_compares)     /* NetBatch distinct-scan row compares (hot!) */
+  X(netbatch_compares)     /* NetBatch distinct-scan row compares (hot!) */ \
+  X(compactions)           /* DiffTable::CompactDead passes that fired */ \
+  X(compact_rows_dropped)  /* dead rows reclaimed across all compactions */
 
 namespace hyde::rt {
 

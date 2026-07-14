@@ -587,6 +587,8 @@ class DiffTable : public RowStore<Row> {
     if (!NeedsCompaction()) {
       return false;
     }
+    HYDE_RT_BENCH_COUNT(compactions);
+    HYDE_RT_BENCH_COUNT_N(compact_rows_dropped, this->NumRows() - num_live);
     const uint32_t w = this->CompactRowsInPlace(
         [this](uint32_t id) { return Total(counts[id]) <= 0; },
         [this](uint32_t old_id, uint32_t new_id) {
