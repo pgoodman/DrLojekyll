@@ -19,8 +19,10 @@ and never runs the CF-build F14 pre-pass):
 These became the standing OptDiff fixtures (product_diff, product_mixed,
 product_self, product_conds) at the Stage-5 landing (2026-07-13) — see
 tests/OptDiff/cases/ and stage5-notes.md's landing record. The drivers
-observe the published delta stream by overriding the (now-virtual)
-DatabaseLog methods; cross-message oracle batches split into one runtime
+observe the published delta stream by providing their own log type whose
+member signatures match the published-message hooks (the entry points deduce
+the log's static type -- nothing is virtual, no inheritance or overriding);
+cross-message oracle batches split into one runtime
 epoch per message (the runtime has one entry point per message), and the
 same-epoch double flip lives in product_conds' second database instance
 and product_self's mixed batch. Run: build/debug/bin/drlojekyll-oracle

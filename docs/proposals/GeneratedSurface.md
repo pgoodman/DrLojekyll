@@ -508,3 +508,89 @@ Gates unchanged (§Gates): zero golden churn, ctest 3/3, corpus 4-mode
 sweep, F22 fence probes, build wall time before/after (baseline
 recorded this session: SUITE PASS 155, wall 1:53.60 at 8 jobs, fresh
 zero-red run at branch start; ctest 3/3 at 59.15s).
+
+## Landing record (2026-07-13) — EPOCH CLOSED (the hidden-friend surface)
+
+Commits on generated-surface (branched off differential-product's TIP
+93c1810): 247e34e pre-code re-verification record + §C′ artifacts;
+86bf123 Stage A (bodies → explicit-parameter detail functions,
+driver-invisible, suite-gated); 90f4301 Stage B (the surface flip +
+all-driver sweep, atomic); Stage C docs sweep. Method executed per the
+bootstrap: fleet re-derivation of §A (errata E1-E9), empirical OQ
+resolution on two compilers, 5-lens adversarial critique, hand-written
+byte-verified target artifacts with a round-2 review, then the staged
+conversion with the full suite between stages.
+
+### Deviations for ratification
+
+1. **Branch base = 93c1810, not the named 6de25cb.** The tip adds only
+   the Stage-5 ratification addendum; branching at 6de25cb would have
+   dropped that record from the epoch's line of work.
+2. **Staging: "region by region" executed as Stage A + atomic Stage B.**
+   Stage A landed the effects computation and body relocation behind the
+   UNCHANGED driver surface (methods as thin wrappers, virtual log
+   intact) with the full suite green; Stage B flipped the surface and
+   swept all drivers in ONE commit (nothing compiles half-way). The
+   critique's dual-surface 3-commit alternative was evaluated and
+   REJECTED: a 1-arg ctor cannot coexist with the reference members the
+   3-arg ctor binds without converting members to pointers (whole-body
+   churn), and a transitional no-op init() would mask real init
+   omissions in the sweep.
+3. **Design deltas from the seed §B** (each recorded with evidence in
+   §D): detail forward declarations are MANDATORY and PRE-class (the
+   phase-1/no-dependent-arg trap — probed on clang 21 + gcc 16); detail
+   procs keep concrete `bool` returns (the seed's deduced-return device
+   is retired for the guts — needed nowhere); message handlers emit
+   `_detail` twins (the force injector calls a handler); forced queries
+   deduce Log/Functors and take (db, log, functors, bound…); ALL entry
+   points including queries assert `initialized_`; cursors stay NESTED
+   with `next()` in-class (OQ-S4); queries take Database& NON-const
+   (forcing mutates; seed §B's `const` was wrong); the artifact is two
+   files with datalog.cpp as an anchor TU (OQ-S3); global namespace
+   stays, no new namespace (OQ-S1); hidden friends are ADL-only —
+   qualified calls do not compile (ctest drivers call unqualified).
+4. **§C′ artifacts inline their message-handler bodies into the
+   friends** (nothing calls those handlers in the three cases); the
+   emitter emits the twin split. The artifacts are the committed
+   driver-contract pin, not a byte-level emitter spec; remaining diffs
+   vs emitted output are comment/signature wrapping only.
+5. **FINDINGS.md unchanged**: the epoch found no new compiler defect.
+   The one dormant-feature caveat (an @inline functor's verbatim C++ now
+   lands inside a template body — two-phase lookup applies; zero corpus
+   coverage) is recorded here and in the docs sweep, not as a FINDINGS
+   entry (it was not found by the golden-master method and nothing
+   observable changed).
+6. **F23 probe note**: the FINDINGS repro reproduces (exit 139 opt /
+   clean fence rejection nodf) only with the product DEAD (no consumer)
+   — the crash is in dead-flow elimination; a consumed product reaches
+   the fence cleanly. Verified unchanged post-epoch; the record's repro
+   text is accurate as written (it has no consumer clause).
+
+### Gates (all green)
+
+SUITE: PASS (155) at Stage A and at Stage B close; ZERO golden churn
+across the epoch (`git diff 93c1810..HEAD -- tests/OptDiff/goldens`
+empty; the one mid-sweep red — kvindex_1, whose driver COMPILES under
+opt/nocf and was wrongly in the sweep's skip set — was fixed by sweeping
+it, goldens untouched). ctest 3/3 (both ctest drivers ported; the
+namespaced-types + unqualified-ADL-calls pattern). data/ corpus 4-mode
+sweep: average_weight / pairwise_average_weight / evm_func_parse
+unchanged clean diagnostics; evm_array_parse pre-existing 134 unchanged;
+every other file ALL-OK in 4 modes. F22 fence probe: rejected with the
+narrowed diagnostic in all 4 modes. Build wall time (full suite, 8
+jobs, same machine, debug compiler): **1:53.60 before → 1:42.21 after**
+(~10% FASTER — the anchor TU is trivial, so each case compiles the
+artifact once instead of splitting real work across two TUs). The
+PerfRoadmap §1 bit-stable-artifact caveat stands unchanged (entity-id
+nondeterminism is unaffected by this epoch).
+
+### The retired stopgap
+
+Stage 5's deviation 1 (`virtual DatabaseLog`) is RETIRED as ratified:
+no virtual anything remains in the generated artifact; the product_*
+drivers observe published deltas through their own log types by
+deduction.
+
+EPOCH CLOSED. Next epoch per the recorded sequencing: the bench harness
+(PerfRoadmap.md §5 bootstrap), writing its drivers once against THIS
+surface and measuring it.

@@ -198,8 +198,8 @@ value) or `free` (result column). The name-plus-binding-pattern is the unit
 of identity — the same name may be re-declared with different patterns, and
 each pattern generates its own entry point. In generated C++, an all-`bound`
 query is a `bool` existence check; a query with `free` columns is a cursor
-(`db.<name>_<pattern>(...)` where the pattern is one `b`/`f` letter per
-column). `@first` (requires at least one `free` parameter) limits the result
+(`<name>_<pattern>(db, ...)` — a hidden-friend call taking the database as its
+first argument, where the pattern is one `b`/`f` letter per column). `@first` (requires at least one `free` parameter) limits the result
 to the first match. Queries also accept an embedded clause.
 
 ```datalog
@@ -379,27 +379,31 @@ struct DatabaseLog {                        // one method per published message
   void new_path_2(uint32_t From, uint32_t To, bool added) {}
 };
 
-class Database {
+struct Database {                           // sealed state struct; members private
  public:
-  explicit Database(::hyde::rt::Allocator, DatabaseLog &, DatabaseFunctors &);
-
-  // #message edge/2; @differential => (additions, removals)
-  bool edge_2(::hyde::rt::Vec<Tup_u32_u32> added,
-              ::hyde::rt::Vec<Tup_u32_u32> removed);
-
-  // #query reachable_from (bf): cursor over the free column
-  reachable_from_bf_cursor reachable_from_bf(uint32_t From);
-
-  // #query connected (bb): existence check
-  bool connected_bb(uint32_t From, uint32_t To);
+  explicit Database(::hyde::rt::Allocator); // allocates empty tables; no epoch 0
 };
+
+// Driver-facing functions are HIDDEN FRIENDS of Database, reachable only by
+// unqualified (ADL) call with the database argument. Types may be qualified
+// (reach::Database), but a qualified CALL such as reach::init(db, ...) does
+// not compile:
+//
+//   init(db, log, functors);                    // epoch 0: empty model + t=0 deltas
+//   edge_2(db, log, functors, added, removed);  // @differential => (adds, removals)
+//   auto c = reachable_from_bf(db, From);        // #query (bf): cursor over free col
+//   bool ok = connected_bb(db, From, To);        // #query (bb): existence check
 ```
 
-A non-differential message takes a single `Vec`. The driver pushes edge
-tuples through `edge_2`; the fixpoint over `path` runs inside that call,
-invoking `log.new_path_2(..., true)` for each new pair (and with `false` for
-each retracted pair when removals are supplied); afterwards the driver
-iterates `reachable_from_bf(from)` with `cursor.next(to)`.
+A non-differential message takes a single `Vec`. The driver constructs `db`
+(construction runs no epoch 0), then calls `init(db, log, functors)` exactly
+once before any message; the entry points and queries assert it has run. The
+log and functors types flow by DEDUCTION — nothing is virtual, so any type
+providing the same member signatures observes the published deltas. The driver
+pushes edge tuples through `edge_2`; the fixpoint over `path` runs inside that
+call, invoking `log.new_path_2(..., true)` for each new pair (and with `false`
+for each retracted pair when removals are supplied); afterwards the driver
+iterates `reachable_from_bf(db, from)` with `cursor.next(to)`.
 
 ## Divergences of docs/Grammar.md from the parser
 

@@ -35,7 +35,7 @@ the concrete grammar in `docs/Grammar.md`.
        |     +- ProgramImpl::Optimize (flattening, no-op removal, proc dedup)
        v
   cxx::GenerateDatabaseCode  ------ lib/CodeGen/CPlusPlus/Database.cpp
-       |   <db>.h + <db>.cpp        (template-free C++)
+       |   <db>.h + <db>.cpp        (header-only C++; .cpp is an anchor TU)
        v
   user driver + runtime  ---------- include/drlojekyll/Runtime, lib/Runtime
 ```
@@ -220,11 +220,13 @@ void hyde::cxx::GenerateDatabaseCode(const Program &program,
 ```
 
 Implemented in `lib/CodeGen/CPlusPlus/Database.cpp`, this walks the program's
-tables, procedures, and queries and emits two files: a header with row/key
-structs, tuple aliases, enums, `DatabaseFunctors`, `DatabaseLog`, and the
-`Database` class; and a source file with procedure bodies and query-cursor
-`next` methods. The output is concrete and template-free; every region kind
-maps to a small, readable statement pattern. `docs/RuntimeAndCodegen.md`
+tables, procedures, and queries and emits two files: `<db>.h` carries the whole
+artifact — row/key structs, tuple aliases, enums, `DatabaseFunctors`,
+`DatabaseLog`, the sealed `Database` state struct with its hidden-friend entry
+points, and the templated flow-procedure definitions — while `<db>.cpp` is an
+anchor TU (banner plus `#include "<db>.h"`). The output is header-only and
+heavily templated (the entry points deduce the driver's log/functors types);
+every region kind maps to a small, readable statement pattern. `docs/RuntimeAndCodegen.md`
 describes the generated-code shape and the runtime containers
 (`Allocator.h`, `Hash.h`, `Vec.h`, `Table.h` under
 `include/drlojekyll/Runtime`; the only compiled runtime source is
@@ -266,11 +268,13 @@ reachable(A, B) : path(A, B).
 
 ```cpp
 using edge_input = Tup_i32_i32;
-class Database {
+struct Database {
  public:
-  explicit Database(::hyde::rt::Allocator, DatabaseLog &, DatabaseFunctors &);
-  bool edge_2(::hyde::rt::Vec<Tup_i32_i32> vec);   // message: name_arity
-  reachable_bf_cursor reachable_bf(int32_t From);  // query: name_bindings
+  explicit Database(::hyde::rt::Allocator);   // allocates empty tables; no epoch 0
+  // Driver-facing functions are HIDDEN FRIENDS, reached by unqualified (ADL)
+  // call with the database argument -- e.g. init(db, log, functors),
+  // edge_2(db, log, functors, vec), reachable_bf(db, From). A qualified call
+  // does not compile. Tables/indices/globals + initialized_ are private.
 };
 ```
 
@@ -283,14 +287,15 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;   // one member fn per #functor; none here
   DatabaseLog log;             // one no-op method per published message
-  Database db(allocator, log, functors);
+  Database db(allocator);      // construction cannot fail; runs no epoch 0
+  init(db, log, functors);     // epoch 0: empty-EDB least model + t=0 deltas
 
   hyde::rt::Vec<edge_input> edges(allocator);
   edges.Add({1, 2});
   edges.Add({2, 3});
-  db.edge_2(std::move(edges));       // drives the incremental update
+  edge_2(db, log, functors, std::move(edges));  // drives the incremental update
 
-  auto c = db.reachable_bf(1);       // b=bound, f=free per query column
+  auto c = reachable_bf(db, 1);      // b=bound, f=free per query column
   for (int32_t to; c.next(to);) { /* 2, 3 */ }
 }
 ```

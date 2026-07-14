@@ -79,10 +79,24 @@ clang++ -std=c++23 -I include -I gen driver.cpp gen/datalog.cpp \
   lib/Runtime/Allocator.cpp -o case
 ```
 
-Generated API: database name defaults to `datalog`, no namespace; messages are
-`db.<name>_<arity>(Vec<...>)`; queries are cursors `db.<name>_<bindings>()`
-(`b`/`f` per column) — always read the generated `datalog.h` for exact
-signatures before writing a driver.
+Generated API (the hidden-friend surface, since the generated-surface
+epoch): database name defaults to `datalog`, no namespace; `datalog.h` is
+the whole header-only artifact (`datalog.cpp` is an anchor TU — compile
+lines unchanged). `struct Database` is a sealed state struct constructed
+with just the allocator; ALL driver-facing functions are hidden friends,
+reachable only by unqualified ADL call with the database argument (never
+qualify the calls; types may be qualified). Epoch 0 is explicit:
+`init(db, log, functors)` once, immediately after construction, before
+anything else (entry points and queries assert it). Messages are
+`<name>_<arity>(db, log, functors, Vec<...>[, Vec<...>])`; queries are
+`<name>_<bindings>(db, bound...)` (`b`/`f` per column) returning bool
+(all-bound) or a cursor (`auto c = q_f(db); c.next(out...)`); queries
+with a forcing function also take `(log, functors)` after `db`. Log and
+functor types flow by deduction — a driver observes published deltas by
+providing ITS OWN type with the message-hook signatures (no inheritance,
+no virtual, no `override`); `DatabaseFunctors` members are declared in
+the header and defined by the driver out-of-line. Always read the
+generated `datalog.h` for exact signatures before writing a driver.
 
 ## Key internals
 
