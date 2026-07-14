@@ -309,3 +309,133 @@ counter seam (own commit, off by default, suite-verified no-op);
 BASELINE.md committed with the first accepted run; landing record
 appended HERE with deviations for ratification; FINDINGS.md updated if
 the harness exposes a correctness bug.
+
+## 7. Landing record (2026-07-14) — BENCH-HARNESS EPOCH CLOSED
+
+Branch `bench-harness` off main 0c2dd2f (differential-product and
+generated-surface both fully merged; merge-base check per §6.4). Commits:
+2cb0bb8 (Phase 2: worked tc_random workload + baselines + BASELINE.md
+skeleton), 006f354 (counter seam, own commit, verified no-op), c8bc96f
+(counts-binary wiring), df454ff (Phase 4: all families + runner), plus
+this docs/close commit. Method executed per §6.4: fleet re-verification
+of the §6 seed BEFORE building (3 agents; the F17/F18/F22 precedent held
+— errata below), 5-lens adversarial design critique (26 recorded
+resolutions in the session design ledger), hand-written worked workload
+with round-2 review and fixes applied, seam gated by object-file
+byte-compare + suite + on-path golden checks, families fleet-built
+against the committed pattern with 4-mode sentinel gates, then a 3-part
+accepted run (326 folded runs) on a quiesced machine.
+
+### Seed errata found by the pre-code re-verification (the precedent held)
+
+- E-1 (the real defect): §3 Q4 / MD §11 OQ6 was STALE FROM BIRTH — the
+  `kTouched` dedup-at-append bit landed in the SAME commit (efacc67)
+  that recorded OQ6's "measure before choosing". The touched vector
+  never held duplicates. The measurement pivoted to the branch's
+  benefit (touch_calls vs touch_appends); OQ6 now closed with data
+  (annotated in MD §11).
+- E-2: §6.1 "kInI persistent; rest batch scratch" — kExplicit is ALSO
+  persistent (Commit's reset mask deliberately keeps it).
+- E-3: §6.1/§4 "7/8 load" — the grow test `(n + n>>3) >= cap` is a
+  max load of 8/9 ≈ 0.889 (the Table.h comment is imprecise too).
+- E-4: §6.2 omitted the REDERIVE bridge band and the second (tail)
+  frontier-filter band; actual order is drain → filter → seed-fold →
+  OVERDELETE → REDERIVE → INSERT → tail filters → commit.
+- E-5: §6.2 placed NetBatch in the entry friend; it runs in the detail
+  twin. "g==1 gates once-only seeds" is emitter-general but vacuous in
+  the scale-shaped cases (dead increment there).
+- E-6 (cost-model-relevant, new): join arms re-Find rows BY VALUE per
+  index hit (CHECKMEMBER is value-keyed) — one redundant full hash
+  probe per hit; stages thread row values, not ids, so every stage
+  re-Finds. Measured: ~7-9 Finds per fold. A data-structures-epoch
+  target (id-keyed membership).
+
+### What landed
+
+bench/ per §6.3 as amended: common/bench.h driver kit; workloads
+tc_random (+matched-pair Q2 mode), deep_chain, pure_cycle, flip_storm/
+phantom_pair (publishes through a deduced log), disasm_synth; baselines
+tc_random_{naive,incr} (Floyd-oracle-verified; incr = Italiano adds +
+affected-source-BFS deletes, del=full control), deep_chain_naive,
+pure_cycle_naive, phantom_pair_naive; runbench.sh (manifest-driven,
+fragment folding on run_complete, exit-code manifest, Q5 compile
+capture, progsize generator); README.md; BASELINE.md with the FIRST
+ACCEPTED RUN. Counter seam: Runtime/BenchCounters.h + increment sites
+in Table.h/Vec.h under DRLOJEKYLL_BENCH_COUNTERS (default-off).
+
+### First numbers vs the §3 questions (details in bench/BASELINE.md)
+
+Q1 hash probing dominates volume everywhere (2.6-3.5 probes/find,
+  7-9 finds/fold — half of it the redundant re-Find); per-ROUND fixed
+  overhead dominates deep cascades (900k mostly-empty SortAndUnique
+  calls per 1e5-deep retract); NetBatch is negligible at every viable
+  batch size (the engine's own superlinear batch cost hits first).
+Q2 retract/insert ≈ 1.13 at equal fan-out (C_nr firewall margins hold);
+  pure-cycle exception: ~63x work amplification, 815x vs naive —
+  OQ7(a) quantified, the engine's worst regime.
+Q3 COST: engine never beats from-scratch on the grid (1.87x-106x
+  slower) but the ratio improves with N and collapses with batch size;
+  crossover extrapolates to N≥8-16k at bs≤4-16. Loses to the
+  hand-incremental baseline everywhere.
+Q4 (pivoted) the Touch dedup bit suppresses 50-69% of appends — keeps
+  its branch; closed.
+Q5 drlojekyll's own compile time is SUPERLINEAR in rule count (52ms at
+  2 rules → 7.81s at 128); generated text and clang cost ~linear — the
+  delta-relational IR epoch's sizing number.
+DRIFT (the headline): steady-state churn degrades 19.6x over 2000
+  epochs with flat live data and a flat machine canary — the
+  append-only log + dead-chain tax, the data-structures epoch's
+  motivating number.
+Debug/release ≈ 8x (the "debug timings are not representative" caveat,
+  now a number). Suite gates at close: SUITE: PASS (155), zero golden
+  churn vs main, ctest 3/3. FINDINGS.md UNCHANGED: 24/24 sentinel
+  groups agree across modes and baselines — the harness found no
+  correctness bug.
+
+### Deviations for ratification
+
+1. Generators are shared C++ headers (gen.h per family), not §6.3's
+   per-family gen.py — one determinism contract consumed by engine and
+   baselines alike.
+2. OPEN-1 resolved against the seed's lean: the hand-incremental delete
+   baseline is (c) affected-source BFS recompute (all five critique
+   lenses converged); (b) full-recompute-on-delete kept as the labeled
+   `del=full` control.
+3. kcfa workloads: deliberate scope cut (fixed-shape tiny cases; scaling
+   needs a program generator; flip_storm + disasm cover negation/merge
+   and realistic shapes). Revisit if the data-structures epoch needs a
+   points-to shape.
+4. wasm build spike (§2 piggyback): deferred WITH BLOCKER — Apple clang
+   has no wasm32 backend and no wasi sysroot on the dev machine; one
+   brew'd LLVM + wasi-sdk away, retry then.
+5. Envelope timeouts are recorded data, not failures: tc_random bs≥256
+   @1024 nodes, 256/bs=256, pure_cycle k=128 exceeded the fail-fast
+   RTIMEOUT (60s) and are manifested as knob-too-large per the R21
+   protocol. runbench reports COMPLETE when the MANIFEST is trustworthy,
+   not when every run folded.
+6. Debug-ratio points ran REPS=3 (methodology says 5; it is a caveat
+   number, not a headline).
+7. Baseline knob strings carry the shared stream subset (no
+   alloc/canary/shadow keys); cross-binary sentinel joins on stream
+   knobs in analysis; the runner enforces intra-name agreement.
+8. flip_storm exercises the DEL-side stale-drop gate only (structural
+   in its generator; the add-side mirror shape is recorded future
+   work). disasm_synth is growth-only (its message surface is monotone)
+   and has no hand baseline — engine series + counters + compile
+   metrics only.
+9. The Q2 pairs mode refactored the tc driver's sentinel drain
+   (final_query_wall_ns now brackets drain+sort+hash, previously
+   drain-only).
+10. §1's bit-stable-artifact trigger was NOT pulled: bench keys on
+   semantics (case+mode+knobs), so text nondeterminism stayed a
+   methodology caveat, not a work item.
+
+EPOCH CLOSED. Next epoch per §4: RUNTIME DATA STRUCTURES, now gated
+open — §3 Q1 has numbers. Priorities the data pointed at, in order:
+id-keyed membership (kill the per-hit redundant re-Find), row-log/
+chain compaction or liveness-aware storage (the 19.6x drift), probe/
+layout work on the open-addressing sets, per-round induction overhead
+(empty-sort elision), and the §4 seekable/WCOJ substrate decision —
+priced against these baselines. The pure-cycle 63x amplification is
+the standing differential-semantics question (MD §10 weight escape)
+if a real workload ever hits it.

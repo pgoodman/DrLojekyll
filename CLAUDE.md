@@ -71,6 +71,18 @@ the monotone projection, each against its own golden
 repros (F1–F19 and F21 fixed as of July 2026; F20 is an open record-only
 latent-comparator note).
 
+### Bench harness (perf, never gates correctness)
+
+`bench/` is the COST instrument (PerfRoadmap.md §2; methodology + first
+accepted run in `bench/BASELINE.md`; how-to in `bench/README.md`). Run:
+`DR=build/debug/bin/drlojekyll bench/runbench.sh <workroot> <runspec>
+[modes]`. Bench builds are `-O2 -DNDEBUG`; the optional runtime counter
+seam (`-DDRLOJEKYLL_BENCH_COUNTERS`, Runtime/BenchCounters.h) is a
+suite-verified no-op when off, and counts binaries are never the timed
+binaries. Comparisons key on (case, mode, knobs) semantics, never
+generated-text hashes. Never time bench runs concurrently with suite
+runs; never rebuild the compiler mid-run.
+
 Manual compile of generated code (driver pattern in any `cases/*.main.cpp`):
 
 ```sh
