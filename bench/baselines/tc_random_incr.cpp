@@ -63,16 +63,17 @@ int main(int argc, char **argv) {
   const std::string mode = knobs.Str("mode", "native");
   const uint64_t block = knobs.U64("block", 1u);
   const std::string del = knobs.Str("del", "bfs");  // bfs | full
+  const uint64_t pairs = knobs.U64("pairs", 0u);
   knobs.Finish();
 
   char knob_str[256];
   std::snprintf(knob_str, sizeof knob_str,
                 "alloc=malloc,batches=%llu,bs=%llu,del=%s,ef=%llu,graph=%s,"
-                "nodes=%llu,rr=%llu,seed=%llu",
+                "nodes=%llu,pairs=%llu,rr=%llu,seed=%llu",
                 (unsigned long long) batches, (unsigned long long) bs,
                 del.c_str(), (unsigned long long) ef, graph.c_str(),
-                (unsigned long long) nodes, (unsigned long long) rr,
-                (unsigned long long) seed);
+                (unsigned long long) nodes, (unsigned long long) pairs,
+                (unsigned long long) rr, (unsigned long long) seed);
   const bench::Tsv tsv{"tc_random_incr", knob_str, mode, rep};
 
   tsv.Row(-1, "clock_overhead_ns", bench::ClockOverheadNs());
@@ -110,62 +111,110 @@ int main(int argc, char **argv) {
   tsv.Row(-1, "seed_edges", gen.live.size());
   prev_bits = closure.bits;
 
-  // ---- churn phase ----
-  uint64_t block_wall = 0u;
-  for (uint64_t b = 0u; b < batches; ++b) {
-    bench::Batch batch = gen.Churn(bs);
+  // ---- churn phase (pairs=0) OR matched-pair phase (pairs>0) ----
+  if (pairs == 0u) {
+    uint64_t block_wall = 0u;
+    for (uint64_t b = 0u; b < batches; ++b) {
+      bench::Batch batch = gen.Churn(bs);
 
-    const uint64_t t0 = bench::NowNs();
+      const uint64_t t0 = bench::NowNs();
 
-    // Deletes first: collect the affected-source superset against the OLD
-    // closure, update adjacency, then recompute exactly those rows.
-    if (!batch.removes.empty()) {
-      if (del == "full") {
-        for (const auto &[x, y] : batch.removes) {
-          adj.Remove(x, y);
+      // Deletes first: collect the affected-source superset against the OLD
+      // closure, update adjacency, then recompute exactly those rows.
+      if (!batch.removes.empty()) {
+        if (del == "full") {
+          for (const auto &[x, y] : batch.removes) {
+            adj.Remove(x, y);
+          }
+          bench::RecomputeAll(adj, closure, worklist, visited);
+        } else {
+          affected.clear();
+          for (uint32_t s = 0u; s < n32; ++s) {
+            const uint64_t *row = closure.Row(s);
+            for (const auto &[x, y] : batch.removes) {
+              if (s == x || bench::Closure::Test(row, x)) {
+                affected.push_back(s);
+                break;
+              }
+            }
+          }
+          for (const auto &[x, y] : batch.removes) {
+            adj.Remove(x, y);
+          }
+          for (uint32_t s : affected) {
+            bench::RecomputeRow(adj, s, closure.Row(s), closure.words,
+                                worklist, visited);
+          }
         }
+      }
+      for (const auto &[x, y] : batch.adds) {
+        adj.Add(x, y);
+        AddEdgeIncremental(closure, x, y, scratch_r);
+      }
+
+      const uint64_t dt = bench::NowNs() - t0;
+
+      const int64_t epoch = static_cast<int64_t>(b);
+      if (block <= 1u) {
+        tsv.Row(epoch, "epoch_wall_ns", dt);
+      } else {
+        block_wall += dt;
+        if ((b + 1u) % block == 0u) {
+          tsv.Row(epoch, "block_wall_ns", block_wall);
+          block_wall = 0u;
+        }
+      }
+      tsv.Row(epoch, "batch_adds", batch.adds.size());
+      tsv.Row(epoch, "batch_removes", batch.removes.size());
+      tsv.Row(epoch, "delta_tc_rows", closure.DeltaPairs(prev_bits));
+      prev_bits = closure.bits;
+    }
+  } else {
+    // ---- matched-pair phase (Q2, design R15) ----
+    // Frozen surrounding graph = post-seed closure (prev_bits). Each pair i
+    // samples a fresh non-live edge e_i: add it via the exact single-edge
+    // update (pair_add_wall_ns), record |Δtc| of the add against the frozen
+    // closure (pair_delta_tc), then delete it via this baseline's delete
+    // strategy (pair_del_wall_ns). Set-semantics-equivalent: the incremental
+    // delete recomputes the affected rows from the current adjacency, which
+    // (adjacency restored) reproduces the frozen closure exactly.
+    tsv.Row(-1, "state_tc_count_pre_pairs", closure.CountPairs());
+    tsv.Row(-1, "state_hash_pre_pairs", closure.Hash());
+
+    for (uint64_t i = 0u; i < pairs; ++i) {
+      const bench::Edge e = gen.SampleFreshEdge();
+      const int64_t epoch = static_cast<int64_t>(i);
+
+      // add leg (exact single-edge incremental update).
+      const uint64_t ta = bench::NowNs();
+      adj.Add(e.first, e.second);
+      AddEdgeIncremental(closure, e.first, e.second, scratch_r);
+      tsv.Row(epoch, "pair_add_wall_ns", bench::NowNs() - ta);
+      tsv.Row(epoch, "pair_delta_tc", closure.DeltaPairs(prev_bits));
+      gen.MarkLive(e);
+
+      // del leg (this baseline's delete strategy for one edge).
+      const uint64_t td = bench::NowNs();
+      if (del == "full") {
+        adj.Remove(e.first, e.second);
         bench::RecomputeAll(adj, closure, worklist, visited);
       } else {
         affected.clear();
         for (uint32_t s = 0u; s < n32; ++s) {
           const uint64_t *row = closure.Row(s);
-          for (const auto &[x, y] : batch.removes) {
-            if (s == x || bench::Closure::Test(row, x)) {
-              affected.push_back(s);
-              break;
-            }
+          if (s == e.first || bench::Closure::Test(row, e.first)) {
+            affected.push_back(s);
           }
         }
-        for (const auto &[x, y] : batch.removes) {
-          adj.Remove(x, y);
-        }
+        adj.Remove(e.first, e.second);
         for (uint32_t s : affected) {
-          bench::RecomputeRow(adj, s, closure.Row(s), closure.words,
-                              worklist, visited);
+          bench::RecomputeRow(adj, s, closure.Row(s), closure.words, worklist,
+                              visited);
         }
       }
+      tsv.Row(epoch, "pair_del_wall_ns", bench::NowNs() - td);
+      gen.EraseLive(e);
     }
-    for (const auto &[x, y] : batch.adds) {
-      adj.Add(x, y);
-      AddEdgeIncremental(closure, x, y, scratch_r);
-    }
-
-    const uint64_t dt = bench::NowNs() - t0;
-
-    const int64_t epoch = static_cast<int64_t>(b);
-    if (block <= 1u) {
-      tsv.Row(epoch, "epoch_wall_ns", dt);
-    } else {
-      block_wall += dt;
-      if ((b + 1u) % block == 0u) {
-        tsv.Row(epoch, "block_wall_ns", block_wall);
-        block_wall = 0u;
-      }
-    }
-    tsv.Row(epoch, "batch_adds", batch.adds.size());
-    tsv.Row(epoch, "batch_removes", batch.removes.size());
-    tsv.Row(epoch, "delta_tc_rows", closure.DeltaPairs(prev_bits));
-    prev_bits = closure.bits;
   }
 
   // ---- sentinel (clock stopped) ----

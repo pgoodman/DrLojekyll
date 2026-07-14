@@ -35,16 +35,17 @@ int main(int argc, char **argv) {
   const uint64_t rep = knobs.U64("rep", 0u);
   const std::string mode = knobs.Str("mode", "native");
   const uint64_t block = knobs.U64("block", 1u);
+  const uint64_t pairs = knobs.U64("pairs", 0u);
   knobs.Finish();
 
   char knob_str[256];
   std::snprintf(knob_str, sizeof knob_str,
                 "alloc=malloc,batches=%llu,bs=%llu,ef=%llu,graph=%s,"
-                "nodes=%llu,rr=%llu,seed=%llu",
+                "nodes=%llu,pairs=%llu,rr=%llu,seed=%llu",
                 (unsigned long long) batches, (unsigned long long) bs,
                 (unsigned long long) ef, graph.c_str(),
-                (unsigned long long) nodes, (unsigned long long) rr,
-                (unsigned long long) seed);
+                (unsigned long long) nodes, (unsigned long long) pairs,
+                (unsigned long long) rr, (unsigned long long) seed);
   const bench::Tsv tsv{"tc_random_naive", knob_str, mode, rep};
 
   tsv.Row(-1, "clock_overhead_ns", bench::ClockOverheadNs());
@@ -80,35 +81,69 @@ int main(int argc, char **argv) {
   tsv.Row(-1, "seed_edges", gen.live.size());
   prev_bits = closure.bits;
 
-  // ---- churn phase ----
-  uint64_t block_wall = 0u;
-  for (uint64_t b = 0u; b < batches; ++b) {
-    bench::Batch batch = gen.Churn(bs);
+  // ---- churn phase (pairs=0) OR matched-pair phase (pairs>0) ----
+  if (pairs == 0u) {
+    uint64_t block_wall = 0u;
+    for (uint64_t b = 0u; b < batches; ++b) {
+      bench::Batch batch = gen.Churn(bs);
 
-    const uint64_t t0 = bench::NowNs();
-    for (const auto &[x, y] : batch.adds) {
-      adj.Add(x, y);
-    }
-    for (const auto &[x, y] : batch.removes) {
-      adj.Remove(x, y);
-    }
-    bench::RecomputeAll(adj, closure, worklist, visited);
-    const uint64_t dt = bench::NowNs() - t0;
-
-    const int64_t epoch = static_cast<int64_t>(b);
-    if (block <= 1u) {
-      tsv.Row(epoch, "epoch_wall_ns", dt);
-    } else {
-      block_wall += dt;
-      if ((b + 1u) % block == 0u) {
-        tsv.Row(epoch, "block_wall_ns", block_wall);
-        block_wall = 0u;
+      const uint64_t t0 = bench::NowNs();
+      for (const auto &[x, y] : batch.adds) {
+        adj.Add(x, y);
       }
+      for (const auto &[x, y] : batch.removes) {
+        adj.Remove(x, y);
+      }
+      bench::RecomputeAll(adj, closure, worklist, visited);
+      const uint64_t dt = bench::NowNs() - t0;
+
+      const int64_t epoch = static_cast<int64_t>(b);
+      if (block <= 1u) {
+        tsv.Row(epoch, "epoch_wall_ns", dt);
+      } else {
+        block_wall += dt;
+        if ((b + 1u) % block == 0u) {
+          tsv.Row(epoch, "block_wall_ns", block_wall);
+          block_wall = 0u;
+        }
+      }
+      tsv.Row(epoch, "batch_adds", batch.adds.size());
+      tsv.Row(epoch, "batch_removes", batch.removes.size());
+      tsv.Row(epoch, "delta_tc_rows", closure.DeltaPairs(prev_bits));
+      prev_bits = closure.bits;
     }
-    tsv.Row(epoch, "batch_adds", batch.adds.size());
-    tsv.Row(epoch, "batch_removes", batch.removes.size());
-    tsv.Row(epoch, "delta_tc_rows", closure.DeltaPairs(prev_bits));
-    prev_bits = closure.bits;
+  } else {
+    // ---- matched-pair phase (Q2, design R15) ----
+    // Frozen surrounding graph = post-seed closure. For each pair i, sample
+    // a fresh non-live edge e_i, add it and recompute (pair_add_wall_ns),
+    // record the add's |Δtc| against the frozen closure (pair_delta_tc — the
+    // fan-out normalizer the engine cannot cheaply report; joined on epoch i
+    // downstream), then remove e_i and recompute (pair_del_wall_ns). The
+    // frozen closure is `prev_bits` (== closure.bits at seed end); after each
+    // pair the closure returns to it exactly.
+    // prev_bits already holds the post-seed closure (set above).
+    tsv.Row(-1, "state_tc_count_pre_pairs", closure.CountPairs());
+    tsv.Row(-1, "state_hash_pre_pairs", closure.Hash());
+
+    for (uint64_t i = 0u; i < pairs; ++i) {
+      const bench::Edge e = gen.SampleFreshEdge();
+      const int64_t epoch = static_cast<int64_t>(i);
+
+      // add leg.
+      const uint64_t ta = bench::NowNs();
+      adj.Add(e.first, e.second);
+      bench::RecomputeAll(adj, closure, worklist, visited);
+      tsv.Row(epoch, "pair_add_wall_ns", bench::NowNs() - ta);
+      tsv.Row(epoch, "pair_delta_tc", closure.DeltaPairs(prev_bits));
+      gen.MarkLive(e);
+
+      // del leg (restores the frozen state exactly).
+      const uint64_t td = bench::NowNs();
+      adj.Remove(e.first, e.second);
+      bench::RecomputeAll(adj, closure, worklist, visited);
+      tsv.Row(epoch, "pair_del_wall_ns", bench::NowNs() - td);
+      gen.EraseLive(e);
+    }
   }
 
   // ---- sentinel (clock stopped) ----

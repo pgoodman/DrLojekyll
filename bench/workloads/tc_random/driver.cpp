@@ -41,6 +41,30 @@ hyde::rt::Vec<Tup_u64_u64> ToVec(const hyde::rt::Allocator &alloc,
   return v;
 }
 
+// Drain the reachable() cursor into a canonical (ascending-pair) FNV hash
+// and a pair count. Used both for the final sentinel and (in matched-pair
+// mode) for the pre-pairs frozen-state hash — the two MUST be equal, since
+// set semantics restore the exact post-seed state after every pair.
+struct TcState {
+  uint64_t count;
+  uint64_t hash;
+};
+
+TcState DrainTc(Database &db) {
+  std::vector<std::pair<uint64_t, uint64_t>> pairs;
+  auto c = reachable_ff(db);
+  for (uint64_t f = 0u, t = 0u; c.next(f, t);) {
+    pairs.emplace_back(f, t);
+  }
+  std::sort(pairs.begin(), pairs.end());
+  bench::Fnv fnv;
+  for (const auto &[f, t] : pairs) {
+    fnv.Add(f);
+    fnv.Add(t);
+  }
+  return {pairs.size(), fnv.h};
+}
+
 // COUNTS-binary support (compiled with -DDRLOJEKYLL_BENCH_COUNTERS): emit
 // per-epoch counter deltas as ctr_* metric rows. This binary's wall rows
 // are discarded downstream — counts and wall are separate narratives.
@@ -76,6 +100,10 @@ int main(int argc, char **argv) {
   const uint64_t block = knobs.U64("block", 1u);
   const uint64_t shadow = knobs.U64("shadow", 1u);
   const uint64_t warmup = knobs.U64("warmup", 3u);
+  // Matched-pair mode (Q2, design R15): pairs=0 (default) runs the churn
+  // phase; pairs=N>0 runs the churn phase's REPLACEMENT — N add/remove
+  // matched pairs against the frozen post-seed graph (below).
+  const uint64_t pairs = knobs.U64("pairs", 0u);
   knobs.Finish();
 
   // Every measurement-affecting knob is part of the canonical key (sorted);
@@ -84,13 +112,14 @@ int main(int argc, char **argv) {
   char knob_str[256];
   std::snprintf(knob_str, sizeof knob_str,
                 "alloc=%s,batches=%llu,block=%llu,bs=%llu,canary=%llu,"
-                "ef=%llu,graph=%s,nodes=%llu,rr=%llu,seed=%llu,shadow=%llu",
+                "ef=%llu,graph=%s,nodes=%llu,pairs=%llu,rr=%llu,seed=%llu,"
+                "shadow=%llu",
                 alloc_kind.c_str(), (unsigned long long) batches,
                 (unsigned long long) block, (unsigned long long) bs,
                 (unsigned long long) canary, (unsigned long long) ef,
                 graph.c_str(), (unsigned long long) nodes,
-                (unsigned long long) rr, (unsigned long long) seed,
-                (unsigned long long) shadow);
+                (unsigned long long) pairs, (unsigned long long) rr,
+                (unsigned long long) seed, (unsigned long long) shadow);
   const bench::Tsv tsv{"tc_random_engine", knob_str, mode, rep};
 
   tsv.Row(-1, "clock_overhead_ns", bench::ClockOverheadNs());
@@ -153,72 +182,102 @@ int main(int argc, char **argv) {
   // stay in the series for drift analysis — methodology R2/R10).
   tsv.Row(-1, "warmup_epochs", warmup);
 
-  // ---- churn phase ----
-  uint64_t block_wall = 0u;
-  for (uint64_t b = 0u; b < batches; ++b) {
-    bench::Batch batch = gen.Churn(bs);
-    auto adds = ToVec(input_alloc, batch.adds);
-    auto removes = ToVec(input_alloc, batch.removes);
-    const uint64_t adds_n = batch.adds.size();
-    const uint64_t removes_n = batch.removes.size();
+  // ---- churn phase (pairs=0) OR matched-pair phase (pairs>0) ----
+  if (pairs == 0u) {
+    uint64_t block_wall = 0u;
+    for (uint64_t b = 0u; b < batches; ++b) {
+      bench::Batch batch = gen.Churn(bs);
+      auto adds = ToVec(input_alloc, batch.adds);
+      auto removes = ToVec(input_alloc, batch.removes);
+      const uint64_t adds_n = batch.adds.size();
+      const uint64_t removes_n = batch.removes.size();
 
 #ifdef DRLOJEKYLL_BENCH_COUNTERS
-    const hyde::rt::BenchCounters ctr_before = hyde::rt::gBenchCounters;
+      const hyde::rt::BenchCounters ctr_before = hyde::rt::gBenchCounters;
 #endif
-    const uint64_t t0 = bench::NowNs();
-    add_edge_2(db, log, functors, std::move(adds), std::move(removes));
-    const uint64_t dt = bench::NowNs() - t0;
+      const uint64_t t0 = bench::NowNs();
+      add_edge_2(db, log, functors, std::move(adds), std::move(removes));
+      const uint64_t dt = bench::NowNs() - t0;
 
-    const int64_t epoch = static_cast<int64_t>(b);
+      const int64_t epoch = static_cast<int64_t>(b);
 #ifdef DRLOJEKYLL_BENCH_COUNTERS
-    EmitCounterDeltas(tsv, epoch, ctr_before, hyde::rt::gBenchCounters);
+      EmitCounterDeltas(tsv, epoch, ctr_before, hyde::rt::gBenchCounters);
 #endif
-    if (block <= 1u) {
-      tsv.Row(epoch, "epoch_wall_ns", dt);
-    } else {
-      block_wall += dt;
-      if ((b + 1u) % block == 0u) {
-        tsv.Row(epoch, "block_wall_ns", block_wall);
-        block_wall = 0u;
+      if (block <= 1u) {
+        tsv.Row(epoch, "epoch_wall_ns", dt);
+      } else {
+        block_wall += dt;
+        if ((b + 1u) % block == 0u) {
+          tsv.Row(epoch, "block_wall_ns", block_wall);
+          block_wall = 0u;
+        }
+      }
+      tsv.Row(epoch, "batch_adds", adds_n);
+      tsv.Row(epoch, "batch_removes", removes_n);
+
+      // Driver-side NetBatch shadow (design R5): same code, same data, timed
+      // outside the epoch bracket. The engine's own in-entry NetBatch cost
+      // at this batch is (to first order) this number.
+      if (shadow) {
+        auto s_adds = ToVec(input_alloc, batch.adds);
+        auto s_removes = ToVec(input_alloc, batch.removes);
+        const uint64_t s0 = bench::NowNs();
+        hyde::rt::NetBatch(s_adds, s_removes);
+        tsv.Row(epoch, "netshadow_wall_ns", bench::NowNs() - s0);
+      }
+
+      if (canary && ((b + 1u) % canary == 0u)) {
+        tsv.Row(epoch, "canary_wall_ns", bench::CanaryWallNs());
       }
     }
-    tsv.Row(epoch, "batch_adds", adds_n);
-    tsv.Row(epoch, "batch_removes", removes_n);
+  } else {
+    // ---- matched-pair phase (Q2, design R15) ----
+    // The frozen surrounding graph is the post-seed state. Each pair i
+    // samples a fresh non-live edge e_i, times the add of {+e_i} against
+    // that frozen state (pair_add_wall_ns), then times the matching remove
+    // {-e_i} (pair_del_wall_ns); set semantics restore the exact pre-pair
+    // state, so every pair is measured against the SAME graph. We drain the
+    // frozen state's TC hash BEFORE the loop (clock stopped) and re-drain it
+    // as the final sentinel: the two hashes MUST be identical.
+    const TcState pre = DrainTc(db);
+    tsv.Row(-1, "state_tc_count_pre_pairs", pre.count);
+    tsv.Row(-1, "state_hash_pre_pairs", pre.hash);
 
-    // Driver-side NetBatch shadow (design R5): same code, same data, timed
-    // outside the epoch bracket. The engine's own in-entry NetBatch cost at
-    // this batch is (to first order) this number.
-    if (shadow) {
-      auto s_adds = ToVec(input_alloc, batch.adds);
-      auto s_removes = ToVec(input_alloc, batch.removes);
-      const uint64_t s0 = bench::NowNs();
-      hyde::rt::NetBatch(s_adds, s_removes);
-      tsv.Row(epoch, "netshadow_wall_ns", bench::NowNs() - s0);
-    }
+    for (uint64_t i = 0u; i < pairs; ++i) {
+      const bench::Edge e = gen.SampleFreshEdge();
+      const int64_t epoch = static_cast<int64_t>(i);
 
-    if (canary && ((b + 1u) % canary == 0u)) {
-      tsv.Row(epoch, "canary_wall_ns", bench::CanaryWallNs());
+      // add leg: {+e}, timed.
+      {
+        std::vector<bench::Edge> one{e};
+        auto adds = ToVec(input_alloc, one);
+        hyde::rt::Vec<Tup_u64_u64> removes(input_alloc);
+        const uint64_t t0 = bench::NowNs();
+        add_edge_2(db, log, functors, std::move(adds), std::move(removes));
+        tsv.Row(epoch, "pair_add_wall_ns", bench::NowNs() - t0);
+      }
+      gen.MarkLive(e);
+
+      // del leg: {-e}, timed.
+      {
+        hyde::rt::Vec<Tup_u64_u64> adds(input_alloc);
+        std::vector<bench::Edge> one{e};
+        auto removes = ToVec(input_alloc, one);
+        const uint64_t t0 = bench::NowNs();
+        add_edge_2(db, log, functors, std::move(adds), std::move(removes));
+        tsv.Row(epoch, "pair_del_wall_ns", bench::NowNs() - t0);
+      }
+      gen.EraseLive(e);
     }
   }
 
   // ---- untimed tail: query drain + sentinel (clock stopped) ----
   {
     const uint64_t q0 = bench::NowNs();
-    std::vector<std::pair<uint64_t, uint64_t>> pairs;
-    auto c = reachable_ff(db);
-    for (uint64_t f = 0u, t = 0u; c.next(f, t);) {
-      pairs.emplace_back(f, t);
-    }
-    const uint64_t q_wall = bench::NowNs() - q0;
-    tsv.Row(-1, "final_query_wall_ns", q_wall);
-    std::sort(pairs.begin(), pairs.end());
-    bench::Fnv fnv;
-    for (const auto &[f, t] : pairs) {
-      fnv.Add(f);
-      fnv.Add(t);
-    }
-    tsv.Row(-1, "final_tc_count", pairs.size());
-    tsv.Row(-1, "final_tc_hash", fnv.h);
+    const TcState st = DrainTc(db);
+    tsv.Row(-1, "final_query_wall_ns", bench::NowNs() - q0);
+    tsv.Row(-1, "final_tc_count", st.count);
+    tsv.Row(-1, "final_tc_hash", st.hash);
     tsv.Row(-1, "final_live_edges", gen.live.size());
   }
 

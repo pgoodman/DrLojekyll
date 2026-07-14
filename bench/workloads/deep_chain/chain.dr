@@ -1,0 +1,25 @@
+; Deep linear derivation chain over a @differential base fact -- the knobbed
+; bench variant of tests/OptDiff/cases/deep_chain_retract.dr (that suite case,
+; with its 4-mode golden, is this program's correctness net; the bench only
+; scales the chain depth and drives repeated retract/reseed cycles).
+;
+; The driver feeds a descending next-chain N -> N-1 -> ... -> 0 and the single
+; base fact base(N), so reach(k) has exactly one derivation of depth N - k and
+; the deepest row reach(0) has the numerically smallest key. Retracting base(N)
+; marks the whole chain unknown, and the recheck resolves rows in ascending key
+; order, so the first checker call on reach(0) recurses through all N unresolved
+; predecessors -- the maximum-recursion-depth shape for the top-down checker
+; machinery. This bench raises the depth to 100000 (the Stage 3 acceptance gate)
+; and churns retract/reseed cycles to price the full-chain overdelete/rederive
+; cascade; the constant-stack claim is exercised here at -O2 -DNDEBUG.
+#message base(u64 X) @differential.
+#message next(u64 From, u64 To).
+
+#local reach(X).
+
+#query reach_out(free u64 X).
+
+reach(X) : base(X).
+reach(Y) : reach(X), next(X, Y).
+
+reach_out(X) : reach(X).

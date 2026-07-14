@@ -1,0 +1,41 @@
+; Bench workload: the OQ7(b) phantom-churn isolator, scaled. This is
+; StackSafeNegation.md section 5.1.1's two-hop construction --
+; h(X,Z) : e(X,Y), e(Y,Z) over a @differential edge relation e -- lifted
+; to bench scale. The suite cases two_hop_phantom.dr and tc_phantom_claim.dr
+; are the fixed-size correctness net for exactly this join shape (their
+; 4-mode goldens + oracle cover the phantom pairings); this workload only
+; scales it and prices the differential machinery under mixed-batch churn.
+;
+; UNLIKE tc.dr (query-only, empty sinks, no publish cost), h is ALSO
+; published as a @differential message: every net presence change of an h
+; row surfaces one publication call at the batch's commit sweep. The driver
+; provides its OWN log type with the h_msg_2 hook signature and counts
+; adds/dels per epoch, so this workload gives the publish cost a number
+; (design R18/R4-note-4) and lets the driver reconstruct the live h set
+; purely from the published net-change stream.
+;
+; The phantom shape: a mixed batch that in ONE message removes a live e
+; edge and adds another such that a spurious 2-path h(X,Z) would form by
+; pairing the removed hop with the added hop -- an instance in neither the
+; old nor the new materialization. The F17 signed claim gates
+; (Table.h TryClaimAdd: Total>0, TryClaimDel: C_nr<=0) drop those phantom
+; enqueues; the counts binary's ctr_stale_drops_{add,del} count the drops.
+;
+; h_out is a query too, drained once at the end (clock stopped) as a second
+; sentinel independent of the publication stream (precedent: two_hop_phantom
+; carries the h_out query alongside the published relation).
+#message e_msg(u64 X, u64 Y) @differential.
+
+#local e(X, Y).
+#local h(X, Z).
+
+#message h_msg(u64 X, u64 Z) @differential.
+
+#query h_out(free u64 X, free u64 Z).
+
+e(X, Y) : e_msg(X, Y).
+
+h(X, Z) : e(X, Y), e(Y, Z).
+
+h_msg(X, Z) : h(X, Z).
+h_out(X, Z) : h(X, Z).

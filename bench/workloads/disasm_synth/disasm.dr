@@ -1,0 +1,46 @@
+; Bench workload: recursive disassembler over a synthetic instruction/
+; transfer stream (design R19: the realistic-program point). This program
+; is a VERBATIM copy of tests/MiniDisassembler/database.dr; that ctest case
+; (mini_disassembler_standalone_test) is this workload's correctness net,
+; the bench only scales its input. Do not edit the semantics here -- if the
+; two ever diverge, the ctest golden is authoritative.
+;
+; MESSAGE SURFACE: both messages are plain #message -- MONOTONE, add-only.
+; There is no @differential relation, so this workload is GROWTH/INGEST
+; ONLY (no retraction, no edit_batches). Adding instructions and transfers
+; still forces RE-DERIVATION (a new fall-through predecessor demotes a
+; function head), so the incremental machinery is exercised on ingest even
+; though nothing is ever retracted.
+
+#database mini_disassembler.
+
+#enum EdgeType u8.
+
+#constant EdgeType FALL_THROUGH 0.
+#constant EdgeType CALL 1.
+
+#message instruction(u64 EA).
+#message raw_transfer(u64 FromEA, u64 ToEA, EdgeType TransferKind).
+
+#query function(bound u64 ToEA)
+
+    ; The target of a function call is an instruction.
+    : raw_transfer(FromEA, ToEA, CALL)
+    , instruction(FromEA)
+    , instruction(ToEA)
+
+    ; Any instruction without a predecessor is a function.
+    : !raw_transfer(_, ToEA, _)
+    , instruction(ToEA).
+
+#query function_instructions(bound u64 FuncEA, free u64 InstEA)
+
+    ; The first instruction of a function is a function instruction.
+    : function(FuncEA)
+    , FuncEA = InstEA
+
+    ; The fall-through of one function instruction is also a function
+    ; instruction, assuming it's not a function head.
+    : function_instructions(FuncEA, PredEA)
+    , raw_transfer(PredEA, InstEA, FALL_THROUGH)
+    , !function(InstEA).

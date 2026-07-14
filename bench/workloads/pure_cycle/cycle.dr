@@ -1,0 +1,22 @@
+; Bench workload: non-linear transitive closure over a differential edge
+; relation -- deliberately the SAME program semantics as
+; bench/workloads/tc_random/tc.dr (and tests/OptDiff cases/tc_nonlinear_diff.dr:
+; that case's 4-mode golden + oracle coverage is this program's correctness
+; net). This family drives it with a PLANTED-RING stream instead of random
+; edges. Inside an intact ring every tc row's support is purely cyclic (there
+; is no non-cyclic derivation of any ring pair), so retracting a single ring
+; edge triggers the FULL overdelete wave over that ring's tc cone, then
+; rederivation of the surviving path pairs -- the OQ7(a) pure-cycle regime in
+; isolation. Query-only: the commit sweeps carry empty sinks, so this workload
+; prices the differential machinery without publish cost.
+#message add_edge(u64 From, u64 To) @differential.
+#query reachable(free u64 From, free u64 To).
+#local tc(From, To).
+#local edge(From, To).
+
+edge(From, To) : add_edge(From, To).
+
+tc(From, To) : edge(From, To).
+tc(From, To) : tc(From, X), tc(X, To).
+
+reachable(From, To) : tc(From, To).

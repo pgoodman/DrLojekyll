@@ -208,6 +208,41 @@ struct GraphGen {
     return batch;
   }
 
+  // Matched-pair (Q2, design R15) support: sample one edge that is NOT
+  // currently live, without mutating any state. Deterministic from the same
+  // seeded Rng as the seed/churn stream, so the engine and both baselines
+  // draw the byte-identical pair sequence. The caller applies the add and
+  // the matching remove (set semantics restore the pre-pair state), then
+  // MarkLive / EraseLive keep this generator's `live`/`member` in lockstep
+  // so the next pair samples against the same frozen surrounding graph.
+  Edge SampleFreshEdge(void) {
+    for (;;) {
+      const Edge e = SampleEdge();
+      if (!IsLive(PackEdge(e.first, e.second))) {
+        return e;
+      }
+    }
+  }
+
+  // Mirror an applied add into the generator's live set (a pair's add leg).
+  void MarkLive(const Edge &e) {
+    live.push_back(e);
+    member.Insert(PackEdge(e.first, e.second));
+  }
+
+  // Mirror an applied remove (a pair's del leg): find the edge and erase it,
+  // restoring the exact pre-pair live set. The edge was just MarkLive'd, so
+  // it is present; a linear scan is fine at matched-pair cadence (one pair
+  // at a time, not a batch).
+  void EraseLive(const Edge &e) {
+    for (size_t i = 0u; i < live.size(); ++i) {
+      if (live[i] == e) {
+        EraseLiveAt(i);
+        return;
+      }
+    }
+  }
+
   // One seed-phase batch: adds only, up to `ops` fresh edges, stopping at
   // the target live-edge count.
   Batch Seed(uint64_t ops, uint64_t target_edges) {
