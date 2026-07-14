@@ -439,3 +439,180 @@ layout work on the open-addressing sets, per-round induction overhead
 priced against these baselines. The pure-cycle 63x amplification is
 the standing differential-semantics question (MD §10 weight escape)
 if a real workload ever hits it.
+
+## 8. Epoch-start addendum (2026-07-14, at the bench-harness close):
+## the data-structures epoch's seed — verified pseudocode of the runtime
+## + the path forward as DIFFS against it
+## (SINGLE-PASS SEED by the closing session; the §6/§D precedent stands:
+## every epoch's pre-code re-verification has caught a real seed defect —
+## re-verify §8.1-§8.3 against HEAD before building anything)
+
+### 8.0 Inventory at epoch start (verify, then trust)
+
+- Suite 155, ctest 3/3, zero golden churn; main = 354e772 (bench epoch
+  merged). bench/ instrument + BASELINE.md accepted run are the diff
+  targets; the counter seam exists (BenchCounters.h, default-off,
+  no-op-verified) — REUSE it for A/B, re-verify the no-op gate after
+  ANY Table.h/Vec.h edit (object-file byte-compare at -O2 no -g, suite,
+  on-path golden check; recipe in the seam commit 006f354).
+- The runtime (include/drlojekyll/Runtime/{Table,Vec,Allocator,Hash}.h,
+  lib/Runtime/Allocator.cpp) is UNCHANGED by the bench epoch except the
+  seam's no-op counter macros. lib/ControlFlow + codegen unchanged.
+- Unlike the bench epoch, THIS epoch's mandate INCLUDES changing
+  lib/Runtime, and — where a diff below requires it — codegen
+  (lib/CodeGen/CPlusPlus/Database.cpp) and possibly CF-IR lowering.
+  Gates: byte-identical goldens throughout (every change below is
+  semantics-neutral BY DESIGN; a golden diff means a bug), oracle green,
+  and bench before/after at the BASELINE.md flagship points — the
+  epoch's success METRIC is movement on the recorded numbers (19.6x
+  drift, probes/fold, per-round overhead), McSherry/COST +
+  mechanical-sympathy lenses per IdeasTriage.md.
+
+### 8.1 The runtime as pseudocode (fleet-verified at the bench epoch;
+### errata already folded in)
+
+    RowStore<Row>:                                  « Table.h:52-168 »
+      Vec<Row> rows (LOG: append-only, ids = offsets, NEVER shrinks)
+      Vec<u64> hashes (per-row cache; probe compares hash before row)
+      u32* slots open-addressing (linear probe, 2x growth from 64,
+        grow when (n + n>>3) >= cap  =>  max load 8/9 ≈ 0.889)
+      Find(row) = Hash + probe chain      « ~2.6-3.5 steps/find measured »
+      FindOrAdd = Find | append(rows,hashes) + InsertSlot(| Rehash O(n))
+      NO row removal path.  « hazard: 19.6x churn drift, BASELINE.md »
+    Table<Row> (monotone): + u32 sealed watermark; InI = id<sealed;
+      NetAdded = id>=sealed; Present/InNew=true; Seal() per epoch.
+    DiffTable<Row>: + Vec<u64> counts (packed signed C_nr|C_r, one RMW),
+      + Vec<u8> flags (kInI AND kExplicit persistent; kDel/kAdd/kDelNow/
+      kAddNow/kTouched batch scratch), + Vec<u32> touched (kTouched
+      dedups at append — 50-69% suppression measured).
+      Fold = FindOrAdd + GrowTo + Touch + RMW + crossing test
+        (+: total 0->pos;  -: kInI && C_nr<=0 — reads the FLAG too)
+      TryClaimDel/Add = dup test + STALE re-test (C_nr<=0 / total>0)
+        + Touch + flag RMW;  Retire* = flag RMW
+      Commit(sink) = O(touched): was!=now -> sink; reset scratch;
+        kInI := present.  DebugValidateCounts = O(ALL rows), NDEBUG-off.
+      MEMBERSHIP PREDICATES take an id (InI/InNew/SurvivesSoFar/
+        AliveAtClaim/InNew{With,Sans}Frontier/Present/
+        RecursivelySupported/NetAdded/NetDeleted) — the runtime is
+        ALREADY id-keyed; the value-keyed waste is in the GENERATED
+        CALLERS (§8.2).
+    Index<Key>: slot table {key,hash,head,used} per DISTINCT key (8/9
+      load, 2x from 64) + per-row `next` u32 chain, HEAD-PUSH =>
+      newest-first, unsorted, append-only, NO removal — dead rows cost
+      every future probe of their key one hop + one membership test
+      forever (half the drift).
+    Vec<T>: flat, 2x from 16; SortAndUnique = std::sort + unique with
+      NO size guard — runs the full call machinery on 0/1-element vecs
+      « ~900k calls/300k elems per 1e5-deep retract measured ».
+    NetBatch: O(batch²) distinct-scan « measured negligible at viable
+      batch sizes — NOT a priority, despite §6's flagging ».
+    Allocator: {ctx, alloc_fn, free_fn} by value; Malloc | Arena(bump,
+      Free=no-op). Every container funnels through it.
+
+### 8.2 The generated contact points that constrain §8.3 (from the
+### emitted artifact, verified at the bench epoch)
+
+    JOIN ARM (per index hit):                 « the 7-9 finds/fold »
+      s = idx.First/Next          « id in hand »
+      row = tbl.RowAt(s); cols = row...
+      m = tbl.Find({cols...})     « REDUNDANT: m == s ALWAYS (same
+                                    table, dedup by value) »
+      if (m != kNoRow && tbl.<MembershipPred>(m)) { fold(...) }
+    STAGE PLUMBING: frontier/queue vecs carry COLUMN VALUES, not ids;
+      every consumer stage re-Finds (claim drains, frontier filters,
+      retires, net filters: 1-2 Finds per row per stage).
+    FIXPOINT ROUND: per round per queue vec: SortAndUnique + drain;
+      ~3 vecs per induction side; rounds = cascade depth.
+    CURSORS: pos scan over NumRows() ever-added + Present(id) filter
+      (log bloat taxes every query drain).
+    INDEX MAINT: idx.Add at every added_row fold site, in row-id order.
+    Emitter anchors: lib/CodeGen/CPlusPlus/Database.cpp (EmitRegion
+      dispatch ~:249; join lowering emits the scan + re-Find +
+      membership pattern; CHECKMEMBER regions in lib/ControlFlow are
+      value-keyed by construction — check whether the id can be
+      threaded in the CF-IR or only at emission).
+
+### 8.3 The path forward as DIFFS (ranked by the measured numbers;
+### each is semantics-neutral => zero golden churn expected)
+
+    D1  KILL THE REDUNDANT RE-FIND (join arms first).
+        JOIN ARM:
+      -   m = tbl.Find({cols...})
+      -   if (m != kNoRow && tbl.Pred(m)) ...
+      +   if (tbl.Pred(s)) ...          « s from the scan; same table »
+        Cheapest big win; likely EMISSION-ONLY (the join arm already
+        has s in scope). Verify: is the CHECKMEMBER's table always the
+        scan's table in this pattern, or can lowering place a
+        different-table membership there? (If different, keep Find for
+        those sites only.) Stage plumbing (values->ids in vecs) is the
+        LARGER half of the finds — but ids don't survive FindOrAdd on a
+        DIFFERENT table and vecs feed cross-table folds; scope a
+        second diff carefully (per-vec: same-table consumers only).
+        Expected movement: probes/fold and finds/fold in the counters;
+        epoch wall at tc/pure_cycle flagship.
+    D2  LOG COMPACTION / DEAD-ROW GC (the 19.6x drift killer).
+        RowStore:
+      +   dead_rows counter (DiffTable bumps on commit when now==false)
+      +   CompactAt(epoch boundary, threshold: dead > live*K or bytes):
+      +     rebuild rows/hashes densely, dropping DiffTable rows with
+      +       total==0 (scratch flags all clear at that point; touched
+      +       empty; kInI==present invariant holds) — IDS CHANGE:
+      +     rebuild the id set, ALL indices (chains die with the ids),
+      +     counts/flags side arrays; monotone Table<> never compacts
+      +     (rows never die); sealed/watermark untouched.
+        SAFETY ARGUMENT the next session must make rigorous: row ids
+        never escape an epoch (vecs are epoch-local, cursors are
+        driver-side and doc'd as invalidated-by-next-epoch — VERIFY the
+        cursor contract; if cursors may span epochs, compaction gates
+        on that decision). Layout choice at compaction = the
+        column-stats idea (IdeasTriage #22-23) and the precondition for
+        D5. Expected movement: the drift slope -> ~flat; late-epoch
+        wall; final_query_wall.
+    D3  EMPTY/TINY-SORT ELISION (per-round overhead).
+        Vec::SortAndUnique:
+      +   if (count <= 1) return;       « trivially order-identical »
+        Then measure; if rounds still dominate, the bigger diff is the
+        OQ4 round-barrier question (linearizable insertion order) —
+        that one is NOT semantics-neutral-by-inspection (emission
+        order feeds queue order), treat as its own gated design.
+        Expected movement: deep_chain retract/reseed wall.
+    D4  PROBE/LAYOUT (after D1/D2 so measurements aren't polluted by
+        work that's about to be deleted): load-factor sweep, hash-cache
+        line packing (hashes interleaved with slots vs separate),
+        chain storage. Seam A/B per variant; mechanical-sympathy rules
+        (count dependent loads).
+    D5  SEEKABLE/WCOJ SUBSTRATE DECISION (PerfRoadmap §4): price the
+        rntz-style Seek/galloping join against the (post-D1/D2) chain
+        scans on OUR workloads. Requires sorted or trie-shaped index
+        storage — D2's compaction layout is where sortedness can be
+        established cheaply. This is a DECISION with numbers, not a
+        committed build.
+
+### 8.4 Bootstrap (next session)
+
+Branch: data-structures off main (354e772). Read IN ORDER: this file
+§7+§8 (the §8 seed is SINGLE-PASS — re-verify per precedent);
+bench/BASELINE.md end to end (the diff targets + methodology);
+IdeasTriage.md (the lenses + ranked ideas + rejections); CLAUDE.md
+(invariants + bench section); memory perf-guiding-oracles. Code:
+include/drlojekyll/Runtime/Table.h END TO END, Vec.h, a REAL emitted
+artifact (compile bench/workloads/tc_random/tc.dr and
+pure_cycle/cycle.dr with -cpp-out; read the join arms and stage
+plumbing), and the join-lowering emitter region in
+lib/CodeGen/CPlusPlus/Database.cpp + the CHECKMEMBER construction in
+lib/ControlFlow/Build (is the scan id available to the CF-IR?).
+Method: the checkpoint method — re-derive §8.1/§8.2 from code
+(fleet-verified), write the D1-D5 diffs against YOUR pseudocode,
+adversarially critique (minimum: D1's different-table-membership
+question, D2's id-escape/cursor-contract safety argument and index
+rebuild cost, D3's ordering neutrality, golden-neutrality of
+everything), hand-write the DESIRED OUTPUT STATES concretely before
+generalizing (the post-D1 join arm in a real artifact, hand-edited and
+golden-verified; the post-D2 Table.h compaction path hand-written and
+driven by a scratch test at scale), THEN implement one diff at a time:
+suite + oracle + seam-no-op gates between diffs, bench flagship
+before/after per diff recorded in BASELINE.md as run 2, 3, ... Gates:
+SUITE PASS 155 ZERO golden churn (semantics-neutral epoch), ctest 3/3,
+BASELINE.md updated with per-diff deltas, landing record appended HERE
+with deviations for ratification. Environment: as §6.4 (PATH, bash
+3.2, ${=var}, never rebuild mid-suite, never time concurrently).
