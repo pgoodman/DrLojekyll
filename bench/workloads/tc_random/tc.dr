@@ -1,0 +1,18 @@
+; Bench workload: non-linear transitive closure over a differential edge
+; relation, deliberately the same semantics as the suite case
+; tests/OptDiff/cases/tc_nonlinear_diff.dr: that case's 4-mode golden +
+; oracle coverage is this program's correctness net; the bench only scales
+; it. Query-only: the commit sweeps carry empty sinks, so this workload
+; prices the differential machinery without publish cost (a transmit
+; variant is a separate case).
+#message add_edge(u64 From, u64 To) @differential.
+#query reachable(free u64 From, free u64 To).
+#local tc(From, To).
+#local edge(From, To).
+
+edge(From, To) : add_edge(From, To).
+
+tc(From, To) : edge(From, To).
+tc(From, To) : tc(From, X), tc(X, To).
+
+reachable(From, To) : tc(From, To).
