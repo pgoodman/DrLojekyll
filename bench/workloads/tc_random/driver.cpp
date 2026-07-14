@@ -41,6 +41,20 @@ hyde::rt::Vec<Tup_u64_u64> ToVec(const hyde::rt::Allocator &alloc,
   return v;
 }
 
+// COUNTS-binary support (compiled with -DDRLOJEKYLL_BENCH_COUNTERS): emit
+// per-epoch counter deltas as ctr_* metric rows. This binary's wall rows
+// are discarded downstream — counts and wall are separate narratives.
+#ifdef DRLOJEKYLL_BENCH_COUNTERS
+void EmitCounterDeltas(const bench::Tsv &tsv, int64_t epoch,
+                       const hyde::rt::BenchCounters &before,
+                       const hyde::rt::BenchCounters &after) {
+#define HYDE_RT_BENCH_EMIT(name) \
+  tsv.Row(epoch, "ctr_" #name, after.name - before.name);
+  HYDE_RT_BENCH_COUNTER_FIELDS(HYDE_RT_BENCH_EMIT)
+#undef HYDE_RT_BENCH_EMIT
+}
+#endif
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -148,11 +162,17 @@ int main(int argc, char **argv) {
     const uint64_t adds_n = batch.adds.size();
     const uint64_t removes_n = batch.removes.size();
 
+#ifdef DRLOJEKYLL_BENCH_COUNTERS
+    const hyde::rt::BenchCounters ctr_before = hyde::rt::gBenchCounters;
+#endif
     const uint64_t t0 = bench::NowNs();
     add_edge_2(db, log, functors, std::move(adds), std::move(removes));
     const uint64_t dt = bench::NowNs() - t0;
 
     const int64_t epoch = static_cast<int64_t>(b);
+#ifdef DRLOJEKYLL_BENCH_COUNTERS
+    EmitCounterDeltas(tsv, epoch, ctr_before, hyde::rt::gBenchCounters);
+#endif
     if (block <= 1u) {
       tsv.Row(epoch, "epoch_wall_ns", dt);
     } else {
