@@ -9,11 +9,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::vector<int32_t> v;
-    auto c = db.all_users_f();
+    auto c = all_users_f(db);
     for (int32_t id = 0; c.next(id);) {
       v.push_back(id);
     }
@@ -30,7 +31,7 @@ int main() {
     for (auto id : ids) {
       vec.Add({id});
     }
-    std::cout << "add rc=" << db.add_user_1(std::move(vec)) << '\n';
+    std::cout << "add rc=" << add_user_1(db, log, functors, std::move(vec)) << '\n';
   };
 
   dump();

@@ -11,10 +11,10 @@
 // eager walk's boundary net-additions frontier (and its table Seals at
 // commit); the differential side's arms scan the monotone side (InI = the
 // sealed watermark, InNew = log presence); the monotone side has NO - arm.
-struct PrintLog : DatabaseLog {
+struct PrintLog {
   std::vector<std::string> rows;
 
-  void pair_2(uint32_t X, uint32_t Y, bool added) override {
+  void pair_2(uint32_t X, uint32_t Y, bool added) {
     rows.push_back(std::string(added ? "+(" : "-(") + std::to_string(X) +
                    "," + std::to_string(Y) + ")");
   }
@@ -34,7 +34,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   PrintLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto vec = [&](std::vector<uint32_t> xs) {
     hyde::rt::Vec<Tup_u32> v(allocator);
@@ -44,12 +45,12 @@ int main() {
     return v;
   };
   auto a = [&](std::vector<uint32_t> add, const char *label) {
-    db.a_in_1(vec(add));
+    a_in_1(db, log, functors, vec(add));
     log.flush(label);
   };
   auto b = [&](std::vector<uint32_t> add, std::vector<uint32_t> rem,
                const char *label) {
-    db.b_in_1(vec(add), vec(rem));
+    b_in_1(db, log, functors, vec(add), vec(rem));
     log.flush(label);
   };
 

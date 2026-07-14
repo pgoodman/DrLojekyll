@@ -26,11 +26,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<uint64_t> rows;
-    auto c = db.q_out_f();
+    auto c = q_out_f(db);
     for (uint64_t x = 0; c.next(x);) {
       rows.push_back(x);
     }
@@ -47,13 +48,13 @@ int main() {
     hyde::rt::Vec<Tup_u64> add(allocator);
     hyde::rt::Vec<Tup_u64> rem(allocator);
     add.Add({5});
-    db.r_1(std::move(add), std::move(rem));
+    r_1(db, log, functors, std::move(add), std::move(rem));
   }
   {
     hyde::rt::Vec<Tup_u64_u64> add(allocator);
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     add.Add({1, 5});
-    db.src_2(std::move(add), std::move(rem));
+    src_2(db, log, functors, std::move(add), std::move(rem));
   }
   dump("after seed");
 
@@ -65,7 +66,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     add.Add({2, 5});
     rem.Add({1, 5});
-    db.src_2(std::move(add), std::move(rem));
+    src_2(db, log, functors, std::move(add), std::move(rem));
   }
   dump("after flip");
   return 0;

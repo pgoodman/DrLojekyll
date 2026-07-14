@@ -10,7 +10,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump1 = [](const char *name, auto cursor) {
     std::vector<int32_t> vals;
@@ -25,8 +26,8 @@ int main() {
     std::cout << '\n';
   };
   auto dump = [&]() {
-    dump1("on", db.on_vals_f());
-    dump1("off", db.off_vals_f());
+    dump1("on", on_vals_f(db));
+    dump1("off", off_vals_f(db));
   };
 
   dump();
@@ -34,19 +35,19 @@ int main() {
     hyde::rt::Vec<m_input> rows(allocator);
     rows.Add({10});
     rows.Add({20});
-    db.m_1(std::move(rows));
+    m_1(db, log, functors, std::move(rows));
   }
   dump();  // is_on still false: on empty, off has 10 20
   {
     hyde::rt::Vec<log_in_input> rows(allocator);
     rows.Add({7});
-    db.log_in_1(std::move(rows));
+    log_in_1(db, log, functors, std::move(rows));
   }
   dump();  // condition flipped: on has 10 20, off empty
   {
     hyde::rt::Vec<m_input> rows(allocator);
     rows.Add({30});
-    db.m_1(std::move(rows));
+    m_1(db, log, functors, std::move(rows));
   }
   dump();
   return 0;

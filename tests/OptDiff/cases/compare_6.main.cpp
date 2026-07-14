@@ -10,14 +10,15 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&]<typename D>(D &d) {
     {
       std::cout << "q_ne:";
-      if constexpr (requires { d.q_ne_ff(); }) {
+      if constexpr (requires { q_ne_ff(d); }) {
         std::vector<std::pair<int32_t, int32_t>> v;
-        auto c = d.q_ne_ff();
+        auto c = q_ne_ff(d);
         for (int32_t x = 0, y = 0; c.next(x, y);) {
           v.emplace_back(x, y);
         }
@@ -30,9 +31,9 @@ int main() {
     }
     {
       std::cout << "q_lt:";
-      if constexpr (requires { d.q_lt_f(); }) {
+      if constexpr (requires { q_lt_f(d); }) {
         std::vector<int32_t> v;
-        auto c = d.q_lt_f();
+        auto c = q_lt_f(d);
         for (int32_t x = 0; c.next(x);) {
           v.push_back(x);
         }
@@ -45,9 +46,9 @@ int main() {
     }
     {
       std::cout << "q_gt:";
-      if constexpr (requires { d.q_gt_ff(); }) {
+      if constexpr (requires { q_gt_ff(d); }) {
         std::vector<std::pair<int32_t, int32_t>> v;
-        auto c = d.q_gt_ff();
+        auto c = q_gt_ff(d);
         for (int32_t x = 0, y = 0; c.next(x, y);) {
           v.emplace_back(x, y);
         }
@@ -65,14 +66,14 @@ int main() {
     for (auto [x, y] : rows) {
       v.Add({x, y});
     }
-    (db.*member)(std::move(v));
+    member(db, log, functors, std::move(v));
   };
 
-  send(&Database::in_2, {{1, 2}, {2, 1}, {20, 3}});
-  send(&Database::b_2, {{15, 4}, {1, 2}});
+  send([](auto &&...args) { return in_2(std::forward<decltype(args)>(args)...); }, {{1, 2}, {2, 1}, {20, 3}});
+  send([](auto &&...args) { return b_2(std::forward<decltype(args)>(args)...); }, {{15, 4}, {1, 2}});
   dump(db);
 
-  send(&Database::in_2, {{11, 30}, {1, 5}});
+  send([](auto &&...args) { return in_2(std::forward<decltype(args)>(args)...); }, {{11, 30}, {1, 5}});
   dump(db);
   return 0;
 }

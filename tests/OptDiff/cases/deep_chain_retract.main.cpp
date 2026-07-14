@@ -19,13 +19,14 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     uint64_t count = 0;
     uint64_t min = ~0ull;
     uint64_t max = 0;
-    auto c = db.reach_out_f();
+    auto c = reach_out_f(db);
     for (uint64_t x = 0; c.next(x);) {
       ++count;
       min = std::min(min, x);
@@ -45,13 +46,13 @@ int main() {
     for (uint64_t i = 0; i < kChainDepth; ++i) {
       steps.Add({i + 1, i});
     }
-    db.next_2(std::move(steps));
+    next_2(db, log, functors, std::move(steps));
   }
   {
     hyde::rt::Vec<Tup_u64> add(allocator);
     hyde::rt::Vec<Tup_u64> rem(allocator);
     add.Add({kChainDepth});
-    db.base_1(std::move(add), std::move(rem));
+    base_1(db, log, functors, std::move(add), std::move(rem));
   }
   dump("after seed");
 
@@ -60,7 +61,7 @@ int main() {
     hyde::rt::Vec<Tup_u64> add(allocator);
     hyde::rt::Vec<Tup_u64> rem(allocator);
     rem.Add({kChainDepth});
-    db.base_1(std::move(add), std::move(rem));
+    base_1(db, log, functors, std::move(add), std::move(rem));
   }
   dump("after retract");
   return 0;

@@ -14,14 +14,15 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     // 0..46 covers the full bounded model; 47 is past the bound and must
     // scan empty.
     for (int32_t n = 0; n <= 47; ++n) {
       std::vector<int32_t> vals;
-      auto c = db.fib_bf(n);
+      auto c = fib_bf(db, n);
       for (int32_t v = 0; c.next(v);) {
         vals.push_back(v);
       }

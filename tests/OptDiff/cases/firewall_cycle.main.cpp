@@ -27,11 +27,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<uint64_t> rows;
-    auto c = db.p_out_f();
+    auto c = p_out_f(db);
     for (uint64_t x = 0; c.next(x);) {
       rows.push_back(x);
     }
@@ -46,7 +47,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> add(allocator);
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     for (auto [f, t] : adds) add.Add({f, t});
-    db.edge_2(std::move(add), std::move(rem));
+    edge_2(db, log, functors, std::move(add), std::move(rem));
   };
 
   auto base_batch = [&](std::vector<uint64_t> adds, std::vector<uint64_t> rems) {
@@ -54,7 +55,7 @@ int main() {
     hyde::rt::Vec<Tup_u64> rem(allocator);
     for (auto x : adds) add.Add({x});
     for (auto x : rems) rem.Add({x});
-    db.base_1(std::move(add), std::move(rem));
+    base_1(db, log, functors, std::move(add), std::move(rem));
   };
 
   // Batch 1: edges for both cycles (1<->2 and 3<->4), never retracted.

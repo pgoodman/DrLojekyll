@@ -9,13 +9,14 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     for (int32_t key : {1, 2, 3}) {
       {
         std::vector<int32_t> vs;
-        auto c = db.getp_bf(key);
+        auto c = getp_bf(db, key);
         for (int32_t b = 0; c.next(b);) {
           vs.push_back(b);
         }
@@ -28,7 +29,7 @@ int main() {
       }
       {
         std::vector<int32_t> vs;
-        auto c = db.getq_bf(key);
+        auto c = getq_bf(db, key);
         for (int32_t b = 0; c.next(b);) {
           vs.push_back(b);
         }
@@ -42,7 +43,7 @@ int main() {
     }
     {
       std::vector<int32_t> vs;
-      auto c = db.qa_f();
+      auto c = qa_f(db);
       for (int32_t a = 0; c.next(a);) {
         vs.push_back(a);
       }
@@ -55,7 +56,7 @@ int main() {
     }
     {
       std::vector<int32_t> vs;
-      auto c = db.qb_f();
+      auto c = qb_f(db);
       for (int32_t a = 0; c.next(a);) {
         vs.push_back(a);
       }
@@ -73,7 +74,7 @@ int main() {
     v.Add({1, 10});
     v.Add({1, 11});
     v.Add({2, 20});
-    db.in_2(std::move(v));
+    in_2(db, log, functors, std::move(v));
   }
   {
     hyde::rt::Vec<in2_input> v(allocator);
@@ -81,7 +82,7 @@ int main() {
     v.Add({5, 3});
     v.Add({10, 20});
     v.Add({15, 4});
-    db.in2_2(std::move(v));
+    in2_2(db, log, functors, std::move(v));
   }
   dump();
 
@@ -89,13 +90,13 @@ int main() {
     hyde::rt::Vec<in_input> v(allocator);
     v.Add({2, 21});
     v.Add({3, 30});
-    db.in_2(std::move(v));
+    in_2(db, log, functors, std::move(v));
   }
   {
     hyde::rt::Vec<in2_input> v(allocator);
     v.Add({9, 100});
     v.Add({-3, -5});
-    db.in2_2(std::move(v));
+    in2_2(db, log, functors, std::move(v));
   }
   dump();
   return 0;

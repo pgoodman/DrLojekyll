@@ -13,7 +13,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump1 = [](const char *name, auto cursor) {
     std::vector<int32_t> vals;
@@ -30,9 +31,9 @@ int main() {
 
   auto dump_all = [&](const char *round) {
     std::cout << "-- " << round << '\n';
-    dump1("out_t", db.out_t_f());
-    dump1("out_u", db.out_u_f());
-    dump1("out_v", db.out_v_f());
+    dump1("out_t", out_t_f(db));
+    dump1("out_u", out_u_f(db));
+    dump1("out_v", out_v_f(db));
   };
 
   dump_all("round0");
@@ -41,7 +42,7 @@ int main() {
     hyde::rt::Vec<m_input> rows(allocator);
     rows.Add({2});
     rows.Add({4});
-    db.m_1(std::move(rows));
+    m_1(db, log, functors, std::move(rows));
   }
   dump_all("round1");
 
@@ -49,12 +50,12 @@ int main() {
     hyde::rt::Vec<n_input> rows(allocator);
     rows.Add({30});
     rows.Add({4});
-    db.n_1(std::move(rows));
+    n_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<m_input> rows(allocator);
     rows.Add({5});
-    db.m_1(std::move(rows));
+    m_1(db, log, functors, std::move(rows));
   }
   dump_all("round2");
   return 0;

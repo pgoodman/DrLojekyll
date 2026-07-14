@@ -9,11 +9,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::vector<uint64_t> nodes;
-    auto nc = db.is_node_f();
+    auto nc = is_node_f(db);
     for (uint64_t n = 0; nc.next(n);) {
       nodes.push_back(n);
     }
@@ -25,7 +26,7 @@ int main() {
     std::cout << '\n';
     for (auto f : nodes) {
       std::vector<uint64_t> tos;
-      auto c = db.reachable_from_bf(f);
+      auto c = reachable_from_bf(db, f);
       for (uint64_t t = 0; c.next(t);) {
         tos.push_back(t);
       }
@@ -38,7 +39,7 @@ int main() {
     }
     for (auto t : nodes) {
       std::vector<uint64_t> froms;
-      auto c = db.reaching_to_fb(t);
+      auto c = reaching_to_fb(db, t);
       for (uint64_t f = 0; c.next(f);) {
         froms.push_back(f);
       }
@@ -57,7 +58,7 @@ int main() {
     edges.Add({2, 3});
     edges.Add({3, 4});
     edges.Add({7, 8});
-    db.add_edge_2(std::move(edges));
+    add_edge_2(db, log, functors, std::move(edges));
   }
   std::cout << "round 1\n";
   dump();
@@ -66,7 +67,7 @@ int main() {
     hyde::rt::Vec<add_edge_input> edges(allocator);
     edges.Add({4, 7});  // connect the components
     edges.Add({8, 1});  // close a cycle
-    db.add_edge_2(std::move(edges));
+    add_edge_2(db, log, functors, std::move(edges));
   }
   std::cout << "round 2\n";
   dump();

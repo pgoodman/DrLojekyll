@@ -24,11 +24,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<std::pair<uint64_t, uint64_t>> rows;
-    auto c = db.out_ff();
+    auto c = out_ff(db);
     for (uint64_t f = 0, t = 0; c.next(f, t);) {
       rows.emplace_back(f, t);
     }
@@ -45,7 +46,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     for (auto [f, t] : adds) add.Add({f, t});
     for (auto [f, t] : rems) rem.Add({f, t});
-    db.edge_msg_2(std::move(add), std::move(rem));
+    edge_msg_2(db, log, functors, std::move(add), std::move(rem));
   };
 
   auto gate_batch = [&](std::vector<uint64_t> adds,
@@ -54,7 +55,7 @@ int main() {
     hyde::rt::Vec<Tup_u64> rem(allocator);
     for (auto n : adds) add.Add({n});
     for (auto n : rems) rem.Add({n});
-    db.gate_msg_1(std::move(add), std::move(rem));
+    gate_msg_1(db, log, functors, std::move(add), std::move(rem));
   };
 
   edge_batch({{1, 2}, {2, 3}, {3, 4}}, {});

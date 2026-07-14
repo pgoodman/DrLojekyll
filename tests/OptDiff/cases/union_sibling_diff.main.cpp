@@ -13,12 +13,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto ok = true;
   auto check = [&db, &ok](const char *label, std::vector<uint64_t> expect) {
     std::vector<uint64_t> xs;
-    auto c = db.out_f();
+    auto c = out_f(db);
     for (uint64_t x = 0; c.next(x);) {
       xs.push_back(x);
     }
@@ -42,14 +43,14 @@ int main() {
     hyde::rt::Vec<Tup_u64> rem(allocator);
     for (auto x : adds) add.Add({x});
     for (auto x : rems) rem.Add({x});
-    db.a_1(std::move(add), std::move(rem));
+    a_1(db, log, functors, std::move(add), std::move(rem));
   };
   auto send_b = [&](std::vector<uint64_t> adds, std::vector<uint64_t> rems) {
     hyde::rt::Vec<Tup_u64> add(allocator);
     hyde::rt::Vec<Tup_u64> rem(allocator);
     for (auto x : adds) add.Add({x});
     for (auto x : rems) rem.Add({x});
-    db.b_1(std::move(add), std::move(rem));
+    b_1(db, log, functors, std::move(add), std::move(rem));
   };
 
   send_a({1, 2}, {});

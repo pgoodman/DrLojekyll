@@ -27,17 +27,18 @@ Results RunOrder(int order) {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto send_m1 = [&](std::initializer_list<int32_t> vals) {
     hyde::rt::Vec<m1_input> rows(allocator);
     for (auto v : vals) rows.Add({v});
-    db.m1_1(std::move(rows));
+    m1_1(db, log, functors, std::move(rows));
   };
   auto send_m2 = [&](std::initializer_list<int32_t> vals) {
     hyde::rt::Vec<m2_input> rows(allocator);
     for (auto v : vals) rows.Add({v});
-    db.m2_1(std::move(rows));
+    m2_1(db, log, functors, std::move(rows));
   };
 
   switch (order) {
@@ -48,12 +49,12 @@ Results RunOrder(int order) {
 
   Results r;
   {
-    auto cur = db.q_t_f();
+    auto cur = q_t_f(db);
     for (int32_t a = 0; cur.next(a);) r.t.push_back(a);
     std::sort(r.t.begin(), r.t.end());
   }
   {
-    auto cur = db.q_p_ff();
+    auto cur = q_p_ff(db);
     for (int32_t a = 0, b = 0; cur.next(a, b);) r.p.emplace_back(a, b);
     std::sort(r.p.begin(), r.p.end());
   }

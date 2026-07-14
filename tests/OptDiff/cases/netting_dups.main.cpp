@@ -9,11 +9,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<int32_t> vals;
-    auto c = db.out_f();
+    auto c = out_f(db);
     for (int32_t v = 0; c.next(v);) {
       vals.push_back(v);
     }
@@ -34,7 +35,7 @@ int main() {
     for (auto v : rem) {
       removed.Add({v});
     }
-    db.m_1(std::move(added), std::move(removed));
+    m_1(db, log, functors, std::move(added), std::move(removed));
   };
 
   auto send_other = [&](std::vector<int32_t> add, std::vector<int32_t> rem) {
@@ -46,7 +47,7 @@ int main() {
     for (auto v : rem) {
       removed.Add({v});
     }
-    db.other_1(std::move(added), std::move(removed));
+    other_1(db, log, functors, std::move(added), std::move(removed));
   };
 
   // Control: a genuine add lands.

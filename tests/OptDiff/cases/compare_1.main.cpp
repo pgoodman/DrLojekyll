@@ -10,12 +10,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&]<typename D>(D &d) {
     {
       std::vector<int32_t> v;
-      auto c = d.q_eq_f();
+      auto c = q_eq_f(d);
       for (int32_t x = 0; c.next(x);) {
         v.push_back(x);
       }
@@ -30,9 +31,9 @@ int main() {
       // The optimizer proves q_lt unsatisfiable and drops its entry point;
       // an empty result is the expected output in every mode.
       std::cout << "q_lt:";
-      if constexpr (requires { d.q_lt_f(); }) {
+      if constexpr (requires { q_lt_f(d); }) {
         std::vector<int32_t> v;
-        auto c = d.q_lt_f();
+        auto c = q_lt_f(d);
         for (int32_t x = 0; c.next(x);) {
           v.push_back(x);
         }
@@ -55,7 +56,7 @@ int main() {
     for (auto [x, y] : rem) {
       rv.Add({x, y});
     }
-    db.add_pair_2(std::move(av), std::move(rv));
+    add_pair_2(db, log, functors, std::move(av), std::move(rv));
   };
 
   send({{1, 1}, {1, 2}, {3, 3}, {4, 5}}, {});

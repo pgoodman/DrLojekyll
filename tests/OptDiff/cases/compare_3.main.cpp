@@ -10,12 +10,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     {
       std::vector<int32_t> v;
-      auto c = db.q_lt_f();
+      auto c = q_lt_f(db);
       for (int32_t x = 0; c.next(x);) {
         v.push_back(x);
       }
@@ -28,7 +29,7 @@ int main() {
     }
     {
       std::vector<std::pair<int32_t, int32_t>> v;
-      auto c = db.q_gt_ff();
+      auto c = q_gt_ff(db);
       for (int32_t x = 0, y = 0; c.next(x, y);) {
         v.emplace_back(x, y);
       }
@@ -46,15 +47,15 @@ int main() {
     for (auto [x, y] : rows) {
       v.Add({x, y});
     }
-    (db.*member)(std::move(v));
+    member(db, log, functors, std::move(v));
   };
 
-  send(&Database::a_2, {{1, 2}, {5, 3}, {20, 1}});
-  send(&Database::b_2, {{2, 4}, {9, 9}, {11, 50}});
+  send([](auto &&...args) { return a_2(std::forward<decltype(args)>(args)...); }, {{1, 2}, {5, 3}, {20, 1}});
+  send([](auto &&...args) { return b_2(std::forward<decltype(args)>(args)...); }, {{2, 4}, {9, 9}, {11, 50}});
   dump();
 
-  send(&Database::a_2, {{12, 12}, {0, 1}});
-  send(&Database::b_2, {{30, 2}, {1, 2}});
+  send([](auto &&...args) { return a_2(std::forward<decltype(args)>(args)...); }, {{12, 12}, {0, 1}});
+  send([](auto &&...args) { return b_2(std::forward<decltype(args)>(args)...); }, {{30, 2}, {1, 2}});
   dump();
   return 0;
 }

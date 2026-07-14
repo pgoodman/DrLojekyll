@@ -9,7 +9,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump1 = [](const char *name, auto cursor) {
     std::vector<int32_t> vals;
@@ -24,8 +25,8 @@ int main() {
     std::cout << '\n';
   };
   auto dump = [&]() {
-    dump1("same", db.q_same_f());
-    dump1("tag", db.q_tag_f());
+    dump1("same", q_same_f(db));
+    dump1("tag", q_tag_f(db));
   };
 
   // Round 1: no denials yet.
@@ -33,13 +34,13 @@ int main() {
     hyde::rt::Vec<a_input> rows(allocator);
     rows.Add({1});
     rows.Add({2});
-    db.a_1(std::move(rows));
+    a_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<b_input> rows(allocator);
     rows.Add({2});
     rows.Add({3});
-    db.b_1(std::move(rows));
+    b_1(db, log, functors, std::move(rows));
   }
   dump();  // same: 1 2 3 / tag: 1 2 3
 
@@ -49,7 +50,7 @@ int main() {
     hyde::rt::Vec<Tup_i32> adds(allocator);
     hyde::rt::Vec<Tup_i32> removes(allocator);
     adds.Add({2});
-    db.da_1(std::move(adds), std::move(removes));
+    da_1(db, log, functors, std::move(adds), std::move(removes));
   }
   dump();  // same: 1 3 / tag: 1 2 3
 
@@ -58,13 +59,13 @@ int main() {
     hyde::rt::Vec<Tup_i32> adds(allocator);
     hyde::rt::Vec<Tup_i32> removes(allocator);
     removes.Add({2});
-    db.da_1(std::move(adds), std::move(removes));
+    da_1(db, log, functors, std::move(adds), std::move(removes));
   }
   {
     hyde::rt::Vec<Tup_i32> adds(allocator);
     hyde::rt::Vec<Tup_i32> removes(allocator);
     adds.Add({3});
-    db.db_1(std::move(adds), std::move(removes));
+    db_1(db, log, functors, std::move(adds), std::move(removes));
   }
   dump();  // same: 1 2 3 / tag: 1 2
   return 0;

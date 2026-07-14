@@ -30,11 +30,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<uint64_t> rows;
-    auto c = db.flagged_out_f();
+    auto c = flagged_out_f(db);
     for (uint64_t x = 0; c.next(x);) {
       rows.push_back(x);
     }
@@ -51,14 +52,14 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     for (auto [f, t] : adds) add.Add({f, t});
     for (auto [f, t] : rems) rem.Add({f, t});
-    db.add_edge_2(std::move(add), std::move(rem));
+    add_edge_2(db, log, functors, std::move(add), std::move(rem));
   };
 
   auto watch_batch = [&](std::vector<uint64_t> adds) {
     hyde::rt::Vec<Tup_u64> add(allocator);
     hyde::rt::Vec<Tup_u64> rem(allocator);
     for (auto x : adds) add.Add({x});
-    db.watch_1(std::move(add), std::move(rem));
+    watch_1(db, log, functors, std::move(add), std::move(rem));
   };
 
   // Batch 1: build main chain 10->1->2->3->4 and diamond 1->5->3.

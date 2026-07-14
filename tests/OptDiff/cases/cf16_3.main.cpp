@@ -9,13 +9,14 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::cout << "reachable:";
     for (uint32_t f = 1; f <= 5; ++f) {
       for (uint32_t t = 1; t <= 5; ++t) {
-        if (db.reachable_bb(f, t)) {
+        if (reachable_bb(db, f, t)) {
           std::cout << " (" << f << ',' << t << ')';
         }
       }
@@ -33,7 +34,7 @@ int main() {
     for (auto [f, t] : rem) {
       rv.Add({f, t});
     }
-    db.add_edge_2(std::move(av), std::move(rv));
+    add_edge_2(db, log, functors, std::move(av), std::move(rv));
   };
 
   dump();

@@ -8,15 +8,16 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&]<typename D>(D &d, const char *round) {
     std::cout << "-- " << round << '\n';
 
     std::cout << "result:";
-    if constexpr (requires { d.result_f(); }) {
+    if constexpr (requires { result_f(d); }) {
       std::vector<int> v;
-      auto c = d.result_f();
+      auto c = result_f(d);
       for (int x = 0; c.next(x);) {
         v.push_back(x);
       }
@@ -28,7 +29,7 @@ int main() {
     std::cout << '\n';
 
     std::vector<int> v;
-    auto c = d.all_likes_f();
+    auto c = all_likes_f(d);
     for (int x = 0; c.next(x);) {
       v.push_back(x);
     }
@@ -45,7 +46,7 @@ int main() {
     for (auto x : rows) {
       v.Add({x});
     }
-    db.like_1(std::move(v));
+    like_1(db, log, functors, std::move(v));
   };
 
   dump(db, "round0");

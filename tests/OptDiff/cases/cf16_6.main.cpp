@@ -9,12 +9,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::cout << "logged_in:";
     for (int32_t id = 1; id <= 4; ++id) {
-      if (db.user_is_logged_in_b(id)) {
+      if (user_is_logged_in_b(db, id)) {
         std::cout << ' ' << id;
       }
     }
@@ -26,7 +27,7 @@ int main() {
     for (auto id : ids) {
       vec.Add({id});
     }
-    db.add_user_1(std::move(vec));
+    add_user_1(db, log, functors, std::move(vec));
   };
 
   auto log_in = [&](std::vector<int32_t> add, std::vector<int32_t> rem) {
@@ -38,7 +39,7 @@ int main() {
     for (auto id : rem) {
       rv.Add({id});
     }
-    db.log_in_1(std::move(av), std::move(rv));
+    log_in_1(db, log, functors, std::move(av), std::move(rv));
   };
 
   dump();

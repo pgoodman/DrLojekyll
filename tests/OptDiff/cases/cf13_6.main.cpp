@@ -9,17 +9,18 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::cout << "chk:";
     for (int32_t x = 0; x <= 5; ++x) {
-      std::cout << ' ' << (db.chk_b(x) ? '1' : '0');
+      std::cout << ' ' << (chk_b(db, x) ? '1' : '0');
     }
     std::cout << '\n';
 
     std::vector<int32_t> v;
-    auto c = db.all_f();
+    auto c = all_f(db);
     for (int32_t x = 0; c.next(x);) {
       v.push_back(x);
     }
@@ -40,7 +41,7 @@ int main() {
     for (auto x : rem) {
       rv.Add({x});
     }
-    db.a_1(std::move(av), std::move(rv));
+    a_1(db, log, functors, std::move(av), std::move(rv));
   };
 
   auto send_b = [&](std::vector<int32_t> add, std::vector<int32_t> rem) {
@@ -52,7 +53,7 @@ int main() {
     for (auto x : rem) {
       rv.Add({x});
     }
-    db.b_1(std::move(av), std::move(rv));
+    b_1(db, log, functors, std::move(av), std::move(rv));
   };
 
   send_a({1, 2}, {});

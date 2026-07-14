@@ -10,16 +10,17 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&]<typename D>(D &d) {
     {
       // Proven unsatisfiable: must stay empty in every mode. The optimizer
       // may drop the entry point entirely.
       std::cout << "q_unsat_eq:";
-      if constexpr (requires { d.q_unsat_eq_f(); }) {
+      if constexpr (requires { q_unsat_eq_f(d); }) {
         std::vector<int> v;
-        auto c = d.q_unsat_eq_f();
+        auto c = q_unsat_eq_f(d);
         for (int x = 0; c.next(x);) {
           v.push_back(x);
         }
@@ -32,7 +33,7 @@ int main() {
     }
     {
       std::vector<std::pair<int, int>> v;
-      auto c = d.q_ne_true_ff();
+      auto c = q_ne_true_ff(d);
       for (int x = 0, y = 0; c.next(x, y);) {
         v.emplace_back(x, y);
       }
@@ -45,9 +46,9 @@ int main() {
     }
     {
       std::cout << "q_same_ne:";
-      if constexpr (requires { d.q_same_ne_f(); }) {
+      if constexpr (requires { q_same_ne_f(d); }) {
         std::vector<int> v;
-        auto c = d.q_same_ne_f();
+        auto c = q_same_ne_f(d);
         for (int x = 0; c.next(x);) {
           v.push_back(x);
         }
@@ -65,7 +66,7 @@ int main() {
     for (auto [x, y] : rows) {
       v.Add({x, y});
     }
-    db.tin_2(std::move(v));
+    tin_2(db, log, functors, std::move(v));
   };
 
   send({{1, 2}, {2, 1}, {1, 1}, {2, 2}});

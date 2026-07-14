@@ -10,7 +10,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump2 = [](const char *name, auto cursor) {
     std::vector<std::pair<int32_t, int32_t>> rows;
@@ -25,8 +26,8 @@ int main() {
     std::cout << '\n';
   };
   auto dump = [&]() {
-    dump2("perm", db.q_perm_ff());
-    dump2("mix", db.q_mix_ff());
+    dump2("perm", q_perm_ff(db));
+    dump2("mix", q_mix_ff(db));
   };
 
   dump();
@@ -34,14 +35,14 @@ int main() {
     hyde::rt::Vec<m_input> rows(allocator);
     rows.Add({1, 2});
     rows.Add({3, 4});
-    db.m_2(std::move(rows));
+    m_2(db, log, functors, std::move(rows));
   }
   dump();
   {
     hyde::rt::Vec<m_input> rows(allocator);
     rows.Add({5, 6});
     rows.Add({3, 4});  // duplicate of an existing row
-    db.m_2(std::move(rows));
+    m_2(db, log, functors, std::move(rows));
   }
   dump();
   return 0;

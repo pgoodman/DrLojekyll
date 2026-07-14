@@ -9,12 +9,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&]() {
     for (uint64_t from : {1u, 2u, 3u, 4u}) {
       std::vector<uint64_t> tos;
-      auto c = db.has_edge_bf(from);
+      auto c = has_edge_bf(db, from);
       for (uint64_t to = 0; c.next(to);) {
         tos.push_back(to);
       }
@@ -34,7 +35,7 @@ int main() {
     rows.Add({1, 10, 5});
     rows.Add({1, 11, 3});
     rows.Add({2, 20, 7});
-    db.add_edge_3(std::move(rows));
+    add_edge_3(db, log, functors, std::move(rows));
   }
   dump();
   {
@@ -42,7 +43,7 @@ int main() {
     rows.Add({1, 10, 2});  // same key pair, different weight
     rows.Add({2, 21, 4});
     rows.Add({3, 30, 1});
-    db.add_edge_3(std::move(rows));
+    add_edge_3(db, log, functors, std::move(rows));
   }
   dump();
   return 0;

@@ -12,11 +12,11 @@
 // DatabaseLog hook and flushed SORTED after each message epoch (publish
 // order within one sweep is not part of the contract; the per-epoch delta
 // SET is).
-struct PrintLog : DatabaseLog {
+struct PrintLog {
   std::vector<std::string> rows;
 
   void enabled_features_2(bool FooEnabled, bool BarEnabled,
-                          bool added) override {
+                          bool added) {
     std::string s(added ? "+(" : "-(");
     s += FooEnabled ? "true," : "false,";
     s += BarEnabled ? "true)" : "false)";
@@ -40,7 +40,8 @@ int main() {
 
   {
     PrintLog log;
-    Database db(allocator, log, functors);
+    Database db(allocator);
+    init(db, log, functors);
     log.flush("init");
 
     auto enable = [&](std::vector<uint32_t> xs, const char *label) {
@@ -48,7 +49,7 @@ int main() {
       for (auto x : xs) {
         v.Add({x});
       }
-      db.enable_feature_1(std::move(v));
+      enable_feature_1(db, log, functors, std::move(v));
       log.flush(label);
     };
 
@@ -64,13 +65,14 @@ int main() {
   // any transient (true,false)/(false,true) is a position-keying bug.
   {
     PrintLog log;
-    Database db(allocator, log, functors);
+    Database db(allocator);
+    init(db, log, functors);
     log.flush("db2 init");
 
     hyde::rt::Vec<Tup_u32> v(allocator);
     v.Add({1});
     v.Add({2});
-    db.enable_feature_1(std::move(v));
+    enable_feature_1(db, log, functors, std::move(v));
     log.flush("db2 b1 +enable(1)+enable(2)");
   }
   return 0;

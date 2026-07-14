@@ -13,7 +13,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&](const char *round) {
     std::cout << "-- " << round << '\n';
@@ -21,7 +22,7 @@ int main() {
     std::cout << "getq:";
     for (int32_t a : {1, 5, 7}) {
       std::vector<int32_t> v;
-      auto c = db.getq_bf(a);
+      auto c = getq_bf(db, a);
       for (int32_t s = 0; c.next(s);) {
         v.push_back(s);
       }
@@ -38,7 +39,7 @@ int main() {
     for (int32_t a : {1, 5, 7}) {
       for (int32_t s : {a + 1, a + 2}) {
         std::cout << ' ' << a << ',' << s << '='
-                  << (db.lookup_bb(a, s) ? '1' : '0');
+                  << (lookup_bb(db, a, s) ? '1' : '0');
       }
     }
     std::cout << '\n';
@@ -49,7 +50,7 @@ int main() {
     for (auto x : rows) {
       v.Add({x});
     }
-    db.m_1(std::move(v));
+    m_1(db, log, functors, std::move(v));
   };
 
   dump("round0");

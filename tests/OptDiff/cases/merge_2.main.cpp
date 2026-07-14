@@ -10,11 +10,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::vector<std::pair<int32_t, int32_t>> outer;
-    auto oc = db.q_outer_ff();
+    auto oc = q_outer_ff(db);
     for (int32_t x = 0, y = 0; oc.next(x, y);) {
       outer.emplace_back(x, y);
     }
@@ -26,7 +27,7 @@ int main() {
     std::cout << '\n';
 
     std::vector<int32_t> proj;
-    auto pc = db.q_proj_f();
+    auto pc = q_proj_f(db);
     for (int32_t x = 0; pc.next(x);) {
       proj.push_back(x);
     }
@@ -43,24 +44,24 @@ int main() {
     hyde::rt::Vec<m1_input> rows(allocator);
     rows.Add({1, 10});
     rows.Add({2, 20});
-    db.m1_2(std::move(rows));
+    m1_2(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<m2_input> rows(allocator);
     rows.Add({3, 30});
-    db.m2_2(std::move(rows));
+    m2_2(db, log, functors, std::move(rows));
   }
   dump();
   {
     hyde::rt::Vec<m3_input> rows(allocator);
     rows.Add({4, 40});
     rows.Add({1, 10});  // same tuple as an m1 row, via the other operand
-    db.m3_2(std::move(rows));
+    m3_2(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<m2_input> rows(allocator);
     rows.Add({20, 2});  // proj sees this reversed: proj(2, 20)
-    db.m2_2(std::move(rows));
+    m2_2(db, log, functors, std::move(rows));
   }
   dump();
   return 0;

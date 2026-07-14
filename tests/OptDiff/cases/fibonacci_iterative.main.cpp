@@ -14,12 +14,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     for (int32_t n = 0; n <= 12; ++n) {
       std::vector<int32_t> vals;
-      auto c = db.fibonnaci_bf(n);
+      auto c = fibonnaci_bf(db, n);
       for (int32_t v = 0; c.next(v);) {
         vals.push_back(v);
       }
@@ -38,7 +39,7 @@ int main() {
   {
     hyde::rt::Vec<init_fibonacci_input> rows(allocator);
     rows.Add({8});
-    db.init_fibonacci_1(std::move(rows));
+    init_fibonacci_1(db, log, functors, std::move(rows));
   }
   dump();
 
@@ -49,7 +50,7 @@ int main() {
     rows.Add({1});
     rows.Add({5});
     rows.Add({12});
-    db.init_fibonacci_1(std::move(rows));
+    init_fibonacci_1(db, log, functors, std::move(rows));
   }
   dump();
   return 0;

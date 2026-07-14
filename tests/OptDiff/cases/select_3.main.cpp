@@ -9,11 +9,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::vector<int32_t> xs;
-    auto c = db.get_f();
+    auto c = get_f(db);
     for (int32_t x = 0; c.next(x);) {
       xs.push_back(x);
     }
@@ -31,14 +32,14 @@ int main() {
     hyde::rt::Vec<add_input> vec(allocator);
     vec.Add({10});
     vec.Add({20});
-    db.add_1(std::move(vec));
+    add_1(db, log, functors, std::move(vec));
   }
   dump();
 
   {
     hyde::rt::Vec<add_input> vec(allocator);
     vec.Add({30});
-    db.add_1(std::move(vec));
+    add_1(db, log, functors, std::move(vec));
   }
   dump();
   return 0;

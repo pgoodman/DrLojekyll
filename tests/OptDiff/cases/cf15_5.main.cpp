@@ -10,13 +10,14 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&](const char *round) {
     std::cout << "-- " << round << '\n';
 
     std::vector<std::pair<int32_t, int32_t>> v;
-    auto c = db.all_reach_ff();
+    auto c = all_reach_ff(db);
     for (int32_t x = 0, y = 0; c.next(x, y);) {
       v.emplace_back(x, y);
     }
@@ -30,7 +31,7 @@ int main() {
     std::cout << "is_reach:";
     for (int32_t x = 1; x <= 5; ++x) {
       for (int32_t y = 1; y <= 5; ++y) {
-        std::cout << (db.is_reach_bb(x, y) ? '1' : '0');
+        std::cout << (is_reach_bb(db, x, y) ? '1' : '0');
       }
       std::cout << ' ';
     }
@@ -47,7 +48,7 @@ int main() {
     for (auto [x, y] : rem) {
       rv.Add({x, y});
     }
-    db.add_edge_2(std::move(av), std::move(rv));
+    add_edge_2(db, log, functors, std::move(av), std::move(rv));
   };
 
   dump("round0");

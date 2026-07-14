@@ -28,11 +28,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<std::pair<uint64_t, uint64_t>> rows;
-    auto c = db.flag_out_ff();
+    auto c = flag_out_ff(db);
     for (uint64_t a = 0, b = 0; c.next(a, b);) {
       rows.emplace_back(a, b);
     }
@@ -47,19 +48,19 @@ int main() {
   auto feed = [&](std::vector<std::pair<uint64_t, uint64_t>> rows) {
     hyde::rt::Vec<Tup_u64_u64> v(allocator);
     for (auto [a, b] : rows) v.Add({a, b});
-    db.feed_2(std::move(v));
+    feed_2(db, log, functors, std::move(v));
   };
   auto unsee = [&](std::vector<uint64_t> rows) {
     hyde::rt::Vec<Tup_u64> v(allocator);
     for (auto a : rows) v.Add({a});
-    db.unsee_1(std::move(v));
+    unsee_1(db, log, functors, std::move(v));
   };
   auto active = [&](std::vector<uint64_t> adds, std::vector<uint64_t> rems) {
     hyde::rt::Vec<Tup_u64> add(allocator);
     hyde::rt::Vec<Tup_u64> rem(allocator);
     for (auto a : adds) add.Add({a});
     for (auto a : rems) rem.Add({a});
-    db.active_1(std::move(add), std::move(rem));
+    active_1(db, log, functors, std::move(add), std::move(rem));
   };
 
   // Batch 1: feed keys 1,2; active 1,2.

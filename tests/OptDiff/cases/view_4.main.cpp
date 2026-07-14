@@ -9,7 +9,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump1 = [](const char *name, auto cursor) {
     std::vector<int32_t> vals;
@@ -24,8 +25,8 @@ int main() {
     std::cout << '\n';
   };
   auto dump = [&]() {
-    dump1("chain", db.q_chain_f());
-    dump1("gated", db.q_gated_f());
+    dump1("chain", q_chain_f(db));
+    dump1("gated", q_gated_f(db));
   };
 
   dump();
@@ -34,20 +35,20 @@ int main() {
     rows.Add({3});
     rows.Add({0});
     rows.Add({-2});
-    db.in_1(std::move(rows));
+    in_1(db, log, functors, std::move(rows));
   }
   dump();  // chain: -2 3; gated still empty (condition not enabled)
   {
     hyde::rt::Vec<log_in_input> rows(allocator);
     rows.Add({100});
-    db.log_in_1(std::move(rows));
+    log_in_1(db, log, functors, std::move(rows));
   }
   dump();  // gated now: -2 3
   {
     hyde::rt::Vec<in_input> rows(allocator);
     rows.Add({5});
     rows.Add({0});  // duplicate, filtered
-    db.in_1(std::move(rows));
+    in_1(db, log, functors, std::move(rows));
   }
   dump();  // both gain 5
   return 0;

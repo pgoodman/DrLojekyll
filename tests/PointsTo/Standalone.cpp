@@ -43,7 +43,8 @@ TEST(PointsTo, RunOnFacts) {
 
   points_to::DatabaseFunctors functors;
   points_to::DatabaseLog log;
-  points_to::Database db(allocator, log, functors);
+  points_to::Database db(allocator);
+  init(db, log, functors);  // ADL: hidden friends are unqualified-only.
 
   hyde::rt::Vec<points_to::assign_alloc_input> assign_alloc_facts(allocator);
   {
@@ -102,17 +103,17 @@ TEST(PointsTo, RunOnFacts) {
 
   {
     Timed timer("Time to apply all inputs");
-    db.assign_alloc_2(std::move(assign_alloc_facts));
-    db.load_3(std::move(load_facts));
-    db.primitive_assign_2(std::move(primitive_assign_facts));
-    db.store_3(std::move(store_facts));
+    assign_alloc_2(db, log, functors, std::move(assign_alloc_facts));
+    load_3(db, log, functors, std::move(load_facts));
+    primitive_assign_2(db, log, functors, std::move(primitive_assign_facts));
+    store_3(db, log, functors, std::move(store_facts));
   }
 
   size_t num_aliases = 0;
   {
     Timed timer("Time to write Alias.tsv");
     std::ofstream fs(kAliasPath);
-    auto cursor = db.alias_ff();
+    auto cursor = alias_ff(db);
     for (uint32_t x, y; cursor.next(x, y);) {
       fs << x << '\t' << y << '\n';
       ++num_aliases;
@@ -123,7 +124,7 @@ TEST(PointsTo, RunOnFacts) {
   {
     Timed timer("Time to write Assign.tsv");
     std::ofstream fs(kAssignPath);
-    auto cursor = db.assign_ff();
+    auto cursor = assign_ff(db);
     for (uint32_t source, dest; cursor.next(source, dest);) {
       fs << source << '\t' << dest << '\n';
       ++num_assigns;
@@ -134,7 +135,7 @@ TEST(PointsTo, RunOnFacts) {
   {
     Timed timer("Time to write VarPointsTo.tsv");
     std::ofstream fs(kVarPointsToPath);
-    auto cursor = db.var_points_to_ff();
+    auto cursor = var_points_to_ff(db);
     for (uint32_t var, heap; cursor.next(var, heap);) {
       fs << var << '\t' << heap << '\n';
       ++num_points_to;

@@ -9,14 +9,15 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   // Scan both queries; the clause testing `c` twice and the clause testing
   // it once must always hold identical rows.
   auto dump = [&db]() {
     std::vector<int32_t> qd;
     {
-      auto c = db.q_double_f();
+      auto c = q_double_f(db);
       for (int32_t x = 0; c.next(x);) {
         qd.push_back(x);
       }
@@ -25,7 +26,7 @@ int main() {
 
     std::vector<int32_t> ps;
     {
-      auto c = db.p_single_f();
+      auto c = p_single_f(db);
       for (int32_t x = 0; c.next(x);) {
         ps.push_back(x);
       }
@@ -48,13 +49,13 @@ int main() {
     for (auto x : xs) {
       v.Add({x});
     }
-    db.feed_r_1(std::move(v));
+    feed_r_1(db, log, functors, std::move(v));
   };
 
   auto set_c = [&](int32_t v) {
     hyde::rt::Vec<Tup_i32> vec(allocator);
     vec.Add({v});
-    db.set_c_1(std::move(vec));
+    set_c_1(db, log, functors, std::move(vec));
   };
 
   dump();  // Nothing anywhere.

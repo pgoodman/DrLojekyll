@@ -13,10 +13,10 @@
 // position-keyed reads must net exactly {-(2,2), +(3,3), and the mixed
 // pairs (2,3)/(3,2) never appearing} with the (3,2)/(2,3) phantom halves
 // dropped by the claim gates.
-struct PrintLog : DatabaseLog {
+struct PrintLog {
   std::vector<std::string> rows;
 
-  void pairs_2(uint32_t A, uint32_t B, bool added) override {
+  void pairs_2(uint32_t A, uint32_t B, bool added) {
     rows.push_back(std::string(added ? "+(" : "-(") + std::to_string(A) +
                    "," + std::to_string(B) + ")");
   }
@@ -36,7 +36,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   PrintLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto n = [&](std::vector<uint32_t> add, std::vector<uint32_t> rem,
                const char *label) {
@@ -48,7 +49,7 @@ int main() {
     for (auto x : rem) {
       rems.Add({x});
     }
-    db.n_in_1(std::move(adds), std::move(rems));
+    n_in_1(db, log, functors, std::move(adds), std::move(rems));
     log.flush(label);
   };
 

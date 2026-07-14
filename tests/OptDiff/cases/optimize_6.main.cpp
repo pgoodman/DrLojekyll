@@ -10,11 +10,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::vector<std::pair<uint64_t, uint64_t>> rows;
-    auto c = db.out_ff();
+    auto c = out_ff(db);
     for (uint64_t a = 0, b = 0; c.next(a, b);) {
       rows.emplace_back(a, b);
     }
@@ -26,7 +27,7 @@ int main() {
     std::cout << '\n';
 
     std::vector<int32_t> dead;
-    auto dc = db.dead_out_f();
+    auto dc = dead_out_f(db);
     for (int32_t x = 0; dc.next(x);) {
       dead.push_back(x);
     }
@@ -44,13 +45,13 @@ int main() {
     add.Add({1, 2});
     add.Add({2, 3});
     add.Add({4, 5});
-    db.add_edge_2(std::move(add), std::move(rem));
+    add_edge_2(db, log, functors, std::move(add), std::move(rem));
   }
   {
     hyde::rt::Vec<input_input> rows(allocator);
     rows.Add({1});
     rows.Add({2});
-    db.input_1(std::move(rows));
+    input_1(db, log, functors, std::move(rows));
   }
   dump();
 
@@ -59,7 +60,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     add.Add({7, 8});
     rem.Add({2, 3});  // delete an earlier edge
-    db.add_edge_2(std::move(add), std::move(rem));
+    add_edge_2(db, log, functors, std::move(add), std::move(rem));
   }
   dump();
 
@@ -68,7 +69,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     rem.Add({4, 5});
     rem.Add({7, 8});
-    db.add_edge_2(std::move(add), std::move(rem));
+    add_edge_2(db, log, functors, std::move(add), std::move(rem));
   }
   dump();
   return 0;

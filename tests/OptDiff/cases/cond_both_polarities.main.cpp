@@ -10,7 +10,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump1 = [](const char *name, auto cursor) {
     std::vector<int32_t> vals;
@@ -27,22 +28,22 @@ int main() {
 
   auto dump = [&db, &dump1](const char *label) {
     std::cout << "-- " << label << '\n';
-    dump1("pos_neg", db.pos_neg_f());
-    dump1("both_pos", db.both_pos_f());
-    dump1("mixed", db.mixed_f());
+    dump1("pos_neg", pos_neg_f(db));
+    dump1("both_pos", both_pos_f(db));
+    dump1("mixed", mixed_f(db));
   };
 
-  auto set_c1 = [&db, &allocator](bool on) {
+  auto set_c1 = [&db, &allocator, &log, &functors](bool on) {
     hyde::rt::Vec<Tup_i32> added(allocator);
     hyde::rt::Vec<Tup_i32> removed(allocator);
     (on ? added : removed).Add({100});
-    db.set_c1_1(std::move(added), std::move(removed));
+    set_c1_1(db, log, functors, std::move(added), std::move(removed));
   };
-  auto set_c2 = [&db, &allocator](bool on) {
+  auto set_c2 = [&db, &allocator, &log, &functors](bool on) {
     hyde::rt::Vec<Tup_i32> added(allocator);
     hyde::rt::Vec<Tup_i32> removed(allocator);
     (on ? added : removed).Add({200});
-    db.set_c2_1(std::move(added), std::move(removed));
+    set_c2_1(db, log, functors, std::move(added), std::move(removed));
   };
 
   dump("empty, c1=0 c2=0");
@@ -51,13 +52,13 @@ int main() {
     hyde::rt::Vec<add_r_input> rows(allocator);
     rows.Add({1});
     rows.Add({2});
-    db.add_r_1(std::move(rows));
+    add_r_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<add_s_input> rows(allocator);
     rows.Add({10});
     rows.Add({11});
-    db.add_s_1(std::move(rows));
+    add_s_1(db, log, functors, std::move(rows));
   }
   dump("data, c1=0 c2=0");  // mixed = s only (via !c1).
 
@@ -67,7 +68,7 @@ int main() {
   {
     hyde::rt::Vec<add_r_input> rows(allocator);
     rows.Add({3});
-    db.add_r_1(std::move(rows));
+    add_r_1(db, log, functors, std::move(rows));
   }
   dump("more r, c1=1 c2=0");  // new row flows through the open gates.
 
@@ -84,7 +85,7 @@ int main() {
   {
     hyde::rt::Vec<add_s_input> rows(allocator);
     rows.Add({12});  // arrives while !c1 is false: must NOT reach mixed.
-    db.add_s_1(std::move(rows));
+    add_s_1(db, log, functors, std::move(rows));
   }
   dump("reopen c1, c1=1 c2=0");
 

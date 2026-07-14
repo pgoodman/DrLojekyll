@@ -12,10 +12,10 @@
 // per message, so each oracle batch splits into an a_in epoch then a b_in
 // epoch (the oracle referees the combined batch; the per-epoch splits
 // settle to the same end state).
-struct PrintLog : DatabaseLog {
+struct PrintLog {
   std::vector<std::string> rows;
 
-  void pair_2(uint32_t X, uint32_t Y, bool added) override {
+  void pair_2(uint32_t X, uint32_t Y, bool added) {
     rows.push_back(std::string(added ? "+(" : "-(") + std::to_string(X) +
                    "," + std::to_string(Y) + ")");
   }
@@ -35,7 +35,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   PrintLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto vec = [&](std::vector<uint32_t> xs) {
     hyde::rt::Vec<Tup_u32> v(allocator);
@@ -46,12 +47,12 @@ int main() {
   };
   auto a = [&](std::vector<uint32_t> add, std::vector<uint32_t> rem,
                const char *label) {
-    db.a_in_1(vec(add), vec(rem));
+    a_in_1(db, log, functors, vec(add), vec(rem));
     log.flush(label);
   };
   auto b = [&](std::vector<uint32_t> add, std::vector<uint32_t> rem,
                const char *label) {
-    db.b_in_1(vec(add), vec(rem));
+    b_in_1(db, log, functors, vec(add), vec(rem));
     log.flush(label);
   };
 

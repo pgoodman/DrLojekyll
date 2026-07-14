@@ -15,12 +15,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
-  auto dump = [&db](int64_t lo, int64_t hi) {
+  auto dump = [&db, &log, &functors](int64_t lo, int64_t hi) {
     for (int64_t t = lo; t <= hi; ++t) {
       std::vector<uint32_t> ids;
-      auto c = db.get_next_id_bf(t);
+      auto c = get_next_id_bf(db, log, functors, t);
       for (uint32_t id = 0; c.next(id);) {
         ids.push_back(id);
       }
@@ -39,7 +40,7 @@ int main() {
     hyde::rt::Vec<trigger_generate_next_id_input> v(allocator);
     v.Add({5});
     v.Add({6});
-    db.trigger_generate_next_id_1(std::move(v));
+    trigger_generate_next_id_1(db, log, functors, std::move(v));
   }
   std::cout << "round 1\n";
   dump(4, 8);
@@ -48,7 +49,7 @@ int main() {
   {
     hyde::rt::Vec<trigger_generate_next_id_input> v(allocator);
     v.Add({9});
-    db.trigger_generate_next_id_1(std::move(v));
+    trigger_generate_next_id_1(db, log, functors, std::move(v));
   }
   std::cout << "round 2\n";
   dump(4, 10);

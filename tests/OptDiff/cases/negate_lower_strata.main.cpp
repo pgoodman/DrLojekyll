@@ -24,11 +24,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<std::pair<uint64_t, uint64_t>> rows;
-    auto c = db.out_ff();
+    auto c = out_ff(db);
     for (uint64_t k = 0, v = 0; c.next(k, v);) {
       rows.emplace_back(k, v);
     }
@@ -45,7 +46,7 @@ int main() {
     hyde::rt::Vec<Tup_u64> rem(allocator);
     for (auto k : adds) add.Add({k});
     for (auto k : rems) rem.Add({k});
-    db.block_1(std::move(add), std::move(rem));
+    block_1(db, log, functors, std::move(add), std::move(rem));
   };
 
   // Batch 1: feed keys, block 2.
@@ -54,7 +55,7 @@ int main() {
     f.Add({1, 10});
     f.Add({2, 20});
     f.Add({3, 30});
-    db.feed_2(std::move(f));
+    feed_2(db, log, functors, std::move(f));
   }
   block({2}, {});
   dump("after feed+block(2)");

@@ -10,7 +10,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump2 = [](const char *name, auto cursor) {
     std::vector<std::pair<int32_t, int32_t>> rows;
@@ -25,48 +26,48 @@ int main() {
     std::cout << '\n';
   };
   auto dump = [&]() {
-    dump2("j", db.q_j_ff());
-    dump2("k", db.q_k_ff());
-    dump2("xp", db.q_xp_ff());
+    dump2("j", q_j_ff(db));
+    dump2("k", q_k_ff(db));
+    dump2("xp", q_xp_ff(db));
   };
 
   dump();
   {
     hyde::rt::Vec<a2_input> rows(allocator);
     rows.Add({1, 100});
-    db.a2_2(std::move(rows));
+    a2_2(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<b2_input> rows(allocator);
     rows.Add({2, 100});
     rows.Add({3, 200});
-    db.b2_2(std::move(rows));
+    b2_2(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<c2_input> rows(allocator);
     rows.Add({100, 7});
     rows.Add({200, 8});
-    db.c2_2(std::move(rows));
+    c2_2(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<e1_input> rows(allocator);
     rows.Add({1});
-    db.e1_1(std::move(rows));
+    e1_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<f1_input> rows(allocator);
     rows.Add({10});
-    db.f1_1(std::move(rows));
+    f1_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<g1_input> rows(allocator);
     rows.Add({2});
-    db.g1_1(std::move(rows));
+    g1_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<h1_input> rows(allocator);
     rows.Add({20});
-    db.h1_1(std::move(rows));
+    h1_1(db, log, functors, std::move(rows));
   }
   dump();
 
@@ -74,22 +75,22 @@ int main() {
   {
     hyde::rt::Vec<c2_input> rows(allocator);
     rows.Add({300, 9});
-    db.c2_2(std::move(rows));
+    c2_2(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<a2_input> rows(allocator);
     rows.Add({4, 300});
-    db.a2_2(std::move(rows));
+    a2_2(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<e1_input> rows(allocator);
     rows.Add({5});
-    db.e1_1(std::move(rows));
+    e1_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<h1_input> rows(allocator);
     rows.Add({30});
-    db.h1_1(std::move(rows));
+    h1_1(db, log, functors, std::move(rows));
   }
   dump();
   return 0;

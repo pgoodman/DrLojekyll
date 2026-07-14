@@ -16,7 +16,7 @@ namespace {
 void Dump(Database &db) {
   std::cout << "Dump:\n";
   for (uint64_t func_ea = 0; func_ea < 50; func_ea++) {
-    auto cursor = db.function_instructions_bf(func_ea);
+    auto cursor = function_instructions_bf(db, func_ea);
     for (uint64_t inst_ea = 0; cursor.next(inst_ea);) {
       std::cout << "  FuncEA=" << func_ea << " InstEA=" << inst_ea << "\n";
     }
@@ -26,7 +26,7 @@ void Dump(Database &db) {
 
 size_t NumFunctionInstructions(Database &db, uint64_t func_ea) {
   std::vector<uint64_t> eas;
-  auto cursor = db.function_instructions_bf(func_ea);
+  auto cursor = function_instructions_bf(db, func_ea);
   for (uint64_t inst_ea = 0; cursor.next(inst_ea);) {
     eas.push_back(inst_ea);
   }
@@ -43,7 +43,8 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
 
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   // Start with a few instructions, with no control-flow between them.
   hyde::rt::Vec<instruction_input> instructions(allocator);
@@ -53,7 +54,7 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   instructions.Add({13});
   instructions.Add({14});
   instructions.Add({15});
-  db.instruction_1(std::move(instructions));
+  instruction_1(db, log, functors, std::move(instructions));
 
   Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 0u);
@@ -72,7 +73,7 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   transfers.Add({12, 13, EdgeType::FALL_THROUGH});
   transfers.Add({13, 14, EdgeType::FALL_THROUGH});
   transfers.Add({14, 15, EdgeType::FALL_THROUGH});
-  db.raw_transfer_3(std::move(transfers));
+  raw_transfer_3(db, log, functors, std::move(transfers));
 
   Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 0u);
@@ -88,7 +89,7 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // no changes to control-flow.
   hyde::rt::Vec<instruction_input> instructions2(allocator);
   instructions2.Add({9});
-  db.instruction_1(std::move(instructions2));
+  instruction_1(db, log, functors, std::move(instructions2));
 
   Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 1u);
@@ -104,7 +105,7 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // transfer over to function 9.
   hyde::rt::Vec<raw_transfer_input> transfers2(allocator);
   transfers2.Add({9, 10, EdgeType::FALL_THROUGH});
-  db.raw_transfer_3(std::move(transfers2));
+  raw_transfer_3(db, log, functors, std::move(transfers2));
 
   Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 7u);
@@ -120,7 +121,7 @@ TEST(MiniDisassembler, DifferentialUpdatesWork) {
   // part of function 9.
   hyde::rt::Vec<raw_transfer_input> transfers3(allocator);
   transfers3.Add({10, 14, EdgeType::CALL});
-  db.raw_transfer_3(std::move(transfers3));
+  raw_transfer_3(db, log, functors, std::move(transfers3));
 
   Dump(db);
   ASSERT_EQ(NumFunctionInstructions(db, 9), 5u);

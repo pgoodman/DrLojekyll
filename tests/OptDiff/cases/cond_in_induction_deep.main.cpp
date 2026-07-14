@@ -14,18 +14,19 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   // out is a bound query; probe fixed id ranges.
   auto dump = [&db]() {
     std::cout << "out:";
     for (int32_t a = 10; a <= 35; ++a) {
-      if (db.out_b(a)) {
+      if (out_b(db, a)) {
         std::cout << ' ' << a;
       }
     }
     for (int32_t a = 100; a <= 105; ++a) {
-      if (db.out_b(a)) {
+      if (out_b(db, a)) {
         std::cout << ' ' << a;
       }
     }
@@ -39,21 +40,21 @@ int main() {
   {
     hyde::rt::Vec<marker_input> v(allocator);
     v.Add({103});
-    db.marker_1(std::move(v));
+    marker_1(db, log, functors, std::move(v));
   }
   dump();
   {
     hyde::rt::Vec<base_input> v(allocator);
     v.Add({10});
     v.Add({101});
-    db.base_1(std::move(v));
+    base_1(db, log, functors, std::move(v));
   }
   dump();  // reach2 copies reach1: 10 101
   {
     hyde::rt::Vec<edge1_input> v(allocator);
     v.Add({10, 11});
     v.Add({101, 102});
-    db.edge1_2(std::move(v));
+    edge1_2(db, log, functors, std::move(v));
   }
   dump();  // outer cycle grows: 10 11 101 102
   {
@@ -65,7 +66,7 @@ int main() {
     v.Add({22, 23});
     v.Add({23, 21});  // inner cycle
     v.Add({14, 15});
-    db.edge2_2(std::move(v));
+    edge2_2(db, log, functors, std::move(v));
   }
   dump();  // gate closed: no inner derivations appear
 
@@ -74,14 +75,14 @@ int main() {
   {
     hyde::rt::Vec<base_input> v(allocator);
     v.Add({20});
-    db.base_1(std::move(v));
+    base_1(db, log, functors, std::move(v));
   }
   dump();  // 20 appears via the copy rule; 21..23 still stalled
   {
     hyde::rt::Vec<edge1_input> v(allocator);
     v.Add({102, 103});
     v.Add({11, 14});
-    db.edge1_2(std::move(v));
+    edge1_2(db, log, functors, std::move(v));
   }
   dump();  // gate opens: stalled inner work unleashes (12 13 15 21 22 23)
 
@@ -89,14 +90,14 @@ int main() {
   {
     hyde::rt::Vec<base_input> v(allocator);
     v.Add({30});
-    db.base_1(std::move(v));
+    base_1(db, log, functors, std::move(v));
   }
   dump();
   {
     hyde::rt::Vec<edge2_input> v(allocator);
     v.Add({30, 31});
     v.Add({31, 32});
-    db.edge2_2(std::move(v));
+    edge2_2(db, log, functors, std::move(v));
   }
   dump();  // 31 32 derived immediately under the open gate
   return 0;

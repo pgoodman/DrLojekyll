@@ -25,11 +25,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<uint64_t> rows;
-    auto c = db.reach_out_f();
+    auto c = reach_out_f(db);
     for (uint64_t x = 0; c.next(x);) {
       rows.push_back(x);
     }
@@ -46,21 +47,21 @@ int main() {
     hyde::rt::Vec<Tup_u64> rem(allocator);
     for (auto x : adds) add.Add({x});
     for (auto x : rems) rem.Add({x});
-    db.dead_1(std::move(add), std::move(rem));
+    dead_1(db, log, functors, std::move(add), std::move(rem));
   };
 
   // Batch 1: seed src=1 and the chain 1->2->3->4.
   {
     hyde::rt::Vec<Tup_u64> s(allocator);
     s.Add({1});
-    db.src_1(std::move(s));
+    src_1(db, log, functors, std::move(s));
   }
   {
     hyde::rt::Vec<Tup_u64_u64> e(allocator);
     e.Add({1, 2});
     e.Add({2, 3});
     e.Add({3, 4});
-    db.edge_2(std::move(e));
+    edge_2(db, log, functors, std::move(e));
   }
   dump("after batch 1");
 

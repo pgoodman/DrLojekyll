@@ -10,7 +10,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump1 = [](const char *name, auto cursor) {
     std::vector<int32_t> vals;
@@ -37,10 +38,10 @@ int main() {
     std::cout << '\n';
   };
   auto dump = [&]() {
-    dump2("eq", db.q_eq_ff());
-    dump1("ceq", db.q_ceq_f());
-    dump1("lt", db.q_lt_f());
-    dump2("pairs", db.pairs_ff());
+    dump2("eq", q_eq_ff(db));
+    dump1("ceq", q_ceq_f(db));
+    dump1("lt", q_lt_f(db));
+    dump2("pairs", pairs_ff(db));
   };
 
   dump();
@@ -50,20 +51,20 @@ int main() {
     ev.Add({1, 3, 0});
     ev.Add({4, 3, 5});
     ev.Add({5, 6, 6});
-    db.e_3(std::move(ev));
+    e_3(db, log, functors, std::move(ev));
     hyde::rt::Vec<add_node_input> nv(allocator);
     nv.Add({1});
     nv.Add({2});
-    db.add_node_1(std::move(nv));
+    add_node_1(db, log, functors, std::move(nv));
   }
   dump();
   {
     hyde::rt::Vec<e_input> ev(allocator);
     ev.Add({3, 3, 3});
-    db.e_3(std::move(ev));
+    e_3(db, log, functors, std::move(ev));
     hyde::rt::Vec<add_node_input> nv(allocator);
     nv.Add({3});
-    db.add_node_1(std::move(nv));
+    add_node_1(db, log, functors, std::move(nv));
   }
   dump();
   return 0;

@@ -7,12 +7,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::cout << label << " gated:";
     for (int32_t x = 1; x <= 5; ++x) {
-      if (db.gated_b(x)) {
+      if (gated_b(db, x)) {
         std::cout << ' ' << x;
       }
     }
@@ -27,7 +28,7 @@ int main() {
     items.Add({1});
     items.Add({2});
     items.Add({3});
-    db.add_item_1(std::move(items));
+    add_item_1(db, log, functors, std::move(items));
   }
   dump("items-only");
 
@@ -36,7 +37,7 @@ int main() {
     hyde::rt::Vec<Tup_i32> added(allocator);
     hyde::rt::Vec<Tup_i32> removed(allocator);
     added.Add({10});
-    db.add_a_1(std::move(added), std::move(removed));
+    add_a_1(db, log, functors, std::move(added), std::move(removed));
   }
   dump("a-set");
 
@@ -45,7 +46,7 @@ int main() {
     hyde::rt::Vec<Tup_i32> added(allocator);
     hyde::rt::Vec<Tup_i32> removed(allocator);
     added.Add({20});
-    db.add_b_1(std::move(added), std::move(removed));
+    add_b_1(db, log, functors, std::move(added), std::move(removed));
   }
   dump("a+b-set");
 
@@ -54,7 +55,7 @@ int main() {
     hyde::rt::Vec<Tup_i32> added(allocator);
     hyde::rt::Vec<Tup_i32> removed(allocator);
     removed.Add({10});
-    db.add_a_1(std::move(added), std::move(removed));
+    add_a_1(db, log, functors, std::move(added), std::move(removed));
   }
   dump("a-retracted");
 
@@ -63,7 +64,7 @@ int main() {
     hyde::rt::Vec<Tup_i32> added(allocator);
     hyde::rt::Vec<Tup_i32> removed(allocator);
     removed.Add({20});
-    db.add_b_1(std::move(added), std::move(removed));
+    add_b_1(db, log, functors, std::move(added), std::move(removed));
   }
   dump("b-retracted");
 
@@ -72,7 +73,7 @@ int main() {
     hyde::rt::Vec<Tup_i32> added(allocator);
     hyde::rt::Vec<Tup_i32> removed(allocator);
     added.Add({30});
-    db.add_a_1(std::move(added), std::move(removed));
+    add_a_1(db, log, functors, std::move(added), std::move(removed));
   }
   dump("a-reset");
 

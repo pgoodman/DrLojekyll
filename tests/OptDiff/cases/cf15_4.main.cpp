@@ -10,7 +10,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&](const char *round) {
     std::cout << "-- " << round << '\n';
@@ -20,7 +21,7 @@ int main() {
     std::cout << "entry_1:";
     for (int32_t a = 0; a <= 6; ++a) {
       for (int32_t b = 0; b <= 3; ++b) {
-        if (db.entry_1_bb(a, b)) {
+        if (entry_1_bb(db, a, b)) {
           std::cout << " (" << a << ',' << b << ')';
         }
       }
@@ -28,7 +29,7 @@ int main() {
     std::cout << '\n';
 
     std::vector<std::pair<int32_t, int32_t>> v;
-    auto c = db.get_p_ff();
+    auto c = get_p_ff(db);
     for (int32_t a = 0, b = 0; c.next(a, b);) {
       v.emplace_back(a, b);
     }
@@ -45,14 +46,14 @@ int main() {
     for (auto [a, b] : rows) {
       v.Add({a, b});
     }
-    db.add_entry_2(std::move(v));
+    add_entry_2(db, log, functors, std::move(v));
   };
   auto send_singles = [&](std::vector<int32_t> rows) {
     hyde::rt::Vec<Tup_i32> v(allocator);
     for (auto x : rows) {
       v.Add({x});
     }
-    db.add_entry2_1(std::move(v));
+    add_entry2_1(db, log, functors, std::move(v));
   };
 
   dump("round0");

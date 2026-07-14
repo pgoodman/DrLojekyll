@@ -10,7 +10,8 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump2 = [](const char *name, auto cursor) {
     std::vector<std::pair<int32_t, int32_t>> rows;
@@ -26,9 +27,9 @@ int main() {
   };
 
   auto dump = [&db, &dump2]() {
-    dump2("qres", db.qres_ff());
-    dump2("qres2", db.qres2_ff());
-    dump2("qres3", db.qres3_ff());
+    dump2("qres", qres_ff(db));
+    dump2("qres2", qres2_ff(db));
+    dump2("qres3", qres3_ff(db));
   };
 
   dump();
@@ -37,24 +38,24 @@ int main() {
     hyde::rt::Vec<feed_input> rows(allocator);
     rows.Add({1, 10});
     rows.Add({2, 20});
-    db.feed_2(std::move(rows));
+    feed_2(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<other_input> rows(allocator);
     rows.Add({3, 30});
-    db.other_2(std::move(rows));
+    other_2(db, log, functors, std::move(rows));
   }
   dump();
 
   {
     hyde::rt::Vec<unsee_input> rows(allocator);
     rows.Add({1});
-    db.unsee_1(std::move(rows));
+    unsee_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<other_input> rows(allocator);
     rows.Add({1, 99});
-    db.other_2(std::move(rows));
+    other_2(db, log, functors, std::move(rows));
   }
   dump();
   return 0;

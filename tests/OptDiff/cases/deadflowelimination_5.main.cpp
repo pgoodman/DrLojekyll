@@ -9,12 +9,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::vector<int32_t> o;
     {
-      auto c = db.out_f();
+      auto c = out_f(db);
       for (int32_t v = 0; c.next(v);) {
         o.push_back(v);
       }
@@ -31,20 +32,20 @@ int main() {
   {
     hyde::rt::Vec<in_input> vec(allocator);
     vec.Add({5});
-    db.in_1(std::move(vec));
+    in_1(db, log, functors, std::move(vec));
   }
   dump();
   {
     // Turn the condition on; the self-cycle clause adds nothing new.
     hyde::rt::Vec<cond_src_input> vec(allocator);
     vec.Add({9});
-    db.cond_src_1(std::move(vec));
+    cond_src_1(db, log, functors, std::move(vec));
   }
   dump();
   {
     hyde::rt::Vec<in_input> vec(allocator);
     vec.Add({7});
-    db.in_1(std::move(vec));
+    in_1(db, log, functors, std::move(vec));
   }
   dump();
   return 0;

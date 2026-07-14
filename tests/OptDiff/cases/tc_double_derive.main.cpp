@@ -24,11 +24,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<std::pair<uint64_t, uint64_t>> rows;
-    auto c = db.t_out_ff();
+    auto c = t_out_ff(db);
     for (uint64_t f = 0, t = 0; c.next(f, t);) {
       rows.emplace_back(f, t);
     }
@@ -46,7 +47,7 @@ int main() {
     add.Add({1, 2});
     add.Add({2, 3});
     add.Add({1, 3});
-    db.edge_msg_2(std::move(add), std::move(rem));
+    edge_msg_2(db, log, functors, std::move(add), std::move(rem));
   }
   dump("seeded");
 
@@ -57,7 +58,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     rem.Add({1, 3});
     rem.Add({2, 3});
-    db.edge_msg_2(std::move(add), std::move(rem));
+    edge_msg_2(db, log, functors, std::move(add), std::move(rem));
   }
   dump("after");
   return 0;

@@ -21,7 +21,7 @@ void Dump(Database &db) {
   for (int32_t id : kIds) {
     for (int32_t t0 : kIds) {
       for (int32_t t1 : kIds) {
-        if (db.reaches_cfg_bbb(id, t0, t1)) {
+        if (reaches_cfg_bbb(db, id, t0, t1)) {
           std::cout << " (" << id << ',' << t0 << ',' << t1 << ')';
         }
       }
@@ -32,7 +32,7 @@ void Dump(Database &db) {
   for (int32_t id : kIds) {
     for (int32_t t0 : kIds) {
       for (int32_t t1 : kIds) {
-        if (db.reaches_clo_bbb(id, t0, t1)) {
+        if (reaches_clo_bbb(db, id, t0, t1)) {
           std::cout << " (" << id << ',' << t0 << ',' << t1 << ')';
         }
       }
@@ -47,31 +47,32 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   // Round 1.
   {
     hyde::rt::Vec<add_prog_input> progs(allocator);
     progs.Add({20});
-    db.add_prog_1(std::move(progs));
+    add_prog_1(db, log, functors, std::move(progs));
   }
   {
     hyde::rt::Vec<add_lam_input> lams(allocator);
     lams.Add({10, 1, 2, 21});
     lams.Add({11, 3, 4, 32});
-    db.add_lam_4(std::move(lams));
+    add_lam_4(db, log, functors, std::move(lams));
   }
   {
     hyde::rt::Vec<add_var_input> vars(allocator);
     vars.Add({30, 1});
     vars.Add({31, 2});
     vars.Add({32, 3});
-    db.add_var_2(std::move(vars));
+    add_var_2(db, log, functors, std::move(vars));
   }
   {
     hyde::rt::Vec<add_app_input> apps(allocator);
     apps.Add({20, 10, 11, 11});
-    db.add_app_4(std::move(apps));
+    add_app_4(db, log, functors, std::move(apps));
   }
   Dump(db);
 
@@ -79,7 +80,7 @@ int main() {
   {
     hyde::rt::Vec<add_app_input> apps(allocator);
     apps.Add({21, 30, 31, 31});
-    db.add_app_4(std::move(apps));
+    add_app_4(db, log, functors, std::move(apps));
   }
   Dump(db);
   return 0;

@@ -31,11 +31,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<std::pair<uint64_t, uint64_t>> rows;
-    auto c = db.reachable_ff();
+    auto c = reachable_ff(db);
     for (uint64_t f = 0, t = 0; c.next(f, t);) {
       rows.emplace_back(f, t);
     }
@@ -52,7 +53,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     for (auto [f, t] : adds) add.Add({f, t});
     for (auto [f, t] : rems) rem.Add({f, t});
-    db.add_edge_2(std::move(add), std::move(rem));
+    add_edge_2(db, log, functors, std::move(add), std::move(rem));
   };
 
   // Batch 1: seed a 4-node chain 1->2->3->4. p(1,4) is double-derived.

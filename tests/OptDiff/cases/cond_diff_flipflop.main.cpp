@@ -9,14 +9,15 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   int step = 0;
   auto dump = [&](const char *label) {
     std::cout << "-- step " << ++step << ": " << label << '\n';
     {
       std::vector<int32_t> v;
-      auto c = db.gated_f();
+      auto c = gated_f(db);
       for (int32_t x = 0; c.next(x);) {
         v.push_back(x);
       }
@@ -29,7 +30,7 @@ int main() {
     }
     {
       std::vector<int32_t> v;
-      auto c = db.ungated_f();
+      auto c = ungated_f(db);
       for (int32_t x = 0; c.next(x);) {
         v.push_back(x);
       }
@@ -51,7 +52,7 @@ int main() {
     for (auto s : rem) {
       removed.Add({s});
     }
-    db.support_1(std::move(added), std::move(removed));
+    support_1(db, log, functors, std::move(added), std::move(removed));
   };
 
   auto send_item = [&](std::vector<int32_t> add, std::vector<int32_t> rem) {
@@ -63,7 +64,7 @@ int main() {
     for (auto x : rem) {
       removed.Add({x});
     }
-    db.item_1(std::move(added), std::move(removed));
+    item_1(db, log, functors, std::move(added), std::move(removed));
   };
 
   dump("initial (gate closed, no data)");

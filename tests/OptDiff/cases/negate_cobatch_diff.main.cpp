@@ -28,11 +28,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<std::pair<uint64_t, uint64_t>> rows;
-    auto c = db.out_ff();
+    auto c = out_ff(db);
     for (uint64_t a = 0, b = 0; c.next(a, b);) {
       rows.emplace_back(a, b);
     }
@@ -49,7 +50,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64_u64> rem(allocator);
     for (auto [t, a, b] : adds) add.Add({t, a, b});
     for (auto [t, a, b] : rems) rem.Add({t, a, b});
-    db.sig_3(std::move(add), std::move(rem));
+    sig_3(db, log, functors, std::move(add), std::move(rem));
   };
 
   dump("initial");

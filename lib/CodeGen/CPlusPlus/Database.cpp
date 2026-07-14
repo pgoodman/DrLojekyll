@@ -1,11 +1,17 @@
 // Copyright 2026, Trail of Bits. All rights reserved.
 //
-// The C++ backend. Emits a concrete implementation of a Datalog program:
-// a header with named row structs, enums, and a `Database` class, plus a
-// source file with the procedure and query-cursor definitions. The emitted
-// code contains no templates; storage is provided by the small concrete
-// runtime (`hyde::rt::Table`, `hyde::rt::Index`, `hyde::rt::Vec`) and all
-// allocation goes through an explicit `hyde::rt::Allocator`.
+// The C++ backend. Emits a header-only implementation of a Datalog
+// program: named row structs, enums, a sealed `Database` state struct
+// whose driver surface is hidden-friend entry points (epoch 0 = an
+// explicit `init(db, log, functors)`; messages and forced queries deduce
+// the driver's Log/Functors types statically — no virtual dispatch), and
+// namespace-scope detail functions carrying the flow-procedure bodies,
+// whose parameter lists name exactly the state they read and write. The
+// source file is an anchor translation unit (banner + include) so
+// one-TU-per-database build systems keep working. Storage is provided by
+// the small concrete runtime (`hyde::rt::Table`, `hyde::rt::Index`,
+// `hyde::rt::Vec`) and all allocation goes through an explicit
+// `hyde::rt::Allocator`.
 
 #include <drlojekyll/CodeGen/CodeGen.h>
 #include <drlojekyll/ControlFlow/Program.h>
@@ -280,12 +286,6 @@ class Generator {
   // Vector/scalar parameter tail shared by declarations and definitions.
   std::string ProcValueParams(ProgramProcedure proc);
 
-  // The detail name a wrapper METHOD must use: class scope shadows the
-  // namespace-scope detail of the same name, so wrappers qualify.
-  std::string QualifiedDetailName(ProgramProcedure proc) {
-    return "::" + (ns_name.empty() ? "" : ns_name + "::") + DetailName(proc);
-  }
-
   void EmitDetailDecls(OutputStream &os);
 
   // ---------------------------------------------------------------------
@@ -301,13 +301,12 @@ class Generator {
   void EmitFunctorsDecl(void);
   void EmitLogDecl(void);
   void EmitDatabaseDecl(void);
+  void EmitQueryFriends(const ProgramQuery &spec);
 
   // ---------------------------------------------------------------------
-  // Source emission.
+  // Procedure emission (the detail definitions; header-resident).
 
-  void EmitConstructor(void);
   void EmitProcedure(ProgramProcedure proc);
-  void EmitQueries(void);
 
   void EmitRegion(ProgramRegion region);
   void EmitOptional(std::optional<ProgramRegion> region) {
@@ -1062,19 +1061,20 @@ void Generator::EmitFunctorsDecl(void) {
 
 void Generator::EmitLogDecl(void) {
   EmitInlines(hh, "c++:database:log:prologue");
-  hh << "// Receives published messages. The default methods do nothing;\n"
-     << "// they are virtual so a driver can observe the published delta\n"
-     << "// stream (a @differential message publishes one call per net\n"
-     << "// presence change at each batch's commit sweep).\n"
+  hh << "// Receives published messages. The default methods do nothing.\n"
+     << "// Entry points deduce the log's static type, so any type\n"
+     << "// providing the same member signatures observes the published\n"
+     << "// delta stream (a @differential message publishes one call per\n"
+     << "// net presence change at each batch's commit sweep) with no\n"
+     << "// virtual dispatch.\n"
      << "struct DatabaseLog {\n";
   hh.PushIndent();
-  hh << hh.Indent() << "virtual ~DatabaseLog(void) = default;\n";
   EmitInlines(hh, "c++:database:log:definition:prologue");
   for (ParsedMessage message : Messages(module)) {
     if (!message.IsPublished()) {
       continue;
     }
-    hh << hh.Indent() << "virtual void " << message.Name() << "_"
+    hh << hh.Indent() << "void " << message.Name() << "_"
        << message.Arity() << "(";
     for (ParsedParameter param : ParsedDeclaration(message).Parameters()) {
       hh << TypeName(module, param.Type()) << " "
@@ -1089,118 +1089,104 @@ void Generator::EmitLogDecl(void) {
 }
 
 void Generator::EmitDatabaseDecl(void) {
-  hh << "class Database {\n"
+  hh << "// The sealed database state: tables, indices, and epoch counters.\n"
+     << "// Construction allocates empty tables and cannot fail; epoch 0\n"
+     << "// (the empty-program fixpoint) runs when the driver calls\n"
+     << "// `init(db, log, functors)`, and every entry point asserts it has\n"
+     << "// run. All driver-facing functions are hidden friends: reach them\n"
+     << "// by unqualified call with the database as an argument.\n"
+     << "struct Database {\n"
      << " public:\n";
   hh.PushIndent();
-  hh << hh.Indent()
-     << "explicit Database(::hyde::rt::Allocator allocator_, DatabaseLog "
-        "&log_, DatabaseFunctors &functors_);\n\n";
 
-  // Message entry points.
+  // In-class constructor: member-init only, no callbacks, cannot fail.
+  hh << hh.Indent()
+     << "explicit Database(::hyde::rt::Allocator allocator_)\n";
+  hh.PushIndent();
+  hh << hh.Indent() << ": allocator(allocator_)";
+  for (DataTable table : program.Tables()) {
+    hh << ",\n" << hh.Indent() << "  " << table_member[table.Id()]
+       << "(allocator_)";
+    for (DataIndex index : table.Indices()) {
+      if (auto it = index_member.find(index.Id()); it != index_member.end()) {
+        hh << ",\n" << hh.Indent() << "  " << it->second << "(allocator_)";
+      }
+    }
+  }
+  hh << " {}\n\n";
+  hh.PopIndent();
+
+  // Epoch 0: the zeroth entry point.
+  for (ProgramProcedure proc : program.Procedures()) {
+    if (proc.Kind() != ProcedureKind::kInitializer) {
+      continue;
+    }
+    const auto &fx = EffectsOf(proc);
+    hh << hh.Indent() << "// Epoch 0: derives the empty-EDB least model "
+          "and publishes its\n"
+       << hh.Indent() << "// t=0 deltas to `log`. Call exactly once, "
+          "before any message.\n"
+       << hh.Indent() << "template <typename Log, typename Functors>\n"
+       << hh.Indent() << "friend auto init(Database &db, Log &"
+       << (fx.uses_log ? "log" : "") << ", Functors &"
+       << (fx.uses_functors ? "functors" : "") << ") {\n";
+    hh.PushIndent();
+    hh << hh.Indent() << "assert(!db.initialized_);\n"
+       << hh.Indent() << "db.initialized_ = true;\n"
+       << hh.Indent() << "return " << DetailName(proc) << "("
+       << DetailStateArgs(proc, "db.") << ");\n";
+    hh.PopIndent();
+    hh << hh.Indent() << "}\n\n";
+    break;
+  }
+
+  // Message entry points: thin hidden-friend wrappers over the handler
+  // detail twins.
   for (ProgramProcedure proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
       continue;
     }
+    const auto &fx = EffectsOf(proc);
     hh << hh.Indent() << "// Message `" << proc.Message()->Name() << "/"
        << proc.Message()->Arity() << "`.\n";
-    hh << hh.Indent() << "bool " << ProcName(proc) << "(";
-    auto sep = "";
+    hh << hh.Indent() << "template <typename Log, typename Functors>\n";
+    hh << hh.Indent() << "friend auto " << ProcName(proc)
+       << "(Database &db, Log &" << (fx.uses_log ? "log" : "")
+       << ", Functors &" << (fx.uses_functors ? "functors" : "");
     for (DataVector vec : proc.VectorParameters()) {
-      hh << sep << "::hyde::rt::Vec<" << VecType(vec) << "> " << VecName(vec);
-      sep = ", ";
+      hh << ", ::hyde::rt::Vec<" << VecType(vec) << "> " << VecName(vec);
     }
     for (DataVariable var : proc.VariableParameters()) {
-      hh << sep << TypeName(module, var.Type()) << " " << VarName(var);
-      sep = ", ";
+      hh << ", " << TypeName(module, var.Type()) << " " << VarName(var);
     }
-    hh << ");\n\n";
-  }
-
-  // Query entry points and their cursors.
-  for (const ProgramQuery &spec : program.Queries()) {
-    const ParsedDeclaration decl(spec.query);
-    const auto name =
-        Sanitize(ToString(decl.Name())) + "_" + std::string(decl.BindingPattern());
-
-    std::vector<ParsedParameter> bound_params, free_params;
-    for (ParsedParameter param : decl.Parameters()) {
-      (param.Binding() == ParameterBinding::kBound ? bound_params
-                                                   : free_params)
-          .push_back(param);
-    }
-
-    hh << hh.Indent() << "// Query `" << decl.Name() << "/" << decl.Arity()
-       << "` (" << decl.BindingPattern() << ").\n";
-
-    if (free_params.empty()) {
-      hh << hh.Indent() << "bool " << name << "(";
-      auto sep = "";
-      for (ParsedParameter param : bound_params) {
-        hh << sep << TypeName(module, param.Type()) << " "
-           << Sanitize(ToString(param.Name()));
-        sep = ", ";
-      }
-      hh << ");\n\n";
-      continue;
-    }
-
-    hh << hh.Indent() << "struct " << name << "_cursor {\n";
+    hh << ") {\n";
     hh.PushIndent();
-    hh << hh.Indent() << "Database &db;\n";
-    for (ParsedParameter param : bound_params) {
-      hh << hh.Indent() << TypeName(module, param.Type()) << " "
-         << Sanitize(ToString(param.Name())) << ";\n";
+    hh << hh.Indent() << "assert(db.initialized_);\n";
+    hh << hh.Indent() << "return " << DetailName(proc) << "("
+       << DetailStateArgs(proc, "db.");
+    for (DataVector vec : proc.VectorParameters()) {
+      hh << ", std::move(" << VecName(vec) << ")";
     }
-    hh << hh.Indent() << "uint32_t pos;\n";
-    hh << hh.Indent() << "bool next(";
-    auto sep = "";
-    for (ParsedParameter param : free_params) {
-      hh << sep << TypeName(module, param.Type()) << " &"
-         << Sanitize(ToString(param.Name()));
-      sep = ", ";
+    for (DataVariable var : proc.VariableParameters()) {
+      hh << ", " << VarName(var);
     }
     hh << ");\n";
     hh.PopIndent();
-    hh << hh.Indent() << "};\n";
+    hh << hh.Indent() << "}\n\n";
+  }
 
-    hh << hh.Indent() << name << "_cursor " << name << "(";
-    sep = "";
-    for (ParsedParameter param : bound_params) {
-      hh << sep << TypeName(module, param.Type()) << " "
-         << Sanitize(ToString(param.Name()));
-      sep = ", ";
-    }
-    hh << ");\n\n";
+  // Query entry points and their cursors, defined in-class. A query
+  // with a forcing function runs a flow first, so it deduces Log and
+  // Functors like a message entry point; plain queries only read.
+  for (const ProgramQuery &spec : program.Queries()) {
+    EmitQueryFriends(spec);
   }
 
   hh.PopIndent();
   hh << " private:\n";
   hh.PushIndent();
 
-  // Internal procedures.
-  for (ProgramProcedure proc : program.Procedures()) {
-    if (proc.Kind() == ProcedureKind::kMessageHandler) {
-      continue;
-    }
-    hh << hh.Indent() << "bool " << ProcName(proc) << "(";
-    auto sep = "";
-    const auto by_value = TakesVectorsByValue(proc);
-    for (DataVector vec : proc.VectorParameters()) {
-      hh << sep << "::hyde::rt::Vec<" << VecType(vec) << "> "
-         << (by_value ? "" : "&") << VecName(vec);
-      sep = ", ";
-    }
-    for (DataVariable var : proc.VariableParameters()) {
-      hh << sep << TypeName(module, var.Type()) << " " << VarName(var);
-      sep = ", ";
-    }
-    hh << ");\n";
-  }
-  hh << "\n";
-
-  hh << hh.Indent() << "::hyde::rt::Allocator allocator;\n"
-     << hh.Indent() << "[[maybe_unused]] DatabaseLog &log;\n"
-     << hh.Indent() << "[[maybe_unused]] DatabaseFunctors &functors;\n\n";
+  hh << hh.Indent() << "::hyde::rt::Allocator allocator;\n\n";
 
   // Tables and their indexes. Differential tables carry per-row derivation
   // counters; monotone tables are insert-only row logs.
@@ -1223,39 +1209,197 @@ void Generator::EmitDatabaseDecl(void) {
     hh << hh.Indent() << TypeName(module, var.Type()) << " " << VarName(var)
        << " = 0;\n";
   }
+  hh << hh.Indent() << "bool initialized_ = false;\n";
 
   hh.PopIndent();
   hh << "};\n\n";
 }
 
-// -----------------------------------------------------------------------
-// Source emission.
+// One query's driver surface: an existence check, or a nested cursor
+// struct (with its in-class `next`) plus the factory. All hidden
+// friends; all assert epoch 0 has run.
+void Generator::EmitQueryFriends(const ProgramQuery &spec) {
+  const ParsedDeclaration decl(spec.query);
+  const auto name =
+      Sanitize(ToString(decl.Name())) + "_" + std::string(decl.BindingPattern());
+  const auto table = spec.table;
+  const auto member = table_member[table.Id()];
+  const auto &fields = col_field[table.Id()];
 
-void Generator::EmitConstructor(void) {
-  cc << "Database::Database(::hyde::rt::Allocator allocator_, DatabaseLog "
-        "&log_, DatabaseFunctors &functors_)\n"
-     << "    : allocator(allocator_),\n"
-     << "      log(log_),\n"
-     << "      functors(functors_)";
-  for (DataTable table : program.Tables()) {
-    cc << ",\n      " << table_member[table.Id()] << "(allocator_)";
-    for (DataIndex index : table.Indices()) {
-      if (auto it = index_member.find(index.Id()); it != index_member.end()) {
-        cc << ",\n      " << it->second << "(allocator_)";
+  std::vector<ParsedParameter> params;
+  std::vector<bool> is_bound;
+  std::vector<std::string> param_names;
+  for (ParsedParameter param : decl.Parameters()) {
+    params.push_back(param);
+    is_bound.push_back(param.Binding() == ParameterBinding::kBound);
+    param_names.push_back(Sanitize(ToString(param.Name())));
+  }
+  const bool has_free =
+      std::find(is_bound.begin(), is_bound.end(), false) != is_bound.end();
+  const bool differential = table.IsDifferential();
+
+  std::vector<std::string> bound_names, free_names;
+  for (auto i = 0u; i < params.size(); ++i) {
+    (is_bound[i] ? bound_names : free_names).push_back(param_names[i]);
+  }
+
+  hh << hh.Indent() << "// Query `" << decl.Name() << "/" << decl.Arity()
+     << "` (" << decl.BindingPattern() << ").\n";
+
+  // The forced form runs a flow before reading, so it deduces Log and
+  // Functors; the plain form is a non-template read-only friend.
+  const auto emit_signature_prefix = [&](void) {
+    if (spec.forcing_function) {
+      const auto &fx = EffectsOf(*spec.forcing_function);
+      hh << hh.Indent() << "template <typename Log, typename Functors>\n";
+      hh << hh.Indent() << "friend "
+         << (has_free ? name + "_cursor" : std::string("bool")) << " "
+         << name << "(Database &db, Log &" << (fx.uses_log ? "log" : "")
+         << ", Functors &" << (fx.uses_functors ? "functors" : "");
+    } else {
+      hh << hh.Indent() << "friend "
+         << (has_free ? name + "_cursor" : std::string("bool")) << " "
+         << name << "(Database &db";
+    }
+    for (auto i = 0u; i < params.size(); ++i) {
+      if (is_bound[i]) {
+        hh << ", " << TypeName(module, params[i].Type()) << " "
+           << param_names[i];
+      }
+    }
+    hh << ") {\n";
+  };
+
+  const auto emit_forcing_call = [&](const std::vector<std::string> &args) {
+    if (!spec.forcing_function) {
+      return;
+    }
+    hh << hh.Indent() << DetailName(*spec.forcing_function) << "("
+       << DetailStateArgs(*spec.forcing_function, "db.");
+    for (const auto &arg : args) {
+      hh << ", " << arg;
+    }
+    hh << ");\n";
+  };
+
+  if (!has_free) {
+    // Existence check.
+    emit_signature_prefix();
+    hh.PushIndent();
+    hh << hh.Indent() << "assert(db.initialized_);\n";
+    emit_forcing_call(param_names);
+    if (differential) {
+      hh << hh.Indent() << "const uint32_t id = db." << member << ".Find("
+         << RowExpr(param_names) << ");\n";
+      hh << hh.Indent() << "return id != ::hyde::rt::kNoRow && db."
+         << member << ".Present(id);\n";
+    } else {
+      hh << hh.Indent() << "return db." << member << ".Find("
+         << RowExpr(param_names) << ") != ::hyde::rt::kNoRow;\n";
+    }
+    hh.PopIndent();
+    hh << hh.Indent() << "}\n\n";
+    return;
+  }
+
+  // The nested cursor, with `next` defined in-class (nested member
+  // bodies compile in complete-class context, so the later-declared
+  // table members are visible).
+  const bool via_index = spec.index && index_member.contains(spec.index->Id());
+  hh << hh.Indent() << "struct " << name << "_cursor {\n";
+  hh.PushIndent();
+  hh << hh.Indent() << "Database &db;\n";
+  for (auto i = 0u; i < params.size(); ++i) {
+    if (is_bound[i]) {
+      hh << hh.Indent() << TypeName(module, params[i].Type()) << " "
+         << param_names[i] << ";\n";
+    }
+  }
+  hh << hh.Indent() << "uint32_t pos;\n";
+  hh << hh.Indent() << "bool next(";
+  auto sep = "";
+  for (auto i = 0u; i < params.size(); ++i) {
+    if (!is_bound[i]) {
+      hh << sep << TypeName(module, params[i].Type()) << " &"
+         << param_names[i];
+      sep = ", ";
+    }
+  }
+  hh << ") {\n";
+  hh.PushIndent();
+  if (via_index) {
+    hh << hh.Indent() << "while (pos != ::hyde::rt::kNoRow) {\n";
+    hh.PushIndent();
+    hh << hh.Indent() << "const uint32_t id = pos;\n";
+    hh << hh.Indent() << "pos = db." << index_member[spec.index->Id()]
+       << ".Next(id);\n";
+  } else {
+    hh << hh.Indent() << "while (pos < db." << member << ".NumRows()) {\n";
+    hh.PushIndent();
+    hh << hh.Indent() << "const uint32_t id = pos++;\n";
+  }
+  hh << hh.Indent() << "const auto row = db." << member << ".RowAt(id);\n";
+  if (differential) {
+    hh << hh.Indent() << "if (!db." << member << ".Present(id)) {\n";
+    hh.PushIndent();
+    hh << hh.Indent() << "continue;\n";
+    hh.PopIndent();
+    hh << hh.Indent() << "}\n";
+  }
+  if (!via_index) {
+    // Re-check bound columns (a full scan is unkeyed).
+    for (auto i = 0u; i < params.size(); ++i) {
+      if (is_bound[i]) {
+        hh << hh.Indent() << "if (row." << fields[i]
+           << " != " << param_names[i] << ") {\n";
+        hh.PushIndent();
+        hh << hh.Indent() << "continue;\n";
+        hh.PopIndent();
+        hh << hh.Indent() << "}\n";
       }
     }
   }
-  cc << " {\n";
-  cc.PushIndent();
-  for (ProgramProcedure proc : program.Procedures()) {
-    if (proc.Kind() == ProcedureKind::kInitializer) {
-      cc << cc.Indent() << ProcName(proc) << "();\n";
-      break;
+  for (auto i = 0u; i < params.size(); ++i) {
+    if (!is_bound[i]) {
+      hh << hh.Indent() << param_names[i] << " = row." << fields[i]
+         << ";\n";
     }
   }
-  cc.PopIndent();
-  cc << "}\n\n";
+  hh << hh.Indent() << "return true;\n";
+  hh.PopIndent();
+  hh << hh.Indent() << "}\n";
+  hh << hh.Indent() << "return false;\n";
+  hh.PopIndent();
+  hh << hh.Indent() << "}\n";
+  hh.PopIndent();
+  hh << hh.Indent() << "};\n";
+
+  // The factory.
+  emit_signature_prefix();
+  hh.PushIndent();
+  hh << hh.Indent() << "assert(db.initialized_);\n";
+  emit_forcing_call(bound_names);
+  hh << hh.Indent() << "return {db";
+  for (const auto &p : bound_names) {
+    hh << ", " << p;
+  }
+  if (via_index) {
+    std::vector<std::string> key_exprs;
+    for (DataColumn col : spec.index->KeyColumns()) {
+      key_exprs.push_back(param_names[col.Index()]);
+    }
+    hh << ", db." << index_member[spec.index->Id()] << ".First("
+       << RowExpr(key_exprs) << ")";
+  } else {
+    hh << ", 0";
+  }
+  hh << "};\n";
+  hh.PopIndent();
+  hh << hh.Indent() << "}\n\n";
 }
+
+// -----------------------------------------------------------------------
+// Procedure emission.
 
 void Generator::EmitProcedure(ProgramProcedure proc) {
   // The detail function carries the body; its parameter list is the
@@ -1282,40 +1426,6 @@ void Generator::EmitProcedure(ProgramProcedure proc) {
   if (!EndsWithReturn(body)) {
     cc << cc.Indent() << "return false;\n";
   }
-  cc.PopIndent();
-  cc << "}\n\n";
-
-  // The class-facing wrapper: today's method surface, delegating to the
-  // detail with the member state. The detail's name is shadowed by this
-  // very method (and its siblings), so the call is qualified.
-  cc << "bool Database::" << ProcName(proc) << "(";
-  auto sep = "";
-  const auto by_value = TakesVectorsByValue(proc);
-  for (DataVector vec : proc.VectorParameters()) {
-    cc << sep << "::hyde::rt::Vec<" << VecType(vec) << "> "
-       << (by_value ? "" : "&") << VecName(vec);
-    sep = ", ";
-  }
-  for (DataVariable var : proc.VariableParameters()) {
-    cc << sep << TypeName(module, var.Type()) << " " << VarName(var);
-    sep = ", ";
-  }
-  cc << ") {\n";
-  cc.PushIndent();
-  cc << cc.Indent() << "return " << QualifiedDetailName(proc) << "("
-     << DetailStateArgs(proc, "");
-  for (DataVector vec : proc.VectorParameters()) {
-    cc << ", ";
-    if (by_value) {
-      cc << "std::move(" << VecName(vec) << ")";
-    } else {
-      cc << VecName(vec);
-    }
-  }
-  for (DataVariable var : proc.VariableParameters()) {
-    cc << ", " << VarName(var);
-  }
-  cc << ");\n";
   cc.PopIndent();
   cc << "}\n\n";
 }
@@ -2272,189 +2382,25 @@ void Generator::EmitInduction(ProgramInductionRegion region) {
 }
 
 // -----------------------------------------------------------------------
-// Queries.
-
-void Generator::EmitQueries(void) {
-  for (const ProgramQuery &spec : program.Queries()) {
-    const ParsedDeclaration decl(spec.query);
-    const auto name =
-        Sanitize(ToString(decl.Name())) + "_" + std::string(decl.BindingPattern());
-    const auto table = spec.table;
-    const auto member = table_member[table.Id()];
-    const auto &fields = col_field[table.Id()];
-
-    // Query parameters map 1:1, in order, to the backing table's columns.
-    std::vector<ParsedParameter> params;
-    std::vector<bool> is_bound;
-    std::vector<std::string> param_names;
-    for (ParsedParameter param : decl.Parameters()) {
-      params.push_back(param);
-      is_bound.push_back(param.Binding() == ParameterBinding::kBound);
-      param_names.push_back(Sanitize(ToString(param.Name())));
-    }
-    const bool has_free =
-        std::find(is_bound.begin(), is_bound.end(), false) != is_bound.end();
-
-    // The liveness filter applied to each candidate row: a count-based
-    // presence read on a differential table; nothing on a monotone table,
-    // whose stored rows are present forever.
-    const bool differential = table.IsDifferential();
-    const auto emit_row_filter = [&](const std::string &row,
-                                     const std::string &id_expr) {
-      (void) row;
-      if (!differential) {
-        return;
-      }
-      cc << cc.Indent() << "if (!db." << member << ".Present(" << id_expr
-         << ")) {\n";
-      cc.PushIndent();
-      cc << cc.Indent() << "continue;\n";
-      cc.PopIndent();
-      cc << cc.Indent() << "}\n";
-    };
-
-    if (!has_free) {
-      // Existence check.
-      cc << "bool Database::" << name << "(";
-      auto sep = "";
-      for (auto i = 0u; i < params.size(); ++i) {
-        cc << sep << TypeName(module, params[i].Type()) << " "
-           << param_names[i];
-        sep = ", ";
-      }
-      cc << ") {\n";
-      cc.PushIndent();
-      if (spec.forcing_function) {
-        cc << cc.Indent() << ProcName(*spec.forcing_function) << "("
-           << JoinExprs(param_names, ", ") << ");\n";
-      }
-      if (differential) {
-        cc << cc.Indent() << "const uint32_t id = " << member << ".Find("
-           << RowExpr(param_names) << ");\n";
-        cc << cc.Indent()
-           << "return id != ::hyde::rt::kNoRow && " << member
-           << ".Present(id);\n";
-      } else {
-        cc << cc.Indent() << "return " << member << ".Find("
-           << RowExpr(param_names) << ") != ::hyde::rt::kNoRow;\n";
-      }
-      cc.PopIndent();
-      cc << "}\n\n";
-      continue;
-    }
-
-    std::vector<std::string> bound_names, free_names;
-    for (auto i = 0u; i < params.size(); ++i) {
-      (is_bound[i] ? bound_names : free_names).push_back(param_names[i]);
-    }
-
-    // Factory.
-    cc << "Database::" << name << "_cursor Database::" << name << "(";
-    auto sep = "";
-    for (auto i = 0u; i < params.size(); ++i) {
-      if (is_bound[i]) {
-        cc << sep << TypeName(module, params[i].Type()) << " "
-           << param_names[i];
-        sep = ", ";
-      }
-    }
-    cc << ") {\n";
-    cc.PushIndent();
-    if (spec.forcing_function) {
-      cc << cc.Indent() << ProcName(*spec.forcing_function) << "("
-         << JoinExprs(bound_names, ", ") << ");\n";
-    }
-    cc << cc.Indent() << "return {*this";
-    for (const auto &p : bound_names) {
-      cc << ", " << p;
-    }
-    if (spec.index && index_member.contains(spec.index->Id())) {
-      std::vector<std::string> key_exprs;
-      for (DataColumn col : spec.index->KeyColumns()) {
-        key_exprs.push_back(param_names[col.Index()]);
-      }
-      cc << ", " << index_member[spec.index->Id()] << ".First("
-         << RowExpr(key_exprs) << ")";
-    } else {
-      cc << ", 0";
-    }
-    cc << "};\n";
-    cc.PopIndent();
-    cc << "}\n\n";
-
-    // Cursor::next.
-    cc << "bool Database::" << name << "_cursor::next(";
-    sep = "";
-    for (auto i = 0u; i < params.size(); ++i) {
-      if (!is_bound[i]) {
-        cc << sep << TypeName(module, params[i].Type()) << " &"
-           << param_names[i];
-        sep = ", ";
-      }
-    }
-    cc << ") {\n";
-    cc.PushIndent();
-
-    const bool via_index =
-        spec.index && index_member.contains(spec.index->Id());
-    if (via_index) {
-      cc << cc.Indent() << "while (pos != ::hyde::rt::kNoRow) {\n";
-      cc.PushIndent();
-      cc << cc.Indent() << "const uint32_t id = pos;\n";
-      cc << cc.Indent() << "pos = db." << index_member[spec.index->Id()]
-         << ".Next(id);\n";
-    } else {
-      cc << cc.Indent() << "while (pos < db." << member << ".NumRows()) {\n";
-      cc.PushIndent();
-      cc << cc.Indent() << "const uint32_t id = pos++;\n";
-    }
-    cc << cc.Indent() << "const auto row = db." << member << ".RowAt(id);\n";
-    emit_row_filter("row", "id");
-    if (!via_index) {
-      // Re-check bound columns (a full scan is unkeyed).
-      for (auto i = 0u; i < params.size(); ++i) {
-        if (is_bound[i]) {
-          cc << cc.Indent() << "if (row." << fields[i]
-             << " != " << param_names[i] << ") {\n";
-          cc.PushIndent();
-          cc << cc.Indent() << "continue;\n";
-          cc.PopIndent();
-          cc << cc.Indent() << "}\n";
-        }
-      }
-    }
-
-    for (auto i = 0u; i < params.size(); ++i) {
-      if (!is_bound[i]) {
-        cc << cc.Indent() << param_names[i] << " = row." << fields[i]
-           << ";\n";
-      }
-    }
-    cc << cc.Indent() << "return true;\n";
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";
-    cc << cc.Indent() << "return false;\n";
-    cc.PopIndent();
-    cc << "}\n\n";
-  }
-}
-
-// -----------------------------------------------------------------------
 
 void Generator::Run(void) {
   ComputeNames();
   CollectVectorShapes();
 
-  // ---- Header.
+  // ---- Header: the whole artifact. `cc` aliases the same stream (the
+  // anchor TU is written by GenerateDatabaseCode), so the procedure
+  // definitions land here, after the class.
   hh << "// Auto-generated file; do not edit.\n\n"
      << "#pragma once\n\n"
      << "#include <drlojekyll/Runtime/Allocator.h>\n"
      << "#include <drlojekyll/Runtime/Hash.h>\n"
      << "#include <drlojekyll/Runtime/Table.h>\n"
      << "#include <drlojekyll/Runtime/Vec.h>\n\n"
+     << "#include <cassert>\n"
      << "#include <cstdint>\n"
      << "#include <optional>\n"
      << "#include <tuple>\n"
+     << "#include <utility>\n"
      << "#include <vector>\n\n";
 
   EmitInlines(hh, "c++:database:prologue");
@@ -2486,40 +2432,46 @@ void Generator::Run(void) {
   EmitRowStructs();
   EmitFunctorsDecl();
   EmitLogDecl();
+
+  // Forward declarations for every detail function BEFORE the class:
+  // hidden-friend bodies whose intra-detail calls carry no dependent
+  // argument bind at template-definition time (and non-template query
+  // friends see only pre-class names).
+  EmitDetailDecls(hh);
+
   EmitDatabaseDecl();
+
+  // The detail definitions (via the aliased `cc`).
+  for (ProgramProcedure proc : program.Procedures()) {
+    EmitProcedure(proc);
+  }
 
   EmitInlines(hh, "c++:database:epilogue:namespace");
   if (!ns_name.empty()) {
     hh << "}  // namespace " << ns_name << "\n";
   }
   EmitInlines(hh, "c++:database:epilogue");
-
-  // ---- Source.
-  cc << "// Auto-generated file; do not edit.\n\n"
-     << "#include \"" << header_name << "\"\n\n"
-     << "#include <tuple>\n"
-     << "#include <utility>\n\n";
-  if (!ns_name.empty()) {
-    cc << "namespace " << ns_name << " {\n\n";
-  }
-
-  EmitDetailDecls(cc);
-  EmitConstructor();
-  for (ProgramProcedure proc : program.Procedures()) {
-    EmitProcedure(proc);
-  }
-  EmitQueries();
-
-  if (!ns_name.empty()) {
-    cc << "}  // namespace " << ns_name << "\n";
-  }
 }
 
 }  // namespace
 
 void GenerateDatabaseCode(const Program &program, OutputStream &os_h,
                           OutputStream &os_cc, std::string_view header_name) {
-  Generator(program, os_h, os_cc, header_name).Run();
+  // The generated database is header-only: the Generator writes the
+  // whole artifact into the header stream (passed as both `hh` and
+  // `cc`). The source file survives as an anchor translation unit so
+  // build systems that compile one TU per database (static libraries,
+  // explicit compile lines) keep working unchanged.
+  Generator(program, os_h, os_h, header_name).Run();
+  os_cc << "// Auto-generated file; do not edit.\n"
+        << "//\n"
+        << "// Anchor translation unit: the generated database is "
+           "header-only; this\n"
+        << "// file exists so build systems that compile one TU per "
+           "database (static\n"
+        << "// libraries, explicit compile lines) keep working "
+           "unchanged.\n\n"
+        << "#include \"" << header_name << "\"\n";
 }
 
 }  // namespace cxx

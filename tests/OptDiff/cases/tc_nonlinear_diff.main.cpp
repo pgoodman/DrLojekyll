@@ -6,7 +6,7 @@
 // still derive tc(2,1) after tc(3,1) is re-proven.
 //
 // Part 2 replays randomized add/remove batches for several seeds and
-// compares db.reachable_ff() against a naive from-scratch recomputation
+// compares reachable_ff(db) against a naive from-scratch recomputation
 // after every batch. Exits nonzero on any mismatch, so every optimization
 // mode is checked for correctness, not just cross-mode agreement.
 #include <algorithm>
@@ -42,7 +42,7 @@ static std::set<Edge> NaiveTC(const std::set<Edge> &edges) {
 
 static std::set<Edge> Reachable(Database &db) {
   std::set<Edge> got;
-  auto c = db.reachable_ff();
+  auto c = reachable_ff(db);
   for (uint64_t f = 0, t = 0; c.next(f, t);) {
     got.insert({f, t});
   }
@@ -64,7 +64,8 @@ int main() {
   {
     DatabaseFunctors functors;
     DatabaseLog log;
-    Database db(allocator, log, functors);
+    Database db(allocator);
+    init(db, log, functors);
 
     {
       hyde::rt::Vec<Tup_u64_u64> add(allocator);
@@ -72,14 +73,14 @@ int main() {
       add.Add({3, 1});
       add.Add({1, 1});
       add.Add({4, 3});
-      db.add_edge_2(std::move(add), std::move(rem));
+      add_edge_2(db, log, functors, std::move(add), std::move(rem));
     }
     {
       hyde::rt::Vec<Tup_u64_u64> add(allocator);
       hyde::rt::Vec<Tup_u64_u64> rem(allocator);
       add.Add({2, 3});
       rem.Add({1, 1});
-      db.add_edge_2(std::move(add), std::move(rem));
+      add_edge_2(db, log, functors, std::move(add), std::move(rem));
     }
 
     const std::set<Edge> expect =
@@ -106,7 +107,8 @@ int main() {
 
     DatabaseFunctors functors;
     DatabaseLog log;
-    Database db(allocator, log, functors);
+    Database db(allocator);
+    init(db, log, functors);
     std::set<Edge> edges;
 
     for (int round = 0; round < 40; ++round) {
@@ -133,7 +135,7 @@ int main() {
           edges.insert({a, b});
         }
       }
-      db.add_edge_2(std::move(add), std::move(rem));
+      add_edge_2(db, log, functors, std::move(add), std::move(rem));
 
       const std::set<Edge> expect = NaiveTC(edges);
       const std::set<Edge> got = Reachable(db);

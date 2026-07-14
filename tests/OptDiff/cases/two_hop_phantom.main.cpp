@@ -10,11 +10,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db](const char *label) {
     std::vector<std::pair<uint64_t, uint64_t>> rows;
-    auto c = db.h_out_ff();
+    auto c = h_out_ff(db);
     for (uint64_t x = 0, z = 0; c.next(x, z);) {
       rows.emplace_back(x, z);
     }
@@ -36,7 +37,7 @@ int main() {
     add.Add({9, 5});
     add.Add({1, 7});
     add.Add({7, 9});
-    db.e_msg_2(std::move(add), std::move(rem));
+    e_msg_2(db, log, functors, std::move(add), std::move(rem));
   }
   dump("seeded");
 
@@ -50,7 +51,7 @@ int main() {
     hyde::rt::Vec<Tup_u64_u64> rem(allocator);
     add.Add({2, 3});
     rem.Add({3, 9});
-    db.e_msg_2(std::move(add), std::move(rem));
+    e_msg_2(db, log, functors, std::move(add), std::move(rem));
   }
   dump("after mixed batch");
   return 0;

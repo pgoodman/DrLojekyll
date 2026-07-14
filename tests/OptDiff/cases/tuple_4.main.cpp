@@ -10,11 +10,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::vector<std::pair<int32_t, int32_t>> pairs;
-    auto c = db.out_ff();
+    auto c = out_ff(db);
     for (int32_t a = 0, b = 0; c.next(a, b);) {
       pairs.emplace_back(a, b);
     }
@@ -26,7 +27,7 @@ int main() {
     std::cout << '\n';
 
     std::vector<int32_t> vals;
-    auto c2 = db.out2_f();
+    auto c2 = out2_f(db);
     for (int32_t v = 0; c2.next(v);) {
       vals.push_back(v);
     }
@@ -44,13 +45,13 @@ int main() {
     hyde::rt::Vec<input_input> rows(allocator);
     rows.Add({4});
     rows.Add({-1});
-    db.input_1(std::move(rows));
+    input_1(db, log, functors, std::move(rows));
   }
   {
     hyde::rt::Vec<input2_input> rows(allocator);
     rows.Add({1, 100});
     rows.Add({2, 200});
-    db.input2_2(std::move(rows));
+    input2_2(db, log, functors, std::move(rows));
   }
   dump();
 
@@ -58,7 +59,7 @@ int main() {
     hyde::rt::Vec<input2_input> rows(allocator);
     rows.Add({1, 300});  // same key, different dropped column
     rows.Add({3, 400});
-    db.input2_2(std::move(rows));
+    input2_2(db, log, functors, std::move(rows));
   }
   dump();
   return 0;

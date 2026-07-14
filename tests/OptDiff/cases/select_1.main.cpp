@@ -9,11 +9,12 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     std::vector<int32_t> ys;
-    auto c = db.is_on_f();
+    auto c = is_on_f(db);
     for (int32_t y = 0; c.next(y);) {
       ys.push_back(y);
     }
@@ -31,21 +32,21 @@ int main() {
     hyde::rt::Vec<ping_input> vec(allocator);
     vec.Add({1});
     vec.Add({2});
-    db.ping_1(std::move(vec));
+    ping_1(db, log, functors, std::move(vec));
   }
   dump();  // condition not yet set: expect empty
 
   {
     hyde::rt::Vec<enable_input> vec(allocator);
     vec.Add({7u});
-    db.enable_1(std::move(vec));
+    enable_1(db, log, functors, std::move(vec));
   }
   dump();  // condition now set
 
   {
     hyde::rt::Vec<ping_input> vec(allocator);
     vec.Add({3});
-    db.ping_1(std::move(vec));
+    ping_1(db, log, functors, std::move(vec));
   }
   dump();
   return 0;

@@ -9,12 +9,13 @@ int main() {
   const auto allocator = hyde::rt::MallocAllocator();
   DatabaseFunctors functors;
   DatabaseLog log;
-  Database db(allocator, log, functors);
+  Database db(allocator);
+  init(db, log, functors);
 
   auto dump = [&db]() {
     for (uint64_t n = 1; n <= 9; ++n) {
       std::vector<uint64_t> tos;
-      auto c = db.reachable_from_bf(n);
+      auto c = reachable_from_bf(db, n);
       for (uint64_t t = 0; c.next(t);) {
         tos.push_back(t);
       }
@@ -27,7 +28,7 @@ int main() {
     }
     for (uint64_t n = 1; n <= 9; ++n) {
       std::vector<uint64_t> froms;
-      auto c = db.reaching_to_fb(n);
+      auto c = reaching_to_fb(db, n);
       for (uint64_t f = 0; c.next(f);) {
         froms.push_back(f);
       }
@@ -47,7 +48,7 @@ int main() {
     add.Add({2, 3});
     add.Add({3, 4});
     add.Add({7, 8});
-    db.add_edge_2(std::move(add), std::move(rem));
+    add_edge_2(db, log, functors, std::move(add), std::move(rem));
   }
   std::cout << "round 1\n";
   dump();
@@ -58,7 +59,7 @@ int main() {
     add.Add({4, 7});  // connect the components
     add.Add({8, 1});  // close a cycle
     rem.Add({2, 3});  // differential removal splits the chain
-    db.add_edge_2(std::move(add), std::move(rem));
+    add_edge_2(db, log, functors, std::move(add), std::move(rem));
   }
   std::cout << "round 2\n";
   dump();
