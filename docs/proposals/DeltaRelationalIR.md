@@ -255,3 +255,79 @@ nodf mode (release 696 samples):
     Verdict: the code's matrix is internally consistent with F17/F18/F22
     and CLAUDE.md's differential invariants. The deltas against the DOCS
     are E-12/E-13/E-14 above.
+
+## 5. The path as diffs (re-ranked by R0; predictions pre-registered
+## BEFORE measurement; critique pass recorded in §6)
+
+    RQ5a  DELETE THE DEAD TAINT PASSES from the timed path.
+          Build.cpp:2592-2593 (RunBackwards/ForwardsTaintAnalysis) have
+          zero consumers (§1.3). Remove the calls (keep the code +
+          public API or delete both — owner's call at review; default:
+          delete calls AND the passes; Format.cpp's commented consumers
+          note how to regenerate).
+          PREDICTIONS: Q5 release@128 nodf −85..95% (892→~60-120ms),
+          opt −4..8%; debug@128 similar fractions; zero golden churn
+          (analysis-only pass, results unread); zero runtime effect;
+          suite PASS 155 untouched.
+    RQ5b  CSE CANDIDATE FILTER: replace the shallow HashInit bucket +
+          pairwise-Equals-of-everything with a memoized cycle-safe deep
+          structural hash (refine buckets; only Equals within deep-hash
+          buckets), or equivalently cross-pair memoization. MUST
+          preserve: the group_ids guard (InsertSetsOverlap stays inside
+          Equals — untouched), keep-last-edge, unit-SELECT non-folding,
+          and CSE outcome (same merge set; merge ORDER may shift —
+          goldens compare case STDOUT, not generated text, so this is
+          suite-checkable, and keyed drains are sorted by contract).
+          PREDICTIONS: Q5 release@128 opt −60..80% (1077→~200-400ms);
+          debug@128 opt −60..80%; the curve exponent at the tail drops
+          below quadratic; zero golden churn; zero runtime effect.
+    R1    DR-IR VOCABULARY + CONSTRUCTION (df -> dr -> cf -> c++).
+          A small typed IR between Query and Program. Operators carry
+          sign / position / claim-context as ATTRIBUTES; membership
+          predicates are the TEN of §4 with semantics derived from
+          Runtime/Table.h (E-12), the negate seed read context-keyed
+          (E-13). Vocabulary (first cut, to be critiqued):
+            ACCESS(table, bound-prefix, pred) — the §10.2 unified
+              table-access operator; lowering ∈ {point-test, keyed
+              chain walk, positioned seek (future), full scan}
+            SEED_FOLD(rule, delta_pos, sign, class) — seed-schema arm:
+              frontier loop + ACCESS chain + head fold (UPDATECOUNT)
+            FIXPOINT_FIRE(join, delta_pos, sign) — claim-relative
+              matrix keyed on static position
+            CROSSOVER(negate, sign) / PRODUCT_ARM(product, side, sign)
+            CLAIM_DRAIN(table, sign) / RETIRE(table, sign) /
+            REDERIVE(table) / FRONTIER_FILTER(table, sign) /
+            FIXPOINT_ROUND(scc) / COMMIT_SWEEP(table)
+          CONSTRUCTION replaces BuildStratumPhases' discovery half +
+          scheduling fixpoint (externalizing exactly the E-16 shared
+          state); the schemas become data. The latent CF hazards (§1.4:
+          DiscoverBranches path enumeration, scheduling-fixpoint
+          re-scans) get memoized/worklist forms in the rebuild.
+          PREDICTIONS: Q5 ~neutral (CF build is ~3% of compile; must
+          not regress >10% at 128); goldens byte-identical for the
+          construction-only step (no emission change yet).
+    R2    GENERIC LOWERING dr -> cf, one operator family at a time,
+          replacing the Emit* web. Goldens are the semantic net; the
+          golden policy (owner decision, §7) governs any emission-shape
+          change; the derivation-counter oracle referees every blessed
+          change. PREDICTIONS: byte-identical goldens per family EXCEPT
+          where a reviewed --bless is recorded; flagship runtime
+          neutral (same emitted shapes; any lowering change is its own
+          measured decision).
+    R3    AGGREGATES as the inaugural operator family (GROUP-UPDATE /
+          state-cell per AggregatingFunctors §2/§3); KV index =
+          degenerate aggregate; gated on the mutable(...) decision
+          (§7). New corpus: average_weight.dr, pairwise_average_weight
+          compile+run; oracle grows the per-group recompute referee.
+          PREDICTIONS: no existing-golden churn; new goldens authored
+          from oracle truth.
+    R4    (gated, owner decision) JOIN group_ids reshape for native
+          self-joins (IdeasTriage #6) — only with an invariant-
+          preservation argument for the CSE guard.
+
+    Ordering rationale: RQ5a/RQ5b first — they are the measured Q5 fix,
+    tiny, and de-risk the epoch's flagship metric before the big
+    rebuild; R1 construction next (golden-frozen), then R2 family by
+    family, then R3. R0's re-ranking demotes "the IR fixes Q5" to "the
+    IR must not regress Q5"; the IR's carry is aggregates + the
+    F17/F18/F22 bug-class + the unified access operator.
