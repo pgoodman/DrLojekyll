@@ -107,7 +107,12 @@ with a forcing function also take `(log, functors)` after `db`. Log and
 functor types flow by deduction — a driver observes published deltas by
 providing ITS OWN type with the message-hook signatures (no inheritance,
 no virtual, no `override`); `DatabaseFunctors` members are declared in
-the header and defined by the driver out-of-line. Always read the
+the header and defined by the driver out-of-line. CURSOR CONTRACTS
+(normative since the data-structures epoch — dead-row compaction
+renumbers row ids): any entry-point call invalidates open cursors
+(drain fully before the next message), and keyed-cursor enumeration
+order is unspecified — drivers must sort keyed drains before printing
+(every corpus driver does; review gate on new ones). Always read the
 generated `datalog.h` for exact signatures before writing a driver.
 
 ## Key internals
@@ -124,7 +129,14 @@ generated `datalog.h` for exact signatures before writing a driver.
   `lib/ControlFlow/Optimize.cpp` (per-region `OptimizeImpl` overloads, same
   doc-comment convention). Differential maintenance is per-stratum
   OVERDELETE → REDERIVE → INSERT with split per-row derivation counters
-  (see `docs/proposals/StackSafeNegation.md`).
+  (see `docs/proposals/StackSafeNegation.md`). Since the data-structures
+  epoch: differential tables COMPACT dead rows at the emitted commit-
+  sweep tail (trigger: dead ≥ live with a 4096-row floor, so suite-sized
+  programs never fire it; ids renumber; the sweep rebuilds each index
+  under its codegen-known key projection; monotone tables never compact
+  — no deaths, and `sealed` is an id-order watermark); join/scan body
+  membership gates read predicates on the scan cursor id (the emitter's
+  row-binding scope stack — the value-keyed re-Find is gone).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —
