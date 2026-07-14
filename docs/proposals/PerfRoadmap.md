@@ -830,3 +830,128 @@ re-verification (the E-1..E-11 precedent), design critique, hand-write
 the target IR for ONE real case before generalizing. Gates: as this
 epoch, PLUS an explicit golden policy decided with the owner before
 any emission change. Environment: as §6.4/§8.4.
+
+### 10.4 The whole pipeline as pseudocode (SINGLE-PASS SEED, recorded at
+### the data-structures close from a structural read + this epoch's
+### verified runtime/emitter/artifact pseudocode — re-verify per the
+### E-1..E-11 precedent before building anything)
+
+    PIPELINE (bin/drlojekyll/Main.cpp):
+      parse (lib/Lex, lib/Parse) -> ParsedModule
+      Query::Build(module, log, optimize)          « lib/DataFlow »
+        BuildClause per clause -> SELECT/TUPLE/CMP/MAP/JOIN/MERGE/
+          NEGATE/INSERT views; zero-arity predicates desugar to unit
+          relations (1 bool col); Stratify rejects unstratified
+          negation in all modes
+        if optimize: QueryImpl::Optimize = Simplify -> per-node
+          Canonicalize FIXPOINT -> CSE (group_ids guard) -> dead-flow
+          elimination        « Q5 superlinearity suspect pool #1 »
+        -> Query: dataflow DAG, every inter-view dependency a column
+           edge
+      Program::Build(query, log, first_id, optimize)
+                                       « lib/ControlFlow/Build »
+        pre-pass diagnostics: AGG / KVINDEX / impure MAP / on-cycle
+          differential @product (ViewSelfReachable fence)
+        BuildDataModel + FillDataModel: views -> DataModels
+          (equivalence classes) -> one TABLE per model (monotone |
+          differential by CanProduceDeletions reachability); indices
+          from join/negate key columns
+        BuildEntryProcedure + BuildIOProcedure per message (ingest
+          loops: explicit folds, index Adds, frontier appends) ->
+          the single flow proc
+        BuildStratumPhases (Stratum.cpp:1456, ~2330 lines — THE
+          EMISSION WEB §10.1 names; two halves worth separating):
+          DISCOVERY half (becomes DR-IR *construction*):
+            ComputeRecursiveSCCs -> RuleClass (kRecursive iff fold
+              target and deriving view share an SCC)
+            DiscoverBranches: branch CHAINS from every frontier
+              source (differential table = both signs; induction-
+              owned = adds only; monotone boundary = adds only)
+              through TUPLE/CMP/MAP paths to fold targets
+            JoinEmission per join view reached by a chain: ONE delta
+              pivot vec shared by all feeding chains and signs; dual
+              sections; suppressed when ALL sides share the join's
+              own SCC (no lower atom -> no seed; round-0 carried by
+              the claim-round fire)
+            negation crossovers: exactly ONE arm-pair per non-@never
+              negate (F19 invariant); @never gates on Present
+            product arms: one signed frontier arm per side x sign
+              (acyclic differential @product)
+            a per-stratum scheduling FIXPOINT orders: seed folds
+              (hoisted, both signs) -> claim drains -> OVERDELETE ->
+              REDERIVE bridge -> INSERT -> tail frontier filters ->
+              branch-chain walks -> commit sweeps
+                                 « Q5 suspect pool #2 »
+          EMISSION half (becomes a GENERIC DR->CF lowering):
+            EmitSeedLoop / EmitCrossover / EmitClaimDrain /
+            EmitRetireFrontier / EmitRederive / EmitFrontierFilter /
+            EmitJoinFire (claim-relative predicate matrix keyed on
+            STATIC join position) / EmitProductArms /
+            EmitChainStep+EmitHeadFold+EmitSectionWalk — every
+            sign x position x claim-context combination is a
+            hand-coded region-tree builder; ALL VALUE-KEYED by
+            construction (the CF-IR has no row-id or position
+            vocabulary — the D1 elision recovers ids at C++ emission
+            time, and the §10.2 unified access operator is where
+            ids/positions could become first-class instead)
+        Induction.cpp: fixpoint-round loops (queue vecs,
+          SortAndUnique + drain per round, retire bands)
+        ProgramImpl::Optimize x2 (around ExtractPrimaryProcedure):
+          region flattening, no-op removal, procedure dedup
+                                 « Q5 suspect pool #3 »
+        -> Program: region tree (SERIES/PARALLEL/INDUCTION/LET/
+           TUPLECMP/UPDATECOUNT/CHECKMEMBER/COMMITSWEEP/CLAIM/
+           RETIRE/VECTOR*/TABLEJOIN/TABLESCAN/TABLEPRODUCT/...)
+      C++ codegen (lib/CodeGen/CPlusPlus/Database.cpp):
+        row/key structs -> sealed Database + hidden friends ->
+        EmitRegion dispatch (D1 row-binding scope stack lives here)
+        -> commit-sweep tail (D2 compaction + emitted reindex)
+      runs against include/drlojekyll/Runtime (§8.1 pseudocode as
+        amended by this epoch: compaction, num_live, Index::Clear)
+
+    Q5 caveat for the profiler: dr_wall superlinearity (52ms@2 ->
+    7.81s@128 rules) has NOT been attributed to a pass — the three
+    suspect pools above are hypotheses, not findings. R0 measures
+    before anything is designed.
+
+### 10.5 The path as diffs against §10.4 (re-rank after R0's profile)
+
+    R0  PROFILE FIRST. Run the progsize curve (runbench's generator)
+        under a profiler; attribute the superlinearity to a pass.
+        NO IR design commits before R0 lands — the IR must fix the
+        measured hot pass, and its shape (e.g. whether DR-IR
+        construction replaces the scheduling fixpoint or wraps it)
+        depends on which pool is hot.
+    R1  DR-IR VOCABULARY (df -> dr -> cf -> c++). First-class delta
+        operators carrying sign / position / claim-context as
+        ATTRIBUTES: table-access (the §10.2 unified bound-prefix
+        operator: point-test | chain walk | seek | scan as lowering
+        choices), seed-fold, claim-drain, rederive-bridge,
+        frontier-filter, crossover-pair, product-arm, fixpoint-round,
+        commit-sweep. The §5.1 schemas become DATA consumed by one
+        generic lowering, not code shapes. BuildStratumPhases'
+        DISCOVERY half becomes DR-IR construction.
+    R2  GENERIC LOWERING dr -> cf, one operator family at a time,
+        goldens as the semantic net. GOLDEN POLICY IS AN EPOCH-START
+        OWNER DECISION: emission shape may change; changes go through
+        reviewed --bless with the derivation-counter oracle as
+        referee — zero churn is NOT the default here, unlike the
+        data-structures epoch.
+    R3  AGGREGATES as the inaugural new operator family
+        (AggregatingFunctors §2/§3 GROUP-UPDATE/state-cell); KV index
+        = degenerate aggregate; the mutable(...) surface decision
+        (§4.1, recommendation (a) recorded) gates at epoch start.
+    R4  (gated, optional) JOIN group_ids reshape for native self-joins
+        (IdeasTriage #6, the measured cubic tc⋈tc witness blowup) —
+        ONLY inside this rebuild, with an invariant-preservation
+        argument for the CSE guard.
+
+### 10.6 Bootstrap amendment (supersedes §10.3 where they differ)
+
+As §10.3, plus: §10.4/§10.5 are THE seed to re-verify (single-pass,
+never fleet-reviewed — the E-1..E-11 precedent says the verification
+WILL find a defect; budget for it). The two §10.4 halves of
+Stratum.cpp must be re-derived from code before R1's vocabulary is
+fixed. R0's profile is the epoch's first artifact and gates all
+design. Owner decisions to collect at epoch start: mutable(...)
+syntax (§4.1), the R2 golden policy, and whether R4 is in scope.
