@@ -157,3 +157,155 @@ Seed design (critique before building):
 - Environment: export PATH="/Users/pag/Code/.brew/bin:$PATH"; suite gates
   as in CLAUDE.md (SUITE: PASS required, byte-identical goldens — perf work
   changes no goldens, ever).
+
+## 6. Epoch-start addendum (2026-07-14, at the generated-surface close):
+## inventory deltas + the whole-program pseudocode this epoch measures
+## (SINGLE-PASS SEED derived by the closing session — re-verify per the
+## F17/F18/F22/fwd-decl precedent: every epoch's pre-code re-verification
+## has caught a real defect in its seed)
+
+### 6.0 Inventory deltas vs §1 (verify, then trust)
+
+- Suite is now 155 cases (Stage 5 added product_*); ctest 3/3; both at
+  the generated-surface close, zero golden churn. Baselines on the dev
+  machine: full debug suite wall 1:42.21 (8 jobs).
+- THE DRIVER SURFACE CHANGED (generated-surface epoch, branch
+  `generated-surface`, landing record in GeneratedSurface.md): header-only
+  artifact + anchor-TU datalog.cpp (compile lines unchanged); sealed
+  `struct Database` (ctor = allocator only); hidden friends, ADL-only
+  (never qualify calls); explicit `init(db, log, functors)` epoch 0
+  (asserted once — entries AND queries assert); log/functors by template
+  deduction (no virtual anywhere); messages
+  `<msg>_<arity>(db, log, functors, Vec[, Vec])`; queries
+  `<q>_<pat>(db, bound…)`, cursors nested. Bench drivers are written ONCE,
+  against this. NEW CAPABILITY: epoch 0 is now separately timeable (it
+  was a constructor side effect before).
+- Generated code compiles per case in ~one real TU (driver includes the
+  whole artifact; anchor TU is trivial). Release bench builds must use
+  -O2 -DNDEBUG: NDEBUG kills the entry asserts AND DebugValidateCounts
+  (a per-table O(rows) debug sweep per epoch — debug timings are NOT
+  representative).
+
+### 6.1 The measured object, as pseudocode (runtime cost model;
+### anchors: include/drlojekyll/Runtime/{Table,Vec,Allocator}.h)
+
+    RowStore<Row> (base of Table/DiffTable):
+      row LOG (Vec<Row>, append-only, NEVER shrinks) + Vec<u64> hashes
+      + open-addressing id set (7/8 load, 2x growth from 64, linear probe)
+      Find/TryAdd: O(1) expected = Hash + probe chain; Rehash O(rows)
+      => FULL SCANS (TABLESCAN with no key, product arms, unkeyed
+         cursors) walk EVER-ADDED rows and liveness-filter per row:
+         retraction churn bloats scan cost PERMANENTLY (log bloat is a
+         first-class COST question for retraction-heavy knobs).
+    Table<Row> (monotone): + uint32 sealed watermark; InI/NetAdded = id
+      compare; Seal() per epoch.
+    DiffTable<Row>: + Vec<u64> counts (packed signed C_nr|C_r, one RMW
+      reads a consistent before/after), + Vec<u8> flags (kInI persistent;
+      rest batch scratch), + touched Vec<u32>.
+      fold (Add/SubDerivation, Add/SubExplicit) = FindOrAdd + 64-bit RMW
+        + crossing test (sign-dependent) + Touch (1 amortized append)
+      TryClaimDel/Add = flag test + STALE-ENTRY RE-TEST (C_nr<=0 /
+        Total>0) + flag RMW;  Retire* = flag RMW
+      Commit(sink) = O(touched): per row, was!=now -> sink (the publish),
+        reset scratch, set kInI := present;  DebugValidateCounts =
+        O(ALL rows) DEBUG ONLY.
+    Index<Key>: slot table (Key+hash+head+used per DISTINCT key, 7/8
+      load) + per-row `next` u32 chain, HEAD-PUSH: chains are
+      insertion-ordered NEWEST-FIRST, not sorted (the §4 seekable/WCOJ
+      substrate needs sorted/trie storage — data-structures epoch).
+      First = key probe; Next = 1 load; readers liveness-filter per hit.
+    Vec<T>: flat, 2x growth from 16, trivially-copyable T only;
+      SortAndUnique = std::sort + unique (per frontier hop, per queue
+      drain — everywhere).
+    NetBatch(adds, removes): SET-net with annihilation — TODAY a
+      QUADRATIC nested scan (per row, linear probe of `distinct`).
+      O(|batch|^2): a pre-identified measurement target. (Bench epoch
+      MEASURES it; any fix is the data-structures epoch's.)
+    Allocator: 2-pointer seam (ctx + alloc/free fn ptrs); Malloc or
+      Arena (bump chunks, geometric, Free = no-op). EVERY container
+      allocation funnels through it — the natural allocation-count hook.
+
+### 6.2 One epoch end to end (generated code; anchors:
+### GeneratedSurface.artifacts/*, lib/CodeGen/CPlusPlus/Database.cpp)
+
+    DRIVER: Database db(alloc); init(db, log, functors);       « epoch 0 »
+            <msg>_<arity>(db, log, functors, adds[, removes])  « 1 call =
+                                                                 1 epoch »
+    ENTRY (hidden friend): assert initialized_;
+      [::hyde::rt::NetBatch(adds, removes)]     « differential msgs only »
+      -> <handler>_detail(alloc, [log,] tables…, globals…, vecs…)
+    HANDLER: ingest loop (TryAdd / Add|SubExplicit; per-index Add on
+      fresh rows; frontier vec appends) -> flow_N(…)
+    flow_N (one epoch's stratum machinery, all state via explicit refs):
+      g += 1                          « ==1 gates the once-only seeds »
+      per stratum:
+        SEEDS (hoisted): branch chains; dual-section joins (per-side
+          position-keyed InNew/InI reads, NetAdded||NetDeleted
+          disjunction); negate crossovers; product arms — each path ends
+          in ONE UPDATECOUNT fold; crossed -> queue append
+        CLAIM DRAINS: SortAndUnique(queue); TryClaimDel/Add (re-tests
+          drop stale/phantom entries)
+        FRONTIER FILTERS: NetDeleted/NetAdded -> net_removals/additions
+        INDUCTIONS: for (changed; !all-vecs-empty): fixpoint rounds,
+          ±recursive folds, claim-relative membership matrix, Retire*
+      COMMIT SWEEPS (per differential table, table order): Commit(sink)
+        over TOUCHED — was!=now calls log.<msg>(cols…, added) on the
+        DEDUCED log for transmit-backed tables; Seal() per monotone
+        table; DebugValidateCounts in debug only.
+    Natural probe points the pseudocode implies: wall per entry call
+    (epoch), init separately, commit-sweep share, touched-set sizes,
+    fold/claim/probe/rehash/sort element counts, allocation bytes —
+    all reachable via the §2 counter seam + the Allocator seam.
+
+### 6.3 The harness as diffs against §6.1/§6.2 and the OptDiff pipeline
+
+      tests/OptDiff/…                            « untouched; stays the
+                                                   correctness net »
+    + bench/runbench.sh                          « same 3-TU compile line
+        as diffrun.sh but -O2 -DNDEBUG; runs (workload, knob-point,
+        mode); emits TSV rows (workload, knobs, mode, metric, value) »
+    + bench/workloads/<family>/gen.py            « knobbed: size, batches,
+        add:remove ratio, seed »
+    + bench/workloads/<family>/driver.cpp        « NEW surface; timed
+        epochs (warm), per-epoch wall, peak RSS »
+    + bench/baselines/<family>_naive.cpp         « from-scratch recompute
+        per batch (COST honesty) »
+    + bench/baselines/<family>_incr.cpp          « hand worklist where
+        meaningful (tc) »
+    + bench/BASELINE.md                          « first accepted run +
+        hardware caveats; later epochs diff against it »
+    ± include/drlojekyll/Runtime/*.h             « OPTIONAL, OWN COMMIT,
+        default-off: #ifdef DRLOJEKYLL_BENCH_COUNTERS seam counting
+        folds/claims/probes/rehashes/commit-visits/sort-elements/
+        netbatch-scans (+ alloc bytes via a counting Allocator, which
+        needs NO seam) — suite-verified byte-identical no-op when off »
+    Workload families (from §2, updated case names): knobbed tc
+      (random graph; the tc_nonlinear_diff NaiveTC oracle pattern is the
+      from-scratch baseline seed), deep_chain_retract knobbed,
+      negation/condition flip storms (merge_5 / cond_diff_flipflop
+      shapes), disassemble on synthetic byte streams.
+
+### 6.4 Bootstrap update (supersedes §5's read list where they differ)
+
+Branch: bench-harness off generated-surface's tip (or off main if the
+owner has merged differential-product + generated-surface; check
+`git merge-base`). Read (in order): this file TOP TO BOTTOM (§6 is the
+seed to RE-VERIFY, single-pass, never fleet-reviewed); the
+GeneratedSurface.md landing record + one committed artifact
+(GeneratedSurface.artifacts/cf13_1/ — the surface bench drivers use);
+StackSafeNegation.md §11 OQ6/OQ7; AggregatingFunctors.md §4; CLAUDE.md
+"Generated API". Code anchors: include/drlojekyll/Runtime/*.h (683-line
+Table.h is the object of measurement — read it ALL),
+lib/Runtime/Allocator.cpp, tests/OptDiff/{diffrun,runall}.sh,
+tests/OptDiff/cases/tc_nonlinear_diff.main.cpp (NaiveTC + the 31-instance
+stress pattern), deep_chain_retract.main.cpp (scale knob precedent).
+Environment: export PATH="/Users/pag/Code/.brew/bin:$PATH"; macOS bash
+3.2 (no declare -A); zsh does NOT word-split $flags (use ${=var} or
+arg arrays); NEVER rebuild the compiler while a suite run is in flight;
+bench runs must not share the machine with suite runs when timing.
+Gates: suite PASS (155) zero golden churn; ctest 3/3; ZERO changes to
+lib/Runtime, lib/ControlFlow, or codegen in bench commits EXCEPT the
+counter seam (own commit, off by default, suite-verified no-op);
+BASELINE.md committed with the first accepted run; landing record
+appended HERE with deviations for ratification; FINDINGS.md updated if
+the harness exposes a correctness bug.
