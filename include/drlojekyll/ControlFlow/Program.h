@@ -618,7 +618,10 @@ enum class MembershipPredicate : unsigned {
   kPresent,               // Count-based presence: C_nr + C_r > 0.
   kRecursivelySupported,  // C_r > 0 (the REDERIVE survival test).
   kNetDeleted,            // kDel && !kAdd (net deletion this batch).
-  kNetAdded,              // kAdd && !kDel (net addition this batch).
+  kNetAdded,              // kAdd && !kDel && !kInI (net addition this
+                          // batch; the !kInI conjunct is load-bearing —
+                          // see Runtime/Table.h NetAdded for the
+                          // same-batch gate-dropped-del double-count).
 };
 
 // One signed derivation-counter fold on a table: a single +1/-1 of the
