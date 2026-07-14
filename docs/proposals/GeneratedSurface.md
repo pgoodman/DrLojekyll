@@ -110,6 +110,125 @@ friends for ADL-only API surface.
   per file but leaves two API spellings in the tree. Lean: no facade,
   one mechanical driver sweep, suite as the net.
 
+## A. The current generated artifact and its emitter, as pseudocode
+## (single-pass derivation 2026-07-13 — a SEED for the next session to
+## re-verify, NOT fleet-reviewed; anchors at lib/CodeGen/CPlusPlus/
+## Database.cpp @ c680f1c)
+
+Emitter pipeline: `GenerateDatabaseCode` → `Generator::Run` (:2063) —
+`ComputeNames` (:352; `ns_name = #database name's NamespaceName(kCxx)`,
+EMPTY unless the module declares one — MiniDisassembler generates
+`namespace mini_disassembler`, OptDiff cases generate none) →
+`CollectVectorShapes` → header, then source:
+
+    datalog.h (:2068-2115):
+      #pragma once; Runtime includes (Allocator/Hash/Table/Vec)
+      [inline hooks c++:database:{prologue,enums:*,...} — EmitInlines :548]
+      namespace <ns_name>?               « empty by default ⇒ GLOBAL scope »
+      enums (:556); Tup_<types> shape structs {cols, Hash, <=>} (:596)
+      using <msg>_input = Tup_…          « 1-vec (monotone) messages ONLY »
+      row structs (:612); struct DatabaseFunctors (:646)
+      struct DatabaseLog {               « EmitLogDecl :719 »
+        virtual ~DatabaseLog() = default;              « Stage-5 stopgap »
+        virtual void <msg>_<arity>(cols…, bool added) {}  « per published msg »
+      };
+      class Database {                   « EmitDatabaseDecl :747 »
+       public:
+        Database(Allocator, DatabaseLog&, DatabaseFunctors&);
+        bool <msg>_<arity>(Vec<Tup>[, Vec<Tup>]);   « one entry per message
+                                                      = one EPOCH; differential
+                                                      messages take adds+removes »
+        bool <query>_<all-bound>(args) / cursor <query>_<pattern>(bound args)
+       private:
+        bool init_N(); bool proc_N(…); bool flow_N(…);   « flow procedures »
+        Allocator; DatabaseLog &log; DatabaseFunctors &functors;
+        Table/DiffTable<Tup_…> table_N; Index<…> index_N;  « THE STATE »
+      };
+
+    datalog.cpp:
+      Database::Database(…) : members(allocator)… { init_N(); }
+        « EmitConstructor :890 — EPOCH 0 RUNS IN THE CTOR, invoking log
+          callbacks mid-construction; init's bool is swallowed »
+      bool Database::<proc>(…) { … }     « EmitProcedure :916; body =
+        EmitRegion (:249 dispatch) lowering the CF-IR region tree: vector
+        ops, UPDATECOUNT folds, CHECKMEMBER gates, claim/retire, NetBatch,
+        TABLEJOIN/TABLEPRODUCT/TABLESCAN, inductions, COMMITSWEEP — a
+        differential-backed @differential transmit's sweep calls
+        log.<msg>_<arity>(row cols…, added) (:1028, :1316);
+        per-proc local vectors declared fresh at entry (~:928-931) »
+      query bodies (EmitQueries :1896): index/scan + `Present(id)` filter
+        on differential tables.
+
+Driver contract today: construct (epoch 0 fires implicitly; the log must
+be live BEFORE construction) → `db.<msg>_<arity>(Vec…)` per epoch →
+observe via query cursors and/or DatabaseLog overrides. Build contract:
+cmake/Compiler.cmake `compile_datalog()` declares byproducts
+`${DATABASE_NAME}.h/.cpp` (:76-77); OptDiff's diffrun.sh compiles
+`driver.cpp datalog.cpp lib/Runtime/Allocator.cpp` as separate TUs.
+
+## B. The redesign as diffs against §A (the five decisions, rendered)
+
+    datalog.h:
+    -  struct DatabaseLog { virtual void <msg>_<arity>(…) {} … };
+    +  « DatabaseLog/DatabaseFunctors as CONCRETE default types remain
+    +    available for drivers that don't customize, but nothing in the
+    +    generated code names them: entry points deduce Log/Functors »
+    -  class Database { public: ctor-runs-init; methods; private: … };
+    +  struct Database {                      « the sealed state struct »
+    +   private:
+    +    Allocator allocator; Table/DiffTable table_N; Index index_N;
+    +    « NO log/functors members — they arrive per call by deduction »
+    +   public:
+    +    explicit Database(Allocator);        « allocate empty tables; NO
+    +                                           callbacks; cannot fail »
+    +    template <typename Log, typename Functors>
+    +    friend auto init(Database &db, Log &log, Functors &f);
+    +      « EPOCH 0 = the zeroth entry point; returns the swallowed bool;
+    +        message entry points debug-assert it has run »
+    +    template <typename Log, typename Functors>
+    +    friend auto <msg>_<arity>(Database &db, Log &log, Functors &f,
+    +                              Vec<Tup>[, Vec<Tup>]);
+    +      « HIDDEN FRIENDS: defined in-class (ADL-only — a namespace-scope
+    +        definition would un-hide), THIN — each delegates to an
+    +        internal flow function below »
+    +    friend auto <query>_<pattern>(const Database &db, bound args…);
+    +      « auto return: cursor struct definitions may live BELOW »
+    +  };
+    +  « impl region (same header or an always-included datalog.inl):
+    +    internal-linkage flow functions taking EXPLICIT table/index/vector
+    +    references — the signature IS the read/write set; auto returns;
+    +    generator emits in topological order so deduced-return
+    +    definition-before-call is guaranteed by construction »
+    -datalog.cpp: all Database:: definitions
+    +datalog.cpp: shrinks to an anchor TU or disappears — OQ-S3 decides;
+    +  cmake/Compiler.cmake byproducts and diffrun.sh compile lines follow.
+
+Diff-to-decision map: state struct + private members = (1)+(2); hidden
+friends = (2); internal explicit-parameter flow functions = (3); Log/
+Functors template parameters = (4), retiring the §A virtual; `init` as
+entry 0 = (5), deleting §A's ctor body.
+
+## C. Target artifact end states (this epoch's "planned IR" — to be
+## hand-written CONCRETELY next session before touching the emitter)
+
+Two worked artifacts, written by hand and compiled against the untouched
+runtime with hand-ported drivers, stdout byte-compared to the committed
+goldens BEFORE any emitter change:
+
+- **booleans_diff** (monotone+differential messages, query cursors, no
+  published messages): pins the query-cursor shape under `auto`, the
+  `<msg>_input` alias story, and a Log parameter that is never called
+  (deduction with an empty default log).
+- **product_conds** (Stage-5 fixture): pins TWO database instances,
+  epoch-0-as-explicit-call (its `init:` output line must survive
+  byte-identically — the driver calls `init(db, log, functors)` where the
+  ctor used to fire it), log observation by deduction (PrintLog with NO
+  virtual anywhere), and the differential-transmit commit sweep calling a
+  deduced log.
+
+Their hand-written headers become §C' of this ledger (committed), then
+the emitter is converted to REPRODUCE them.
+
 ## Open questions for the epoch
 
 - OQ-S1: global namespace + ADL vs finally introducing an opt-in
@@ -153,3 +272,48 @@ unchanged; full-suite build wall time measured before/after and recorded
 here; landing record appended HERE with deviations for ratification.
 After this epoch: the bench harness (PerfRoadmap.md §5 bootstrap),
 measuring the NEW surface.
+
+## Session bootstrap (fresh-session checklist — works on any machine)
+
+State at seed (2026-07-13): branch differential-product @ c680f1c
+(Stage 5 CLOSED — f4e3565 impl+fixtures, f736b1d docs+landing record;
+NOT yet merged to main; Stage-5 deviations pending owner ratification,
+incl. the `virtual DatabaseLog` stopgap this epoch retires). NOTHING of
+this redesign is implemented. §A–§C above are a SINGLE-PASS derivation by
+the Stage-5 session — never fleet-reviewed; the first adversarial review
+is THIS epoch's first task (the F17/F18/F22 precedent: every epoch's
+pre-code re-verification has caught a real defect in its seed).
+
+- Read (in order): this file top to bottom; the Stage-5 landing record in
+  StackSafeNegation.stage5-notes.md (the virtual-log deviation context and
+  the fixture/driver conventions); PerfRoadmap.md §4 (the resequencing).
+  Code anchors: lib/CodeGen/CPlusPlus/Database.cpp (Generator::Run :2063,
+  EmitLogDecl :719, EmitDatabaseDecl :747, EmitConstructor :890,
+  EmitProcedure :916, EmitQueries :1896, log call sites :1028/:1316,
+  EmitInlines :548 + the c++:database:* hook stages); cmake/Compiler.cmake
+  compile_datalog (:72-83); tests/OptDiff/diffrun.sh compile line; a
+  REPRESENTATIVE generated pair (compile booleans_diff and product_conds
+  with -cpp-out and READ datalog.h/.cpp end to end — the ground truth §A
+  summarizes); the driver-usage matrix (every cases/*.main.cpp +
+  tests/MiniDisassembler/Standalone.cpp + tests/PointsTo).
+- Method (mandated): re-derive §A from the code and the real generated
+  files; write §B's diffs against YOUR re-derivation; adversarially
+  critique them (minimum: OQ-S1..S4, the hidden-friend/two-phase-lookup
+  interaction, ADL pitfalls and error-message quality for a missing log
+  method, the epoch-0 relocation against every driver incl. ctest's, the
+  header-only compile-time delta, the cmake/diffrun contract change);
+  hand-write §C's two target artifacts, compile and byte-verify them
+  against committed goldens; critique those against §B; ONLY THEN convert
+  the emitter region by region, full suite between regions, and sweep the
+  drivers mechanically.
+- Gates: as §Gates above. Blessing policy unchanged: goldens change ONLY
+  via explicit review — this epoch expects ZERO golden changes.
+- Environment: export PATH="/Users/pag/Code/.brew/bin:$PATH"; suite =
+  DR=build/debug/bin/drlojekyll tests/OptDiff/runall.sh <workroot> [jobs]
+  [filter]; macOS bash 3.2 (no declare -A); NEVER rebuild the compiler
+  while a suite run is in flight (corrupts the run: DR-FAIL(127));
+  runall.sh --bless filters are REGEXES — anchor them.
+- End state: emitter + drivers + docs (RuntimeAndCodegen.md's generated-
+  code shape section, CLAUDE.md's "Generated API" paragraph) committed;
+  a landing record appended HERE with deviations for ratification;
+  FINDINGS.md updated if anything is found; build-time delta recorded.
