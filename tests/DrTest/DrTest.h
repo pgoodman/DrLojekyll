@@ -39,12 +39,18 @@ struct Registrar {
 // aborting the whole process.
 struct AssertionFailure {};
 
-// Stringifies a value for diagnostic output.
+// Stringifies a value for diagnostic output. Types without a stream
+// operator still compare fine — their failure diagnostic just cannot
+// print the value (so ASSERT_EQ stays usable on row structs).
 template <typename T>
 inline std::string Show(const T &value) {
-  std::ostringstream os;
-  os << value;
-  return os.str();
+  if constexpr (requires(std::ostringstream &os) { os << value; }) {
+    std::ostringstream os;
+    os << value;
+    return os.str();
+  } else {
+    return "<unprintable>";
+  }
 }
 
 // Reports a failed binary comparison and aborts the current test.
@@ -94,6 +100,51 @@ template <typename A, typename B>
     auto &&drtest_b = (b);                                                   \
     if (!(drtest_a != drtest_b)) {                                           \
       ::drtest::FailBinary(__FILE__, __LINE__, "!=", #a, #b, drtest_a,       \
+                           drtest_b);                                        \
+    }                                                                        \
+  } while (0)
+
+// Ordered comparisons. Prefer these over ASSERT_TRUE(a < b): the assertion
+// states its intent and the failure prints both operands — the property
+// being tested survives into the diagnostic (and into any future
+// property-based harness built on these).
+
+#define ASSERT_LT(a, b)                                                      \
+  do {                                                                       \
+    auto &&drtest_a = (a);                                                   \
+    auto &&drtest_b = (b);                                                   \
+    if (!(drtest_a < drtest_b)) {                                            \
+      ::drtest::FailBinary(__FILE__, __LINE__, "<", #a, #b, drtest_a,        \
+                           drtest_b);                                        \
+    }                                                                        \
+  } while (0)
+
+#define ASSERT_LE(a, b)                                                      \
+  do {                                                                       \
+    auto &&drtest_a = (a);                                                   \
+    auto &&drtest_b = (b);                                                   \
+    if (!(drtest_a <= drtest_b)) {                                           \
+      ::drtest::FailBinary(__FILE__, __LINE__, "<=", #a, #b, drtest_a,       \
+                           drtest_b);                                        \
+    }                                                                        \
+  } while (0)
+
+#define ASSERT_GT(a, b)                                                      \
+  do {                                                                       \
+    auto &&drtest_a = (a);                                                   \
+    auto &&drtest_b = (b);                                                   \
+    if (!(drtest_a > drtest_b)) {                                            \
+      ::drtest::FailBinary(__FILE__, __LINE__, ">", #a, #b, drtest_a,        \
+                           drtest_b);                                        \
+    }                                                                        \
+  } while (0)
+
+#define ASSERT_GE(a, b)                                                      \
+  do {                                                                       \
+    auto &&drtest_a = (a);                                                   \
+    auto &&drtest_b = (b);                                                   \
+    if (!(drtest_a >= drtest_b)) {                                           \
+      ::drtest::FailBinary(__FILE__, __LINE__, ">=", #a, #b, drtest_a,       \
                            drtest_b);                                        \
     }                                                                        \
   } while (0)
