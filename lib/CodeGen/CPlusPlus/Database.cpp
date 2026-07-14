@@ -200,6 +200,17 @@ class Generator {
     }
   }
 
+  // The namespace-scope detail function carrying a procedure's body. A
+  // message handler's public name is claimed by its driver-facing entry
+  // point, so its detail twin is suffixed; every other kind's ProcName
+  // already carries the procedure id and serves as-is.
+  std::string DetailName(ProgramProcedure proc) {
+    if (proc.Kind() == ProcedureKind::kMessageHandler) {
+      return ProcName(proc) + "_detail";
+    }
+    return ProcName(proc);
+  }
+
   // Vectors are passed by value into dataflow entry points and moved down;
   // all other procedure kinds take them by reference.
   static bool TakesVectorsByValue(ProgramProcedure proc) {
@@ -224,6 +235,58 @@ class Generator {
   std::string ShapeName(const std::vector<TypeLoc> &types);
   std::string VecType(DataVector vec);
   void WalkRegion(ProgramRegion region);
+
+  // ---------------------------------------------------------------------
+  // Per-procedure effects: the exact state a procedure's body (and,
+  // transitively, its callees') reads and writes. The detail function's
+  // parameter list is rendered from this set, so the signature IS the
+  // read/write set.
+
+  struct ProcEffects {
+    std::unordered_set<unsigned> tables;   // DataTable ids
+    std::unordered_set<unsigned> indexes;  // DataIndex ids (member-backed)
+    std::unordered_set<unsigned> globals;  // global DataVariable ids
+    bool uses_log{false};       // publishes (publish region / commit sweep)
+    bool uses_functors{false};  // calls a non-inline functor
+  };
+
+  const ProcEffects &EffectsOf(ProgramProcedure proc);
+  void CollectEffects(ProgramRegion region, ProcEffects &out);
+
+  // `template <...>` header line for a detail function, or "".
+  static std::string DetailTemplateHeader(const ProcEffects &fx) {
+    if (fx.uses_log && fx.uses_functors) {
+      return "template <typename Log, typename Functors>\n";
+    }
+    if (fx.uses_log) {
+      return "template <typename Log>\n";
+    }
+    if (fx.uses_functors) {
+      return "template <typename Functors>\n";
+    }
+    return "";
+  }
+
+  // The state half of a detail function's parameter list, rendered from
+  // its effects: allocator, deduced log/functors, then tables with their
+  // indexes and globals in member-declaration order.
+  std::string DetailStateParams(ProgramProcedure proc);
+
+  // The matching argument list at a call site. `prefix` qualifies the
+  // state names ("" where they are in scope as parameters or members,
+  // "db." inside a hidden friend).
+  std::string DetailStateArgs(ProgramProcedure proc, const char *prefix);
+
+  // Vector/scalar parameter tail shared by declarations and definitions.
+  std::string ProcValueParams(ProgramProcedure proc);
+
+  // The detail name a wrapper METHOD must use: class scope shadows the
+  // namespace-scope detail of the same name, so wrappers qualify.
+  std::string QualifiedDetailName(ProgramProcedure proc) {
+    return "::" + (ns_name.empty() ? "" : ns_name + "::") + DetailName(proc);
+  }
+
+  void EmitDetailDecls(OutputStream &os);
 
   // ---------------------------------------------------------------------
   // Header emission.
@@ -345,6 +408,11 @@ class Generator {
 
   // Tuple shape (mangled type list) -> (struct name, column types).
   std::map<std::string, std::pair<std::string, std::vector<TypeLoc>>> shapes;
+
+  // Procedure id -> transitive effects (memoized; the call graph is a
+  // DAG — recursion lives inside INDUCTION regions, never in calls).
+  std::unordered_map<unsigned, ProcEffects> proc_effects;
+  std::unordered_set<unsigned> effects_in_progress;
 
   unsigned next_ins_id{0};
 };
@@ -540,6 +608,282 @@ void Generator::WalkRegion(ProgramRegion region) {
     }
   }
   // Leaf regions (return, publish, vector ops) have no nested bodies.
+}
+
+// -----------------------------------------------------------------------
+// Per-procedure effects.
+
+const Generator::ProcEffects &Generator::EffectsOf(ProgramProcedure proc) {
+  const auto id = proc.Id();
+  if (auto it = proc_effects.find(id); it != proc_effects.end()) {
+    return it->second;
+  }
+
+  // The procedure call graph is a DAG (recursion lives inside INDUCTION
+  // regions, never in calls); a cycle would make explicit parameter sets
+  // ill-founded.
+  assert(!effects_in_progress.contains(id));
+  effects_in_progress.insert(id);
+  ProcEffects out;
+  CollectEffects(proc.Body(), out);
+  effects_in_progress.erase(id);
+  return proc_effects.emplace(id, std::move(out)).first->second;
+}
+
+void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
+  // A global variable renders as a `g<id>` reference (VarName); constants
+  // render inline and need no parameter.
+  const auto add_var = [&](DataVariable var) {
+    switch (var.DefiningRole()) {
+      case VariableRole::kConstantZero:
+      case VariableRole::kConstantFalse:
+      case VariableRole::kConstantTrue: return;
+      default: break;
+    }
+    if (!var.IsConstant() && var.IsGlobal()) {
+      out.globals.insert(var.Id());
+    }
+  };
+  const auto add_vars = [&](auto range) {
+    for (DataVariable var : range) {
+      add_var(var);
+    }
+  };
+
+  // A written table's member-backed indexes are maintained alongside the
+  // insertion (EmitIndexAdds), whether or not a region names them.
+  const auto add_written_table = [&](DataTable table) {
+    out.tables.insert(table.Id());
+    for (DataIndex index : table.Indices()) {
+      if (index_member.contains(index.Id())) {
+        out.indexes.insert(index.Id());
+      }
+    }
+  };
+
+  const auto recurse = [&](std::optional<ProgramRegion> sub) {
+    if (sub) {
+      CollectEffects(*sub, out);
+    }
+  };
+
+  if (region.IsSeries()) {
+    for (auto sub : ProgramSeriesRegion::From(region).Regions()) {
+      CollectEffects(sub, out);
+    }
+  } else if (region.IsParallel()) {
+    for (auto sub : ProgramParallelRegion::From(region).Regions()) {
+      CollectEffects(sub, out);
+    }
+  } else if (region.IsLetBinding()) {
+    auto let = ProgramLetBindingRegion::From(region);
+    add_vars(let.UsedVariables());
+    recurse(let.Body());
+  } else if (region.IsVectorLoop()) {
+    recurse(ProgramVectorLoopRegion::From(region).Body());
+  } else if (region.IsVectorAppend()) {
+    add_vars(ProgramVectorAppendRegion::From(region).TupleVariables());
+  } else if (region.IsUpdateCount()) {
+    auto change = ProgramUpdateCountRegion::From(region);
+    add_written_table(change.Table());
+    add_vars(change.TupleVariables());
+    recurse(change.Body());
+  } else if (region.IsCheckMember()) {
+    auto check = ProgramCheckMemberRegion::From(region);
+    out.tables.insert(check.Table().Id());
+    add_vars(check.TupleVariables());
+    recurse(check.IfPresent());
+    recurse(check.IfAbsent());
+  } else if (region.IsCommitSweep()) {
+    auto sweep = ProgramCommitSweepRegion::From(region);
+    out.tables.insert(sweep.Table().Id());
+    if (sweep.Message()) {
+      out.uses_log = true;
+    }
+  } else if (region.IsClaim()) {
+    auto claim = ProgramClaimRegion::From(region);
+    out.tables.insert(claim.Table().Id());
+    add_vars(claim.TupleVariables());
+    recurse(claim.Body());
+  } else if (region.IsRetire()) {
+    auto retire = ProgramRetireRegion::From(region);
+    out.tables.insert(retire.Table().Id());
+    add_vars(retire.TupleVariables());
+  } else if (region.IsTableJoin()) {
+    auto join = ProgramTableJoinRegion::From(region);
+    const auto tables = join.Tables();
+    for (auto i = 0u; i < tables.size(); ++i) {
+      out.tables.insert(tables[i].Id());
+      if (auto index = join.Index(i);
+          index && index_member.contains(index->Id())) {
+        out.indexes.insert(index->Id());
+      }
+    }
+    recurse(join.Body());
+    recurse(join.AddedBody());
+    recurse(join.RemovedBody());
+  } else if (region.IsTableProduct()) {
+    auto product = ProgramTableProductRegion::From(region);
+    for (DataTable table : product.Tables()) {
+      out.tables.insert(table.Id());
+    }
+    recurse(product.Body());
+  } else if (region.IsTableScan()) {
+    auto scan = ProgramTableScanRegion::From(region);
+    out.tables.insert(scan.Table().Id());
+    add_vars(scan.InputVariables());
+    if (auto index = scan.Index();
+        index && index_member.contains(index->Id()) &&
+        scan.InputVariables().size() == index->KeyColumns().size()) {
+      out.indexes.insert(index->Id());
+    }
+    recurse(scan.Body());
+  } else if (region.IsTupleCompare()) {
+    auto cmp = ProgramTupleCompareRegion::From(region);
+    add_vars(cmp.LHS());
+    add_vars(cmp.RHS());
+    recurse(cmp.BodyIfTrue());
+    recurse(cmp.BodyIfFalse());
+  } else if (region.IsGenerate()) {
+    auto gen = ProgramGenerateRegion::From(region);
+    if (!gen.Functor().InlineName(Language::kCxx)) {
+      out.uses_functors = true;
+    }
+    add_vars(gen.InputVariables());
+    recurse(gen.BodyIfResults());
+    recurse(gen.BodyIfEmpty());
+  } else if (region.IsCall()) {
+    auto call = ProgramCallRegion::From(region);
+    add_vars(call.VariableArguments());
+    const auto &callee = EffectsOf(call.CalledProcedure());
+    out.tables.insert(callee.tables.begin(), callee.tables.end());
+    out.indexes.insert(callee.indexes.begin(), callee.indexes.end());
+    out.globals.insert(callee.globals.begin(), callee.globals.end());
+    out.uses_log |= callee.uses_log;
+    out.uses_functors |= callee.uses_functors;
+    recurse(call.BodyIfTrue());
+    recurse(call.BodyIfFalse());
+  } else if (region.IsPublish()) {
+    auto publish = ProgramPublishRegion::From(region);
+    out.uses_log = true;
+    add_vars(publish.VariableArguments());
+  } else if (region.IsTestAndSet()) {
+    auto tas = ProgramTestAndSetRegion::From(region);
+    add_var(tas.Accumulator());
+    recurse(tas.Body());
+  } else if (region.IsWorkerId()) {
+    recurse(ProgramWorkerIdRegion::From(region).Body());
+  } else if (region.IsInduction()) {
+    auto induction = ProgramInductionRegion::From(region);
+    recurse(induction.Initializer());
+    CollectEffects(induction.FixpointLoop(), out);
+    recurse(induction.Output());
+  }
+  // Remaining leaves (return, vector clear/unique/swap, net-batch) touch
+  // vectors and constants only.
+}
+
+std::string Generator::DetailStateParams(ProgramProcedure proc) {
+  const auto &fx = EffectsOf(proc);
+  std::vector<std::string> parts;
+  parts.push_back("::hyde::rt::Allocator &allocator");
+  if (fx.uses_log) {
+    parts.push_back("Log &log");
+  }
+  if (fx.uses_functors) {
+    parts.push_back("Functors &functors");
+  }
+  auto num_indexes = 0u;
+  for (DataTable table : program.Tables()) {
+    if (!fx.tables.contains(table.Id())) {
+      continue;
+    }
+    parts.push_back(std::string("::hyde::rt::") +
+                    (table.IsDifferential() ? "DiffTable<" : "Table<") +
+                    row_type[table.Id()] + "> &" + table_member[table.Id()]);
+    for (DataIndex index : table.Indices()) {
+      if (fx.indexes.contains(index.Id())) {
+        parts.push_back("::hyde::rt::Index<" + key_type[index.Id()] + "> &" +
+                        index_member[index.Id()]);
+        ++num_indexes;
+      }
+    }
+  }
+
+  // Every used index rides with its table (index reads imply table reads).
+  assert(num_indexes == fx.indexes.size());
+  (void) num_indexes;
+
+  for (DataVariable var : program.GlobalVariables()) {
+    if (fx.globals.contains(var.Id())) {
+      parts.push_back(TypeName(module, var.Type()) + " &" + VarName(var));
+    }
+  }
+  return JoinExprs(parts, ", ");
+}
+
+std::string Generator::DetailStateArgs(ProgramProcedure proc,
+                                       const char *prefix) {
+  const auto &fx = EffectsOf(proc);
+  std::vector<std::string> parts;
+  parts.push_back(std::string(prefix) + "allocator");
+  if (fx.uses_log) {
+    parts.push_back("log");
+  }
+  if (fx.uses_functors) {
+    parts.push_back("functors");
+  }
+  for (DataTable table : program.Tables()) {
+    if (!fx.tables.contains(table.Id())) {
+      continue;
+    }
+    parts.push_back(std::string(prefix) + table_member[table.Id()]);
+    for (DataIndex index : table.Indices()) {
+      if (fx.indexes.contains(index.Id())) {
+        parts.push_back(std::string(prefix) + index_member[index.Id()]);
+      }
+    }
+  }
+  for (DataVariable var : program.GlobalVariables()) {
+    if (fx.globals.contains(var.Id())) {
+      parts.push_back(std::string(prefix) + VarName(var));
+    }
+  }
+  return JoinExprs(parts, ", ");
+}
+
+std::string Generator::ProcValueParams(ProgramProcedure proc) {
+  std::vector<std::string> parts;
+  const auto by_value = TakesVectorsByValue(proc);
+  for (DataVector vec : proc.VectorParameters()) {
+    parts.push_back("::hyde::rt::Vec<" + VecType(vec) + "> " +
+                    (by_value ? "" : "&") + VecName(vec));
+  }
+  for (DataVariable var : proc.VariableParameters()) {
+    parts.push_back(TypeName(module, var.Type()) + " " + VarName(var));
+  }
+  return JoinExprs(parts, ", ");
+}
+
+// Forward declarations for every detail function, ahead of any caller:
+// calls with no dependent argument bind at template-definition time, so
+// these must precede the class and its hidden friends.
+void Generator::EmitDetailDecls(OutputStream &os) {
+  os << "// Internal flow procedures. Not driver-facing. Each signature\n"
+     << "// names exactly the state the procedure reads and writes.\n";
+  for (ProgramProcedure proc : program.Procedures()) {
+    const auto &fx = EffectsOf(proc);
+    os << DetailTemplateHeader(fx);
+    if (!fx.uses_log && !fx.uses_functors) {
+      os << "inline ";
+    }
+    os << "bool " << DetailName(proc) << "(" << DetailStateParams(proc);
+    if (const auto tail = ProcValueParams(proc); !tail.empty()) {
+      os << ", " << tail;
+    }
+    os << ");\n";
+  }
+  os << "\n";
 }
 
 // -----------------------------------------------------------------------
@@ -914,17 +1258,16 @@ void Generator::EmitConstructor(void) {
 }
 
 void Generator::EmitProcedure(ProgramProcedure proc) {
-  cc << "bool Database::" << ProcName(proc) << "(";
-  auto sep = "";
-  const auto by_value = TakesVectorsByValue(proc);
-  for (DataVector vec : proc.VectorParameters()) {
-    cc << sep << "::hyde::rt::Vec<" << VecType(vec) << "> "
-       << (by_value ? "" : "&") << VecName(vec);
-    sep = ", ";
+  // The detail function carries the body; its parameter list is the
+  // procedure's transitive read/write set plus the value parameters.
+  const auto &fx = EffectsOf(proc);
+  cc << DetailTemplateHeader(fx);
+  if (!fx.uses_log && !fx.uses_functors) {
+    cc << "inline ";
   }
-  for (DataVariable var : proc.VariableParameters()) {
-    cc << sep << TypeName(module, var.Type()) << " " << VarName(var);
-    sep = ", ";
+  cc << "bool " << DetailName(proc) << "(" << DetailStateParams(proc);
+  if (const auto tail = ProcValueParams(proc); !tail.empty()) {
+    cc << ", " << tail;
   }
   cc << ") {\n";
   cc.PushIndent();
@@ -939,6 +1282,40 @@ void Generator::EmitProcedure(ProgramProcedure proc) {
   if (!EndsWithReturn(body)) {
     cc << cc.Indent() << "return false;\n";
   }
+  cc.PopIndent();
+  cc << "}\n\n";
+
+  // The class-facing wrapper: today's method surface, delegating to the
+  // detail with the member state. The detail's name is shadowed by this
+  // very method (and its siblings), so the call is qualified.
+  cc << "bool Database::" << ProcName(proc) << "(";
+  auto sep = "";
+  const auto by_value = TakesVectorsByValue(proc);
+  for (DataVector vec : proc.VectorParameters()) {
+    cc << sep << "::hyde::rt::Vec<" << VecType(vec) << "> "
+       << (by_value ? "" : "&") << VecName(vec);
+    sep = ", ";
+  }
+  for (DataVariable var : proc.VariableParameters()) {
+    cc << sep << TypeName(module, var.Type()) << " " << VarName(var);
+    sep = ", ";
+  }
+  cc << ") {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "return " << QualifiedDetailName(proc) << "("
+     << DetailStateArgs(proc, "");
+  for (DataVector vec : proc.VectorParameters()) {
+    cc << ", ";
+    if (by_value) {
+      cc << "std::move(" << VecName(vec) << ")";
+    } else {
+      cc << VecName(vec);
+    }
+  }
+  for (DataVariable var : proc.VariableParameters()) {
+    cc << ", " << VarName(var);
+  }
+  cc << ");\n";
   cc.PopIndent();
   cc << "}\n\n";
 }
@@ -1067,8 +1444,12 @@ void Generator::EmitCall(ProgramCallRegion region) {
   const ProgramProcedure callee = region.CalledProcedure();
   const auto callee_by_value = TakesVectorsByValue(callee);
 
-  std::string call = ProcName(callee) + "(";
-  auto sep = "";
+  // Detail-to-detail call: the caller's parameter set is a superset of
+  // the callee's (transitive closure), so every state argument is in
+  // scope under its member name.
+  std::string call =
+      DetailName(callee) + "(" + DetailStateArgs(callee, "");
+  auto sep = ", ";
   for (DataVector vec : region.VectorArguments()) {
     call += sep;
     if (callee_by_value) {
@@ -2122,6 +2503,7 @@ void Generator::Run(void) {
     cc << "namespace " << ns_name << " {\n\n";
   }
 
+  EmitDetailDecls(cc);
   EmitConstructor();
   for (ProgramProcedure proc : program.Procedures()) {
     EmitProcedure(proc);
