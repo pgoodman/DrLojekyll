@@ -450,3 +450,28 @@ STAGE 5 IS CLOSED (acyclic). The on-cycle differential product remains the
 recorded gap (fence + diagnostic; EmitJoinFire generalization to 0 pivots
 is the future path). Next epoch per the recorded sequencing: the bench
 harness / perf epoch, seeded at docs/proposals/PerfRoadmap.md.
+
+### Ratification addendum (2026-07-13, owner: "ratify")
+
+The owner reviewed the four deviations in-session (the review thread also
+produced the successor design for deviation 1) and ratified all four:
+
+1. **DatabaseLog virtualization — RATIFIED AS A STOPGAP with a committed
+   retirement path**: the generated-surface redesign
+   (docs/proposals/GeneratedSurface.md, seeded and resequenced ahead of
+   the bench epoch in this same session) replaces virtual dispatch with
+   log-by-template-deduction on free-function entry points; the virtual
+   methods die with that epoch. CRTP was considered and rejected (no
+   static type flows through a base reference into a non-template call
+   site); the deduced-parameter form is the recorded successor.
+2. Fixture epoch adaptation (per-message runtime epochs; the same-epoch
+   T1 discriminator carried by product_conds' second instance and
+   product_self b4) — RATIFIED as landed.
+3. F23 record-only (pre-existing DeadFlowElimination SIGSEGV,
+   baseline-reproducible) — RATIFIED; promotion trigger stands in
+   FINDINGS.
+4. The side-phantom regression case deferred — RATIFIED; noted as a
+   candidate for a later fixture sweep.
+
+No code changed for this addendum. STAGE 5 remains CLOSED as recorded;
+branch merge to main is a separate owner action, pending.
