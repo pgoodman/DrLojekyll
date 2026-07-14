@@ -179,3 +179,55 @@ number to remember is roughly ONE ORDER OF MAGNITUDE.
   slower); pure_cycle k=128 exceeds 60s/40 batches. Dense graphs
   (ef>=120 at any size) explode via the nonlinear-TC witness table
   (materializes tc JOIN tc triples — cubic-ish in SCC size).
+
+## Accepted runs 2–5 (data-structures epoch, 2026-07-14, branch data-structures)
+
+Same machine/toolchain class as run 1 (quiesced, caffeinate, REPS=5,
+COUNTS=1 separate binaries). Flagship runspec (repo-relative), drift
+runspec = the same tc line at batches=2000:
+
+    engine tc_random  bench/workloads/tc_random/tc.dr  nodes=1024 ef=80 bs=16 rr=50 batches=200
+    engine pure_cycle bench/workloads/pure_cycle/cycle.dr rings=8 k=32 batches=40
+    engine deep_chain bench/workloads/deep_chain/chain.dr depth=100000 cycles=20
+    engine flip_storm bench/workloads/flip_storm/phantom_pair.dr nodes=256 m=32 batches=100
+
+METHODOLOGY ADDENDUM (normative for future accepted runs): sequential
+flagship comparisons on this machine carry a ±2–6% thermal confound
+(the canary moved +2.2% between two same-day runs while every family
+shifted +3–6%); the canary catches within-run drift, not between-run
+regime shifts. Per-diff wall deltas below ~10% are therefore decided by
+INTERLEAVED-BINARY A/B (alternate the pre/post binaries process-by-
+process in one session; medians over ≥4 alternations). Counters are
+exact and unaffected; sequential runs remain the instrument for counter
+deltas and large effects.
+
+- RUN 2 (epoch-start "before", tree == b077449 + docs): tc epoch
+  303.3µs, pure_cycle 46.5ms, deep_chain retract 25.5ms / reseed
+  21.3ms, flip 384.1µs — all within ~5% of run 1 (recorded machine
+  consistency). Drift anchor: early 367.9µs → late 6198.1µs = 16.85x
+  (reproduces run 1's 19.6x headline), 2000-epoch total 13.18s,
+  final query 432.0µs.
+- RUN 3 (post-D3, SortAndUnique ≤1 guard): interleaved A/B —
+  deep_chain retract −1.5%, reseed −3.0%. PRE-REGISTERED PREDICTION
+  MISSED (−8..−25% predicted): the elided out-of-line std::sort call
+  costs ~1ns hot, not 10–30ns; deep-cascade per-round overhead lives in
+  the claim/retire/filter Finds (2.9M/cycle), not sort dispatch.
+  Counters identical before/after (call-site volume, by design).
+- RUN 4 (post-D1, re-Find elision): counters (exact): tc_random finds
+  −39.7%, probe_steps −19.4%; pure_cycle finds & probes −25.2%;
+  deep_chain finds −6.9%; member_checks UNCHANGED everywhere (both
+  elision classes drop the Find, neither drops the predicate read).
+  Wall (interleaved A/B): tc_random −17.8%, pure_cycle −10.3%;
+  deep_chain retract ~−12% (sequential, thermal-confounded band).
+- RUN 5 (post-D2, dead-row compaction): THE DRIFT REFEREE: 16.85x →
+  1.78x (early 211.8µs → late 377.6µs); 2000-epoch total 13.18s →
+  2.77s; final query 432 → 222µs. Flagship: tc_random −31.8%
+  (interleaved A/B; compaction fires within 200 churn batches at
+  rr=50); pure_cycle +0.9%, deep_chain retract +1.2% / reseed −0.9%
+  (A/B: neutral within noise — D2 is a pathology fix, neutral where
+  history stays live); flip final query −57.5% (sequential).
+- EPOCH TOTAL (run 2 → run 5, same instrument, sequential): tc epoch
+  303.3 → 186.2µs; drift 16.85x → 1.78x; steady-state churn is no
+  longer quadratic-in-history. Sentinels: every gate run agreed with
+  its golden; the compact-always oracle (tcd + d5, dbg+opt) agreed
+  byte-for-byte; no FINDINGS entry (no correctness bug exposed).
