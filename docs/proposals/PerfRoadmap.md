@@ -786,6 +786,24 @@ the schemas become data.
        (seed-fold, claim-drain, frontier-filter, rederive-bridge,
        crossover-pair, product-arm, commit-sweep) with sign/position/
        claim attributes; goldens are the semantic net (155, 4 modes).
+       VOCABULARY CANDIDATE (owner-flagged 2026-07-14, at the D5
+       member-to-cursor discussion): treat membership-test and
+       enumeration as ONE parameterized table-access operator — a
+       bound-prefix read that lowers to point-test (all columns
+       bound), keyed chain walk, positioned SEEK, or full scan as a
+       LOWERING decision in the df -> dr -> cf -> c++ pipeline,
+       instead of today's disjoint CHECKMEMBER / TABLESCAN /
+       TABLEJOIN-arm / BuildMaybeScanPartial shapes. Today a
+       membership hit yields an id but no POSITION (unordered hash
+       set; newest-first chains), so check and iterate compose in
+       only one direction — the D1 elision was exactly patching that
+       asymmetry at emission time. A unified access operator makes
+       the §9-D5 seekable/WCOJ substrate a per-table lowering choice
+       (sorted storage establishable at CompactRowsInPlace) rather
+       than a runtime retrofit, and gives the IR one place to reason
+       about access paths. Price per COST discipline before adopting
+       any seek lowering (the gist's own ~2x-slower caveat; the
+       post-D1/D2 chain scans are the bar).
     3. Rebuild Program::Build's stratum machinery on the vocabulary,
        one operator family at a time, byte-identical goldens
        throughout (the generated-code SHAPE may change only via
