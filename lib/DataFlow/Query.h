@@ -113,11 +113,6 @@ class QueryColumnImpl : public Def<QueryColumnImpl> {
   // After optimizing a dataflow, we replace all ID values
   unsigned id;
 
-  // Display the range of column nodes in this columns forwards (or backwards)
-  // taint set.
-  std::shared_ptr<UseList<QueryColumnImpl>> forwards_col_taints;
-  std::shared_ptr<UseList<QueryColumnImpl>> backwards_col_taints;
-
   // The index of this column within its view. This will have a value of
   // `kInvalidIndex` if we don't have the information.
   unsigned index;
@@ -1110,16 +1105,6 @@ class QueryImpl {
   DefList<QueryNegateImpl> negations;
   DefList<QueryCompareImpl> compares;
   DefList<QueryInsertImpl> inserts;
-
-  // Forwards and Backwards Column Tainting
-  void RunForwardsTaintAnalysis(void);
-  void RunBackwardsTaintAnalysis(void);
-
-  UsedNodeRange<QueryColumn> GetForwardsTaintsFromColId(unsigned col_id);
-  UsedNodeRange<QueryColumn> GetBackwardsTaintsFromColId(unsigned col_id);
-
-  std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> forwards_col_taints;
-  std::vector<std::shared_ptr<UseList<QueryColumnImpl>>> backwards_col_taints;
 
   // Number of strata (SCCs of the condensation) assigned by `Stratify`;
   // view/model stratum ids range over `[0, num_strata)`.

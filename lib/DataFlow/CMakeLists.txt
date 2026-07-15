@@ -36,7 +36,6 @@ set(DataFlow_SRCS
     "Select.cpp"
     "Stratify.cpp"
     "Stream.cpp"
-    "Taint.cpp"
     "Tuple.cpp"
     "View.cpp"
 )

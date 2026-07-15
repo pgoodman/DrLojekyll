@@ -73,8 +73,9 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       os << col.Variable(); // << ":" << *(col.Index());
     }
 //    os << ", Id:" << col.Id();
-//    os << "<BR />" << "F: " << col.ForwardsTaintIds();
-//    os << "<BR />" << "B: " << col.BackwardsTaintIds();
+//    NOTE(pag): the per-column taint-set debug dump used to live here; the
+//    taint passes (lib/DataFlow/Taint.cpp) were deleted as dead code at the
+//    delta-relational-IR epoch — recover both from git history if needed.
     return os;
   };
 

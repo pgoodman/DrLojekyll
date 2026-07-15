@@ -2589,8 +2589,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
       return std::nullopt;
     }
     impl->TrackConstAfterInit();
-    impl->RunBackwardsTaintAnalysis();
-    impl->RunForwardsTaintAnalysis();
 
   // This is useful for debugging.
   } catch (...) {

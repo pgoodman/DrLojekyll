@@ -458,3 +458,28 @@ Format.cpp lines.
 4. R0 re-ranking ratified: RQ5a (FULL taint removal: passes + members +
    accessors) and RQ5b (deep hash KEEPING deletion flags, B-2) land
    before R1.
+
+## 8. Implementation record (one diff at a time; gates per CLAUDE.md +
+## §7 golden policy)
+
+### RQ5a — dead taint passes deleted (2026-07-15)
+
+Removed: lib/DataFlow/Taint.cpp (236 lines), the two Query::Build calls,
+QueryColumnImpl/QueryImpl taint members, the four public accessors
+(include/drlojekyll/DataFlow/Query.h + Query.cpp). Format.cpp's
+commented dump lines now cite git history. Net −310 lines. The
+write-only STRONG Use edges the passes injected into every column's
+use list are gone with them (critique §6.1 RQ5a-depth resolution).
+GATES: debug+release builds green; ctest 3/3; SUITE PASS (155), zero
+golden churn; no Runtime header touched (seam gate n/a); generated
+code semantics unchanged (analysis-only pass, results unread).
+Q5 per-diff (medians of 3, vs §1.1; rules=128):
+  debug: opt 7832→6766 (−13.6%), nodf 7405→614 (−91.7%),
+         none 7132→363 (−94.9%), nocf −11.0%
+  release: opt 1077→1061 (−1.5%), nodf 892→100 (−88.8%),
+           none 850→81 (−90.4%), nocf noise-band (5-rep recheck
+           ~1070ms ≈ +5%, within the ±2-6% sequential band)
+Pre-registered predictions (§5): nodf/none −85..95% HIT; opt −4..8%
+BRACKETED (release −1.5%, debug −13.6% — the taint share of the
+CSE'd-graph opt path was smaller in release, larger in debug than
+predicted). The opt-mode curve remains ~n^3 — that is RQ5b's target.
