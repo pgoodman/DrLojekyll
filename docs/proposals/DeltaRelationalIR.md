@@ -437,3 +437,24 @@ ingest band was §5-covered via NET_BATCH). §1.1's table now carries all
 4 modes (the RQ5a prediction's 892ms cell is rel/nodf@128). Taint API
 grep confirmed: no consumer anywhere beyond the two commented
 Format.cpp lines.
+
+## 7. Owner decisions (2026-07-14, ratified at the design checkpoint)
+
+1. GOLDEN POLICY (R2): permutation-only bless. R1 construction is a
+   byte-identical-stdout hard gate. R2, per operator family: stdout
+   diffs are acceptable ONLY as order-permutations of published deltas
+   within one epoch, with the derivation-counter oracle AND the
+   monotone projection green; then one reviewed `--bless` per family,
+   with the diff summary recorded here. Any non-permutation diff is a
+   bug — never blessed.
+2. mutable(...): option (a) confirmed — kept as sugar desugaring to a
+   degenerate aggregate at R3; merge functors must carry declared
+   algebra or be rejected; the KVINDEX dataflow node becomes a
+   desugaring-deletion candidate.
+3. R4 (group_ids reshape): gated in-scope — only after R2 is fully
+   green, only with a reviewed invariant-preservation argument for the
+   CSE guard; dropped without ceremony (re-seeded for the next epoch)
+   if this epoch runs long.
+4. R0 re-ranking ratified: RQ5a (FULL taint removal: passes + members +
+   accessors) and RQ5b (deep hash KEEPING deletion flags, B-2) land
+   before R1.
