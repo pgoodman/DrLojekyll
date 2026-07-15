@@ -4,6 +4,7 @@
 #include <set>
 
 #include "Build.h"
+#include "DR.h"
 
 namespace hyde {
 namespace {
@@ -1832,6 +1833,36 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     if (branch.ends_at_join) {
       branch.stratum = joins[join_index[branch.path.back()]].stratum;
     }
+  }
+
+  // R1a DR-IR inventory hook (spec §7.2/§7.3). The crossover/product discovery
+  // vectors are now FINAL (the scheduling fixpoint has converged; nothing below
+  // mutates the crossover/product SET, only its emission). Derive the DR-IR
+  // inventory INDEPENDENTLY from the query and cross-check it against this
+  // discovery's shared state (V-OLD-EQUIV) plus the B-3 family validators. The
+  // call is unconditional (owner: no flags, no env vars) and construction-only
+  // — no emission below is touched. The validators are always-on: a divergence
+  // is a silent-breakage bug and aborts.
+  {
+    DRFlowGraph dr_flow =
+        BuildDRInventory(impl, context, query, recursive_sccs);
+
+    std::vector<OldCrossoverRef> old_crossovers;
+    old_crossovers.reserve(crossovers.size());
+    for (const CrossoverEmission &x : crossovers) {
+      old_crossovers.push_back(OldCrossoverRef{
+          x.negate, x.negate_table, x.negated_table, x.pred_table,
+          x.pred_view, x.negated_differential});
+    }
+
+    std::vector<OldProductRef> old_products;
+    old_products.reserve(products.size());
+    for (const ProductEmission &p : products) {
+      old_products.push_back(OldProductRef{
+          p.product_view, p.product_table, p.side_tables, p.side_differential});
+    }
+
+    ValidateDRInventory(dr_flow, old_crossovers, old_products, recursive_sccs);
   }
 
   // Cash the readiness precondition, SPLIT by emission-site kind (A4).

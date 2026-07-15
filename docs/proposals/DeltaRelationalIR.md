@@ -620,3 +620,33 @@ BuildDRFlow + ValidateDRFlow + LinearizeAndCheck + V-OLD-EQUIV
 (isomorphism against the old discovery's E-16 shared state) run inside
 the existing build; the emission half is UNTOUCHED until R2 family
 cutovers; R1 is a byte-identical-golden hard gate per §7.1.
+
+### R1a — DR-IR inventory layer, construct-alongside (2026-07-15)
+
+NEW lib/ControlFlow/Build/DR.h (300 lines: the v3 object-model core —
+ElementShape/VecRole/UniqueContract/EffKind/Ctx/Pred(the ten)/DROpKind,
+DREffect, DRVec, DRTable, DROp, DRFlowGraph) + DR.cpp (~430 lines):
+BuildDRInventory derives the crossover and product-arm op families
+INDEPENDENTLY from the Query (crossover pair per non-@never negate,
+minus always / plus iff negated table differential, RuleClass
+replicated exactly; product arm per side×sign, minus iff side
+differential, position-keyed reads j<i kInNew / j>i kInI), and
+ValidateDRInventory runs V-OLD-EQUIV (same crossover/product sets +
+SCC map as the old discovery) plus the PROMOTED always-on B-3
+validators (V-XOVER-ONE — lifting the NDEBUG assert at Stratum.cpp:
+1595-1617 — V-PROD-MONO, V-PROD-CLASS), fprintf+abort style (survives
+NDEBUG, matching the Unsupported convention). Hook: unconditional, in
+BuildStratumPhases after the scheduling fixpoint converges, before the
+readiness asserts; flat OldCrossoverRef/OldProductRef payloads cross
+the anonymous-namespace boundary. Zero emission change; zero Runtime
+change; LowerDRFlow not yet declared (R2).
+GATES: debug+release builds; ctest 3/3; SUITE PASS (155) byte-identical;
+Q5 spot @128: release/opt 134ms, none 76ms, debug/opt 940ms — no
+regression vs the post-RQ5b medians (146.5/77/970).
+R1b QUEUE (from the implementer + identity judge B-13): materialize
+queues/frontiers as first-class DRVec def/use edges (multi-def per
+A-4); Σ-term SEED_FOLD/FIXPOINT_FIRE derivation (subsumes the
+RuleClass/position-rule replication); linearization SEEDED from the
+integer lift; V-QCLEAR + round-scoped V-LOOP; per-arm effects; the
+directed reconvergent-plumbing OptDiff case gating DiscoverBranches
+memoization; join-pivot element-shape decision.
