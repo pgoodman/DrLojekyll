@@ -231,3 +231,23 @@ deltas and large effects.
   longer quadratic-in-history. Sentinels: every gate run agreed with
   its golden; the compact-always oracle (tcd + d5, dbg+opt) agreed
   byte-for-byte; no FINDINGS entry (no correctness bug exposed).
+
+## Accepted runs 6–7 (delta-relational-IR epoch, 2026-07-15, branch delta-relational-ir)
+
+COMPILER-SIDE diffs only (Q5 instrument: progsize chain, dr_wall medians
+of 3, 2/8/32/128 rules, both builds × 4 modes; runtime/flagship untouched
+by construction — zero changes to Runtime/ControlFlow/codegen; suite PASS
+155 + ctest 3/3 + zero golden churn per diff). Full tables in
+docs/proposals/DeltaRelationalIR.md §1.1/§8.
+
+- RUN 6 (post-RQ5a, dead taint passes deleted): rel@128 nodf 892→100ms
+  (−88.8%), none 850→81ms (−90.4%), opt −1.5%; dbg@128 nodf −91.7%,
+  none −94.9%, opt −13.6%. Prediction −85..95% HIT (nodf/none).
+- RUN 7 (post-RQ5b, CSE color refinement): rel@128 opt 1061→146.5ms
+  (−86.2%), nocf −88.7%; dbg@128 opt −85.7%. Small sizes +9..20%
+  (+3..5ms fixed refinement cost, accepted); nodf/none@128 +7..14%
+  (Simplify's SELECT-CSE refinement). Prediction −60..80% EXCEEDED.
+- EPOCH Q5 TOTAL vs R0 baseline @128: rel opt 1077→146.5 (−86.4%),
+  dbg opt 7833→970 (−87.6%); the 32→128 tail is ~linear. The Q5
+  superlinearity (bench run 1's headline) is resolved by the two
+  dataflow diffs; the DR-IR proper is gated on not regressing this.
