@@ -7,6 +7,8 @@
 #include "Query.h"
 
 #include <sstream>
+#include <string_view>
+#include <unordered_set>
 
 namespace hyde {
 namespace {
@@ -66,16 +68,212 @@ static bool DirectlyUsesColumnsOf(VIEW *user, VIEW *def) {
   return false;
 }
 
+// CSE candidate bucketing by color refinement (bisimulation-style partition
+// refinement). `HashInit` alone buckets by kind/flags/arity, so on programs
+// with many same-shaped views (e.g. a chain of N join rules) every bucket
+// holds O(N) views and the pairwise `Equals` below degenerates to O(N^2)
+// deep graph walks that discover nothing — the measured superlinear compile
+// cost (DeltaRelationalIR.md §1). Refinement starts from `HashInit` and
+// iteratively mixes each view's color with its children's colors until the
+// color partition stops refining; `Equals` then runs only within same-color
+// buckets.
+//
+//    color[v] := HashInit(v)  (+ SELECT: the stream/relation identity)
+//    repeat (≤ kMaxColorRounds, or until #distinct colors stops growing):
+//      color'[v] := mix(color[v], position-salted colors of v's children,
+//                       per-kind scalar fields that Equals requires equal)
+//
+// CONSERVATIVENESS CONTRACT (audited per node kind, 2026-07-15; the merge
+// set must equal the pairwise-Equals merge set): a color folds a value ONLY
+// if that kind's `Equals` requires it to be equal — precondition scalars
+// (op, functor id, binding pattern, num_pivots, is_never, ...), and child
+// colors folded POSITIONALLY because every Equals here compares child
+// views/columns positionally (ColumnsEq is positional; Join/Merge compare
+// joined/merged view lists by index — no set semantics anywhere). Two
+// Equals-equal views therefore keep equal colors through every round.
+// group_ids are NEVER folded (the InsertSetsOverlap guard stays inside
+// Equals); SELECT folds its stream/relation pointer because Select::Equals
+// requires pointer identity there. Cycles are safe: refinement only ever
+// splits color classes, so cyclic (bisimilar) equal views stay together —
+// this is why colors replace `Hash()`, whose memo-guard makes it
+// cycle-order-unstable (the old NOTE about grouping by `HashInit`).
+namespace cse_color {
+
+using ColorMap = std::unordered_map<VIEW *, uint64_t>;
+
+static uint64_t ColorOf(const ColorMap &colors, VIEW *v) {
+  if (auto it = colors.find(v); it != colors.end()) {
+    return it->second;
+  }
+  return v->HashInit();  // A child outside the candidate set.
+}
+
+// Fold one input/attached column: its producing view's color plus the two
+// per-column fields ColumnsEq checks (type kind, index within the view).
+static uint64_t FoldCol(const ColorMap &colors, uint64_t acc, unsigned pos,
+                        COL *col) {
+  uint64_t c = ColorOf(colors, col->view);
+  c ^= RotateRight64(c, (col->Index() + 13u) % 64u) *
+       (static_cast<uint64_t>(col->type.Kind()) + 17u);
+  return acc ^ RotateRight64(acc, (pos + 7u) % 64u) * c;
+}
+
+static uint64_t InitColor(VIEW *v) {
+  uint64_t c = v->HashInit();
+  if (auto sel = v->AsSelect(); sel) {
+    // Select::Equals is pointer-identity on the stream or relation; folding
+    // that identity is what lets refinement separate selects of distinct
+    // relations (and everything downstream of them) without deep Equals.
+    const void *ident = sel->stream ? static_cast<const void *>(sel->stream.get())
+                                    : static_cast<const void *>(sel->relation.get());
+    c ^= RotateRight64(c, 21u) *
+         (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ident)) | 1u);
+  } else if (auto insert = v->AsInsert(); insert) {
+    // Insert::Equals requires `declaration` equality; declaration Ids can
+    // collide (auto-declared zero-arity exports), which only makes colors
+    // COARSER — conservative either way, and it seeds round-0 variety at
+    // every relation boundary of the graph.
+    c ^= RotateRight64(c, 27u) * (insert->declaration.Id() + 71u);
+  }
+  return c;
+}
+
+static uint64_t StepColor(const ColorMap &colors, VIEW *v) {
+  uint64_t acc = colors.at(v);
+  unsigned pos = 0u;
+  for (auto col : v->input_columns) {
+    acc = FoldCol(colors, acc, pos++, col);
+  }
+  for (auto col : v->attached_columns) {
+    acc = FoldCol(colors, acc, pos++, col);
+  }
+
+  if (auto join = v->AsJoin(); join) {
+    acc ^= RotateRight64(acc, 11u) * (join->num_pivots + 3u);
+    acc ^= RotateRight64(acc, 19u) * (join->out_to_in.size() + 5u);
+    unsigned j = 0u;
+    for (auto joined_view : join->joined_views) {
+      acc ^= RotateRight64(acc, (j++ + 23u) % 64u) * ColorOf(colors, joined_view);
+    }
+    // Per-output-column pivot/input sets, walked in output-column order —
+    // mirrors Join::Equals's positional walk of `columns` through
+    // `out_to_in`.
+    unsigned out_pos = 0u;
+    for (auto out_col : v->columns) {
+      if (auto it = join->out_to_in.find(out_col); it != join->out_to_in.end()) {
+        unsigned k = 0u;
+        for (auto in_col : it->second) {
+          acc = FoldCol(colors, acc, out_pos * 31u + k++, in_col);
+        }
+      }
+      ++out_pos;
+    }
+
+  } else if (auto merge = v->AsMerge(); merge) {
+    unsigned j = 0u;
+    for (auto merged_view : merge->merged_views) {
+      acc ^= RotateRight64(acc, (j++ + 29u) % 64u) * ColorOf(colors, merged_view);
+    }
+
+  } else if (auto negate = v->AsNegate(); negate) {
+    acc ^= RotateRight64(acc, 31u) *
+           (ColorOf(colors, negate->negated_view.get()) +
+            (negate->is_never ? 41u : 43u));
+
+  } else if (auto map = v->AsMap(); map) {
+    acc ^= RotateRight64(acc, 37u) *
+           (map->functor.Id() + map->num_free_params * 2u +
+            (map->is_positive ? 1u : 0u) + 47u);
+    acc ^= std::hash<std::string_view>{}(
+        ParsedDeclaration(map->functor).BindingPattern());
+
+  } else if (auto cmp = v->AsCompare(); cmp) {
+    acc ^= RotateRight64(acc, 41u) * (static_cast<uint64_t>(cmp->op) + 53u);
+
+  } else if (auto agg = v->AsAggregate(); agg) {
+    acc ^= RotateRight64(acc, 43u) * (agg->functor.Id() + 59u);
+    unsigned j = 0u;
+    for (auto col : agg->group_by_columns) {
+      acc = FoldCol(colors, acc, 1009u + j++, col);
+    }
+    for (auto col : agg->config_columns) {
+      acc = FoldCol(colors, acc, 2003u + j++, col);
+    }
+    for (auto col : agg->aggregated_columns) {
+      acc = FoldCol(colors, acc, 3001u + j++, col);
+    }
+
+  } else if (auto kv = v->AsKVIndex(); kv) {
+    unsigned j = 0u;
+    for (const auto &functor : kv->merge_functors) {
+      acc ^= RotateRight64(acc, (j++ + 47u) % 64u) * (functor.Id() + 61u);
+    }
+  }
+  // SELECT/TUPLE/CMP/INSERT need nothing beyond the generic folds and their
+  // InitColor/HashInit terms.
+
+  return acc;
+}
+
+// Refine to a stable partition. Distinct-color count is monotone
+// non-decreasing under refinement, but distinguishing information travels
+// ONE dataflow hop per round, so a chain of N rules legitimately gains as
+// little as one color per round for ~N rounds (measured on the progsize
+// curve) — rounds are O(V) hash folds, so running to stability is cheap
+// and capping is not. Stop when the count has not grown for TWO
+// consecutive rounds (the grace round tolerates a one-round plateau from a
+// hash collision on an otherwise still-refining partition); bound by
+// #views + 2 as the structural maximum.
+static void Refine(const CandidateList &all_views, ColorMap &colors) {
+  colors.reserve(all_views.size());
+  for (auto view : all_views) {
+    colors.emplace(view, InitColor(view));
+  }
+  size_t prev_distinct = 0u;
+  unsigned stalled_rounds = 0u;
+  const auto max_rounds = static_cast<unsigned>(all_views.size()) + 2u;
+  for (auto round = 0u; round < max_rounds; ++round) {
+    ColorMap next;
+    next.reserve(colors.size());
+    std::unordered_set<uint64_t> distinct;
+    for (auto view : all_views) {
+      const auto c = StepColor(colors, view);
+      next.emplace(view, c);
+      distinct.insert(c);
+    }
+    colors = std::move(next);
+    if (distinct.size() <= prev_distinct) {
+      if (++stalled_rounds >= 2u) {
+        break;
+      }
+    } else {
+      stalled_rounds = 0u;
+      prev_distinct = distinct.size();
+    }
+    if (distinct.size() >= all_views.size()) {
+      break;  // Every view already has a unique color.
+    }
+  }
+}
+
+}  // namespace cse_color
+
 static bool CSE(QueryImpl *impl, CandidateList &all_views) {
   EqualitySet eq;
   CandidateLists candidate_groups;
 
-  // NOTE(pag): We group by `HashInit` rather than `Hash` as `Hash` will force
-  //            us to miss opportunities due to cycles in the dataflow graph.
-  //            `HashInit` ends up being a good enough filter to restrict us to
-  //            plausibly similar things.
+  // Bucket by refined color (see above). Buckets are iterated in first-seen
+  // order over `all_views` so that CSE's merge order stays independent of
+  // the pointer-derived color values.
+  cse_color::ColorMap colors;
+  cse_color::Refine(all_views, colors);
+  std::vector<uint64_t> group_order;
   for (auto view : all_views) {
-    candidate_groups[view->HashInit()].push_back(view);
+    auto &group = candidate_groups[colors[view]];
+    if (group.empty()) {
+      group_order.push_back(colors[view]);
+    }
+    group.push_back(view);
   }
 
   auto changed = false;
@@ -92,8 +290,8 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
 
   impl->RelabelGroupIDs();
 
-  for (auto &[hash, candidates] : candidate_groups) {
-    (void) hash;
+  for (auto group_color : group_order) {
+    auto &candidates = candidate_groups[group_color];
 
     std::sort(candidates.begin(), candidates.end());
     for (auto i = 0u; i < candidates.size(); ++i) {
@@ -101,6 +299,11 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
       for (auto j = i + 1u; j < candidates.size(); ++j) {
         auto v2 = candidates[j];
         assert(v1 != v2);
+
+        // Same color implies same HashInit ingredients: a color-fn bug that
+        // co-buckets different shapes (e.g. a unit SELECT with a non-unit
+        // view) is caught here rather than surfacing as a bogus merge.
+        assert(v1->columns.Size() == v2->columns.Size());
 
         eq.Clear();
         if (v1->Equals(eq, v2)) {

@@ -483,3 +483,110 @@ Pre-registered predictions (§5): nodf/none −85..95% HIT; opt −4..8%
 BRACKETED (release −1.5%, debug −13.6% — the taint share of the
 CSE'd-graph opt path was smaller in release, larger in debug than
 predicted). The opt-mode curve remains ~n^3 — that is RQ5b's target.
+
+### RQ5b — CSE color-refinement bucketing (2026-07-15)
+
+lib/DataFlow/Optimize.cpp: candidate bucketing replaced — round-0 color =
+HashInit (+ Select stream/relation pointer identity, + Insert declaration
+id; both REQUIRED-equal by those kinds' Equals, hence conservative), then
+position-salted refinement over each kind's exact Equals recursion
+(per-kind audit on record: every Equals is POSITIONAL — no set semantics
+anywhere), iterated to partition stability (two-round plateau grace;
+bound #views+2; the first cut's 16-round cap was the F-3 near-miss: on
+chains, distinguishing information travels ONE hop per round, so capped
+refinement left ~120-view buckets and moved nothing). Buckets iterate in
+first-seen order (pointer-derived colors must not order merges). Pair
+loop gains the always-on-shape assert (same columns.Size within bucket).
+group_ids stay OUT of colors; InsertSetsOverlap stays inside Equals.
+
+MERGE-TRAJECTORY AUDIT (the F-3 tripwire, mechanized before commit):
+old-vs-new bucketing A/B over all 156 corpus programs (155 cases +
+progsize@128), instrumented builds (temporary always-on prints, deleted):
+30/156 differ in merge-EVENT counts (bucket granularity changes the
+fixpoint trajectory — inherent to ANY bucketing change; each merge is
+Equals-verified at application time), 0/156 differ in final per-kind
+view counts. B-2's "identical merge set" gate is AMENDED (for
+ratification) to the measurable equivalent: identical final view counts
+on the full corpus + suite byte-identical + oracle green.
+
+GATES: builds green; ctest 3/3; SUITE PASS (155) zero golden churn on
+the exact committed code; no Runtime header touched.
+Q5 per-diff (medians of 3, vs post-RQ5a; rules=128):
+  debug:   opt 6766→970 (−85.7%), nocf −87.5%, nodf +11.1%, none +12.4%
+  release: opt 1061→146.5 (−86.2%), nocf −88.7%, nodf +13.7%, none +6.6%
+  small sizes (2–8 rules): +9..20% (+3..5ms absolute) — the refinement's
+  fixed cost; accepted (suite-wide impact <1s); knob recorded if it ever
+  matters: skip refinement below a bucket-size threshold.
+  vs R0 EPOCH START @128: opt −87.6% debug / −86.4% release; the
+  32→128 tail is now ~LINEAR (3.5x time per 4x rules).
+Pre-registered prediction (−60..80% opt@128): EXCEEDED.
+
+## 9. Independent Fable design review (2026-07-15; optimizability mandate
+## added by owner mid-review) — verdict + adopted resolutions
+
+Verdict: CONDITIONAL GO. The IR's billing is corrected: aggregates are
+acyclic-band (simpler than the hand-landed @product family) and would
+NOT alone justify the IR; the carry is (1) the F17/F18/F22 bug class
+dies only when the E-16 shared-state web becomes checked data, and
+(2) the rewrite substrate (D5 access paths, Stage-6 parallelism,
+fusion/DCE). Judged AS a rewrite substrate, vocabulary v2 is the right
+operator inventory but the WRONG FACTORING — it encodes ordering as enum
+attributes and dataflow as shared named vectors, reproducing one level
+up exactly what makes today's web unoptimizable.
+
+Adopted resolutions (binding; vocabulary v3 requirements before R1 code):
+- F-1: vectors become TYPED IR VALUES with explicit defs/uses
+  ((table, VectorKind) demoted to debug info; element shape
+  values|ids|id+cols is an attribute — F-9); every operator declares an
+  EFFECT SET over {vector append/drain/clear, table counter±(class),
+  flag families read/write, frozen-kInI read, statecell fold/emit/old}.
+  Seed-before-drain, retire-after-fires, E-17 deferral, dual-append,
+  G-6 fusion, G8 dead filters all become dependence-graph facts; the
+  B-3 asserts become graph validators; the scheduling fixpoint's output
+  becomes a CHECKED LINEARIZATION of the dependence graph.
+- F-7: SEED_FOLD/FIXPOINT_FIRE bodies are explicit nested ACCESS-PLAN
+  TREES (matches EmitJoinFire's scan_next nesting at identity; the only
+  shape that admits the D5/WCOJ joint-ordering decision later).
+- F-2: R2 cuts over ACYCLIC FAMILIES FIRST (claim drains, frontier
+  filters, crossovers, product arms, commit sweeps — everything R3
+  needs), fixpoint families last; each cutover deletes its replaced
+  Emit* in the same diff. R3 gates only on the acyclic families.
+- F-4: byte-identical program.ir pinning for family #1 ONLY; thereafter
+  the §7.1 stdout/permutation/oracle gate. IR-vs-lowering sort recorded:
+  keep in IR = everything the §5.1 algebra forces (sign, position,
+  claim-context, ten predicates, dual-append, retire/deferral
+  dependence, seed suppression DERIVED from the schema + asserted);
+  demote to lowering = guard-nesting templates (G11), sort-unique
+  placement (G6), commit order (G9), dead-op emission (G8).
+- F-5: §4's matrix is corrected here: the EAGER negate forward gate
+  (Negate.cpp:91-94) is `HasNeverHint() ? kPresent : kInI` — a THIRD
+  context distinct from the seed chain and the fixpoint refire; the
+  @never/kPresent row belongs to the EAGER context, and the eager-normal
+  (kInI) cell was missing. NEGATE_GATE{context∈{eager,seed,fixpoint},
+  hint} covers the space; constructors derive predicate semantics from
+  Table.h + this correction, not §4-as-was.
+- F-6: B-3's always-on assert set grows: single-fold-per-section-walk
+  (today structural, Stratum.cpp:586-593), readiness
+  (reads-lower-or-same-SCC, today NDEBUG at :1860-1875), R3 sole-deriver
+  (agg table's member list == the agg view). Cite fix: the F19
+  arm-pair assert is Stratum.cpp:1616 (inside the #ifndef NDEBUG block
+  at :1595), not :1591.
+- F-8: per-family R2 cutovers add .batches oracle sidecars to the
+  differential cases each family touches; the §7.1 permutation check is
+  MECHANIZED (sort published deltas per epoch, byte-compare) rather
+  than eyeballed; DebugValidateCounts stays in every driver through R2.
+- F-2 restatement adopted in §5: R1's justification leads with
+  optimizability + bug-class + unified access; aggregates are the first
+  beneficiary, not the driver. Constructor derives SEED_FOLD/
+  FIXPOINT_FIRE terms from the §5.1 telescoped expansion per rule (the
+  sign/position attributes ARE the Σ New^{<i} ⊗ Δ ⊗ Old^{>i} terms
+  reified — kept exactly), so G1-class omissions are structurally
+  impossible.
+- Risk ledger (review Q4) recorded: #1 RQ5b merge-set drift — CLOSED by
+  the mechanized audit above; #2 fixpoint-family lowering bugs masked by
+  small batches — directed OptDiff case (same-round double-claim +
+  remove-then-rederive) REQUIRED before the fixpoint-family cutover;
+  #3 construction/scheduling divergence — always-on readiness asserts +
+  a straddling-model stress case; #4 all-modes-identical counter drift —
+  oracle + recount stay mandatory; #5 two-webs-alive stall — acyclic-
+  first ordering + delete-with-cutover rule.
