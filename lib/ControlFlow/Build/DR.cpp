@@ -13,8 +13,10 @@
 
 #include "DR.h"
 
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <unordered_set>
 
 #include "Build.h"
 
@@ -55,6 +57,160 @@ static DerivClass RuleClass(const std::unordered_map<TABLE *, unsigned> &sccs,
     }
   }
   return DerivClass::kNonRecursive;
+}
+
+// ---------------------------------------------------------------------------
+// §1.4 BRANCH/JOIN DISCOVERY — replicated EXACTLY from Stratum.cpp but as a
+// MEMOIZED WORKLIST (the §1.4 hazard fix). These helpers mirror the `static`
+// discovery helpers there (which are anonymous-namespace-local, so replicated,
+// per the R1a `RuleClass`/`SccOf` pattern).
+// ---------------------------------------------------------------------------
+
+// Replicate `ViewIsInductionOwned` (Stratum.cpp:163).
+static bool ViewIsInductionOwnedDR(Context &context, QueryView view) {
+  return context.view_to_induction.count(view) != 0u;
+}
+
+// Replicate `TableIsInductionOwned` (Stratum.cpp:152).
+static bool TableIsInductionOwnedDR(Context &context, TABLE *table) {
+  for (const QueryView &view : table->views) {
+    if (context.view_to_induction.count(view)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Replicate `FollowsDeltaEdge` (Stratum.cpp:331) EXACTLY.
+static bool FollowsDeltaEdgeDR(Context &context, QueryView succ) {
+  if (ViewIsInductionOwnedDR(context, succ)) {
+    return false;
+  }
+  if (!succ.CanReceiveDeletions()) {
+    return false;
+  }
+  if (succ.IsInsert() && QueryInsert::From(succ).IsStream()) {
+    return false;
+  }
+  return true;
+}
+
+// Replicate `CollectSectionTargets` (Stratum.cpp:418) EXACTLY.
+static void CollectSectionTargetsDR(ProgramImpl *impl, Context &context,
+                                    QueryView view,
+                                    std::vector<TABLE *> &targets) {
+  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE *const table = model->table;
+  if (table != nullptr) {
+    if (!TableIsInductionOwnedDR(context, table)) {
+      targets.push_back(table);
+    }
+    return;
+  }
+  for (QueryView succ : view.Successors()) {
+    if (FollowsDeltaEdgeDR(context, succ)) {
+      CollectSectionTargetsDR(impl, context, succ, targets);
+    }
+  }
+}
+
+// One terminal outcome of the walk suffix rooted at a view: the path SUFFIX
+// (the sequence of consumer edges from — but NOT including — the memoized view
+// onward, ending at the terminal), whether it ends at a pivot-join, and the
+// head-chain fold target (null for a join terminal).
+struct BranchSuffix {
+  std::vector<QueryView> suffix;  // consumer edges after the memoized view
+  bool ends_at_join{false};
+  TABLE *target{nullptr};
+};
+
+// The MEMOIZED branch walk. `Suffixes(view)` is the set of path-suffixes from
+// `view` to each reachable terminal, computed ONCE per view (memoized in
+// `memo`) so reconvergent table-less plumbing costs O(V+E) rather than the old
+// path-copying DFS's exponential re-walk. `source` flavors the terminal rules
+// (same-table stop) exactly as the old `DiscoverBranches` (Stratum.cpp:353).
+//
+// CORRECTNESS (§1.4 / v3-spec OQ): the old DFS records one `BranchChain` per
+// DISTINCT PATH (no visited set), so a diamond of plumbing emits path-
+// multiplicity. This memoization preserves the per-path MULTISET faithfully:
+// the caller CROSS-PRODUCTS its own prefix path with the memoized suffix set
+// (one emitted branch per (prefix, suffix) pair). Memoizing SUFFIXES (not
+// terminal outcomes) is what keeps each distinct prefix→terminal path a
+// distinct emitted branch — a reconvergent view's suffixes are shared storage,
+// but every path THROUGH it still materializes as its own branch.
+//
+// The same-table stop rule (`table == source && !IsInsert`) makes suffixes
+// source-dependent, so the memo is PER-SOURCE (the driver mints a fresh
+// `BranchMemo` per source table). Within one source the walk is O(V+E).
+struct BranchMemo {
+  std::unordered_map<QueryView, std::vector<BranchSuffix>> by_view;
+};
+
+static const std::vector<BranchSuffix> &SuffixesOf(
+    ProgramImpl *impl, Context &context, TABLE *source, QueryView view,
+    BranchMemo &memo) {
+  if (auto it = memo.by_view.find(view); it != memo.by_view.end()) {
+    return it->second;
+  }
+
+  // Accumulate the suffixes locally, then memoize at the tail. Non-inductive
+  // plumbing is a DAG (the same-table stop + induction gate cut every back
+  // edge), so the recursion never re-enters `view` before this returns — no
+  // in-progress slot is needed, and the memo hit above short-circuits every
+  // reconvergent re-arrival (the O(V+E) property).
+  std::vector<BranchSuffix> result;
+
+  for (QueryView succ : view.Successors()) {
+    if (!FollowsDeltaEdgeDR(context, succ)) {
+      continue;
+    }
+
+    DataModel *const model = impl->view_to_model[succ]->FindAs<DataModel>();
+    TABLE *const table = model->table;
+
+    if (table == source && !succ.IsInsert()) {
+      continue;  // a same-model root's own walk covers its edges (Stratum:364)
+    }
+
+    if (succ.IsJoin()) {
+      // A pivot-join terminal (0-pivot @product joins are NOT terminals — their
+      // propagation is owned by the product arms; Stratum.cpp:380).
+      if (0u < QueryJoin::From(succ).NumPivotColumns()) {
+        BranchSuffix bs;
+        bs.suffix.push_back(succ);
+        bs.ends_at_join = true;
+        result.push_back(std::move(bs));
+      }
+
+    } else if (table != nullptr && table != source) {
+      // A table-boundary terminal (dropped if induction-owned; Stratum:397).
+      if (!TableIsInductionOwnedDR(context, table)) {
+        BranchSuffix bs;
+        bs.suffix.push_back(succ);
+        bs.ends_at_join = false;
+        bs.target = table;
+        result.push_back(std::move(bs));
+      }
+
+    } else {
+      // Table-less plumbing: prepend `succ` onto every suffix of `succ`.
+      for (const BranchSuffix &deeper :
+           SuffixesOf(impl, context, source, succ, memo)) {
+        BranchSuffix bs;
+        bs.suffix.reserve(deeper.suffix.size() + 1u);
+        bs.suffix.push_back(succ);
+        bs.suffix.insert(bs.suffix.end(), deeper.suffix.begin(),
+                         deeper.suffix.end());
+        bs.ends_at_join = deeper.ends_at_join;
+        bs.target = deeper.target;
+        result.push_back(std::move(bs));
+      }
+    }
+  }
+
+  auto [it, ok] = memo.by_view.emplace(view, std::move(result));
+  (void) ok;
+  return it->second;
 }
 
 // Build the effect set of a crossover arm (spec §2.1 CROSSOVER). `sign` is -1
@@ -179,10 +335,34 @@ std::vector<const DROp *> DRFlowGraph::ProductArms(void) const {
   return out;
 }
 
+unsigned DRFlowGraph::TableVec(TABLE *table, VecRole role) const {
+  auto it = table_vecs.find(table);
+  assert(it != table_vecs.end());
+  auto jt = it->second.find(role);
+  assert(jt != it->second.end());
+  return jt->second;
+}
+
+// Mint one materialized `DRVec` of `role` for `table` and record it in
+// `flow.table_vecs`. `shape`/`kind`/`uniq` are the R1b constructor knowledge
+// (A-5 element_shape; the demoted debug (table,kind); G6 unique contract).
+static void MintTableVec(DRFlowGraph &flow, TABLE *table, VecRole role,
+                         ElementShape shape, VectorKind kind,
+                         UniqueContract uniq) {
+  const unsigned idx = static_cast<unsigned>(flow.vecs.size());
+  DRVec v;
+  v.shape = shape;
+  v.role = role;
+  v.uniq = uniq;
+  v.debug_table = table;
+  v.debug_kind = kind;
+  flow.vecs.push_back(std::move(v));
+  flow.table_vecs[table][role] = idx;
+}
+
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map) {
-  (void) context;
 
   DRFlowGraph flow;
   flow.scc_map = scc_map;
@@ -200,6 +380,37 @@ DRFlowGraph BuildDRInventory(
       t.member_views.push_back(view);
     }
     flow.tables.push_back(std::move(t));
+  }
+
+  // --------------------------------------------------------------- per-table vecs
+  // Materialize the six vecs each differential non-induction-owned table's
+  // discovery band owns (spec §1): delete/add queues, overdelete/addition sets,
+  // net-removals/net-additions frontiers. element_shape is kIds (queues/sets/
+  // frontiers carry ROW IDS into the one table — A-5 constructor knowledge, not
+  // read back from IR). uniq: the two claim-drain INPUT queues carry
+  // sort-unique-at-drain (mirrors the tc 10-site census — a claim drain
+  // VectorUniques its queue immediately before the loop, G6); the sets and
+  // consolidated frontiers are multiset (their producers append deduped rows,
+  // and the frontier drains sort-unique at the HIGHER seed, an edge attribute
+  // R1c records). Induction-owned tables are fed by the fixpoint machinery, not
+  // the phases, so they own no phase vec here (mirrors `phase_table_order`,
+  // Stratum.cpp:1664).
+  for (TABLE *table : impl->tables) {
+    if (!TableIsDifferential(table) || TableIsInductionOwnedDR(context, table)) {
+      continue;
+    }
+    MintTableVec(flow, table, VecRole::kDeleteQueue, ElementShape::kIds,
+                 VectorKind::kDeleteQueue, UniqueContract::kSortUniqueAtDrain);
+    MintTableVec(flow, table, VecRole::kAddQueue, ElementShape::kIds,
+                 VectorKind::kAddQueue, UniqueContract::kSortUniqueAtDrain);
+    MintTableVec(flow, table, VecRole::kOverdeleteSet, ElementShape::kIds,
+                 VectorKind::kOverdeleteSet, UniqueContract::kMultiset);
+    MintTableVec(flow, table, VecRole::kAdditionSet, ElementShape::kIds,
+                 VectorKind::kAdditionSet, UniqueContract::kMultiset);
+    MintTableVec(flow, table, VecRole::kNetRemoval, ElementShape::kIds,
+                 VectorKind::kNetRemovals, UniqueContract::kMultiset);
+    MintTableVec(flow, table, VecRole::kNetAddition, ElementShape::kIds,
+                 VectorKind::kNetAdditions, UniqueContract::kMultiset);
   }
 
   // -------------------------------------------------------------- crossovers
@@ -231,6 +442,14 @@ DRFlowGraph BuildDRInventory(
     const DerivClass klass =
         RuleClass(scc_map, negate_table, {pred_table, negated_table});
 
+    // Record the arm's queue-append DEF edge (A-4: multi-def). The `-` arm
+    // appends into the negate table's delete queue, the `+` arm into its add
+    // queue. The op index is the post-push slot.
+    const auto record_append_def = [&](unsigned op_idx, VecRole queue) {
+      const unsigned vec_idx = flow.TableVec(negate_table, queue);
+      flow.vecs[vec_idx].defs.push_back(op_idx);
+    };
+
     // The `-` arm always exists (a negated-view GAIN retracts the output).
     {
       DROp minus(DROpKind::kCrossover);
@@ -243,7 +462,9 @@ DRFlowGraph BuildDRInventory(
       minus.negated_differential = negated_differential;
       minus.crossover_sign = -1;
       minus.effects = CrossoverArmEffects(minus, -1, klass);
+      const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
       flow.ops.push_back(std::move(minus));
+      record_append_def(op_idx, VecRole::kDeleteQueue);
     }
 
     // The `+` arm exists only when the negated table is differential (a
@@ -259,7 +480,9 @@ DRFlowGraph BuildDRInventory(
       plus.negated_differential = negated_differential;
       plus.crossover_sign = +1;
       plus.effects = CrossoverArmEffects(plus, +1, klass);
+      const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
       flow.ops.push_back(std::move(plus));
+      record_append_def(op_idx, VecRole::kAddQueue);
     }
   }
 
@@ -317,8 +540,86 @@ DRFlowGraph BuildDRInventory(
         }
 
         arm.effects = ProductArmEffects(arm, sign);
+        const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
         flow.ops.push_back(std::move(arm));
+
+        // The arm's queue-append DEF edge (A-4: multi-def): the `-` arm into
+        // the product table's delete queue, the `+` arm into its add queue.
+        const VecRole queue =
+            (sign < 0) ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+        flow.vecs[flow.TableVec(product_table, queue)].defs.push_back(op_idx);
       }
+    }
+  }
+
+  // ------------------------------------------------------------- branches/joins
+  // The §1.4 branch/join inventory, derived INDEPENDENTLY via the memoized
+  // worklist (`SuffixesOf`). Rooted at every member view of every source table
+  // (source = differential OR carries a net-additions frontier — replicated
+  // EXACTLY from Stratum.cpp:1517-1524), it reproduces the old path-copying
+  // DFS's per-PATH branch multiset (a diamond of plumbing fans out to one
+  // branch per distinct path — see `SuffixesOf`). Joins are deduped by view;
+  // the DR side MINTS the ONE shared join-pivots vec each owns.
+  for (TABLE *table : impl->tables) {
+    bool is_source = TableIsDifferential(table);
+    if (!is_source) {
+      if (auto it = context.table_delta_vecs.find(table);
+          it != context.table_delta_vecs.end()) {
+        is_source = it->second.count(
+            static_cast<unsigned>(VectorKind::kNetAdditions)) != 0u;
+      }
+    }
+    if (!is_source) {
+      continue;
+    }
+
+    const auto num_cols = table->columns.Size();
+    BranchMemo memo;  // per-source memo (source-dependent same-table stop)
+    for (const QueryView &member : table->views) {
+      if (member.IsInsert() || member.Columns().size() != num_cols) {
+        continue;
+      }
+      for (const BranchSuffix &bs :
+           SuffixesOf(impl, context, table, member, memo)) {
+        DRBranch branch;
+        branch.source = table;
+        branch.path.reserve(bs.suffix.size() + 1u);
+        branch.path.push_back(member);  // path[0] = source member (Stratum:1535)
+        branch.path.insert(branch.path.end(), bs.suffix.begin(),
+                           bs.suffix.end());
+        branch.ends_at_join = bs.ends_at_join;
+        branch.target = bs.target;
+        flow.branches.push_back(std::move(branch));
+      }
+    }
+  }
+
+  // Dedup the join emissions by join view, minting ONE shared join-pivots vec
+  // per (A-5: element_shape id+cols over the union pivot column set — the two
+  // section walks project different subsets, carried in the future plan tree,
+  // not the vec; the pivot vec is sort-unique-at-drain, G2/PIVOT_ASSEMBLE).
+  std::unordered_map<QueryView, size_t> join_index;
+  for (const DRBranch &branch : flow.branches) {
+    if (!branch.ends_at_join) {
+      continue;
+    }
+    const QueryView join_view = branch.path.back();
+    if (join_index.emplace(join_view, flow.joins.size()).second) {
+      DRJoin j(join_view);
+
+      // Mint the shared pivot vec (id+cols, sort-unique-at-drain).
+      const unsigned vec_idx = static_cast<unsigned>(flow.vecs.size());
+      DRVec v;
+      v.shape = ElementShape::kIdCols;  // A-5: union pivot column set
+      v.role = VecRole::kJoinPivots;
+      v.uniq = UniqueContract::kSortUniqueAtDrain;
+      v.debug_table = nullptr;  // a message-less join-owned vec
+      v.debug_kind = VectorKind::kJoinPivots;
+      flow.vecs.push_back(std::move(v));
+      j.pivot_vec = vec_idx;
+
+      CollectSectionTargetsDR(impl, context, join_view, j.targets);
+      flow.joins.push_back(std::move(j));
     }
   }
 
@@ -329,7 +630,10 @@ void ValidateDRInventory(
     const DRFlowGraph &flow,
     const std::vector<OldCrossoverRef> &old_crossovers,
     const std::vector<OldProductRef> &old_products,
-    const std::unordered_map<TABLE *, unsigned> &old_scc_map) {
+    const std::vector<OldBranchRef> &old_branches,
+    const std::vector<OldJoinRef> &old_joins,
+    const std::unordered_map<TABLE *, unsigned> &old_scc_map,
+    const std::unordered_map<TABLE *, unsigned> &old_drain_stratum) {
 
   // ----------------------------------------------------------- V-OLD-EQUIV(SCC)
   // Same table-SCC map (both directions: every entry present, same group).
@@ -521,6 +825,160 @@ void ValidateDRInventory(
       ValidatorFail("product data differs from old discovery");
     }
   }
+
+  // -------------------------------------------- V-OLD-EQUIV(branches) — MULTISET
+  // The §1.4 memoized worklist must reproduce the old path-copying DFS's branch
+  // set as a MULTISET of (source, path, ends_at_join, target): the old code
+  // records one chain PER DISTINCT PATH (no visited set), so reconvergent
+  // plumbing produces path-multiplicity that must survive memoization. Match by
+  // equality with a consumed-flag over the DR side (an O(n²) mark, branch
+  // counts are suite-sized) — count equality plus a 1:1 pairing proves multiset
+  // identity.
+  const auto branch_eq = [](const DRBranch &d, const OldBranchRef &o) -> bool {
+    return d.source == o.source && d.ends_at_join == o.ends_at_join &&
+           d.target == o.target && d.path == o.path;
+  };
+  if (flow.branches.size() != old_branches.size()) {
+    ValidatorFail("branch count differs from old discovery");
+  }
+  std::vector<bool> dr_branch_used(flow.branches.size(), false);
+  for (const OldBranchRef &old : old_branches) {
+    bool matched = false;
+    for (size_t i = 0u; i < flow.branches.size(); ++i) {
+      if (!dr_branch_used[i] && branch_eq(flow.branches[i], old)) {
+        dr_branch_used[i] = true;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      ValidatorFail("old branch has no DR-IR counterpart (multiset mismatch)");
+    }
+  }
+
+  // ------------------------------------------------------ V-OLD-EQUIV(joins) + B
+  // Same join SET (join view + section targets), each with exactly ONE minted
+  // shared pivot vec (the join-pivots role, sort-unique-at-drain). Keyed by join
+  // view identity.
+  std::unordered_map<QueryView, const DRJoin *> dr_join;
+  for (const DRJoin &j : flow.joins) {
+    if (!dr_join.emplace(j.join_view, &j).second) {
+      ValidatorFail("V-JOIN-ONE: two DR joins share one join view");
+    }
+    // The pivot vec exists and carries the join-pivots role + contract.
+    if (j.pivot_vec >= flow.vecs.size() ||
+        flow.vecs[j.pivot_vec].role != VecRole::kJoinPivots ||
+        flow.vecs[j.pivot_vec].uniq != UniqueContract::kSortUniqueAtDrain) {
+      ValidatorFail("V-JOIN-ONE: join pivot vec missing or mis-typed");
+    }
+  }
+  if (flow.joins.size() != old_joins.size()) {
+    ValidatorFail("join count differs from old discovery");
+  }
+  for (const OldJoinRef &old : old_joins) {
+    auto it = dr_join.find(old.join_view);
+    if (it == dr_join.end()) {
+      ValidatorFail("old join has no DR-IR counterpart");
+    }
+    if (it->second->targets != old.targets) {
+      ValidatorFail("join section targets differ from old discovery");
+    }
+  }
+
+  // ---------------------------------------- V-OLD-EQUIV(strata) — B-13 seeding
+  // Per-unit stratum equality: every old unit the scheduler ordered has a DR
+  // stratum (seeded by `SeedDRStrata`) equal to the old lift's final integer.
+  // R1b is bookkeeping equality (the DR side STORES the old integers; the
+  // independent deriver is R1c+) — it proves the DR graph CARRIES every unit.
+  if (flow.branch_stratum.size() != flow.branches.size()) {
+    ValidatorFail("branch_stratum not seeded parallel to branches");
+  }
+  for (const OldBranchRef &old : old_branches) {
+    bool matched = false;
+    for (size_t i = 0u; i < flow.branches.size(); ++i) {
+      if (branch_eq(flow.branches[i], old) &&
+          flow.branch_stratum[i] == old.stratum) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      ValidatorFail("branch stratum differs from old discovery (B-13)");
+    }
+  }
+  for (const OldJoinRef &old : old_joins) {
+    auto it = flow.join_stratum.find(old.join_view);
+    if (it == flow.join_stratum.end() || it->second != old.stratum) {
+      ValidatorFail("join stratum differs from old discovery (B-13)");
+    }
+  }
+  for (const OldCrossoverRef &old : old_crossovers) {
+    auto it = flow.crossover_stratum.find(QueryView(old.negate));
+    if (it == flow.crossover_stratum.end() || it->second != old.stratum) {
+      ValidatorFail("crossover stratum differs from old discovery (B-13)");
+    }
+  }
+  for (const OldProductRef &old : old_products) {
+    auto it = flow.product_stratum.find(old.product_view);
+    if (it == flow.product_stratum.end() || it->second != old.stratum) {
+      ValidatorFail("product stratum differs from old discovery (B-13)");
+    }
+  }
+  if (flow.drain_stratum.size() != old_drain_stratum.size()) {
+    ValidatorFail("drain_stratum size differs from old discovery (B-13)");
+  }
+  for (const auto &[table, stratum] : old_drain_stratum) {
+    auto it = flow.drain_stratum.find(table);
+    if (it == flow.drain_stratum.end() || it->second != stratum) {
+      ValidatorFail("drain stratum differs from old discovery (B-13)");
+    }
+  }
+}
+
+// B-13: STORE the old lift's converged integers into `flow`. Bookkeeping — the
+// independent deriver is R1c+. Branch strata are matched to DR branches by
+// identity (source, path, ends_at_join, target); note the old DFS may hold
+// MULTIPLE branches with the SAME identity (reconvergent plumbing) that carry
+// the SAME stratum (the lift keys the drain stratum on the terminal/target, not
+// the path), so a per-identity stratum is well-defined and we assign it to
+// EVERY matching DR branch slot.
+void SeedDRStrata(
+    DRFlowGraph &flow,
+    const std::vector<OldBranchRef> &old_branches,
+    const std::vector<OldJoinRef> &old_joins,
+    const std::vector<OldCrossoverRef> &old_crossovers,
+    const std::vector<OldProductRef> &old_products,
+    const std::unordered_map<TABLE *, unsigned> &old_drain_stratum) {
+
+  const auto branch_eq = [](const DRBranch &d, const OldBranchRef &o) -> bool {
+    return d.source == o.source && d.ends_at_join == o.ends_at_join &&
+           d.target == o.target && d.path == o.path;
+  };
+
+  flow.branch_stratum.assign(flow.branches.size(), 0u);
+  std::vector<bool> seeded(flow.branches.size(), false);
+  for (const OldBranchRef &old : old_branches) {
+    // Assign this old branch's stratum to ONE not-yet-seeded matching DR slot
+    // (1:1 pairing over the identity multiset, mirroring the V-OLD-EQUIV mark).
+    for (size_t i = 0u; i < flow.branches.size(); ++i) {
+      if (!seeded[i] && branch_eq(flow.branches[i], old)) {
+        flow.branch_stratum[i] = old.stratum;
+        seeded[i] = true;
+        break;
+      }
+    }
+  }
+
+  for (const OldJoinRef &old : old_joins) {
+    flow.join_stratum[old.join_view] = old.stratum;
+  }
+  for (const OldCrossoverRef &old : old_crossovers) {
+    flow.crossover_stratum[QueryView(old.negate)] = old.stratum;
+  }
+  for (const OldProductRef &old : old_products) {
+    flow.product_stratum[old.product_view] = old.stratum;
+  }
+  flow.drain_stratum = old_drain_stratum;
 }
 
 }  // namespace hyde

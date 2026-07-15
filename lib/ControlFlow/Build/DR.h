@@ -141,9 +141,21 @@ struct DREffect {
 };
 
 // ---------------------------------------------------------------------------
-// §1 VEC — a typed IR value. R1a does not yet mint real vecs (queues/frontiers
-// are TABLE-keyed references inside effects, see `DREffect`); this class is the
-// R1b landing site. Included so the object model shape is stable from R1a.
+// §1 VEC — a typed IR value (F-1/F-9). R1b MATERIALIZES the queues/frontiers
+// the discovery bands own as real `DRVec` values (R1a left them as TABLE-keyed
+// references inside effects). Per differential non-induction-owned table, six
+// per-table vecs are minted (delete/add queues, overdelete/addition sets, net-
+// removals/net-additions frontiers — VecRole per DR.h); per JoinEmission, ONE
+// shared join-pivots vec. Attributes per spec §1: `shape` is CONSTRUCTOR
+// knowledge (A-5, the producing op's element type — not read back from emitted
+// IR); `uniq` is the sort-unique-at-drain contract keyed on the DRAIN site
+// (mirrors the tc 10-site census, G6); `debug_table`/`debug_kind` are the
+// demoted (table, VectorKind) v2 identity, DEBUG-only. Def/use edges (A-4:
+// append-accumulating queues/sets may MULTI-def) are recorded in R1b ONLY for
+// the two R1a op families that touch them: a crossover appends to the negate
+// table's delete/add queue; a product arm appends to the product table's
+// delete/add queue. Full def/use wiring (seed/fire folds, claim drains,
+// filters) arrives with R1c's op families.
 // ---------------------------------------------------------------------------
 class DRVec {
  public:
@@ -155,7 +167,9 @@ class DRVec {
   TABLE *debug_table{nullptr};
   VectorKind debug_kind{VectorKind::kEmpty};
 
-  // Def/use edges by op index into `DRFlowGraph::ops`. Empty in R1a.
+  // Def/use edges by op index into `DRFlowGraph::ops`. R1b records the two
+  // R1a families' append def-edges (multi-def per A-4); use-edges and the
+  // remaining families land with R1c.
   std::vector<unsigned> defs;  // A-4: append-accumulating vecs may multi-def.
   std::vector<unsigned> uses;
 };
@@ -170,6 +184,43 @@ class DRTable {
   TABLE *model{nullptr};
   bool differential{false};
   std::vector<QueryView> member_views;  // identity-distinct feeders
+};
+
+// ---------------------------------------------------------------------------
+// §1.4 BRANCH INVENTORY — one rule chain from a member view of a source table
+// to its terminal (the first pivot-JOIN, or the first table-boundary view that
+// is not induction-owned), mirroring the old discovery's `BranchChain`
+// (Stratum.cpp:17-33). R1b DERIVES the branch set INDEPENDENTLY of the old
+// path-copying DFS, via a MEMOIZED WORKLIST (the §1.4 hazard fix: reconvergent
+// table-less plumbing costs O(V+E), not exponential). The derived set is
+// compared to the old DFS's as a MULTISET of (source, path, ends_at_join,
+// target) — the old code records one chain PER DISTINCT PATH (its DFS carries
+// no visited set), so a diamond of plumbing produces path-multiplicity; the
+// memoized form reproduces that per-path multiset faithfully by memoizing
+// path-SUFFIXES per view and prepending each caller's prefix.
+// ---------------------------------------------------------------------------
+class DRBranch {
+ public:
+  TABLE *source{nullptr};
+  std::vector<QueryView> path;   // path[0] = source member; back() = terminal
+  bool ends_at_join{false};
+  TABLE *target{nullptr};        // head-chain fold target (null for a join)
+};
+
+// ---------------------------------------------------------------------------
+// §1.4 JOIN INVENTORY — one dual-section pivot-JOIN emission, deduped by join
+// view, owning ONE shared join-pivots `DRVec` (index into `DRFlowGraph::vecs`)
+// that every feeding branch/sign drains. Mirrors the old `JoinEmission`
+// (Stratum.cpp:38-53); the DR side MINTS the pivot vec (A-5: element_shape
+// id+cols over the union pivot column set).
+// ---------------------------------------------------------------------------
+class DRJoin {
+ public:
+  QueryView join_view;
+  unsigned pivot_vec{0u};             // index into DRFlowGraph::vecs
+  std::vector<TABLE *> targets;       // the join section walks' fold targets
+
+  explicit DRJoin(QueryView join_view_) : join_view(join_view_) {}
 };
 
 // ---------------------------------------------------------------------------
@@ -223,42 +274,72 @@ class DROp {
 };
 
 // ---------------------------------------------------------------------------
-// §0 FLOW GRAPH — owns the value/op vectors and the recursive-SCC map. R1a
-// populates the crossover + product-arm ops, the table inventory, and re-holds
-// the SCC map that keyed the derivation.
+// §0 FLOW GRAPH — owns the value/op vectors and the recursive-SCC map. R1b
+// populates the crossover + product-arm ops, the table inventory, the
+// materialized per-table/per-join DRVecs, the independently-derived branch/join
+// inventory, and the per-unit seeded pinned strata (B-13: R1b STORES the old
+// lift's integers; the independent deriver is R1c+).
 // ---------------------------------------------------------------------------
 class DRFlowGraph {
  public:
-  std::vector<DRVec> vecs;      // empty in R1a (R1b materializes queues)
+  std::vector<DRVec> vecs;      // R1b: per-table queues/sets/frontiers + pivots
   std::vector<DRTable> tables;  // debug-labelled models referenced by ops
   std::vector<DROp> ops;        // R1a: crossover pairs + product arms
+
+  // The independently-derived branch/join inventory (§1.4, memoized worklist).
+  std::vector<DRBranch> branches;
+  std::vector<DRJoin> joins;
+
+  // The six materialized per-table vecs, by (table, VecRole) → index into
+  // `vecs`. R1b mints these for every differential non-induction-owned table
+  // (the discovery bands' owned queues/sets/frontiers). The join-pivots vecs
+  // live on `DRJoin::pivot_vec`.
+  std::unordered_map<TABLE *, std::unordered_map<VecRole, unsigned>>
+      table_vecs;
 
   // table -> recursive-SCC group id (only tables in a stratum-phase-owned SCC
   // appear). Copied from the discovery's `ComputeRecursiveSCCs` result.
   std::unordered_map<TABLE *, unsigned> scc_map;
 
+  // B-13 per-unit SEEDED pinned strata: the old scheduling fixpoint's converged
+  // integers, STORED (not independently derived — R1c+). Keyed by unit identity
+  // so V-OLD-EQUIV can prove the DR graph carries every unit the scheduler
+  // ordered. `branch_stratum` is indexed parallel to `branches`; the others are
+  // keyed by view/table identity.
+  std::vector<unsigned> branch_stratum;                  // parallel to branches
+  std::unordered_map<QueryView, unsigned> join_stratum;  // by join view
+  std::unordered_map<QueryView, unsigned> crossover_stratum;  // by negate view
+  std::unordered_map<QueryView, unsigned> product_stratum;    // by product view
+  std::unordered_map<TABLE *, unsigned> drain_stratum;        // by table
+
   // Convenience accessors over `ops`.
   std::vector<const DROp *> Crossovers(void) const;
   std::vector<const DROp *> ProductArms(void) const;
+
+  // Look up a materialized per-table vec index; asserts it exists.
+  unsigned TableVec(TABLE *table, VecRole role) const;
 };
 
 // ---------------------------------------------------------------------------
 // The R1a construction + validation entry points (spec §7.1 / §7.3).
 // ---------------------------------------------------------------------------
 
-// Derive the R1a inventory INDEPENDENTLY from the `Query` (§6-style
-// derivation, trimmed to the crossover + product-arm families). `scc_map` is
-// the discovery's already-computed `ComputeRecursiveSCCs` output, passed in so
-// the RuleClass derivation matches bit-for-bit.
+// Derive the inventory INDEPENDENTLY from the `Query` (§6-style derivation:
+// crossover + product-arm families, the R1b materialized vecs, and the §1.4
+// memoized branch/join inventory). `scc_map` is the discovery's already-
+// computed `ComputeRecursiveSCCs` output, passed in so the RuleClass derivation
+// matches bit-for-bit. Strata are NOT derived here (B-13: seeded from the old
+// lift by `SeedDRStrata`, called after the scheduling fixpoint converges).
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map);
 
 // V-OLD-EQUIV (§7.3) + the B-3 family validators, ALWAYS-ON (survive NDEBUG).
 // Called from `BuildStratumPhases` where the old discovery vectors are in
-// scope; the caller passes the discovery's crossover/product records (opaque
-// here to avoid leaking the anonymous-namespace structs — the caller supplies
-// the comparison payload). On ANY mismatch: `fprintf(stderr, ...)` + `abort()`.
+// scope; the caller passes the discovery's crossover/product/branch/join
+// records (opaque here to avoid leaking the anonymous-namespace structs — the
+// caller supplies the comparison payload). On ANY mismatch: `fprintf(stderr,
+// ...)` + `abort()`.
 //
 // The old-discovery payloads are passed as parallel flat vectors so this
 // header does not depend on the `.cpp`'s anonymous-namespace types.
@@ -269,18 +350,48 @@ struct OldCrossoverRef {
   TABLE *pred_table;
   QueryView pred_view;
   bool negated_differential;
+  unsigned stratum;  // B-13 seeded pinned stratum (by negate view identity)
 };
 struct OldProductRef {
   QueryView product_view;
   TABLE *product_table;
   std::vector<TABLE *> side_tables;
   std::vector<bool> side_differential;
+  unsigned stratum;  // B-13 seeded pinned stratum (by product view identity)
 };
+struct OldBranchRef {
+  TABLE *source;
+  std::vector<QueryView> path;
+  bool ends_at_join;
+  TABLE *target;
+  unsigned stratum;  // B-13 seeded pinned stratum (by branch identity)
+};
+struct OldJoinRef {
+  QueryView join_view;
+  std::vector<TABLE *> targets;
+  unsigned stratum;  // B-13 seeded pinned stratum (by join view identity)
+};
+
+// B-13: STORE the old scheduling fixpoint's converged integers into `flow` as
+// the seeded pinned strata (the independent deriver is R1c+). Matches each DR
+// branch to its old counterpart by identity to fill `branch_stratum`; fills the
+// keyed join/crossover/product/drain maps directly. Bookkeeping only — no
+// derivation.
+void SeedDRStrata(
+    DRFlowGraph &flow,
+    const std::vector<OldBranchRef> &old_branches,
+    const std::vector<OldJoinRef> &old_joins,
+    const std::vector<OldCrossoverRef> &old_crossovers,
+    const std::vector<OldProductRef> &old_products,
+    const std::unordered_map<TABLE *, unsigned> &old_drain_stratum);
 
 void ValidateDRInventory(
     const DRFlowGraph &flow,
     const std::vector<OldCrossoverRef> &old_crossovers,
     const std::vector<OldProductRef> &old_products,
-    const std::unordered_map<TABLE *, unsigned> &old_scc_map);
+    const std::vector<OldBranchRef> &old_branches,
+    const std::vector<OldJoinRef> &old_joins,
+    const std::unordered_map<TABLE *, unsigned> &old_scc_map,
+    const std::unordered_map<TABLE *, unsigned> &old_drain_stratum);
 
 }  // namespace hyde

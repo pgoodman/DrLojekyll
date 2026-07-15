@@ -1835,14 +1835,17 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     }
   }
 
-  // R1a DR-IR inventory hook (spec §7.2/§7.3). The crossover/product discovery
-  // vectors are now FINAL (the scheduling fixpoint has converged; nothing below
-  // mutates the crossover/product SET, only its emission). Derive the DR-IR
-  // inventory INDEPENDENTLY from the query and cross-check it against this
-  // discovery's shared state (V-OLD-EQUIV) plus the B-3 family validators. The
-  // call is unconditional (owner: no flags, no env vars) and construction-only
-  // — no emission below is touched. The validators are always-on: a divergence
-  // is a silent-breakage bug and aborts.
+  // R1a/R1b DR-IR inventory hook (spec §7.2/§7.3). The discovery vectors are
+  // now FINAL (the scheduling fixpoint has converged; nothing below mutates the
+  // branch/join/crossover/product SET or its strata, only its emission). Derive
+  // the DR-IR inventory INDEPENDENTLY from the query (R1b: crossover/product
+  // ops, the materialized per-table/per-join DRVecs, and the §1.4 MEMOIZED
+  // branch/join inventory), SEED its pinned strata from this fixpoint's
+  // converged integers (B-13), and cross-check it against this discovery's
+  // shared state (V-OLD-EQUIV: same crossover/product/branch/join sets + SCC
+  // map + per-unit strata) plus the B-3 family validators. Construction-only —
+  // no emission below is touched; validators are always-on and abort on
+  // divergence.
   {
     DRFlowGraph dr_flow =
         BuildDRInventory(impl, context, query, recursive_sccs);
@@ -1852,17 +1855,34 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     for (const CrossoverEmission &x : crossovers) {
       old_crossovers.push_back(OldCrossoverRef{
           x.negate, x.negate_table, x.negated_table, x.pred_table,
-          x.pred_view, x.negated_differential});
+          x.pred_view, x.negated_differential, x.stratum});
     }
 
     std::vector<OldProductRef> old_products;
     old_products.reserve(products.size());
     for (const ProductEmission &p : products) {
       old_products.push_back(OldProductRef{
-          p.product_view, p.product_table, p.side_tables, p.side_differential});
+          p.product_view, p.product_table, p.side_tables, p.side_differential,
+          p.stratum});
     }
 
-    ValidateDRInventory(dr_flow, old_crossovers, old_products, recursive_sccs);
+    std::vector<OldBranchRef> old_branches;
+    old_branches.reserve(branches.size());
+    for (const BranchChain &b : branches) {
+      old_branches.push_back(OldBranchRef{
+          b.source, b.path, b.ends_at_join, b.target, b.stratum});
+    }
+
+    std::vector<OldJoinRef> old_joins;
+    old_joins.reserve(joins.size());
+    for (const JoinEmission &j : joins) {
+      old_joins.push_back(OldJoinRef{j.join_view, j.targets, j.stratum});
+    }
+
+    SeedDRStrata(dr_flow, old_branches, old_joins, old_crossovers, old_products,
+                 drain_stratum);
+    ValidateDRInventory(dr_flow, old_crossovers, old_products, old_branches,
+                        old_joins, recursive_sccs, drain_stratum);
   }
 
   // Cash the readiness precondition, SPLIT by emission-site kind (A4).

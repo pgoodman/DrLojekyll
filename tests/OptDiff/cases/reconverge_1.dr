@@ -1,0 +1,32 @@
+; Reconvergent table-less plumbing (v3-spec section 1.4 / DeltaRelationalIR OQ):
+; the DR-IR branch discovery must reproduce the old path-copying DFS's
+; per-PATH branch multiset on a DIAMOND of table-less plumbing, where the
+; memoized worklist could otherwise collapse reconvergent paths to one.
+;
+; A single differential source `src(X, Y)` fans out through three CMP-filtered
+; plumbing paths that carry NO table of their own and RECONVERGE at the union
+; feeding `mid`, then `mid` fans out again through two more CMP paths that
+; reconverge at the union feeding `sink` -- a diamond at least two deep. Each
+; CMP branch (`X < Y`, `X > Y`, `X != Y`, ...) is a distinct table-less path
+; from the source member view to the reconvergence point, so the old DFS
+; records one BranchChain per path and the memoized form must too.
+;
+; Differential message + query per the corpus contract; keep suite-sized.
+
+#message src(u64 X, u64 Y) @differential.
+
+#local mid(u64 X, u64 Y).
+#local sink(u64 X).
+
+#query sink_q(free u64 X).
+
+; First diamond: src fans out through three CMP paths into mid.
+mid(X, Y) : src(X, Y), X < Y.
+mid(X, Y) : src(X, Y), X > Y.
+mid(X, Y) : src(X, Y), X != Y.
+
+; Second diamond: mid fans out through two CMP paths into sink.
+sink(X) : mid(X, Y), X < Y.
+sink(X) : mid(X, Y), X != Y.
+
+sink_q(X) : sink(X).

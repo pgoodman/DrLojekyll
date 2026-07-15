@@ -650,3 +650,31 @@ RuleClass/position-rule replication); linearization SEEDED from the
 integer lift; V-QCLEAR + round-scoped V-LOOP; per-arm effects; the
 directed reconvergent-plumbing OptDiff case gating DiscoverBranches
 memoization; join-pivot element-shape decision.
+
+### R1b — DRVec materialization + branch/join inventory (2026-07-15)
+
+DR.h +143 / DR.cpp +462 / Stratum.cpp hook +42; new corpus case
+reconverge_1 (golden via --bless, new-case authoring). Six typed DRVecs
+per differential non-induction-owned table (kIds; queues
+sort-unique-at-drain, sets/frontiers multiset) + one shared join-pivots
+vec per join (element_shape=kIdCols, union pivot columns — the carried
+join-pivot OQ resolved; per-arm projection lives in the plan tree);
+crossover/product queue-append DEF-EDGES recorded (multi-def per A-4).
+Branch/join inventory derived independently with the MEMOIZED
+path-SUFFIX worklist: the old DiscoverBranches is per-PATH (no visited
+set), and suffix-memoization + prefix cross-products preserve the exact
+per-path multiset — proven by the V-OLD-EQUIV multiset comparison on
+every corpus case, not assumed. Empirical: the §1.4 exponential hazard
+is LATENT today (dense table materialization keeps table-less paths ≤2
+hops corpus-wide); reconverge_1 + the multiset check are the standing
+guard. SeedDRStrata stores the old lift's integers per B-13 (the
+independent linearizer is R1c); V-OLD-EQUIV extended with per-unit
+strata equality.
+Also this session: fixpoint_stress_1 (7c43eda) — the §9-risk-#2
+directed witness: same-round double-claim (tc13+tc35 in round 1;
+tc(1,5) exactly-once rests on InNewWithFrontier vs InNewSansFrontier),
+REDERIVE partial restore, §5.1.1 phantom pairs, add-side stale drops;
+oracle 5764 assertions. SUITE IS NOW 157 CASES.
+GATES: debug+release builds; ctest 3/3; FULL SUITE PASS (157)
+byte-identical (zero emission change; validators green corpus-wide);
+Q5 spot @128: release/opt 135ms, debug/opt 936ms — no regression.
