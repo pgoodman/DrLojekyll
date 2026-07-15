@@ -766,3 +766,44 @@ A-6 (LOW: monotone elision hook). ACCESS carries
 - Frozen-kInI RAW-against-Commit modeling (§4): kInI reads are treated as constants within a band, with a single RAW edge to COMMIT_SWEEP. But COMMIT_SWEEP order is table-id (G9), not dependence-derived — so the kInI-RAW edge and the table-id pin could conflict for a table read by a higher stratum's seed after a lower table commits. Confirm commit sweeps are strictly a trailing band (all after all flow ops) so no kInI reader is scheduled after any Commit — the d5rn/tc artifacts show this but it should be a validator (V-COMMIT-TRAILS), not an assumption.
 - R3 statecell effect domain (fold/emit/old) is reserved but unspecified: the AggregatingFunctors old()/valued-sealed reads (average_weight.post-r3 target) need the WAR/RAW semantics of `old` (read prior-epoch sealed value) defined against the frozen-kInI model — is `old` another frozen read, or does it need a per-epoch snapshot value node the scheduler tracks? Out of R1/R2 scope but the domain shape should be pinned so §2's five-domain claim is not later refactored.
 - DiscoverBranches worklist/memoized rebuild (§1.4 latent hazard, exponential path-enumeration DFS at Stratum.cpp:352): §7.2 folds this into BuildDRFlow, but whether the memoized form produces the IDENTICAL branch set (hence identical seeds/fires) as the current no-visited-set DFS on reconvergent plumbing is unverified — a directed OptDiff case with reconvergent table-less plumbing is needed before R1's V-OLD-EQUIV can be trusted on that shape.
+======================================================================
+§B. AMENDMENTS (2026-07-15, after the identity-lowering judge —
+    v3-judge-identity.md; binding over the sections above)
+======================================================================
+B-7 (HIGH, judge F1): CLAIM_DRAIN's IN-ROUND form gains a
+    `vector:clear(input-queue)` effect — the drained accumulating
+    queue is cleared after the drain so this round's fire appends
+    don't replay next round. This is IR CONTENT (load-bearing for
+    quiescence), and single-pass vs in-round is now distinguishable by
+    BOTH the clear and the dual-append. New validator V-QCLEAR: every
+    in-round-drained accumulating queue is cleared before round end.
+B-8 (HIGH, judge F2): the epoch bump `g += 1` becomes ProcFrame
+    prologue material with a declared lowering default ("a flow proc's
+    body opens with the epoch bump"), and engine globals get a value-
+    node home (the StateCell family, its R3 reservation relaxed to
+    "engine scalars"; effect kind global:rmw).
+B-9 (MEDIUM, judge F3): A-2 generalizes to a declared ROUND-BODY BAND
+    TEMPLATE: bands in fixed order (claims, fires, chain-folds,
+    retires; output bands sign-major-then-table-id), table-id within a
+    band keyed by the DRAINED SOURCE vec's debug table, sign − before
+    + where a band holds both. V-SWEEP-ORDER generalizes to a per-band
+    lowering-conformance check.
+B-10 (MEDIUM, judge F4): A-1 applies at EVERY region nesting level —
+    epoch AND fixpoint round. Round-carried vecs (next-round RAW
+    feedback) are loop-carried at round scope; V-LOOP checks
+    drain-before-refill per round.
+B-11 (LOW, judge F5): dual-append intra-seq order is a G11-family
+    template default: persistent-set append before round-frontier
+    append.
+B-12 (LOW, judge F6): ProcFrame is specified: prologue = vec defines
+    in id order + (flow procs) the epoch bump; epilogue = return token
+    per proc kind; entry/receive band templates. Id allocation:
+    "ids allocated sequentially at first touch in pinned order" is a
+    DECLARED lowering default — verify the emitter's var-id stream
+    matches before the R2 family-#1 byte-identity gate is trusted.
+B-13 (R1 sequencing, judge §7 assessment): R1 SEEDS pinned_order from
+    the existing scheduling fixpoint's integer lift (apples-to-apples
+    V-OLD-EQUIV for family #1); the independent linearization deriver
+    lands later behind the same validator. A directed
+    reconvergent-plumbing OptDiff case gates trust in the
+    DiscoverBranches memoized form.
