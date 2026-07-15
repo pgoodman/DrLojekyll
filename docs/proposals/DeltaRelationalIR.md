@@ -590,3 +590,33 @@ Adopted resolutions (binding; vocabulary v3 requirements before R1 code):
   a straddling-model stress case; #4 all-modes-identical counter drift —
   oracle + recount stay mandatory; #5 two-webs-alive stall — acyclic-
   first ordering + delete-with-cutover rule.
+
+## 10. Vocabulary v3 (the binding pre-R1 object model) — record
+
+Drafted, instantiated, and judge-checked 2026-07-15 (workflow: opus spec
+writer → opus tc-artifact rewrite → dependence-completeness judge; the
+identity-lowering judge re-ran separately after an API failure). The
+BINDING artifacts live in DeltaRelationalIR.artifacts/:
+- v3-spec.md — the object model (typed Vec values with def/use edges +
+  element-shape/role/unique-contract; per-op and PER-ARM effect sets
+  over {vector, counter±class, flag read/write, frozen-kInI,
+  statecell(R3)}; access-plan trees for fold bodies; ordering DERIVED
+  as WAR/RAW/WAW with the schedule a CHECKED LINEARIZATION; validators
+  = B-3 + F-6 as graph checks; constructor derives Σ-terms from the
+  §5.1 telescoped expansion) — WITH §A amendments A-1..A-6 resolving
+  the dependence judge's findings (loop-carried epoch-boundary edges;
+  PinnedOrder = topo sort + lowering-default tie-breaks, commit order
+  is a lowering default not a graph edge; per-arm effect granularity;
+  multi-def accumulating queues; element-shape as constructor
+  knowledge; monotone-elision hook attribute).
+- v3-tc-artifact.md — the tc case fully instantiated in v3 (dependence
+  edges named per resource; validators evaluated; the §9 rewrite test
+  list realized as graph facts: filter/drain fusion edges, G8 dead
+  filters as zero-use defs, WCOJ plan-tree change sites).
+- v3-judge-dependence.md — verdict: most orderings derive soundly;
+  the two HIGH holes are closed by §A-1/§A-2.
+R1 DISCIPLINE (spec §7.3, adopted): construct-alongside-and-validate —
+BuildDRFlow + ValidateDRFlow + LinearizeAndCheck + V-OLD-EQUIV
+(isomorphism against the old discovery's E-16 shared state) run inside
+the existing build; the emission half is UNTOUCHED until R2 family
+cutovers; R1 is a byte-identical-golden hard gate per §7.1.
