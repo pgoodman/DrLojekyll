@@ -1,0 +1,94 @@
+; fixpoint_stress_1 -- directed fixpoint-family witness (DeltaRelationalIR.md
+; sec 9 risk #2). A nonlinear same-SCC transitive-closure rule whose batches
+; are ENGINEERED so that the fixpoint families' hardest invariants actually
+; fire -- instead of being masked by tiny batches -- so a future generic
+; lowering bug (mis-ordered retire / sort-unique / deferral, or broken
+; exactly-once counting) fails HERE rather than escaping the cutover.
+;
+;   tc(X,Z) : tc(X,Y), tc(Y,Z).   nonlinear: BOTH body atoms same-stratum tc.
+;   tc(X,Y) : edge(X,Y).          base.
+;   edge(X,Y) : add_edge(X,Y).    add_edge is @differential (deletable).
+;
+; ---------------------------------------------------------------------------
+; ROUND ARITHMETIC (INSERT fixpoint, StackSafeNegation.md sec 5.1 / sec 5.3)
+; ---------------------------------------------------------------------------
+; Seeds tc(X,Y)=edge(X,Y) are all claimed in the seed drain (call it round 0).
+; Fixpoint round r derives rows by combining rows claimed in rounds < r
+; (delta over round r-1's claim Delta_A). A tc row's round is the round it is
+; FIRST claimed.
+;
+; Batch 1 seeds the chain 1->2->3->4->5 (add_edge 1 2,2 3,3 4,4 5):
+;   round 0 (seeds):    tc12 tc23 tc34 tc45
+;   round 1 (D=r0):     tc13 (12.23), tc24 (23.34), tc35 (34.45)
+;   round 2 (D=r1):     tc14 (13.34 and 12.24 -- MULTIPLICITY 2),
+;                       tc25 (24.45 and 23.35 -- MULTIPLICITY 2),
+;                       tc15 (13.35)  <<< SAME-ROUND DOUBLE-CLAIM WITNESS
+;   round 3 (D=r2):     tc15 also via 14.45, 12.25, 13.35-replays -- all
+;                       already present; net-zero folds (exactly-once gate).
+;
+;   The instance  tc(1,5) : tc(1,3), tc(3,5)  has BOTH same-stratum positions
+;   equal to rows FIRST CLAIMED IN ROUND 1 -- a same-round double-claim of the
+;   two positions of ONE rule instance. Per sec 5.1 fixpoint schema this must
+;   be counted EXACTLY ONCE, and only the frontier bits (kAddNow) make that
+;   true:
+;     - delta = tc35 (later pos i): the earlier pos tc13 is read via
+;       InNewWithFrontier = (kInI && !kDel) || kAdd  -> INCLUDES kAddNow rows
+;       -> tc13 (claimed THIS round) is visible -> the instance FIRES (once).
+;     - delta = tc13 (earlier pos i): the later pos tc35 is read via
+;       InNewSansFrontier = (kInI && !kDel) || (kAdd && !kAddNow) -> EXCLUDES
+;       kAddNow rows -> tc35 (claimed THIS round) is NOT visible -> this
+;       ordering does NOT fire.
+;   One firing, not zero and not two: the exactly-once property a broken
+;   sort-unique/deferral or a Frontier/SansFrontier swap would violate.
+;
+; ---------------------------------------------------------------------------
+; REMOVE-THEN-REDERIVE (StackSafeNegation.md sec 5.2 REDERIVE, sec 5.1.1)
+; ---------------------------------------------------------------------------
+; Batch 2 closes a cycle (add_edge 5 1): {1,2,3,4,5} becomes one SCC, so every
+;   ordered pair tc(i,j) i,j in {1..5} is derivable, each with MANY cyclic
+;   supports. This is the substrate for both remove paths below.
+; Batch 3 removes add_edge 3 4 (the chord carrying the whole 1..5 cycle: node
+;   3 has no other out-edge). OVERDELETE overdeletes a LARGE cone -- every tc
+;   row that node 3 or the cycle-closing 5->1 back-edge fed. The rows that
+;   retain a surviving recursive support that does NOT route through 3->4
+;   (e.g. tc(4,1) via 4->5->1, C_r > 0 after quiescence) are restored by
+;   REDERIVE; the rows whose only support was the now-broken cycle genuinely
+;   die. This is the pure C_r>0 REDERIVE path against a large overdelete cone
+;   (sec 11 Q7(a) regime): a mis-ordered retire or a REDERIVE that reads
+;   pre-quiescence counters would over- or under-restore, visible in the
+;   golden. Surviving tc after this batch is a strict subset of the SCC.
+; Batch 4 mixes remove add_edge 5 1 + add add_edge 2 5 in ONE batch. The
+;   removal overdeletes the cycle-closing support; the add re-provides a chord.
+;   Rows whose support flips within the batch drive sec 5.1.1 phantom pairs
+;   (phantom - in OVERDELETE, phantom + in INSERT, netting zero) and mixed
+;   add/remove exercises claim-gate stale drops on BOTH sides (TryClaimDel
+;   C_nr<=0 re-test at dequeue; TryClaimAdd total>0 with !kInI NetAdded drop).
+;
+; ---------------------------------------------------------------------------
+; ADD-SIDE STALE-DROP MIRROR (BASELINE future-work; TryClaimAdd + !kInI)
+; ---------------------------------------------------------------------------
+; In batch 2 (and 4) several base-edge additions derive tc rows that are
+; ALREADY PRESENT at batch start via other (cyclic) derivations: TryClaimAdd's
+; total>0 passes, but NetAdded drops them from the published frontier because
+; !kInI is false (kInI was set at batch start). If the add-side mirror of the
+; F17 stale-drop is mis-lowered, such a row spuriously re-publishes.
+;
+; Exact per-batch end states are computed by the derivation-counter oracle and
+; the from-scratch monotone projection (the .batches sidecar); the driver pins
+; the incremental engine's query results against them after EVERY batch.
+
+#message add_edge(u64 From, u64 To) @differential.
+
+#query reach_from(bound u64 From, free u64 To).
+#query reach_to(free u64 From, bound u64 To).
+
+#local tc(From, To).
+#local edge(From, To).
+
+edge(From, To) : add_edge(From, To).
+
+tc(From, To) : edge(From, To).
+tc(From, To) : tc(From, Y), tc(Y, To).
+
+reach_from(From, To) : tc(From, To).
+reach_to(From, To) : tc(From, To).

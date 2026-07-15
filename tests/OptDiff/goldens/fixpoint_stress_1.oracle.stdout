@@ -1,0 +1,13 @@
+ORACLE: OK (4 batches, 5764 assertions)
+reach_from	1 2
+reach_from	1 3
+reach_from	1 5
+reach_from	2 3
+reach_from	2 5
+reach_from	4 5
+reach_to	1 2
+reach_to	1 3
+reach_to	1 5
+reach_to	2 3
+reach_to	2 5
+reach_to	4 5
