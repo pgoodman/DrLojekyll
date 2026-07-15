@@ -807,3 +807,18 @@ B-13 (R1 sequencing, judge §7 assessment): R1 SEEDS pinned_order from
     lands later behind the same validator. A directed
     reconvergent-plumbing OptDiff case gates trust in the
     DiscoverBranches memoized form.
+B-14 (supersedes B-12's id clause; verified 2026-07-15): ProgramImpl
+    uses ONE SHARED id counter (`impl->next_id++`, Program.cpp:162-178,
+    Build.cpp passim) for procs, vars, vectors (and CF-side entities
+    generally); ids are const at construction and printed verbatim by
+    Format.cpp (no renumbering pass exists). Reproducing program.ir
+    TEXT byte-for-byte from a different builder therefore requires
+    replaying the old builder's entire allocation-call sequence,
+    including entities later discarded — fragile coupling to
+    incidental code-path order. THE FAMILY-#1 GATE IS RESTATED:
+    tree-shape identity modulo a CONSISTENT ID-BIJECTION (same region
+    tree, same structure, ids matched by a one-pass bijection check)
+    PLUS case-stdout byte identity across all 4 modes. The 157 stdout
+    goldens + oracle remain the semantic net; raw IR-text byte
+    identity is dropped as a gate (recorded for owner ratification —
+    it was an internal design gate, never a suite golden).
