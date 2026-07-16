@@ -678,3 +678,19 @@ oracle 5764 assertions. SUITE IS NOW 157 CASES.
 GATES: debug+release builds; ctest 3/3; FULL SUITE PASS (157)
 byte-identical (zero emission change; validators green corpus-wide);
 Q5 spot @128: release/opt 135ms, debug/opt 936ms — no regression.
+
+### R2 gate tooling — permcheck.py (2026-07-15)
+
+tests/OptDiff/permcheck.py mechanizes the §7.1 permutation-only bless
+check (F-8): segments old/new stdout by epoch label lines; published-
+delta tokens ([+-](...)) compare as an order-free multiset per segment;
+ALL other lines byte-identical in order; conservative (boundary
+mismatch = FAIL, never resegmentation); per-case spec seam
+(boundary_re/delta_re/inline_delta) exists but the defaults cover the
+whole current corpus. Survey fact bounding the bless surface: only the
+four product_* drivers print published deltas via deduced-log hooks
+(each sorts within flush today); the other 42 differential cases
+observe via query drains, whose lines are STRUCTURAL (token reordering
+correctly FAILS). Self-tested against real goldens: accepts a
+within-epoch shuffle, rejects dropped boundaries, changed deltas, and
+drain-token reorders.
