@@ -694,3 +694,39 @@ observe via query drains, whose lines are STRUCTURAL (token reordering
 correctly FAILS). Self-tested against real goldens: accepts a
 within-epoch shuffle, rejects dropped boundaries, changed deltas, and
 drain-token reorders.
+
+### R1c — op families + per-arm effects + Σ-term derivation (2026-07-15)
+
+DR.h 591 lines / DR.cpp 2073 lines / Stratum.cpp hook +5. Nine new op
+kinds (seed-fold, fixpoint-fire, chain-fold, claim-drain, retire,
+rederive, frontier-filter, commit-sweep, negate-gate); PlanNode access
+spines (B-1 bound-cols, pivot re-test, lowering choice); per-ARM
+effects (A-3). Derivation from the §5.1 telescoped expansion with every
+counting rule citing its Stratum.cpp anchor: sign availability, same-
+SCC seed suppression DERIVED (+ V-SEED-SUP both spaces), CHAIN_FOLDs
+for same-SCC head projections, the four-cell claim-relative matrix per
+static position, F17 claim gates AS DATA, B-7 in-round clears + G10
+dual-appends, E-17 deferral derived, commit sweeps incl. monotone Seal.
+Negate gates ride plan spines CONTEXT-keyed (E-13: emitter's rule
+encoded; §5.1's per-position split confirmed as the only live
+schema/emitter delta — no new disagreements). Always-on validators:
+V-QCLEAR, V-CLAIM-GATE, V-NEG-CTX, V-RETIRE-AFTER (structural until
+R1d edges), V-DEFER, V-ONE-FOLD, V-SEED-SUP + the V-OLD-EQUIV CENSUS
+(independent recount of the emitter-expected inventory, compared
+per-kind, corpus-wide all 4 modes). Bug found+fixed in-stage:
+use-after-move in FillSeedFoldArm (SIGSEGV on negate-on-lower-chain
+cases; caught by the suite subset — the anchors under-covered that
+path). Anchor censuses recorded in the R1c report (e.g. tcd: 2 seeds,
+4 chain folds, 2 fires×2 arms, 8 drains, 6 retires, 3 rederives, 8
+filters, 4 sweeps).
+GATES: builds green; ctest 3/3 (one PointsTo timeout from machine
+contention, clean rerun passed); FULL SUITE PASS (157) byte-identical
+on the final binary; Q5 spot @128 release/opt 134ms, debug/opt 946ms —
+no regression.
+R1d QUEUE: materialize use-edges uniformly then derive RAW/WAR/WAW;
+model the FIXPOINT_ROUND region shell (round-start frontier clears,
+Δ-emptiness break) for round-scoped V-LOOP (B-10); inventory
+PIVOT_ASSEMBLE before the R2 join-family cutover; eager-walk
+INGEST_FOLD + standalone eager negate-gate; independent linearizer
+behind V-OLD-EQUIV retiring B-13 seeded strata; give commit-sweep
+publish-target a named field (currently on a reused bool, flagged).

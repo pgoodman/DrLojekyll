@@ -24,6 +24,7 @@
 #include <drlojekyll/Runtime/Table.h>  // RowFlags, DerivClass (runtime copy)
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -103,12 +104,45 @@ enum class Pred : uint8_t {
   kNetAdded,
 };
 
-// The op families R1a inventories. The full §2.1 operator table lands in later
-// R1 stages; R1a builds only these two.
+// The op families the DR-IR inventories. R1a built the two frontier-arm
+// families (crossover, product arm); R1c adds the seed/fixpoint/claim/retire/
+// rederive/filter/sweep families + the context-keyed negate gate (spec §2.1,
+// vocabulary v3). STILL construct-alongside: no op is emitted; each family is
+// DERIVED independently and cross-checked (V-OLD-EQUIV) against the old
+// emission driver's discovery state.
 enum class DROpKind : uint8_t {
-  kCrossover,   // a non-@never negate's arm-pair (spec §2.1 CROSSOVER, B-3.1)
-  kProductArm,  // one side×sign arm of an acyclic differential @product
+  kCrossover,      // a non-@never negate's arm-pair (spec §2.1 CROSSOVER, B-3.1)
+  kProductArm,     // one side×sign arm of an acyclic differential @product
+  kSeedFold,       // §6.2 SEED-schema arm: branch chain × sign (head fold)
+  kFixpointFire,   // §6.3 FIXPOINT-schema fire: join × sign (claim-relative)
+  kChainFold,      // §2.1 CHAIN_FOLD: claimed-frontier → projection → head fold
+  kClaimDrain,     // §2.1 CLAIM_DRAIN: table × sign (single-pass | in-round)
+  kRetire,         // §2.1 RETIRE: per SCC table × sign (clear kDelNow/kAddNow)
+  kRederive,       // §2.1 REDERIVE: per SCC table (C_r>0 gate → addQ)
+  kFrontierFilter, // §2.1 FRONTIER_FILTER: table × sign (immediate|deferred)
+  kCommitSweep,    // §2.1 COMMIT_SWEEP: per differential table (flavor)
+  kNegateGate,     // §2.1 NEGATE_GATE: context∈{eager,seed,fixpoint} × hint
 };
+
+// The negate-gate hint (F-5): a normal negate vs an @never negate. Distinct
+// from context — @never negates read Present (eager only), normal negates read
+// InI (eager/seed) or InNew (fixpoint refire). NEVER sign-derived (V-NEG-CTX).
+enum class NegateHint : uint8_t { kNormal, kNever };
+
+// The claim-drain form (spec §2.1 CLAIM_DRAIN): single-pass for a lower
+// differential table (dead/edge), in-round for an SCC table (dual-append +
+// input-queue clear, B-7). DERIVED from whether the table is in a recursive SCC.
+enum class ClaimForm : uint8_t { kSinglePass, kInRound };
+
+// The frontier-filter deferral (E-17 / spec §4.3): immediate for a lower
+// non-recursive table, add-loop-output for an SCC table (BOTH signs deferred
+// into the INSERT round's output). DERIVED, never a placement flag.
+enum class Deferral : uint8_t { kImmediate, kAddLoopOutput };
+
+// The commit-sweep flavor (spec §2.1 COMMIT_SWEEP): a differential table gets
+// Commit+validate+compact+reindex; a monotone table gets Seal. DERIVED from the
+// table's model flavor.
+enum class SweepFlavor : uint8_t { kDifferential, kMonotone };
 
 // ---------------------------------------------------------------------------
 // §2 EFFECT SET. One entry of an op's effect vector (A-3: an op's set is the
@@ -138,6 +172,13 @@ struct DREffect {
   TABLE *read_table{nullptr};
   Pred pred{Pred::kInI};
   Ctx ctx{Ctx::kSeed};
+
+  // For a flags:write effect (kFlagWrite): the written table. The specific bits
+  // are implied by the owning op's kind/sign (claim → kDel|kDelNow / kAdd|
+  // kAddNow; retire → clear kDelNow/kAddNow; commit → clear all + set kInI) —
+  // R1c does not enumerate individual RowFlags on the effect (a later stage
+  // may). `sign` (above) carries the direction where meaningful.
+  TABLE *write_table{nullptr};
 };
 
 // ---------------------------------------------------------------------------
@@ -224,10 +265,76 @@ class DRJoin {
 };
 
 // ---------------------------------------------------------------------------
+// §3 ACCESS-PLAN TREE (F-7). A SEED_FOLD/FIXPOINT_FIRE/CHAIN_FOLD body is a
+// nested chain of `PlanNode`s mirroring `EmitJoinFire`/`EmitSeedLoop`'s
+// scan_next nesting. R1c builds the MINIMAL tree the §3.1 grammar needs to
+// certify V-ONE-FOLD (exactly one Fold leaf) and the per-node access reads —
+// NOT the full column-projection detail an R2 lowering will carry. Each node
+// is one of: an ACCESS (a scanned/point-tested side, carrying its bound-col
+// set per B-1 + membership pred + polarity + identity lowering), a GATE (a
+// bare membership check with no scan — the negate forward gate), or the FOLD
+// leaf (counter± into the head, appended to the sign queue).
+//
+// The chain is a SPINE (each node has ≤1 child); a join fire's k-way scan is a
+// left-deep spine, exactly as `scan_next` nests. `is_fold` marks the sole leaf.
+// ---------------------------------------------------------------------------
+enum class PlanKind : uint8_t { kAccess, kGate, kFold };
+
+// The identity lowering choice for an ACCESS (spec §3.2): a point-test
+// (Find+pred), a keyed section walk (idx.First/Next + pivot re-test), or a full
+// scan (zero bound columns). `kSeek` is reserved for the D5 substrate.
+enum class Lowering : uint8_t { kPointTest, kSectionWalk, kFullScan, kSeek };
+
+class PlanNode {
+ public:
+  PlanKind kind{PlanKind::kFold};
+
+  // ---- ACCESS / GATE (kind == kAccess | kGate) ---------------------------
+  TABLE *table{nullptr};  // the scanned/gated table (the read's target)
+  // The canonical column-id SET this access binds (B-1: GetOrCreateIndex
+  // SortAndUnique order == the index identity, NEVER prefix contiguity). Empty
+  // for a full scan or a bare gate. Column ids, sorted ascending (canonical).
+  std::vector<unsigned> bound_cols;
+  Pred pred{Pred::kInNew};
+  bool absent{false};       // polarity: membership gate ABSENT (negate) vs member
+  Lowering lowering{Lowering::kFullScan};
+  Ctx ctx{Ctx::kSeed};      // the context flavoring a context-sensitive pred
+
+  // For a section-walk ACCESS, the pivot re-test column id (G3 disambiguation:
+  // which body atom is the delta on the scan cursor). kNoPivot when n/a.
+  static constexpr unsigned kNoPivot = ~0u;
+  unsigned pivot_col{kNoPivot};
+
+  // ---- FOLD leaf (kind == kFold) -----------------------------------------
+  TABLE *fold_table{nullptr};   // the head table folded into
+  int fold_sign{0};             // -1 retract / +1 add
+  DerivClass fold_class{DerivClass::kNonRecursive};
+
+  // The single child (null at the leaf, or at a childless partial node).
+  std::unique_ptr<PlanNode> child;
+};
+
+// ---------------------------------------------------------------------------
+// §A-3 PER-ARM structure. A FIXPOINT_FIRE groups per-delta-position arms of ONE
+// join under ONE op (G2); each arm carries its OWN effect list + PlanTree. A
+// SEED_FOLD carries a single arm (one delta position). Validators keyed on
+// frontier-flag reads (V-RETIRE-AFTER) evaluate at ARM granularity (A-3).
+// ---------------------------------------------------------------------------
+class DRArm {
+ public:
+  unsigned delta_pos{0u};                 // the delta body position (static)
+  int sign{0};                            // -1 (OVERDELETE) / +1 (INSERT)
+  std::vector<DREffect> effects;          // this arm's own effect set (A-3)
+  std::unique_ptr<PlanNode> body;         // §3 access-plan tree (spine)
+};
+
+// ---------------------------------------------------------------------------
 // §2.1 OP — one DR-IR operator node with a per-op effect vector. R1a populates
 // only the two families named by `DROpKind`; the crossover carries its arm-pair
 // data (the three tables + pred view + negated_differential + the derived
 // class), the product arm its (side index, sign, side tables + differential).
+// R1c adds the seed/fixpoint/claim/retire/rederive/filter/sweep/negate-gate
+// families (each with its own payload block below).
 // ---------------------------------------------------------------------------
 class DROp {
  public:
@@ -269,6 +376,69 @@ class DROp {
   // j < side_index read at kInNew, j > side_index at kInI (sign-independent).
   // Stored as (table, pred) pairs in position order (delta side omitted).
   std::vector<std::pair<TABLE *, Pred>> arm_reads;
+
+  // ---- SEED_FOLD data (kind == kSeedFold) ----------------------------------
+  // One §6.2 SEED-schema arm: a branch chain × available sign. `seed_branch`
+  // indexes `DRFlowGraph::branches`; `seed_sign` is -1 (over the source's
+  // net-removals) / +1 (over net-additions). `seed_target` is the head table
+  // the chain folds into (== branch.target for a head chain; null for a
+  // join-terminal chain — a join-terminal SEED_FOLD only APPENDS pivots, no
+  // fold, so it carries `join_pivot=true` and no Fold leaf). `seed_class` is
+  // the RuleClass of the head fold. The arm (effects + PlanTree) is `arm`.
+  unsigned seed_branch{0u};
+  int seed_sign{0};
+  TABLE *seed_source{nullptr};
+  TABLE *seed_target{nullptr};
+  DerivClass seed_class{DerivClass::kNonRecursive};
+  bool join_pivot{false};       // a join-terminal seed (pivot append, no fold)
+  bool in_fixpoint_seed{false}; // a same-SCC internal projection seed (§2320)
+
+  // ---- FIXPOINT_FIRE data (kind == kFixpointFire) --------------------------
+  // ONE op per (join, sign) (G2). `fire_join` is the join view; `fire_sign`
+  // -1 (OVERDELETE) / +1 (INSERT). The per-position arms (one per same-SCC
+  // delta position, in JoinedViews() order) are `arms`.
+  std::optional<QueryView> fire_join;
+  TABLE *fire_table{nullptr};   // the join's persisted (recursion-anchor) table
+  int fire_sign{0};
+
+  // ---- CHAIN_FOLD data (kind == kChainFold) --------------------------------
+  // A same-SCC internal projection/merge-arm fold (the tc G7 shape): its delta
+  // is a CLAIMED-* round frontier of `chain_source`, folded (Recursive) into
+  // `chain_target`. `chain_branch` indexes the branch; `chain_sign` -1/+1.
+  unsigned chain_branch{0u};
+  int chain_sign{0};
+  TABLE *chain_source{nullptr};
+  TABLE *chain_target{nullptr};
+
+  // ---- CLAIM_DRAIN / RETIRE / REDERIVE / FRONTIER_FILTER / COMMIT_SWEEP -----
+  // The per-table family target + attributes. `table_op_table` is the table;
+  // `table_op_sign` -1 (del) / +1 (add) where signed (drain/retire/filter);
+  // 0 for REDERIVE/COMMIT_SWEEP. `claim_form`/`deferral`/`sweep_flavor` are the
+  // DERIVED attributes (see the enums). `claim_gate` is the F17 gate predicate
+  // carried as DATA (kNetDeleted-flavored C_nr<=0 for del, Total>0 for add) —
+  // mandatory on every CLAIM_DRAIN (V-CLAIM-GATE).
+  TABLE *table_op_table{nullptr};
+  int table_op_sign{0};
+  ClaimForm claim_form{ClaimForm::kSinglePass};
+  Deferral deferral{Deferral::kImmediate};
+  SweepFlavor sweep_flavor{SweepFlavor::kDifferential};
+  Pred claim_gate{Pred::kNetDeleted};  // the F17 dequeue re-test, AS DATA
+  unsigned scc_group{~0u};             // the owning SCC id for in-round/scc ops
+
+  // ---- NEGATE_GATE data (kind == kNegateGate) ------------------------------
+  // An ACCESS whose pred is the negate forward gate, polarity=ABSENT, derived
+  // from (context, hint) — NEVER sign-derived (F-5 / V-NEG-CTX). `gate_negate`
+  // is the negate view; `gate_table` its negated table; `gate_pred` the
+  // (context,hint)-derived predicate; `gate_hint` the normal/@never hint.
+  std::optional<QueryView> gate_negate;
+  TABLE *gate_table{nullptr};
+  Pred gate_pred{Pred::kInI};
+  NegateHint gate_hint{NegateHint::kNormal};
+
+  // The per-arm structure (A-3). A FIXPOINT_FIRE has one arm per same-SCC delta
+  // position; a SEED_FOLD/CHAIN_FOLD has exactly one. Empty for the per-table
+  // families (claim/retire/rederive/filter/sweep) and the negate gate.
+  std::vector<DRArm> arms;
 
   DROp(DROpKind kind_) : kind(kind_) {}
 };
@@ -315,6 +485,8 @@ class DRFlowGraph {
   // Convenience accessors over `ops`.
   std::vector<const DROp *> Crossovers(void) const;
   std::vector<const DROp *> ProductArms(void) const;
+  // R1c: every op of one kind, in construction order.
+  std::vector<const DROp *> OpsOfKind(DROpKind kind) const;
 
   // Look up a materialized per-table vec index; asserts it exists.
   unsigned TableVec(TABLE *table, VecRole role) const;
@@ -393,5 +565,27 @@ void ValidateDRInventory(
     const std::vector<OldJoinRef> &old_joins,
     const std::unordered_map<TABLE *, unsigned> &old_scc_map,
     const std::unordered_map<TABLE *, unsigned> &old_drain_stratum);
+
+// R1c: validate the DERIVED op families (seed folds, fixpoint fires, chain
+// folds, claim drains, retires, rederives, frontier filters, commit sweeps,
+// negate gates). ALWAYS-ON. Two halves:
+//
+//  (1) INTERNAL graph validators (spec §5, evaluated over `flow` alone):
+//      V-QCLEAR, V-CLAIM-GATE, V-NEG-CTX, V-RETIRE-AFTER (structural),
+//      V-DEFER, V-ONE-FOLD, V-SEED-SUP.
+//  (2) V-OLD-EQUIV extension: the DR op INVENTORY (per-kind counts + keys)
+//      must match what the OLD emission driver EMITS. The expected census is
+//      recomputed HERE by replicating the emission driver's counting rules
+//      (branches×signs minus suppressed, joins with same-SCC side counts,
+//      per-table drains/filters/sweeps) from the same discovery inputs (impl/
+//      context/query/scc_map), then compared count-for-count and key-for-key.
+//
+// This validator needs the live discovery inputs to recompute the emitter's
+// census independently (the flat Old*Refs alone cannot express the per-join
+// same-SCC side test), so it takes them directly. On ANY mismatch: fprintf +
+// abort (survives NDEBUG, matching `ValidateDRInventory`).
+void ValidateDROps(
+    const DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
+    const std::unordered_map<TABLE *, unsigned> &scc_map);
 
 }  // namespace hyde

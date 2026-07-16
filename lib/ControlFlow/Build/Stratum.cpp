@@ -1883,6 +1883,11 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
                  drain_stratum);
     ValidateDRInventory(dr_flow, old_crossovers, old_products, old_branches,
                         old_joins, recursive_sccs, drain_stratum);
+
+    // R1c: validate the derived op families (seed/fixpoint/chain folds, claim
+    // drains, retires, rederives, filters, sweeps, negate gates) + the op-
+    // inventory census against this emission driver's counting rules.
+    ValidateDROps(dr_flow, impl, context, query, recursive_sccs);
   }
 
   // Cash the readiness precondition, SPLIT by emission-site kind (A4).

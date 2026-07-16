@@ -13,9 +13,12 @@
 
 #include "DR.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
+#include <memory>
 #include <unordered_set>
 
 #include "Build.h"
@@ -313,6 +316,166 @@ static std::vector<DREffect> ProductArmEffects(DROp &op, int sign) {
   return fx;
 }
 
+// ===========================================================================
+// R1c op-family derivation helpers. Each mirrors the emitter's semantics EXACTLY
+// (the cited Emit* function is the reference); the effect sets + plan trees are
+// derived, never read back from IR.
+// ===========================================================================
+
+// The canonical bound-col SET (B-1) for a view's key columns feeding a scan of
+// `scan_view`: the scanned view's column ids that a partial scan binds. R1c
+// records the SET the access binds (sorted, deduped); the concrete index
+// identity is R2 lowering. For a full scan (zero bound columns) the set is
+// empty. `bound` are the QueryColumns the caller has bound going into the scan.
+static std::vector<unsigned> CanonBoundCols(
+    const std::vector<QueryColumn> &bound) {
+  std::vector<unsigned> ids;
+  ids.reserve(bound.size());
+  for (QueryColumn c : bound) {
+    ids.push_back(c.Id());
+  }
+  std::sort(ids.begin(), ids.end());
+  ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+  return ids;
+}
+
+// The negate forward-gate predicate DERIVED from (context, hint) — NEVER
+// sign-derived (F-5 / V-NEG-CTX). Mirrors EmitChainStep:520-522 (seed→kInI,
+// fixpoint→kInNew, both signs) and Negate.cpp's eager gate (eager normal→kInI,
+// eager @never→kPresent).
+static Pred NegateGatePred(Ctx ctx, NegateHint hint) {
+  if (ctx == Ctx::kEager) {
+    return (hint == NegateHint::kNever) ? Pred::kPresent : Pred::kInI;
+  }
+  if (ctx == Ctx::kSeed) {
+    return Pred::kInI;  // E-13/F18: seed reads kInI BOTH signs
+  }
+  return Pred::kInNew;  // fixpoint refire, both signs
+}
+
+// NOTE on NEGATE_GATE representation: R1c carries negate forward gates as
+// ACCESS-attribute sub-objects — `PlanKind::kGate` nodes on the owning seed/
+// chain fold's plan spine (plus the matching flag-read effect on the arm) —
+// rather than standalone `kNegateGate` ops. The `kNegateGate` kind exists in
+// the vocabulary (a standalone form is expected for the EAGER context when the
+// eager walk is inventoried, R1d+); V-NEG-CTX validates BOTH forms.
+
+// The Fold-leaf PlanNode for a head fold into `table` with `sign`/`klass`.
+static std::unique_ptr<PlanNode> MakeFoldLeaf(TABLE *table, int sign,
+                                              DerivClass klass) {
+  auto leaf = std::make_unique<PlanNode>();
+  leaf->kind = PlanKind::kFold;
+  leaf->fold_table = table;
+  leaf->fold_sign = sign;
+  leaf->fold_class = klass;
+  return leaf;
+}
+
+// Build the SEED_FOLD arm (effects + minimal PlanTree) for a head-chain seed:
+// vector:drain(source frontier), the chain's negate-gate reads (context=seed),
+// counter±(target, klass) + kInI crossing, vector:append(target delQ/addQ).
+// The PlanTree is a spine of GATE nodes (per NEGATE on the chain, seed ctx)
+// ending at the Fold leaf. `neg_gates` are the negate views on the chain.
+static void FillSeedFoldArm(DROp &op, ProgramImpl *impl,
+                            const std::vector<QueryView> &neg_gates) {
+  DRArm arm;
+  arm.delta_pos = 0u;  // the source member is the delta position
+  arm.sign = op.seed_sign;
+
+  // vector:drain of the source's signed frontier.
+  DREffect drain;
+  drain.kind = EffKind::kVecDrain;
+  drain.value_table = op.seed_source;
+  drain.vec_role =
+      (op.seed_sign < 0) ? VecRole::kNetRemoval : VecRole::kNetAddition;
+  arm.effects.push_back(drain);
+
+  // Build the plan spine root→leaf. We construct leaf-first then wrap.
+  std::unique_ptr<PlanNode> spine;
+  if (op.join_pivot) {
+    // A join-terminal seed appends pivots — no fold leaf, no head table. The
+    // plan spine is just the negate gates (usually none corpus-wide). Model the
+    // "leaf" as an empty gate-less node with no fold (child=null); V-ONE-FOLD
+    // requires exactly one Fold, so a join-pivot seed carries NO PlanTree.
+    // (The pivot append is a vector effect, below.)
+  } else {
+    spine = MakeFoldLeaf(op.seed_target, op.seed_sign, op.seed_class);
+
+    // counter±(target) + kInI crossing read for the head fold.
+    DREffect counter;
+    counter.kind = EffKind::kCounter;
+    counter.counter_table = op.seed_target;
+    counter.sign = op.seed_sign;
+    counter.klass = op.seed_class;
+    arm.effects.push_back(counter);
+
+    DREffect crossing;
+    crossing.kind = EffKind::kInIReadFrozen;
+    crossing.read_table = op.seed_target;
+    crossing.pred = Pred::kInI;
+    crossing.ctx = Ctx::kSeed;
+    arm.effects.push_back(crossing);
+  }
+
+  // Wrap the spine with a GATE per NEGATE on the chain (seed context, kInI both
+  // signs), and record each gate's read effect (E-13).
+  for (QueryView neg : neg_gates) {
+    DataModel *const nm =
+        impl->view_to_model[QueryNegate::From(neg).NegatedView()]
+            ->FindAs<DataModel>();
+    TABLE *const negated_table = nm->table;
+
+    const Pred gate_pred = NegateGatePred(Ctx::kSeed, NegateHint::kNormal);
+    auto gate = std::make_unique<PlanNode>();
+    gate->kind = PlanKind::kGate;
+    gate->table = negated_table;
+    gate->pred = gate_pred;
+    gate->absent = true;  // negate forward gate is polarity=ABSENT
+    gate->ctx = Ctx::kSeed;
+    gate->child = std::move(spine);
+    spine = std::move(gate);
+
+    DREffect read;
+    read.kind = EffKind::kFlagRead;
+    read.read_table = negated_table;
+    read.pred = gate_pred;
+    read.ctx = Ctx::kSeed;
+    arm.effects.push_back(read);
+  }
+
+  // vector:append into the target's sign queue (head chain) OR the join pivots
+  // (join-terminal seed).
+  if (op.join_pivot) {
+    // The pivot append targets the join-pivots vec (no per-table role); model
+    // it as a param/output append with a null table (a message-less vec).
+    DREffect append;
+    append.kind = EffKind::kVecAppend;
+    append.value_table = nullptr;
+    append.vec_role = VecRole::kJoinPivots;
+    arm.effects.push_back(append);
+  } else {
+    DREffect append;
+    append.kind = EffKind::kVecAppend;
+    append.value_table = op.seed_target;
+    append.vec_role =
+        (op.seed_sign < 0) ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+    arm.effects.push_back(append);
+  }
+
+  arm.body = std::move(spine);
+  op.effects = arm.effects;  // op-level union == the single arm's set (A-3)
+  op.arms.push_back(std::move(arm));
+}
+
+// The four-cell claim-relative matrix predicate for a FIXPOINT_FIRE arm reading
+// same-SCC side `j` while `p` is the delta (mirrors EmitJoinFire:1184-1190).
+static Pred FixpointSamePred(size_t j_pos, size_t p_pos, bool is_del) {
+  if (j_pos < p_pos) {
+    return is_del ? Pred::kSurvivesSoFar : Pred::kInNewWithFrontier;  // permissive
+  }
+  return is_del ? Pred::kAliveAtClaim : Pred::kInNewSansFrontier;  // strict
+}
+
 }  // namespace
 
 std::vector<const DROp *> DRFlowGraph::Crossovers(void) const {
@@ -329,6 +492,16 @@ std::vector<const DROp *> DRFlowGraph::ProductArms(void) const {
   std::vector<const DROp *> out;
   for (const DROp &op : ops) {
     if (op.kind == DROpKind::kProductArm) {
+      out.push_back(&op);
+    }
+  }
+  return out;
+}
+
+std::vector<const DROp *> DRFlowGraph::OpsOfKind(DROpKind kind) const {
+  std::vector<const DROp *> out;
+  for (const DROp &op : ops) {
+    if (op.kind == kind) {
       out.push_back(&op);
     }
   }
@@ -621,6 +794,529 @@ DRFlowGraph BuildDRInventory(
       CollectSectionTargetsDR(impl, context, join_view, j.targets);
       flow.joins.push_back(std::move(j));
     }
+  }
+
+  // ==========================================================================
+  // R1c op families. Each is DERIVED independently and mirrors the emission
+  // driver's counting rules EXACTLY (Stratum.cpp cites inline). Strata are NOT
+  // consulted (B-13-seeded later): the op SET is structural, only its emission
+  // ORDER is per-stratum, so grouping by stratum is unnecessary here.
+  // ==========================================================================
+
+  const auto is_recursive = [&](TABLE *table) -> bool {
+    return SccOf(scc_map, table).has_value();
+  };
+  const auto same_scc = [&](TABLE *a, TABLE *b) -> bool {
+    const auto sa = SccOf(scc_map, a);
+    return sa.has_value() && sa == SccOf(scc_map, b);
+  };
+  // Replicate `all_sides_same_scc` (Stratum.cpp:1492-1506): every joined side
+  // shares the join's own SCC.
+  const auto all_sides_same_scc = [&](QueryView join_view) -> bool {
+    DataModel *const jm = impl->view_to_model[join_view]->FindAs<DataModel>();
+    const auto join_scc = SccOf(scc_map, jm->table);
+    if (!join_scc.has_value()) {
+      return false;
+    }
+    for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
+      TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
+      if (SccOf(scc_map, st) != join_scc) {
+        return false;
+      }
+    }
+    return true;
+  };
+  // The negate views on a branch chain, in path order (for the seed plan-tree
+  // gates + their E-13 reads).
+  const auto chain_negates = [&](const DRBranch &branch) {
+    std::vector<QueryView> gates;
+    for (const QueryView &view : branch.path) {
+      if (view.IsNegate()) {
+        gates.push_back(view);
+      }
+    }
+    return gates;
+  };
+
+  // ------------------------------------------------------- SEED_FOLD / CHAIN_FOLD
+  // Per branch × available sign (mirror Stratum.cpp:2012-2080). Two suppressions
+  // (both DERIVED, V-SEED-SUP): (1) a same-SCC internal head projection edge is
+  // NOT a top-level seed — it fires inside the claim round as a CHAIN_FOLD
+  // (Stratum.cpp:2026-2029 / :2311-2326); (2) an all-same-SCC join has NO seed
+  // (Stratum.cpp:2035-2037). For a non-suppressed branch: `-` arm iff the source
+  // is differential & not induction-owned (Stratum.cpp:2071-2076), `+` arm
+  // always (Stratum.cpp:2077-2079). Join-terminal seeds append pivots (no fold).
+  for (unsigned bi = 0u; bi < flow.branches.size(); ++bi) {
+    const DRBranch &branch = flow.branches[bi];
+    TABLE *const source = branch.source;
+    const bool src_seedable =
+        TableIsDifferential(source) && !TableIsInductionOwnedDR(context, source);
+    const bool has_minus = src_seedable;  // `-` arm existence (Stratum:2071)
+
+    // (1) same-SCC internal head projection → CHAIN_FOLD (in-round, both signs).
+    if (!branch.ends_at_join && is_recursive(branch.target) &&
+        same_scc(branch.target, source)) {
+      // The in-fixpoint re-fire only runs for a differential non-induction
+      // source (Stratum.cpp:2317-2319); both signs each round.
+      if (src_seedable) {
+        for (int sign : {-1, +1}) {
+          DROp op(DROpKind::kChainFold);
+          op.ctx = Ctx::kFixpoint;
+          op.chain_branch = bi;
+          op.chain_sign = sign;
+          op.chain_source = source;
+          op.chain_target = branch.target;
+          op.scc_group = *SccOf(scc_map, branch.target);
+          op.seed_class = DerivClass::kRecursive;  // Stratum.cpp:2321
+
+          DRArm arm;
+          arm.sign = sign;
+          arm.delta_pos = 0u;
+          DREffect drain;
+          drain.kind = EffKind::kVecDrain;
+          drain.value_table = source;
+          drain.vec_role =
+              (sign < 0) ? VecRole::kClaimedDel : VecRole::kClaimedAdd;
+          arm.effects.push_back(drain);
+          // The chain's negate gates (fixpoint context — kInNew both signs).
+          for (QueryView neg : chain_negates(branch)) {
+            DataModel *const nm =
+                impl->view_to_model[QueryNegate::From(neg).NegatedView()]
+                    ->FindAs<DataModel>();
+            DREffect read;
+            read.kind = EffKind::kFlagRead;
+            read.read_table = nm->table;
+            read.pred = NegateGatePred(Ctx::kFixpoint, NegateHint::kNormal);
+            read.ctx = Ctx::kFixpoint;
+            arm.effects.push_back(read);
+          }
+          DREffect counter;
+          counter.kind = EffKind::kCounter;
+          counter.counter_table = branch.target;
+          counter.sign = sign;
+          counter.klass = DerivClass::kRecursive;
+          arm.effects.push_back(counter);
+          DREffect crossing;
+          crossing.kind = EffKind::kInIReadFrozen;
+          crossing.read_table = branch.target;
+          crossing.pred = Pred::kInI;
+          crossing.ctx = Ctx::kFixpoint;
+          arm.effects.push_back(crossing);
+          DREffect append;
+          append.kind = EffKind::kVecAppend;
+          append.value_table = branch.target;
+          append.vec_role =
+              (sign < 0) ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+          arm.effects.push_back(append);
+
+          // Plan spine: negate gates (fixpoint) → fold leaf.
+          std::unique_ptr<PlanNode> spine =
+              MakeFoldLeaf(branch.target, sign, DerivClass::kRecursive);
+          for (QueryView neg : chain_negates(branch)) {
+            DataModel *const nm =
+                impl->view_to_model[QueryNegate::From(neg).NegatedView()]
+                    ->FindAs<DataModel>();
+            auto gate = std::make_unique<PlanNode>();
+            gate->kind = PlanKind::kGate;
+            gate->table = nm->table;
+            gate->pred = NegateGatePred(Ctx::kFixpoint, NegateHint::kNormal);
+            gate->absent = true;
+            gate->ctx = Ctx::kFixpoint;
+            gate->child = std::move(spine);
+            spine = std::move(gate);
+          }
+          arm.body = std::move(spine);
+          op.effects = arm.effects;
+          op.arms.push_back(std::move(arm));
+
+          const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
+          flow.ops.push_back(std::move(op));
+          const VecRole q =
+              (sign < 0) ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+          flow.vecs[flow.TableVec(branch.target, q)].defs.push_back(op_idx);
+        }
+      }
+      continue;  // NEVER also a top-level seed (V-SEED-SUP negative space).
+    }
+
+    // (2) all-same-SCC join → no seed at all (V-SEED-SUP).
+    if (branch.ends_at_join && all_sides_same_scc(branch.path.back())) {
+      continue;
+    }
+
+    // The head fold class (Stratum.cpp:2068) — recursive iff target shares the
+    // source's SCC (a linear-recursion join-table → union edge). Null target
+    // for a join-terminal seed.
+    TABLE *target = nullptr;
+    DerivClass klass = DerivClass::kNonRecursive;
+    if (!branch.ends_at_join) {
+      target = branch.target;
+      klass = RuleClass(scc_map, target, {source});
+    }
+
+    const std::vector<QueryView> neg_gates = chain_negates(branch);
+    const int signs[2] = {-1, +1};
+    for (int k = (has_minus ? 0 : 1); k < 2; ++k) {
+      const int sign = signs[k];
+      DROp op(DROpKind::kSeedFold);
+      op.ctx = Ctx::kSeed;
+      op.seed_branch = bi;
+      op.seed_sign = sign;
+      op.seed_source = source;
+      op.seed_target = target;
+      op.seed_class = klass;
+      op.join_pivot = branch.ends_at_join;
+      FillSeedFoldArm(op, impl, neg_gates);
+
+      const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
+      flow.ops.push_back(std::move(op));
+      if (!branch.ends_at_join) {
+        const VecRole q = (sign < 0) ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+        flow.vecs[flow.TableVec(target, q)].defs.push_back(op_idx);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ FIXPOINT_FIRE
+  // ONE op per (SCC join, sign) (G2 / Stratum.cpp:2238-2246 × del+add loops). A
+  // join is a fixpoint fire iff its persisted table is in a recursive SCC. Each
+  // op groups one arm per same-SCC delta position (JoinedViews() order); other
+  // same-SCC positions read the claim-relative matrix, lower positions kInNew.
+  for (const DRJoin &j : flow.joins) {
+    const QueryView join_view = j.join_view;
+    DataModel *const jm = impl->view_to_model[join_view]->FindAs<DataModel>();
+    TABLE *const join_table = jm->table;
+    const auto join_scc = SccOf(scc_map, join_table);
+    if (!join_scc.has_value()) {
+      continue;  // only SCC joins fire in a claim round.
+    }
+
+    // Partition sides into same-SCC positions and lower sides (EmitJoinFire:
+    // 1099-1112).
+    std::vector<QueryView> all_sides;
+    std::vector<size_t> same_pos;
+    std::vector<size_t> lower_pos;
+    for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
+      TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
+      if (SccOf(scc_map, st) == join_scc) {
+        same_pos.push_back(all_sides.size());
+      } else {
+        lower_pos.push_back(all_sides.size());
+      }
+      all_sides.push_back(side);
+    }
+    assert(!same_pos.empty());
+
+    for (int sign : {-1, +1}) {
+      const bool is_del = (sign < 0);
+      DROp op(DROpKind::kFixpointFire);
+      op.ctx = Ctx::kFixpoint;
+      op.fire_join = join_view;
+      op.fire_table = join_table;
+      op.fire_sign = sign;
+
+      std::vector<DREffect> op_fx;
+      for (size_t p_pos : same_pos) {
+        DRArm arm;
+        arm.delta_pos = static_cast<unsigned>(p_pos);
+        arm.sign = sign;
+
+        TABLE *const delta_table =
+            impl->view_to_model[all_sides[p_pos]]->FindAs<DataModel>()->table;
+        DREffect drain;
+        drain.kind = EffKind::kVecDrain;
+        drain.value_table = delta_table;
+        drain.vec_role =
+            is_del ? VecRole::kClaimedDel : VecRole::kClaimedAdd;
+        arm.effects.push_back(drain);
+
+        // The ordered scan list (EmitJoinFire:1178-1195): other same-SCC sides
+        // with the claim-relative matrix pred, then lower sides at kInNew.
+        std::unique_ptr<PlanNode> spine =
+            MakeFoldLeaf(join_table, sign, DerivClass::kRecursive);
+        // Build leaf-first: iterate scan list in REVERSE so the outermost scan
+        // wraps last (matching scan_next's ascending nesting).
+        std::vector<std::pair<size_t, Pred>> scan_list;
+        for (size_t j_pos : same_pos) {
+          if (j_pos == p_pos) {
+            continue;
+          }
+          scan_list.emplace_back(j_pos, FixpointSamePred(j_pos, p_pos, is_del));
+        }
+        for (size_t j_pos : lower_pos) {
+          scan_list.emplace_back(j_pos, Pred::kInNew);
+        }
+        for (auto it = scan_list.rbegin(); it != scan_list.rend(); ++it) {
+          const size_t j_pos = it->first;
+          const Pred pred = it->second;
+          const QueryView side = all_sides[j_pos];
+          TABLE *const st =
+              impl->view_to_model[side]->FindAs<DataModel>()->table;
+
+          // The side's bound columns: its pivot input columns (mirrors
+          // EmitJoinFire's `avail`, :1250-1263), canonicalized per B-1. The
+          // re-test column (the D1 cursor pivot compare) is the first pivot
+          // input in join-pivot order.
+          std::vector<QueryColumn> pivot_inputs;
+          const QueryJoin jv = QueryJoin::From(join_view);
+          for (auto pj = 0u, num_pivots = jv.NumPivotColumns(); pj < num_pivots;
+               ++pj) {
+            for (QueryColumn in_pivot : jv.NthInputPivotSet(pj)) {
+              if (QueryView::Containing(in_pivot) == side) {
+                pivot_inputs.push_back(in_pivot);
+              }
+            }
+          }
+
+          auto acc = std::make_unique<PlanNode>();
+          acc->kind = PlanKind::kAccess;
+          acc->table = st;
+          acc->bound_cols = CanonBoundCols(pivot_inputs);  // B-1 canonical set
+          acc->pivot_col =
+              pivot_inputs.empty() ? PlanNode::kNoPivot : pivot_inputs[0].Id();
+          acc->pred = pred;
+          acc->ctx = Ctx::kFixpoint;
+          acc->lowering = pivot_inputs.empty() ? Lowering::kFullScan
+                                               : Lowering::kSectionWalk;
+          acc->child = std::move(spine);
+          spine = std::move(acc);
+
+          DREffect read;
+          read.kind = EffKind::kFlagRead;
+          read.read_table = st;
+          read.pred = pred;
+          read.ctx = Ctx::kFixpoint;
+          arm.effects.push_back(read);
+        }
+
+        DREffect counter;
+        counter.kind = EffKind::kCounter;
+        counter.counter_table = join_table;
+        counter.sign = sign;
+        counter.klass = DerivClass::kRecursive;
+        arm.effects.push_back(counter);
+        DREffect crossing;
+        crossing.kind = EffKind::kInIReadFrozen;
+        crossing.read_table = join_table;
+        crossing.pred = Pred::kInI;
+        crossing.ctx = Ctx::kFixpoint;
+        arm.effects.push_back(crossing);
+        DREffect append;
+        append.kind = EffKind::kVecAppend;
+        append.value_table = join_table;
+        append.vec_role =
+            is_del ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+        arm.effects.push_back(append);
+
+        arm.body = std::move(spine);
+        for (const DREffect &e : arm.effects) {
+          op_fx.push_back(e);
+        }
+        op.arms.push_back(std::move(arm));
+      }
+      op.effects = std::move(op_fx);  // op-level union (A-3)
+
+      const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
+      flow.ops.push_back(std::move(op));
+      const VecRole q = is_del ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+      flow.vecs[flow.TableVec(join_table, q)].defs.push_back(op_idx);
+    }
+  }
+
+  // -------------------- CLAIM_DRAIN / RETIRE / REDERIVE / FRONTIER_FILTER
+  // Per phase table (differential, not induction-owned — Stratum.cpp:1664-1668).
+  // Acyclic tables: single-pass del+add drains, immediate del+add filters
+  // (Stratum.cpp:2214-2221). SCC tables: in-round del+add drains (dual-append +
+  // input-queue clear), retire del+add, rederive (del only), deferred del+add
+  // filters (Stratum.cpp:2293-2377).
+  const auto mint_claim = [&](TABLE *table, int sign, ClaimForm form) {
+    const bool is_del = (sign < 0);
+    DROp op(DROpKind::kClaimDrain);
+    op.ctx = (form == ClaimForm::kInRound) ? Ctx::kFixpoint : Ctx::kSeed;
+    op.table_op_table = table;
+    op.table_op_sign = sign;
+    op.claim_form = form;
+    op.claim_gate = is_del ? Pred::kNetDeleted : Pred::kNetAdded;  // F17 gate DATA
+    if (is_recursive(table)) {
+      op.scc_group = *SccOf(scc_map, table);
+    }
+
+    // vector:drain(queue) — the F17 gate re-tests at dequeue (V-CLAIM-GATE).
+    DREffect drain;
+    drain.kind = EffKind::kVecDrain;
+    drain.value_table = table;
+    drain.vec_role = is_del ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+    op.effects.push_back(drain);
+    // flags:write (kDel|kDelNow / kAdd|kAddNow).
+    DREffect fw;
+    fw.kind = EffKind::kFlagWrite;
+    fw.write_table = table;
+    fw.sign = sign;
+    op.effects.push_back(fw);
+    // vector:append(overdelete-set / addition-set) — the persistent claim set.
+    DREffect set_append;
+    set_append.kind = EffKind::kVecAppend;
+    set_append.value_table = table;
+    set_append.vec_role =
+        is_del ? VecRole::kOverdeleteSet : VecRole::kAdditionSet;
+    op.effects.push_back(set_append);
+    if (form == ClaimForm::kInRound) {
+      // The DUAL-APPEND (G10 / B-11): also the per-round claimed frontier.
+      DREffect front_append;
+      front_append.kind = EffKind::kVecAppend;
+      front_append.value_table = table;
+      front_append.vec_role = is_del ? VecRole::kClaimedDel : VecRole::kClaimedAdd;
+      op.effects.push_back(front_append);
+      // The B-7 input-queue CLEAR (in-round only) — V-QCLEAR.
+      DREffect clear;
+      clear.kind = EffKind::kVecClear;
+      clear.value_table = table;
+      clear.vec_role = is_del ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+      op.effects.push_back(clear);
+    }
+    flow.ops.push_back(std::move(op));
+  };
+
+  const auto mint_filter = [&](TABLE *table, int sign, Deferral deferral) {
+    const bool is_del = (sign < 0);
+    DROp op(DROpKind::kFrontierFilter);
+    op.ctx = (deferral == Deferral::kAddLoopOutput) ? Ctx::kFixpoint : Ctx::kSeed;
+    op.table_op_table = table;
+    op.table_op_sign = sign;
+    op.deferral = deferral;
+    if (is_recursive(table)) {
+      op.scc_group = *SccOf(scc_map, table);
+    }
+    DREffect drain;
+    drain.kind = EffKind::kVecDrain;
+    drain.value_table = table;
+    drain.vec_role = is_del ? VecRole::kOverdeleteSet : VecRole::kAdditionSet;
+    op.effects.push_back(drain);
+    DREffect read;
+    read.kind = EffKind::kFlagRead;
+    read.read_table = table;
+    read.pred = is_del ? Pred::kNetDeleted : Pred::kNetAdded;
+    read.ctx = op.ctx;
+    op.effects.push_back(read);
+    DREffect append;
+    append.kind = EffKind::kVecAppend;
+    append.value_table = table;
+    append.vec_role = is_del ? VecRole::kNetRemoval : VecRole::kNetAddition;
+    op.effects.push_back(append);
+    flow.ops.push_back(std::move(op));
+  };
+
+  for (TABLE *table : impl->tables) {
+    if (!TableIsDifferential(table) || TableIsInductionOwnedDR(context, table)) {
+      continue;
+    }
+    if (is_recursive(table)) {
+      const unsigned g = *SccOf(scc_map, table);
+      // In-round drains (del in OVERDELETE loop, add in INSERT loop).
+      mint_claim(table, -1, ClaimForm::kInRound);
+      mint_claim(table, +1, ClaimForm::kInRound);
+      // Retire del + add (per round tail).
+      for (int sign : {-1, +1}) {
+        DROp op(DROpKind::kRetire);
+        op.ctx = Ctx::kFixpoint;
+        op.table_op_table = table;
+        op.table_op_sign = sign;
+        op.scc_group = g;
+        DREffect drain;
+        drain.kind = EffKind::kVecDrain;
+        drain.value_table = table;
+        drain.vec_role = (sign < 0) ? VecRole::kClaimedDel : VecRole::kClaimedAdd;
+        op.effects.push_back(drain);
+        DREffect fw;
+        fw.kind = EffKind::kFlagWrite;
+        fw.write_table = table;
+        fw.sign = sign;  // clear kDelNow (-) / kAddNow (+)
+        op.effects.push_back(fw);
+        flow.ops.push_back(std::move(op));
+      }
+      // Rederive (del side only): drain(overdelete-set), read(RecursivelySupported),
+      // append(addQ). Gate kRecursivelySupported.
+      {
+        DROp op(DROpKind::kRederive);
+        op.ctx = Ctx::kFixpoint;
+        op.table_op_table = table;
+        op.scc_group = g;
+        DREffect drain;
+        drain.kind = EffKind::kVecDrain;
+        drain.value_table = table;
+        drain.vec_role = VecRole::kOverdeleteSet;
+        op.effects.push_back(drain);
+        DREffect read;
+        read.kind = EffKind::kFlagRead;
+        read.read_table = table;
+        read.pred = Pred::kRecursivelySupported;
+        read.ctx = Ctx::kFixpoint;
+        op.effects.push_back(read);
+        DREffect append;
+        append.kind = EffKind::kVecAppend;
+        append.value_table = table;
+        append.vec_role = VecRole::kAddQueue;
+        op.effects.push_back(append);
+        flow.ops.push_back(std::move(op));
+      }
+      // Deferred filters (BOTH signs, add-loop-output — E-17).
+      mint_filter(table, -1, Deferral::kAddLoopOutput);
+      mint_filter(table, +1, Deferral::kAddLoopOutput);
+    } else {
+      // Acyclic: single-pass drains + immediate filters.
+      mint_claim(table, -1, ClaimForm::kSinglePass);
+      mint_claim(table, +1, ClaimForm::kSinglePass);
+      mint_filter(table, -1, Deferral::kImmediate);
+      mint_filter(table, +1, Deferral::kImmediate);
+    }
+  }
+
+  // ----------------------------------------------------------- COMMIT_SWEEP
+  // One per differential table (flavor=differential, publish-target iff the
+  // table backs a @differential transmit); one per MONOTONE boundary table with
+  // a delta-vec entry (flavor=monotone / Seal). Mirror Procedure.cpp:307-345.
+  std::unordered_set<TABLE *> published_tables;
+  for (const auto &[message, transmit] : context.commit_published_view) {
+    const auto pred = transmit.Predecessors()[0];
+    DataModel *const pm = impl->view_to_model[pred]->FindAs<DataModel>();
+    if (pm->table) {
+      published_tables.insert(pm->table);
+    }
+  }
+  for (TABLE *table : impl->tables) {
+    if (!TableIsDifferential(table)) {
+      // A monotone boundary table with a delta-vec entry gets a Seal sweep.
+      if (context.table_delta_vecs.find(table) ==
+          context.table_delta_vecs.end()) {
+        continue;
+      }
+      DROp op(DROpKind::kCommitSweep);
+      op.ctx = Ctx::kSeed;
+      op.table_op_table = table;
+      op.sweep_flavor = SweepFlavor::kMonotone;
+      DREffect fw;
+      fw.kind = EffKind::kFlagWrite;
+      fw.write_table = table;
+      op.effects.push_back(fw);
+      flow.ops.push_back(std::move(op));
+      continue;
+    }
+    DROp op(DROpKind::kCommitSweep);
+    op.ctx = Ctx::kSeed;
+    op.table_op_table = table;
+    op.sweep_flavor = SweepFlavor::kDifferential;
+    op.join_pivot = published_tables.count(table) != 0u;  // reuse flag: published?
+    DREffect fr;
+    fr.kind = EffKind::kInIReadFrozen;
+    fr.read_table = table;
+    fr.pred = Pred::kInI;
+    fr.ctx = Ctx::kSeed;
+    op.effects.push_back(fr);
+    DREffect fw;
+    fw.kind = EffKind::kFlagWrite;
+    fw.write_table = table;
+    op.effects.push_back(fw);
+    flow.ops.push_back(std::move(op));
   }
 
   return flow;
@@ -979,6 +1675,399 @@ void SeedDRStrata(
     flow.product_stratum[old.product_view] = old.stratum;
   }
   flow.drain_stratum = old_drain_stratum;
+}
+
+// ---------------------------------------------------------------------------
+// R1c op-family validators (spec §5) + the V-OLD-EQUIV op-inventory census.
+// ---------------------------------------------------------------------------
+void ValidateDROps(
+    const DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
+    const std::unordered_map<TABLE *, unsigned> &scc_map) {
+  (void) query;
+
+  const auto is_recursive = [&](TABLE *table) -> bool {
+    return SccOf(scc_map, table).has_value();
+  };
+  const auto same_scc = [&](TABLE *a, TABLE *b) -> bool {
+    const auto sa = SccOf(scc_map, a);
+    return sa.has_value() && sa == SccOf(scc_map, b);
+  };
+  const auto all_sides_same_scc = [&](QueryView join_view) -> bool {
+    DataModel *const jm = impl->view_to_model[join_view]->FindAs<DataModel>();
+    const auto join_scc = SccOf(scc_map, jm->table);
+    if (!join_scc.has_value()) {
+      return false;
+    }
+    for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
+      TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
+      if (SccOf(scc_map, st) != join_scc) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Count the Fold leaves reachable down a plan spine (V-ONE-FOLD helper).
+  const std::function<unsigned(const PlanNode *)> count_folds =
+      [&](const PlanNode *n) -> unsigned {
+    if (!n) {
+      return 0u;
+    }
+    return (n->kind == PlanKind::kFold ? 1u : 0u) + count_folds(n->child.get());
+  };
+
+  // V-NEG-CTX at SUB-OBJECT granularity: negate gates ride the fold plan spines
+  // as kGate nodes (see the representation note in the derivation helpers).
+  // Every gate's pred must be CONTEXT-derived (seed→kInI, fixpoint→kInNew),
+  // polarity ABSENT — never sign-derived. Because the pred is a function of the
+  // node's ctx alone, a sign-keyed read (the F18 bug shape) cannot validate.
+  const std::function<void(const PlanNode *)> check_gates =
+      [&](const PlanNode *n) {
+        if (!n) {
+          return;
+        }
+        if (n->kind == PlanKind::kGate) {
+          if (!n->absent) {
+            ValidatorFail("V-NEG-CTX: plan-spine negate gate not polarity=ABSENT");
+          }
+          const Pred want =
+              (n->ctx == Ctx::kSeed) ? Pred::kInI
+              : (n->ctx == Ctx::kFixpoint) ? Pred::kInNew
+                                           : Pred::kInI;  // eager-normal
+          if (n->pred != want) {
+            ValidatorFail("V-NEG-CTX: plan-spine negate gate pred not "
+                          "context-derived");
+          }
+        }
+        check_gates(n->child.get());
+      };
+  // Count the distinct table boundaries a plan spine's ACCESS nodes span
+  // (V-ONE-FOLD "no plan tree crosses two table boundaries" — here: the fold
+  // target plus the access tables it reads through form one walk; the check is
+  // that the spine has exactly one Fold, no second Fold under an access).
+  const std::function<void(const PlanNode *)> check_one_fold =
+      [&](const PlanNode *n) {
+        if (!n) {
+          return;
+        }
+        // No Fold may have a child (it is the leaf).
+        if (n->kind == PlanKind::kFold && n->child) {
+          ValidatorFail("V-ONE-FOLD: a Fold leaf has a child");
+        }
+        check_one_fold(n->child.get());
+      };
+
+  // ------------------------------------------------------- internal validators
+  for (const DROp &op : flow.ops) {
+    switch (op.kind) {
+      case DROpKind::kClaimDrain: {
+        // V-CLAIM-GATE (F17): every claim drain carries its gate as DATA.
+        const bool is_del = (op.table_op_sign < 0);
+        const Pred want = is_del ? Pred::kNetDeleted : Pred::kNetAdded;
+        if (op.claim_gate != want) {
+          ValidatorFail("V-CLAIM-GATE: claim drain gate not sign-appropriate");
+        }
+        // V-QCLEAR: an in-round drain clears its accumulating input queue.
+        if (op.claim_form == ClaimForm::kInRound) {
+          bool has_clear = false;
+          for (const DREffect &e : op.effects) {
+            if (e.kind == EffKind::kVecClear &&
+                e.vec_role ==
+                    (is_del ? VecRole::kDeleteQueue : VecRole::kAddQueue)) {
+              has_clear = true;
+            }
+          }
+          if (!has_clear) {
+            ValidatorFail("V-QCLEAR: in-round claim drain lacks a queue clear");
+          }
+          // Dual-append: an in-round drain appends to BOTH the persistent set
+          // and the per-round frontier (G10).
+          bool set_app = false, front_app = false;
+          for (const DREffect &e : op.effects) {
+            if (e.kind != EffKind::kVecAppend) {
+              continue;
+            }
+            if (e.vec_role ==
+                (is_del ? VecRole::kOverdeleteSet : VecRole::kAdditionSet)) {
+              set_app = true;
+            }
+            if (e.vec_role ==
+                (is_del ? VecRole::kClaimedDel : VecRole::kClaimedAdd)) {
+              front_app = true;
+            }
+          }
+          if (!set_app || !front_app) {
+            ValidatorFail("V-QCLEAR: in-round drain missing a dual-append");
+          }
+        } else {
+          // Single-pass drains must NOT clear (negative space).
+          for (const DREffect &e : op.effects) {
+            if (e.kind == EffKind::kVecClear) {
+              ValidatorFail("V-QCLEAR: single-pass claim drain has a queue clear");
+            }
+          }
+        }
+        break;
+      }
+      case DROpKind::kNegateGate: {
+        // V-NEG-CTX (F18/F-5): pred DERIVED from (context,hint), never sign.
+        const Pred want = (op.ctx == Ctx::kEager)
+                              ? (op.gate_hint == NegateHint::kNever ? Pred::kPresent
+                                                                    : Pred::kInI)
+                              : (op.ctx == Ctx::kSeed ? Pred::kInI : Pred::kInNew);
+        if (op.gate_pred != want) {
+          ValidatorFail("V-NEG-CTX: negate gate pred not context-derived");
+        }
+        if (op.ctx == Ctx::kSeed && op.gate_pred == Pred::kInNew) {
+          ValidatorFail("V-NEG-CTX: seed-context negate reads InNew (must be InI)");
+        }
+        if (op.gate_hint == NegateHint::kNever && op.ctx != Ctx::kEager) {
+          ValidatorFail("V-NEG-CTX: @never negate outside eager context");
+        }
+        break;
+      }
+      case DROpKind::kRederive: {
+        // The REDERIVE gate is kRecursivelySupported (mandatory data).
+        bool has_gate = false;
+        for (const DREffect &e : op.effects) {
+          if (e.kind == EffKind::kFlagRead &&
+              e.pred == Pred::kRecursivelySupported) {
+            has_gate = true;
+          }
+        }
+        if (!has_gate) {
+          ValidatorFail("V-CLAIM-GATE: rederive lacks kRecursivelySupported gate");
+        }
+        break;
+      }
+      case DROpKind::kFrontierFilter: {
+        // V-DEFER: an SCC-table filter is add-loop-output (BOTH signs); a
+        // non-recursive table's filter is immediate.
+        const bool scc = is_recursive(op.table_op_table);
+        if (scc && op.deferral != Deferral::kAddLoopOutput) {
+          ValidatorFail("V-DEFER: SCC-table filter is not deferred");
+        }
+        if (!scc && op.deferral != Deferral::kImmediate) {
+          ValidatorFail("V-DEFER: non-recursive filter is deferred");
+        }
+        break;
+      }
+      case DROpKind::kSeedFold:
+      case DROpKind::kChainFold: {
+        // V-ONE-FOLD: exactly one Fold leaf per arm's plan tree (a join-pivot
+        // seed carries no fold — it appends pivots).
+        for (const DRArm &arm : op.arms) {
+          const unsigned folds = count_folds(arm.body.get());
+          const unsigned want = (op.kind == DROpKind::kSeedFold && op.join_pivot)
+                                    ? 0u
+                                    : 1u;
+          if (folds != want) {
+            ValidatorFail("V-ONE-FOLD: seed/chain fold arm has wrong fold count");
+          }
+          check_one_fold(arm.body.get());
+          check_gates(arm.body.get());
+        }
+        break;
+      }
+      case DROpKind::kFixpointFire: {
+        // V-ONE-FOLD per arm; V-RETIRE-AFTER structural companion is checked
+        // below (retire ops exist per SCC per sign).
+        for (const DRArm &arm : op.arms) {
+          if (count_folds(arm.body.get()) != 1u) {
+            ValidatorFail("V-ONE-FOLD: fixpoint fire arm has wrong fold count");
+          }
+          check_one_fold(arm.body.get());
+          check_gates(arm.body.get());
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  // V-RETIRE-AFTER (structural, ARM granularity): for every SCC (group) that has
+  // any FIXPOINT_FIRE, there exist RETIRE ops for that group per sign. The full
+  // ordering (retire strictly after same-round fires) lands with R1d's dep
+  // edges; here we assert the retire ops EXIST per claimed frontier per round.
+  {
+    std::unordered_set<unsigned> fire_groups;  // SCC groups with a fixpoint fire
+    for (const DROp &op : flow.ops) {
+      if (op.kind == DROpKind::kFixpointFire) {
+        TABLE *const t = op.fire_table;
+        if (auto g = SccOf(scc_map, t); g.has_value()) {
+          fire_groups.insert(*g);
+        }
+      }
+      // Chain folds also fire in a round; their group must retire too.
+      if (op.kind == DROpKind::kChainFold && op.scc_group != ~0u) {
+        fire_groups.insert(op.scc_group);
+      }
+    }
+    // Every SCC table's group has both-sign retires (minted per SCC table).
+    std::unordered_map<unsigned, unsigned> retire_signs;  // group → bitmask
+    for (const DROp &op : flow.ops) {
+      if (op.kind == DROpKind::kRetire && op.scc_group != ~0u) {
+        retire_signs[op.scc_group] |= (op.table_op_sign < 0) ? 1u : 2u;
+      }
+    }
+    for (unsigned g : fire_groups) {
+      auto it = retire_signs.find(g);
+      if (it == retire_signs.end() || it->second != 3u) {
+        ValidatorFail("V-RETIRE-AFTER: SCC with fires lacks both-sign retires");
+      }
+    }
+  }
+
+  // ============================ V-OLD-EQUIV op-inventory census ============
+  // Recompute the EXPECTED op counts by replicating the emission driver's rules
+  // from the same discovery inputs, then compare per-kind counts + keys.
+  //
+  // We re-derive the branch/join inventory the same way BuildDRInventory did
+  // (the memoized worklist), so the census is a pure function of impl/context/
+  // query/scc_map — an INDEPENDENT recount, not a copy of `flow`'s ops.
+
+  // Recompute the branch inventory (mirrors BuildDRInventory's branch block).
+  std::vector<DRBranch> exp_branches;
+  for (TABLE *table : impl->tables) {
+    bool is_source = TableIsDifferential(table);
+    if (!is_source) {
+      if (auto it = context.table_delta_vecs.find(table);
+          it != context.table_delta_vecs.end()) {
+        is_source = it->second.count(
+            static_cast<unsigned>(VectorKind::kNetAdditions)) != 0u;
+      }
+    }
+    if (!is_source) {
+      continue;
+    }
+    const auto num_cols = table->columns.Size();
+    BranchMemo memo;
+    for (const QueryView &member : table->views) {
+      if (member.IsInsert() || member.Columns().size() != num_cols) {
+        continue;
+      }
+      for (const BranchSuffix &bs :
+           SuffixesOf(impl, context, table, member, memo)) {
+        DRBranch branch;
+        branch.source = table;
+        branch.path.push_back(member);
+        branch.path.insert(branch.path.end(), bs.suffix.begin(),
+                           bs.suffix.end());
+        branch.ends_at_join = bs.ends_at_join;
+        branch.target = bs.target;
+        exp_branches.push_back(std::move(branch));
+      }
+    }
+  }
+
+  // Expected SEED_FOLD + CHAIN_FOLD counts (mirror Stratum.cpp:2012-2080).
+  unsigned exp_seed = 0u, exp_chain = 0u;
+  for (const DRBranch &branch : exp_branches) {
+    TABLE *const source = branch.source;
+    const bool src_seedable =
+        TableIsDifferential(source) && !TableIsInductionOwnedDR(context, source);
+    if (!branch.ends_at_join && is_recursive(branch.target) &&
+        same_scc(branch.target, source)) {
+      if (src_seedable) {
+        exp_chain += 2u;  // both signs, in-round
+      }
+      continue;
+    }
+    if (branch.ends_at_join && all_sides_same_scc(branch.path.back())) {
+      continue;  // suppressed (V-SEED-SUP)
+    }
+    exp_seed += src_seedable ? 2u : 1u;
+  }
+
+  // Expected FIXPOINT_FIRE count: SCC joins × 2 signs (deduped by join view).
+  unsigned exp_fire = 0u;
+  {
+    std::unordered_set<QueryView> seen_join;
+    for (const DRBranch &branch : exp_branches) {
+      if (!branch.ends_at_join) {
+        continue;
+      }
+      const QueryView jv = branch.path.back();
+      if (!seen_join.insert(jv).second) {
+        continue;
+      }
+      DataModel *const jm = impl->view_to_model[jv]->FindAs<DataModel>();
+      if (is_recursive(jm->table)) {
+        exp_fire += 2u;
+      }
+    }
+  }
+
+  // Expected per-table drains/retires/rederives/filters (mirror the phase band).
+  unsigned exp_claim = 0u, exp_retire = 0u, exp_rederive = 0u, exp_filter = 0u;
+  for (TABLE *table : impl->tables) {
+    if (!TableIsDifferential(table) || TableIsInductionOwnedDR(context, table)) {
+      continue;
+    }
+    if (is_recursive(table)) {
+      exp_claim += 2u;     // in-round del + add
+      exp_retire += 2u;    // del + add
+      exp_rederive += 1u;  // del side
+      exp_filter += 2u;    // deferred del + add
+    } else {
+      exp_claim += 2u;   // single-pass del + add
+      exp_filter += 2u;  // immediate del + add
+    }
+  }
+
+  // Expected COMMIT_SWEEP count: differential tables + monotone boundary tables.
+  unsigned exp_sweep = 0u;
+  for (TABLE *table : impl->tables) {
+    if (TableIsDifferential(table)) {
+      ++exp_sweep;
+    } else if (context.table_delta_vecs.find(table) !=
+               context.table_delta_vecs.end()) {
+      ++exp_sweep;
+    }
+  }
+
+  // Compare against the DERIVED op inventory.
+  const auto count_kind = [&](DROpKind k) -> unsigned {
+    unsigned n = 0u;
+    for (const DROp &op : flow.ops) {
+      if (op.kind == k) {
+        ++n;
+      }
+    }
+    return n;
+  };
+  const auto expect = [&](DROpKind k, unsigned want, const char *what) {
+    if (count_kind(k) != want) {
+      std::fprintf(stderr,
+                   "error: DR-IR op census mismatch (%s): derived %u, "
+                   "emitter-expected %u\n",
+                   what, count_kind(k), want);
+      std::abort();
+    }
+  };
+  expect(DROpKind::kSeedFold, exp_seed, "seed folds");
+  expect(DROpKind::kChainFold, exp_chain, "chain folds");
+  expect(DROpKind::kFixpointFire, exp_fire, "fixpoint fires");
+  expect(DROpKind::kClaimDrain, exp_claim, "claim drains");
+  expect(DROpKind::kRetire, exp_retire, "retires");
+  expect(DROpKind::kRederive, exp_rederive, "rederives");
+  expect(DROpKind::kFrontierFilter, exp_filter, "frontier filters");
+  expect(DROpKind::kCommitSweep, exp_sweep, "commit sweeps");
+
+  // V-SEED-SUP negative space: no SEED_FOLD folds into an all-same-SCC join's
+  // table (the tc G1 bug). POSITIVE: an all-same-SCC join has ≥1 fixpoint fire.
+  for (const DROp &op : flow.ops) {
+    if (op.kind != DROpKind::kSeedFold || op.join_pivot) {
+      continue;
+    }
+    // A seed fold whose target is an SCC table reached from a same-SCC source
+    // would be the tc G1 bug (a wrongly-emitted same-SCC seed).
+    if (op.seed_target && is_recursive(op.seed_target) && op.seed_source &&
+        same_scc(op.seed_target, op.seed_source)) {
+      ValidatorFail("V-SEED-SUP: a same-SCC seed fold exists (should be chain)");
+    }
+  }
 }
 
 }  // namespace hyde
