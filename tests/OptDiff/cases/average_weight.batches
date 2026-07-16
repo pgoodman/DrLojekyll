@@ -1,0 +1,11 @@
+# average_weight oracle sidecar: mirrors average_weight.main.cpp exactly.
+# Batch 1: three edges (two into node 2, one into node 4).
+# Batch 2: re-key edge (1,2) to weight 30 (KV value-churn -> retraction).
+batch
++ add_edge 1 2 10
++ add_edge 3 2 20
++ add_edge 5 4 100
+end
+batch
++ add_edge 1 2 30
+end

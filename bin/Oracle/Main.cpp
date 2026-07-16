@@ -43,9 +43,16 @@
 // exactly the deriving edge's class; a rule with a same-stratum body atom
 // is always recursive).
 //
-// Rejected up front (clean diagnostics): aggregates, KV indices, MAP
-// functors (the differential OptDiff corpus declares none — implement a
-// functor here before using one), and float/foreign-typed columns.
+// Aggregates, KV indices, and the aggregate corpus's MAP functors ARE
+// supported (§4 R3d, docs/proposals/DeltaRelationalIR.artifacts/
+// v3-spec-statecell.md): aggregates/KV are recomputed DEFINITIONALLY (group
+// the summarized input rows by (group ++ config) / key, run the by-name
+// reduction per group) in BOTH the from-scratch and the incremental paths,
+// so the per-view presence + counter cross-check extends to aggregate views
+// for free; MAP functors are implemented BY NAME (see the by-name functor
+// semantics block below — the corpus drivers MUST match those semantics).
+// Still rejected up front (clean diagnostics): unimplemented MAP functors,
+// multi-summary/multi-value aggregates, and float/foreign-typed columns.
 // Unstratified (in-SCC) negation never reaches the oracle: the dataflow
 // Stratify pass rejects it inside `Query::Build`.
 //
@@ -350,10 +357,98 @@ struct ScratchView {
 };
 
 // ---------------------------------------------------------------------
+// BY-NAME FUNCTOR SEMANTICS  (§4 coordination contract; critique HIGH #5).
+//
+// The oracle implements the aggregate/merge/MAP functors BY NAME as pure
+// functions. These semantics are NORMATIVE: the corpus drivers (which
+// supply these functors as free functions per §C-5 of the R3 spec) MUST
+// match them EXACTLY, or the blessed goldens diverge from real runs.
+//
+//   MAP functors (@range(.); one output row per input iff the functor
+//   "succeeds"):
+//     div_i32(LHS, RHS) -> LHS / RHS   (signed integer division, truncating
+//                          toward zero — C++ `/` on int32_t). GUARD: RHS == 0
+//                          produces NO output row (the @range functor yields
+//                          zero tuples), so a group with Count == 0 simply
+//                          does not appear in the query output.
+//     add_i32(LHS, RHS) -> LHS + RHS   (signed 32-bit addition; wraps in the
+//                          two's-complement int32 domain, matching a C++
+//                          int32_t add — no overflow diagnostic).
+//
+//   AGGREGATE reductions (over a group's members):
+//     sum_i32   -> the running sum of the aggregated i32 column over the
+//                  group's members (@invertible: fold(+)=+v, fold(-)=-v).
+//     count_i32 -> the count of members in the group (@invertible).
+//
+//   KV-INDEX merge (the degenerate aggregate; group = key, value = the
+//   surviving merged value):
+//     new_weight_i32 (@recompute, un-annotated invertibility) -> the merge
+//                  is LAST-WRITER: a KV index holds exactly ONE value per
+//                  key, so the surviving value is that of the last-surviving
+//                  member. In the definitional from-scratch reduction there
+//                  is at most one live (From, To) member per key here (the
+//                  edge_weight key is the full (From,To,Weight) input row's
+//                  key projection), so "last wins" is well-defined: the
+//                  merged value is the value of the group's sole member; if
+//                  a key ever had multiple distinct values, the last one
+//                  interned (deterministically, input-row order) wins.
+//
+// div-by-zero rationale: div_i32 is @range(.); a range functor emitting zero
+// rows on a bad input is the modeled "produce no tuple" behavior. This
+// matches average_incoming_weight over an empty group (no incoming edges =>
+// Count 0 => no Avg row) — a clean, driver-matchable contract.
+// ---------------------------------------------------------------------
+
+enum class MapFn : uint8_t { kNone, kDivI32, kAddI32 };
+
+// Apply a MAP functor by name to its bound integer args. Returns nothing when
+// the @range functor "fails" (div by zero) — no output tuple is produced.
+std::optional<Value> ApplyMapFn(MapFn fn, const std::vector<Value> &args) {
+  switch (fn) {
+    case MapFn::kNone: return std::nullopt;
+    case MapFn::kDivI32: {
+      if (args.size() != 2) {
+        return std::nullopt;
+      }
+      const auto rhs = static_cast<int32_t>(static_cast<int64_t>(args[1]));
+      if (rhs == 0) {
+        return std::nullopt;  // @range: div-by-zero => no output row.
+      }
+      const auto lhs = static_cast<int32_t>(static_cast<int64_t>(args[0]));
+      const int32_t res = lhs / rhs;
+      return static_cast<Value>(static_cast<int64_t>(res));
+    }
+    case MapFn::kAddI32: {
+      if (args.size() != 2) {
+        return std::nullopt;
+      }
+      const auto lhs = static_cast<int32_t>(static_cast<int64_t>(args[0]));
+      const auto rhs = static_cast<int32_t>(static_cast<int64_t>(args[1]));
+      const auto res = static_cast<int32_t>(
+          static_cast<uint32_t>(lhs) + static_cast<uint32_t>(rhs));
+      return static_cast<Value>(static_cast<int64_t>(res));
+    }
+  }
+  return std::nullopt;
+}
+
+// Resolve a MAP functor by (name, arity) to the by-name implementation.
+MapFn ResolveMapFn(const std::string &name, unsigned num_bound) {
+  if (name == "div_i32" && num_bound == 2) {
+    return MapFn::kDivI32;
+  }
+  if (name == "add_i32" && num_bound == 2) {
+    return MapFn::kAddI32;
+  }
+  return MapFn::kNone;
+}
+
+// ---------------------------------------------------------------------
 // Rules.
 
 struct Slot {
   bool is_const{false};
+  bool is_map_result{false};  // value comes from the rule's MAP functor result
   unsigned atom{0};
   unsigned col{0};
   Value cval{0};
@@ -392,6 +487,12 @@ struct Rule {
   // negated-view column, referencing the positive atom or constants).
   int neg_atom{-1};
   std::vector<Slot> neg_key;
+
+  // For MAP rules: the named functor and the slots feeding its bound args
+  // (referencing the single body atom or constants). A `nullopt` result (e.g.
+  // div-by-zero) suppresses the instance — @range functors emit zero rows.
+  MapFn map_fn{MapFn::kNone};
+  std::vector<Slot> map_args;
 
   hyde::DerivClass klass{hyde::DerivClass::kNonRecursive};
 };
@@ -499,6 +600,30 @@ class Oracle {
 
   std::vector<std::unique_ptr<Rule>> rules;
   std::vector<std::vector<Rule *>> rules_by_stratum;
+
+  // Aggregate / KV-index views: recomputed DEFINITIONALLY (§4) from their
+  // single summarized input view's rows, grouped by (group ++ config) (for a
+  // KV index: keyed by the key columns), with the by-name reduction run over
+  // each group's members. The same recompute drives BOTH the from-scratch and
+  // the incremental paths, so the per-view presence cross-check extends to
+  // aggregate views for free (spec §4). A `Slot` here references a column
+  // POSITION in the input view, or a constant.
+  enum class AggKind : uint8_t { kSum, kCount, kMerge };
+  struct AggInfo {
+    ViewModel *head{nullptr};   // the aggregate/KV output view
+    ViewModel *input{nullptr};  // the single summarized input view
+    AggKind kind{AggKind::kSum};
+    // Input-column slots for the grouping key: group ++ config (agg) or the
+    // key columns (KV). These form the group key AND the leading output cols.
+    std::vector<Slot> key_slots;
+    // The aggregated / value column slot (the reduced column). For count this
+    // is still read (to iterate members) but its value is unused.
+    Slot val_slot;
+    unsigned arity{0};  // output arity = key_slots.size() + 1 (one summary)
+  };
+  std::vector<AggInfo> aggs;
+  // Per stratum: the aggregate views whose output lands in that stratum.
+  std::vector<std::vector<unsigned>> aggs_by_stratum;  // indices into `aggs`
   // For the scratch fixpoint: (rule, schema position) pairs where a view
   // occupies a same-stratum positive position.
   std::unordered_map<ViewModel *, std::vector<std::pair<Rule *, unsigned>>>
@@ -607,27 +732,16 @@ class Oracle {
       return EXIT_FAILURE;
     }
 
-    // Feature gates.
-    for (auto agg : query->Aggregates()) {
-      (void) agg;
-      Fail("aggregates are not supported by the oracle (existing feature "
-           "gap)");
-    }
-    for (auto kv : query->KVIndices()) {
-      (void) kv;
-      Fail("kv-indices (mutable parameters) are not supported by the oracle "
-           "(existing feature gap)");
-    }
-    for (auto m : query->Maps()) {
-      Fail("MAP functor '" +
-           std::string(m.Functor().NameAsString()) +
-           "' is not implemented by the oracle (the differential OptDiff "
-           "corpus declares no functors; add an implementation here first)");
-    }
+    // Aggregates, KV-indices, and the aggregate corpus's MAP functors are
+    // now supported (§4 R3d): aggregates/KV are recomputed definitionally
+    // (BuildAggregates + ReduceAggregate) in BOTH the from-scratch and the
+    // incremental paths; MAP functors are implemented by name (ApplyMapFn).
+    // Unimplemented MAP functors are still rejected loudly at rule build.
 
     BuildUniverse();
     BuildMessages();
     BuildRules();
+    BuildAggregates();
     return EXIT_SUCCESS;
   }
 
@@ -881,6 +995,74 @@ class Oracle {
       FinishRule(std::move(r));
     }
 
+    // MAP: one rule over the single predecessor view. The functor's `bound`
+    // params feed its args (from `InputColumns()`); its `free` params are the
+    // computed result columns; remaining columns are copied pass-throughs.
+    // Output column layout (Query.cpp QueryMap::ForEachUse): the functor
+    // params in declaration order (bound => fed by an input column; free =>
+    // the map result), then the attached/copied columns.
+    for (auto map : query->Maps()) {
+      const auto head = hyde::QueryView::From(map);
+      std::vector<hyde::QueryColumn> all_ins;
+      for (auto c : map.InputColumns()) {
+        all_ins.push_back(c);
+      }
+      for (auto c : map.InputCopiedColumns()) {
+        all_ins.push_back(c);
+      }
+      auto r = NewRule(VM(head));
+      std::vector<hyde::QueryView> atom_views;
+      if (auto p = SingleAtomOf(all_ins, "MAP")) {
+        atom_views.push_back(*p);
+        AddAtom(*r, *p, false);
+      }
+
+      // The bound args feeding the functor, in `InputColumns()` order.
+      const unsigned num_bound = map.NumInputColumns();
+      for (auto c : map.InputColumns()) {
+        r->map_args.push_back(ResolveSlot(c, atom_views));
+      }
+      r->map_fn =
+          ResolveMapFn(std::string(map.Functor().NameAsString()), num_bound);
+      if (r->map_fn == MapFn::kNone) {
+        Fail("MAP functor '" + std::string(map.Functor().NameAsString()) +
+             "/" + std::to_string(num_bound) +
+             "' is not implemented by the oracle (implement it by name in "
+             "ApplyMapFn/ResolveMapFn first)");
+      }
+
+      // Map each output column to its source. `ForEachUse` covers the bound
+      // (kFunctorInput) and copied (kCopied) output columns; the remaining
+      // output columns are the functor's free results.
+      const unsigned arity = head.Columns().size();
+      std::vector<std::optional<Slot>> out_slot(arity);
+      std::unordered_map<uint64_t, unsigned> out_idx;
+      {
+        unsigned i = 0;
+        for (auto col : head.Columns()) {
+          out_idx.emplace(col.UniqueId(), i++);
+        }
+      }
+      map.ForEachUse([&](hyde::QueryColumn in, hyde::InputColumnRole,
+                         std::optional<hyde::QueryColumn> out) {
+        if (!out) {
+          return;
+        }
+        const unsigned o = out_idx.at(out->UniqueId());
+        out_slot[o] = ResolveSlot(in, atom_views);
+      });
+      for (unsigned o = 0; o < arity; ++o) {
+        if (out_slot[o]) {
+          r->head_tmpl.push_back(*out_slot[o]);
+        } else {
+          Slot s;  // A free result column filled by the MAP functor.
+          s.is_map_result = true;
+          r->head_tmpl.push_back(s);
+        }
+      }
+      FinishRule(std::move(r));
+    }
+
     // MERGE: one rule per merged arm; columns correspond positionally
     // (an INSERT arm's row is its stored input row, so this also holds
     // for INSERT arms).
@@ -1049,6 +1231,173 @@ class Oracle {
     }
   }
 
+  // Resolve an aggregate/KV input column to a Slot referencing a column
+  // POSITION in `input` (or a constant). All non-constant inputs to one
+  // aggregate come from its single summarized input view.
+  Slot ResolveInputSlot(hyde::QueryColumn c, ViewModel *input) {
+    Slot s;
+    if (c.IsConstant()) {
+      s.is_const = true;
+      s.cval = ConstValue(c);
+      return s;
+    }
+    const auto owner = hyde::QueryView::Containing(c);
+    if (VM(owner) != input) {
+      Fail("internal: aggregate input column's view is not the summarized "
+           "input view");
+    }
+    s.atom = 0;
+    s.col = *c.Index();
+    return s;
+  }
+
+  // ------------------------------------------------------------------
+  // Aggregate / KV-index setup (§4). Each becomes an AggInfo recomputed
+  // definitionally from its single summarized input view.
+
+  void BuildAggregates(void) {
+    aggs_by_stratum.assign(num_strata, {});
+
+    auto single_input = [&](const std::vector<hyde::QueryColumn> &cols,
+                            const char *what) -> ViewModel * {
+      auto v = SingleAtomOf(cols, what);
+      if (!v) {
+        Fail(std::string("internal: ") + what +
+             " has no non-constant input view");
+      }
+      return VM(*v);
+    };
+
+    for (auto agg : query->Aggregates()) {
+      const auto head = hyde::QueryView::From(agg);
+      AggInfo ai;
+      ai.head = VM(head);
+
+      // Gather every input column to find the single summarized input view.
+      std::vector<hyde::QueryColumn> all_ins;
+      for (auto c : agg.InputGroupColumns()) {
+        all_ins.push_back(c);
+      }
+      for (auto c : agg.InputConfigurationColumns()) {
+        all_ins.push_back(c);
+      }
+      for (auto c : agg.InputAggregatedColumns()) {
+        all_ins.push_back(c);
+      }
+      ai.input = single_input(all_ins, "AGGREGATE");
+
+      // Output/key layout: group ++ config, then one summary column.
+      for (auto c : agg.InputGroupColumns()) {
+        ai.key_slots.push_back(ResolveInputSlot(c, ai.input));
+      }
+      for (auto c : agg.InputConfigurationColumns()) {
+        ai.key_slots.push_back(ResolveInputSlot(c, ai.input));
+      }
+      if (agg.NumAggregateColumns() != 1 || agg.NumSummaryColumns() != 1) {
+        Fail("oracle supports single-column sum_i32/count_i32 aggregates "
+             "only (functor '" +
+             std::string(agg.Functor().NameAsString()) + "')");
+      }
+      ai.val_slot = ResolveInputSlot(agg.NthInputAggregateColumn(0), ai.input);
+
+      const std::string fname(agg.Functor().NameAsString());
+      if (fname == "sum_i32") {
+        ai.kind = AggKind::kSum;
+      } else if (fname == "count_i32") {
+        ai.kind = AggKind::kCount;
+      } else {
+        Fail("oracle implements only sum_i32/count_i32 aggregate functors "
+             "by name (got '" +
+             fname + "')");
+      }
+      ai.arity = static_cast<unsigned>(ai.key_slots.size()) + 1u;
+      if (ai.arity != ai.head->arity) {
+        Fail("internal: aggregate output arity mismatch for " + ai.head->name);
+      }
+      const auto idx = static_cast<unsigned>(aggs.size());
+      aggs.push_back(std::move(ai));
+      aggs_by_stratum[aggs.back().head->stratum].push_back(idx);
+    }
+
+    for (auto kv : query->KVIndices()) {
+      const auto head = hyde::QueryView::From(kv);
+      AggInfo ai;
+      ai.head = VM(head);
+
+      std::vector<hyde::QueryColumn> all_ins;
+      for (auto c : kv.InputKeyColumns()) {
+        all_ins.push_back(c);
+      }
+      for (auto c : kv.InputValueColumns()) {
+        all_ins.push_back(c);
+      }
+      ai.input = single_input(all_ins, "KVINDEX");
+
+      // Key ++ value layout. The KV index holds ONE value per key (last-writer
+      // merge, §4 semantics); here it degenerates to the sole live member.
+      for (auto c : kv.InputKeyColumns()) {
+        ai.key_slots.push_back(ResolveInputSlot(c, ai.input));
+      }
+      if (kv.NumValueColumns() != 1) {
+        Fail("oracle supports single-value KV indices only (view " +
+             ai.head->name + ")");
+      }
+      ai.val_slot = ResolveInputSlot(kv.NthInputValueColumn(0), ai.input);
+      ai.kind = AggKind::kMerge;
+      ai.arity = static_cast<unsigned>(ai.key_slots.size()) + 1u;
+      if (ai.arity != ai.head->arity) {
+        Fail("internal: KV output arity mismatch for " + ai.head->name);
+      }
+      const auto idx = static_cast<unsigned>(aggs.size());
+      aggs.push_back(std::move(ai));
+      aggs_by_stratum[aggs.back().head->stratum].push_back(idx);
+    }
+  }
+
+  // Definitional group reduction: over `member_rows` (the current rows of the
+  // aggregate's input view), group by the key slots and run the by-name
+  // reduction per group, emitting (key ++ summary) into `out`.
+  template <typename EmitFn>
+  void ReduceAggregate(const AggInfo &ai, const std::vector<Row> &member_rows,
+                       EmitFn &&out) {
+    auto slot_val = [](const Slot &s, const Row &row) -> Value {
+      return s.is_const ? s.cval : row[s.col];
+    };
+    // group key -> accumulator (sum/count/last-value).
+    std::unordered_map<Row, int64_t, RowHash> acc;
+    std::vector<Row> key_order;
+    for (const auto &row : member_rows) {
+      Row key;
+      key.reserve(ai.key_slots.size());
+      for (const auto &s : ai.key_slots) {
+        key.push_back(slot_val(s, row));
+      }
+      const auto v = static_cast<int64_t>(slot_val(ai.val_slot, row));
+      auto it = acc.find(key);
+      if (it == acc.end()) {
+        int64_t init = 0;
+        switch (ai.kind) {
+          case AggKind::kSum: init = v; break;
+          case AggKind::kCount: init = 1; break;
+          case AggKind::kMerge: init = v; break;  // last-writer; see below
+        }
+        acc.emplace(key, init);
+        key_order.push_back(key);
+      } else {
+        switch (ai.kind) {
+          case AggKind::kSum: it->second += v; break;
+          case AggKind::kCount: it->second += 1; break;
+          case AggKind::kMerge: it->second = v; break;  // last member wins
+        }
+      }
+    }
+    for (const auto &key : key_order) {
+      Row head = key;
+      head.push_back(static_cast<Value>(acc[key]));
+      out(head);
+    }
+  }
+
   // ------------------------------------------------------------------
   // Shared rule-instance enumerator. `delta_pos < 0` enumerates every
   // instance; otherwise the delta position is bound to `delta_row` (for a
@@ -1123,9 +1472,13 @@ class Oracle {
       }
     }
 
+    Value map_result{0};  // the MAP functor's free result, set in `finish`.
     auto value_of = [&](const Slot &s) -> Value {
       if (s.is_const) {
         return s.cval;
+      }
+      if (s.is_map_result) {
+        return map_result;
       }
       return (*bound[s.atom])[s.col];
     };
@@ -1135,6 +1488,20 @@ class Oracle {
         if (!EvalFilter(f, value_of(f.lhs), value_of(f.rhs))) {
           return;
         }
+      }
+      // MAP functor: apply the named functor to its bound args. A `nullopt`
+      // result (@range failure, e.g. div-by-zero) emits zero output rows.
+      if (r.map_fn != MapFn::kNone) {
+        std::vector<Value> args;
+        args.reserve(r.map_args.size());
+        for (const auto &s : r.map_args) {
+          args.push_back(value_of(s));
+        }
+        auto res = ApplyMapFn(r.map_fn, args);
+        if (!res) {
+          return;
+        }
+        map_result = *res;
       }
       for (unsigned p = 0; p < n; ++p) {
         const unsigned ai = r.pos2atom[p];
@@ -1625,6 +1992,7 @@ class Oracle {
     // queued and empty incoming frontiers degenerates to the eager insert
     // path, so monotone strata run the same skeleton.
     for (unsigned s = 0; s < num_strata; ++s) {
+      RecomputeAggregatesIncremental(s);
       Overdelete(s);
       Rederive(s);
       InsertPhase(s);
@@ -1633,6 +2001,61 @@ class Oracle {
 
     Commit();
     CheckAgainstScratch();
+  }
+
+  // Incremental aggregate/KV recompute (§4, the definitional path): the same
+  // group reduction as the from-scratch referee, computed each batch over the
+  // input view's NET-NEW present rows (kInNew). We diff the desired agg row
+  // set against the aggregate's batch-start presence (kInI) and emit ONE
+  // NonRecursive +1 / -1 per crossing — exactly emit_touched's one-net-pair
+  // (−old, +new), where a value change (Sum 30→40) is naturally two distinct
+  // keyed rows (X,30) retracted and (X,40) asserted. Seeded BEFORE this
+  // stratum's Overdelete/Insert so the ordinary claim/frontier/commit
+  // machinery builds the aggregate's downstream frontiers. The aggregate is
+  // always NonRecursive (its input is strictly-lower stratum, spec §5). The
+  // per-view presence + counter cross-check (CheckAgainstScratch) then applies
+  // to aggregate views for free, since CheckAgainstScratch mints the matching
+  // expected (1 C_nr per present agg row).
+  void RecomputeAggregatesIncremental(unsigned s) {
+    for (unsigned ax : aggs_by_stratum[s]) {
+      const AggInfo &ai = aggs[ax];
+
+      // The input view's NET-NEW present rows (kInI && !del, or add).
+      std::vector<Row> members;
+      ViewModel *iv = ai.input;
+      for (uint32_t id = 0; id < iv->rows.size(); ++id) {
+        if (Pass(iv->st[id], ReadK::kInNew)) {
+          members.push_back(iv->rows[id]);
+        }
+      }
+
+      // Desired agg row set from the definitional reduction.
+      std::unordered_map<Row, bool, RowHash> desired;
+      std::vector<Row> desired_order;
+      ReduceAggregate(ai, members, [&](const Row &h) {
+        if (desired.emplace(h, true).second) {
+          desired_order.push_back(h);
+        }
+      });
+
+      ViewModel *hv = ai.head;
+
+      // +1 for each desired row absent at batch start.
+      for (const auto &h : desired_order) {
+        auto it = hv->ids.find(h);
+        const bool present = it != hv->ids.end() && hv->st[it->second].in_i;
+        if (!present) {
+          AddDerivation(hv, h, hyde::DerivClass::kNonRecursive);
+        }
+      }
+
+      // -1 for each batch-start-present row no longer desired.
+      for (uint32_t id = 0; id < hv->rows.size(); ++id) {
+        if (hv->st[id].in_i && !desired.count(hv->rows[id])) {
+          SubDerivation(hv, hv->rows[id], hyde::DerivClass::kNonRecursive);
+        }
+      }
+    }
   }
 
   // ------------------------------------------------------------------
@@ -1670,6 +2093,17 @@ class Oracle {
             add(vm, vm->rows[id]);
           }
         }
+      }
+
+      // Aggregate / KV-index views (§4): their single summarized input view is
+      // in a strictly-lower stratum (aggregates are placed like negation), so
+      // its scratch rows are already final. Recompute each aggregate's rows
+      // definitionally — group the input rows and run the by-name reduction —
+      // BEFORE any same-stratum rule that consumes the aggregate fires.
+      for (unsigned ax : aggs_by_stratum[s]) {
+        const AggInfo &ai = aggs[ax];
+        ReduceAggregate(ai, scratch[ai.input->ord].rows,
+                        [&](const Row &h) { add(ai.head, h); });
       }
 
       // Rules without same-stratum atoms fire once over final lower strata.
@@ -1728,6 +2162,19 @@ class Oracle {
         if (vm->st[id].is_explicit) {
           expected[vm->ord][vm->rows[id]].first += 1;
         }
+      }
+    }
+
+    // Aggregate / KV-index views have NO rules; their rows come from the
+    // definitional group reduction (§4). Mint the matching expected counter:
+    // exactly one NonRecursive derivation (C_nr=1) per present agg row — the
+    // one-net-pair (−old,+new) leaves each present agg row with C_nr == 1.
+    // This keeps the counter cross-check MEANINGFUL for agg views (presence
+    // <=> C_nr==1) rather than relaxing it to presence-only. The from-scratch
+    // reduction produced these same rows in `scratch`, so both paths agree.
+    for (const auto &ai : aggs) {
+      for (const auto &row : scratch[ai.head->ord].rows) {
+        expected[ai.head->ord][row].first += 1;
       }
     }
 

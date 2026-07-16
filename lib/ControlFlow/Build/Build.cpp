@@ -843,7 +843,19 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
     // (e.g. a linear recursion over a monotone lower atom, whose monotone
     // predecessor's eager walk is the only path that reaches the JOIN).
     // Monotone inductions are unaffected: they cannot receive deletions.
-    if (succ_view.CanReceiveDeletions()) {
+    //
+    // R3 (spec §2.2/§2.3 E1): an AGGREGATE / KV-INDEX successor is ALSO a cut
+    // successor, even when its (monotone) input carries no deletions. Its
+    // GROUP_UPDATE folds over the INPUT TABLE's net-addition/net-removal
+    // frontiers (never the eager walk), so — exactly like a differential
+    // consumer — the eager walk must NOT descend into it (the Build.cpp:985
+    // chain-breaker would no-op anyway) and MUST record it as a cut successor
+    // so the boundary append below provisions this monotone input table's
+    // net-additions frontier (else the fold drains an empty vec → empty agg,
+    // the stage-B symptom). Value churn from the aggregate is a downstream
+    // deletion source, but the INPUT relation itself can be a monotone message.
+    if (succ_view.CanReceiveDeletions() || succ_view.IsAggregate() ||
+        succ_view.IsKVIndex()) {
       any_cut_succ = true;
       continue;
     }
@@ -1099,20 +1111,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
       continue;
     }
     // over() undeclared -> default @recompute, no diagnostic (spec §C-2/§7.1).
-    //
-    // STAGE-A FENCE (v3-spec-statecell.md §5 rule "anything the lowering can't
-    // yet do -> keep a clean reject, never an assert"): the DR-IR GROUP_UPDATE
-    // construction / strata lift / linearizer arms and the differential-agg-
-    // table classification are LANDED, but the StateCell emit path (LowerGroup-
-    // Update: the Fold over input net frontiers + the emit_touched one-net-pair,
-    // and its C-5 driver-free-function codegen) is NOT yet emitted. Until that
-    // lands (the atomic R3c-ii+R3d unit's remaining half), an aggregate that
-    // passes the checks above would compile to an EMPTY agg table (structurally
-    // valid, semantically wrong). Reject cleanly rather than emit silent-wrong
-    // code. Removing this fence is the stage-B/codegen-completion flip point.
-    log.Append(agg.Functor().SpellingRange())
-        << "Aggregating functors are not yet fully lowered (StateCell emit "
-           "path pending)";
+    // The whole StateCell emit path (GROUP_UPDATE construction + LowerGroup-
+    // Update fold/emit_touched + the C-5 driver-free-function codegen + the DR
+    // branch chain-breaker seeding) is LANDED and executable end-to-end (stage
+    // C flip); an over() aggregate lowers fully — no fence.
   }
 
   for (auto kv : query.KVIndices()) {
@@ -1136,12 +1138,8 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
              "(mark it '@invertible' or '@recompute')";
       continue;
     }
-    // STAGE-A FENCE (same rationale as the aggregate fence above): the StateCell
-    // emit path for a desugared KV GROUP_UPDATE is not yet emitted. Reject
-    // cleanly until the codegen lands (the flip point).
-    log.Append(merge.SpellingRange())
-        << "Relations with mutable-attributed parameters are not yet fully "
-           "lowered (StateCell emit path pending)";
+    // A declared-algebra KV index desugars to a GROUP_UPDATE and lowers fully
+    // (stage C flip) — no fence; the V-ALGEBRA reject above is the only KV gate.
   }
   for (auto map : query.Maps()) {
     if (!map.Functor().IsPure()) {

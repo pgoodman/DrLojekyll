@@ -1189,3 +1189,107 @@ undeclared add_u32; kvindex_2/3/4 STAY diagnostic — same V-ALGEBRA
 reject in all modes; CONFIRMED against the debug compiler). The
 emission layer this record lands is the whole second half of R3c-ii +
 the R3d codegen; only the input-seeding + oracle/goldens remain.
+
+### R3 stage C landing record — THE FLIP (2026-07-16)
+
+The fences are GONE; aggregates + KV indices lower end-to-end and are
+suite-gated green. Landed as ONE commit.
+
+THE SEEDING BLOCKER — actual diagnosis (stage B's hypothesis was in the
+right subsystem but the wrong node): the crash was `EmitSeedLoop ->
+EmitHeadFold -> BuildUpdateCount -> VariableFor` (Stratum.cpp:449, unbound
+summary col), reached because the DR branch discovery let a branch REACH an
+aggregate view as a table-boundary TERMINAL (`SuffixesOf`, DR.cpp:188:
+`table != source` matched the agg's OWN table) and mint a bogus SEED_FOLD
+folding raw input deltas into the agg table — double-deriving it (breaks
+V-AGG-SOLE) and unable to bind the summary columns (they come from the
+fold, not the input scan). THREE surgical fixes, all agg/KV-gated (9/9
+byte-identical on the named anchors — transitive_closure_diff /
+fixpoint_stress_1 / product_diff ×{opt,nodf,nocf} — vs 8dec9cbf):
+  1. CHAIN-BREAKER (DR.cpp `SuffixesOf` + `CollectSectionTargetsDR`): skip
+     any AGG/KVINDEX successor (`IsAggregate()||IsKVIndex() -> continue`);
+     a branch never TRAVERSES one as an interior/terminal edge. An agg view
+     may still be a branch ROOT (path[0], its OWN output propagates). Debug
+     assert: no branch path position >0 is an agg/KV view.
+  2. MONOTONE-BOUNDARY CUT (Build.cpp `BuildEagerInsertionRegionsImpl`, the
+     `any_cut_succ` gate): an AGG/KVINDEX successor is ALSO a cut successor
+     even when its (monotone message) input carries no deletions — its
+     GROUP_UPDATE folds the input TABLE's net-addition/net-removal
+     frontiers, never the eager walk. Without this the monotone input table
+     (edge_weight's message-seeded table:36) got NO net-additions frontier
+     and the fold drained an EMPTY vec — the exact stage-B empty-output
+     symptom (the crash was a red herring FIXED by #1; #2 was the real
+     empty-output cause underneath).
+  3. INDEX MAINTENANCE (Database.cpp `EmitGroupUpdate`): the emit_touched
+     `AddDerivation` into the agg DiffTable omitted the index-`.Add()` calls
+     every ordinary UPDATECOUNT emits on `added_row` — so a downstream
+     index-keyed JOIN (average_weight's sum⋈count on X) could not `Find` the
+     summary rows and produced nothing. Mirror EmitUpdateCount's has_indexes
+     arm (capture the deriv result, `if (added_row) EmitIndexAdds(...)`).
+
+HAND-TRACE (throwaway driver, verbatim): average_weight, batch
+{add_edge(1,2,10), add_edge(3,2,20), add_edge(5,4,100)} then a KV re-key
+{add_edge(1,2,30)} -> `2 15 / 4 100`, then `2 25 / 4 100` (sum into node 2:
+10+20=30 count 2 avg 15; re-key to 30 gives 30+20=50 avg 25; node 4=100
+unchanged). Non-empty, matches the hand-computed sum/count/avg; the KV
+value-churn exercises the emit_touched change arm (-old, +new) / @recompute
+retraction WITHOUT a message deletion (add_edge is not @differential).
+
+CORPUS (tests/OptDiff/cases): average_weight + pairwise_average_weight are
+NEW cases (.dr copied from data/examples + `.main.cpp` + `.batches`);
+aggregate_1 flipped from all-modes-diagnostic to a 4-mode golden with a
+ported ADL driver + `.batches`. Drivers use C-5 free functions (`F_identity/
+F_combine/F_uncombine` for @invertible SUM/COUNT; `F_reduce` for @recompute
+merge/new_weight_i32) + DatabaseFunctors MAP members (div_i32/add_i32,
+new_weight_i32) out-of-line; SORTED keyed drains. kvindex_1 KEEPS its
+mode-split (opt/nocf compile, nodf/none V-ALGEBRA-reject the undeclared
+add_u32); kvindex_2/3/4 STAY diagnostic (V-ALGEBRA all 4 modes). All 3 agg
+cases: 4-mode stdout BYTE-IDENTICAL (cross-mode golden-master).
+
+ORACLE (bin/Oracle/Main.cpp, +457/−17): retired the agg/kv/MAP rejections;
+by-name MAP functors (div_i32=trunc int-div, RHS==0 -> NO row; add_i32=+;
+sum=running sum; count=member count; new_weight_i32 KV merge=last-writer);
+the definitional per-group reduction (`ReduceAggregate`) in BOTH the
+from-scratch and incremental paths (the incremental path diffs the desired
+agg set vs batch-start presence and emits the one-net-pair — the
+emit_touched −old/+new). Counter cross-check NOT relaxed: `C_nr=1` per
+present agg row on both sides. ORACLE: OK on all 3 corpus batches + ~30M
+randomized stress assertions; from-scratch == incremental every batch.
+Driver-vs-oracle AGREE: average_weight final `2 25 / 4 100`, pairwise `2 30
+/ 2 40 / 2 50`, aggregate_1 `1 1 2 / 2 1 2 / 3 1 1` — identical to the
+compiled drivers' final batch. Goldens BLESSED FROM ORACLE TRUTH (red run
+GOLDEN-MISSING-only on the 3 cases -> bless those 9 goldens -> full green).
+
+GATES: (a) debug + release both build + run aggregates (release output ==
+golden); (b) ctest 3/3; (c) SUITE: PASS (164 cases) — 162 pre-existing + 2
+new (aggregate_1 flipped, not added); zero FAIL/DIVERGE/MISSING; anchors
+9/9 byte-identical; no unblessed churn; (d) all 3 agg cases + both kv modes
+green ×4 modes with oracle + monotone sidecars AGREEING; (e) fixpoint_stress_1
++ deep_chain_retract green ×4 + oracle + monotone; (f) Q5 @128 3-rep
+interleaved A/B: median dr_wall +0.3% (<10%), header BYTE-IDENTICAL
+(compile-neutral for non-agg programs); (g) the 9/9 anchor byte-identity
+gate; (h) no mid-suite rebuild. DEVIATION: the wide (all-case) byte-identity
+sweep surfaced pre-existing COMPILER NON-DETERMINISM (kcfa_tiny / some tc /
+induction cases differ base-vs-base — unordered_map-over-pointer ordering);
+this is why the golden-master runs-and-compares-stdout, never generated
+text (CLAUDE.md); the 3 NAMED anchors are deterministic and 9/9 identical.
+
+UNIT CENSUS (R3 aggregates, the inaugural delta-relational-IR operator
+family): stage A (3749a16a) compiler-side cutover + StateCell runtime;
+stage B (8dec9cbf) emission layer behind the fence; stage C (this) the flip
+— seeding fix (3 diffs) + fence lift + corpus (3 drivers/cases + 3
+.batches) + oracle (agg/kv/MAP) + 9 blessed goldens. The whole StateCell
+story (§1 the store, §2 the matrix extension old()/emit()/GROUP_UPDATE, §3
+KV desugar, §4 oracle, §5 stratify, §6 @recompute MIN/MAX, §C occupancy +
+functor ABI) is LANDED and suite-gated. EPOCH-CLOSE RESIDUE (out of R3
+scope, recorded): StateCell dead-group compaction (§1.1, D5-style, own
+moved() callback); shared-input drain FUSION (§2.2 G-6, effect-graph CSE);
+algebra class (II) mergeable-sketch lowering (§1.3, ships (I)+(III) only);
+sorted-multiset MIN/MAX (§6 b', the seekable-iterators residue); KVINDEX
+dataflow-node deletion (§3, a later upstream simplification); aggregates
+over MONOTONE inputs (§C-4 enrollment path exists but corpus is all
+differential-input — untested); configuration-column aggregates (clean
+feature-gap reject); MAP-functor migration onto the C-5 free-function
+surface (§C-5 recorded follow-on, its own epoch); the recorded V-PRED-XCHECK
+residuals (thread the per-arm gate node into EmitChainStep; EmitFrontierFilter
+un-cross-checked) carried forward.

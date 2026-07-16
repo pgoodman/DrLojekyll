@@ -111,6 +111,12 @@ static void CollectSectionTargetsDR(ProgramImpl *impl, Context &context,
     return;
   }
   for (QueryView succ : view.Successors()) {
+    // R3 chain-breaker (critique HIGH #4a): an aggregate/KV-index successor is
+    // owned by its GROUP_UPDATE op — never a section target reached through the
+    // table-less walk (mirror of the `SuffixesOf` skip above).
+    if (succ.IsAggregate() || succ.IsKVIndex()) {
+      continue;
+    }
     if (FollowsDeltaEdgeDR(context, succ)) {
       CollectSectionTargetsDR(impl, context, succ, targets);
     }
@@ -165,6 +171,22 @@ static const std::vector<BranchSuffix> &SuffixesOf(
 
   for (QueryView succ : view.Successors()) {
     if (!FollowsDeltaEdgeDR(context, succ)) {
+      continue;
+    }
+
+    // R3 chain-breaker (critique HIGH #4a / spec §2.2): an AGGREGATE or
+    // KV-INDEX successor is NOT a branch terminal and NOT table-less plumbing to
+    // walk through. Its entire delta maintenance — folding the summarized
+    // input's net frontiers into a StateCell, then emitting the one-net-pair
+    // into its OWN differential table — is owned by the GROUP_UPDATE op
+    // (`BuildGroupUpdateOps`, above), which reads the input table's frontiers
+    // directly. If we let the walk make the agg view a table-boundary terminal
+    // (its model->table is the agg's own table, != source), the seed loop would
+    // mint a bogus SEED_FOLD folding raw input deltas into the agg table
+    // (double-deriving it alongside GROUP_UPDATE, breaking V-AGG-SOLE) — and it
+    // cannot even bind the summary columns (they come from the fold, not the
+    // input scan), aborting `VariableFor`. STOP: drop this successor edge.
+    if (succ.IsAggregate() || succ.IsKVIndex()) {
       continue;
     }
 
@@ -991,6 +1013,16 @@ DRFlowGraph BuildDRInventory(
                            bs.suffix.end());
         branch.ends_at_join = bs.ends_at_join;
         branch.target = bs.target;
+#ifndef NDEBUG
+        // R3 (spec §2.2 chain-breaker): an aggregate/KV-index view may be a
+        // branch ROOT (path[0] — its OWN output table's rows propagate
+        // downstream normally), but the `SuffixesOf` skip guarantees no branch
+        // ever TRAVERSES one as an interior/terminal edge (which would mint a
+        // bogus SEED_FOLD into the agg table, double-deriving it).
+        for (auto pi = 1u; pi < branch.path.size(); ++pi) {
+          assert(!branch.path[pi].IsAggregate() && !branch.path[pi].IsKVIndex());
+        }
+#endif
         flow.branches.push_back(std::move(branch));
       }
     }

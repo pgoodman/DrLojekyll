@@ -1,0 +1,11 @@
+# pairwise_average_weight oracle sidecar: mirrors pairwise_average_weight.main.cpp.
+# Batch 1: three edges into node 2.
+# Batch 2: re-key edge (1,2) to weight 40 (KV value-churn -> retraction).
+batch
++ add_edge 1 2 10
++ add_edge 3 2 20
++ add_edge 5 2 60
+end
+batch
++ add_edge 1 2 40
+end

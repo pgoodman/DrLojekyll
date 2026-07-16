@@ -1,0 +1,4 @@
+ORACLE: OK (2 batches, 395 assertions)
+get_grouped	1 1 2
+get_grouped	2 1 2
+get_grouped	3 1 1

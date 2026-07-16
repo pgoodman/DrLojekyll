@@ -1979,13 +1979,51 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
   // The agg row from a key + summary value. The agg table row is (group ++
   // config ++ summary) in column order; the key contributes the leading
   // group/config fields (key.c0..) and `val` the trailing summary field(s).
-  const auto agg_row = [&](const std::string &val) -> std::string {
+  const auto agg_tuple_exprs = [&](const std::string &val)
+      -> std::vector<std::string> {
     std::vector<std::string> parts;
     for (unsigned i = 0u; i < gpos.size(); ++i) {
       parts.push_back("key.c" + std::to_string(i));
     }
     parts.push_back(val);
-    return "{" + JoinExprs(parts, ", ") + "}";
+    return parts;
+  };
+  const auto agg_row = [&](const std::string &val) -> std::string {
+    return "{" + JoinExprs(agg_tuple_exprs(val), ", ") + "}";
+  };
+
+  // Whether the agg table carries any live index that needs maintenance on a
+  // newly-inserted agg row (parity with EmitUpdateCount: an AddDerivation whose
+  // `added_row` is set must be reflected into every index, else index-keyed
+  // consumers — e.g. a JOIN on the summary output, average_weight's sum⋈count
+  // — cannot Find the row). SubDerivation removes no index entry (rows persist
+  // until compaction), exactly like the ordinary counter path.
+  bool agg_has_indexes = false;
+  for (DataIndex index : agg.Indices()) {
+    if (index_member.contains(index.Id())) {
+      agg_has_indexes = true;
+      break;
+    }
+  }
+
+  // Emit an `AddDerivation` that also maintains the agg table's indices on the
+  // zero-crossing that materializes a new row (mirror EmitUpdateCount's
+  // has_indexes arm).
+  const auto emit_add_deriv = [&](const std::string &val) {
+    if (!agg_has_indexes) {
+      cc << cc.Indent() << agg_member << ".AddDerivation(" << agg_row(val)
+         << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+      return;
+    }
+    const auto d = "gd" + std::to_string(next_ins_id++);
+    cc << cc.Indent() << "const auto " << d << " = " << agg_member
+       << ".AddDerivation(" << agg_row(val)
+       << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+    cc << cc.Indent() << "if (" << d << ".added_row) {\n";
+    cc.PushIndent();
+    EmitIndexAdds(agg, d, agg_tuple_exprs(val));
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
   };
 
   // BAND (b): emit_touched, the occupancy-generalized one-net-pair (spec §C-1).
@@ -2007,8 +2045,7 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
      << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
   cc << cc.Indent() << VecName(region.DelQueue()) << ".Add(" << agg_row("old_v")
      << ");\n";
-  cc << cc.Indent() << agg_member << ".AddDerivation(" << agg_row("new_v")
-     << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+  emit_add_deriv("new_v");
   cc << cc.Indent() << VecName(region.AddQueue()) << ".Add(" << agg_row("new_v")
      << ");\n";
   cc.PopIndent();
@@ -2016,8 +2053,7 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
   cc.PopIndent();
   cc << cc.Indent() << "} else {\n";  // birth: +new only
   cc.PushIndent();
-  cc << cc.Indent() << agg_member << ".AddDerivation(" << agg_row("new_v")
-     << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+  emit_add_deriv("new_v");
   cc << cc.Indent() << VecName(region.AddQueue()) << ".Add(" << agg_row("new_v")
      << ");\n";
   cc.PopIndent();

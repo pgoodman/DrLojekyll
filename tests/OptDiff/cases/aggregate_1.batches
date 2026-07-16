@@ -1,0 +1,12 @@
+# aggregate_1 oracle sidecar: mirrors aggregate_1.main.cpp exactly. A count_i32
+# aggregate (undeclared algebra -> @recompute) with a constant group-by column;
+# the corner-shape oracle coverage the critique asked for (constant group-by).
+batch
++ pair 1 10
++ pair 1 11
++ pair 2 20
+end
+batch
++ pair 2 21
++ pair 3 30
+end

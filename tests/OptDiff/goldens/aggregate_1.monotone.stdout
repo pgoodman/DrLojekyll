@@ -1,0 +1,4 @@
+MONOTONE-PROJECTION: 5 surviving facts
+get_grouped	1 1 2
+get_grouped	2 1 2
+get_grouped	3 1 1

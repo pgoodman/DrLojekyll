@@ -179,22 +179,53 @@ generated `datalog.h` for exact signatures before writing a driver.
 - Union sinking (`do_sink` in `QueryImpl::Optimize`) is commented out —
   `lib/DataFlow/Merge.cpp` sinking code is currently unreachable.
 
-## Known feature gaps (clean diagnostics)
+## Aggregates + KV indices (the R3 delta-relational-IR family — LANDED)
 
-Aggregates and KV indices (mutable params) — design recorded in
-`docs/proposals/AggregatingFunctors.md` (two-level group-by; a KV index is
-the degenerate aggregate), gated on the delta-relational IR per that
-ledger's sequencing; cross-products over differential (deletable) data
-INSIDE RECURSIVE CYCLES (the acyclic case landed as Stage 5 of
-`StackSafeNegation.plan.md`; the fence is `ViewSelfReachable` in
-`Program::Build`'s pre-pass); impure functors (control-flow build); and
-unstratified negation — a negated predicate recursively derived from the
-negation's own result (rejected by the dataflow Stratify pass in all
-modes). Corpus files exercising these:
-`data/examples/average_weight.dr`, `pairwise_average_weight.dr` (KV
-indices), `data/self_testing_examples/evm_func_parse.dr` (unstratified
-negation). Every other file under `data/` — including
-`conditions_to_bools.dr`, the acyclic differential @product example —
+Aggregates (`over(){}`) and KV indices (`mutable(...)` params) LOWER
+end-to-end as of the R3 stage-C flip (delta-relational-IR epoch;
+`docs/proposals/DeltaRelationalIR.md` §12 stage-C record; binding spec
+`docs/proposals/DeltaRelationalIR.artifacts/v3-spec-statecell.md`). A KV
+index is the degenerate aggregate: both lower to ONE `GROUP_UPDATE` op per
+view (`BuildGroupUpdateOps`, DR.cpp), whose standing per-group state is a
+`StateCellStore` (`include/drlojekyll/Runtime/StateCell.h`, a peer of the
+agg DiffTable, own dense-group-id space, two-word sealed/working cell +
+occupancy bit). Band (a) folds the summarized INPUT table's net-frontier
+rows into the cell (`SC.Fold(gid, sign, summary)`); band (b) `emit_touched`
+applies the occupancy-generalized ONE-NET-PAIR guard (birth: +new only;
+death: −old only; change: −old,+new; else nothing) into the agg table's own
+counters + del/add queues, riding the existing acyclic claim/frontier/commit
+tail. The algebra attribute (`@invertible` fold/unfold O(1) | `@recompute`
+per-group rescan) is a lowering selector. The aggregate/KV view is a
+BRANCH CHAIN-BREAKER (`SuffixesOf`/`CollectSectionTargetsDR`, DR.cpp; the
+eager walk stops at it, Build.cpp) — no branch traverses one; its monotone
+message input is provisioned a net-additions frontier as a cut successor.
+REDUCTION BODIES are C-5 driver-supplied FREE FUNCTIONS (forward-declared in
+the header, defined out-of-line): `F_identity/F_combine/F_uncombine` for
+`@invertible`, `F_reduce(values, counts, n)` for `@recompute`. Corpus +
+oracle: `tests/OptDiff/cases/{average_weight, pairwise_average_weight,
+aggregate_1}` (drivers + `.batches` + oracle/monotone goldens; the oracle
+`bin/Oracle/Main.cpp` does the definitional per-group recompute in both
+paths). `data/examples/average_weight.dr` + `pairwise_average_weight.dr`
+compile.
+
+CLEAN-DIAGNOSTIC gaps that remain: a `mutable()` merge functor with NO
+declared `@`-algebra (V-ALGEBRA reject — must be `@invertible`/`@recompute`);
+aggregates with configuration columns; aggregates/KV over INDUCTION-OWNED
+(recursively-derived) inputs; unstratified aggregation (an aggregate over
+its OWN recursive result, rejected by the dataflow Stratify pass as the
+sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).
+
+## Other known feature gaps (clean diagnostics)
+
+Cross-products over differential (deletable) data INSIDE RECURSIVE CYCLES
+(the acyclic case landed as Stage 5 of `StackSafeNegation.plan.md`; the
+fence is `ViewSelfReachable` in `Program::Build`'s pre-pass); impure
+functors (control-flow build); and unstratified negation — a negated
+predicate recursively derived from the negation's own result (rejected by
+the dataflow Stratify pass in all modes). Corpus file:
+`data/self_testing_examples/evm_func_parse.dr` (unstratified negation).
+Every other file under `data/` — including `conditions_to_bools.dr`, the
+acyclic differential @product example, and the two aggregate/KV examples —
 compiles in all 4 modes.
 
 ## Gotchas

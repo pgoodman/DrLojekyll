@@ -15,7 +15,7 @@
 #   TIMEOUT  per-stage timeout in seconds            (default: 120)
 #
 # Case expectations:
-#   aggregate_1, kvindex_2/3/4, agg_in_scc_1, kv_in_scc_1, algebra_dup_1,
+#   kvindex_2/3/4, agg_in_scc_1, kv_in_scc_1, algebra_dup_1,
 #   algebra_conflict_1, evm_func_parse, nonascii_1, truncated_decl_1
 #     — the compiler must exit 1 with a rendered diagnostic (no assert/crash)
 #     in all 4 modes (evm_func_parse: unstratified negation, rejected by the
@@ -214,7 +214,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    aggregate_1|kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|nonascii_1|truncated_decl_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|nonascii_1|truncated_decl_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done
