@@ -1036,3 +1036,32 @@ expected-diagnostic cases wired into runall.sh (suite 157→159);
 corpus aggregate diagnostics byte-unchanged. PARSER AUDIT (gates
 R3c): no algebra pragmas existed (→ §7.1 owner decision, landed as
 R3c-i 50f936b, suite 162).
+
+### Review-fixes + V-PRED-XCHECK (2026-07-16, ecfe674 + e355959)
+
+COMMIT ecfe674 (review fixes, per §11 dispositions): StateCell Touched()
+now const (desync foreclosed; +2 tests, runtime_test 36→38; seam
+byte-identical); ClaimGate enum replaces the Pred abuse (F2) with
+V-CLAIM-GATE checking real semantics; V-BAND-HAZARD aborts on
+key-inverting hazards instead of silently flipping (F3a); V-LOOP
+implements its documented drain-before-refill witness check (F3b);
+RAW/WAR classified by accessor kinds not construction order (F3c);
+the finding-6 empty-lists assert in StepColor; comment rot fixed and
+substrate fields labelled. STRENGTHENED-VALIDATOR EVENT: V-BAND-HAZARD
+fired on MiniDisassembler — investigated, resolved as formulation
+false-positives (delete/add queues are EPOCH-CARRIED roles the flat
+band key cannot see; one legitimate sweep-vs-rederive WAR); the
+carried-role model was corrected, the check NOT weakened; fires on no
+real case now. Gates: builds, ctest 3/3, seam OFF byte-identical,
+SUITE PASS (162), anchors ×4.
+COMMIT e355959 (V-PRED-XCHECK, the F1 minimal kill): always-on
+cross-checks threading DR ops into the Emit* predicate choices —
+EmitJoinFire's matrix vs the arm plan spines, EmitClaimDrain vs the
+ClaimGate (both call-site families), EmitChainStep's negate gate vs
+NegateGatePred. Observation-only PROVEN by direct cpp-out byte-compare
+against ecfe674 (not just goldens). A reintroduced F18/F17 divergence
+now aborts on every compile. RESIDUAL for R3c-ii (recorded): thread
+the actual per-arm gate node into EmitChainStep (currently checked
+against the model function); EmitFrontierFilter reads un-cross-checked;
+site-2 correlation is table-keyed (position-keyed wanted for
+self-joins).
