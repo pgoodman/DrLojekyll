@@ -340,18 +340,11 @@ static std::vector<unsigned> CanonBoundCols(
 }
 
 // The negate forward-gate predicate DERIVED from (context, hint) — NEVER
-// sign-derived (F-5 / V-NEG-CTX). Mirrors EmitChainStep:520-522 (seed→kInI,
+// sign-derived (F-5 / V-NEG-CTX). Mirrors EmitChainStep (seed→kInI,
 // fixpoint→kInNew, both signs) and Negate.cpp's eager gate (eager normal→kInI,
-// eager @never→kPresent).
-static Pred NegateGatePred(Ctx ctx, NegateHint hint) {
-  if (ctx == Ctx::kEager) {
-    return (hint == NegateHint::kNever) ? Pred::kPresent : Pred::kInI;
-  }
-  if (ctx == Ctx::kSeed) {
-    return Pred::kInI;  // E-13/F18: seed reads kInI BOTH signs
-  }
-  return Pred::kInNew;  // fixpoint refire, both signs
-}
+// eager @never→kPresent). DEFINED in the `hyde` namespace (declared in DR.h) so
+// V-PRED-XCHECK can reach it from Stratum.cpp; callers here resolve it by
+// enclosing-namespace lookup.
 
 // NOTE on NEGATE_GATE representation: R1c carries negate forward gates as
 // ACCESS-attribute sub-objects — `PlanKind::kGate` nodes on the owning seed/
@@ -477,6 +470,19 @@ static Pred FixpointSamePred(size_t j_pos, size_t p_pos, bool is_del) {
 }
 
 }  // namespace
+
+// The authoritative (context, hint) → negate-gate predicate (declared in DR.h;
+// see the note above its former in-namespace site). The DR model's sole source
+// for a negate gate's predicate, and V-PRED-XCHECK Site 1's reference value.
+Pred NegateGatePred(Ctx ctx, NegateHint hint) {
+  if (ctx == Ctx::kEager) {
+    return (hint == NegateHint::kNever) ? Pred::kPresent : Pred::kInI;
+  }
+  if (ctx == Ctx::kSeed) {
+    return Pred::kInI;  // E-13/F18: seed reads kInI BOTH signs
+  }
+  return Pred::kInNew;  // fixpoint refire, both signs
+}
 
 std::vector<const DROp *> DRFlowGraph::Crossovers(void) const {
   std::vector<const DROp *> out;

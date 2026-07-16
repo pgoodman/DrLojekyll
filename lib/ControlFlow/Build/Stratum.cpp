@@ -1,5 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <set>
 
@@ -8,6 +10,57 @@
 
 namespace hyde {
 namespace {
+
+// ---------------------------------------------------------------------------
+// V-PRED-XCHECK (big-review finding 1): an ALWAYS-ON cross-check tying the
+// DR-IR model to the surviving Emit* templates. At the emission sites where an
+// Emit* chooses a membership predicate, we compare the emitter's CHOICE against
+// the predicate the corresponding DR op/arm STORED. A reintroduced F18-style
+// sign-keyed read then aborts at COMPILE TIME on every case, instead of relying
+// on the byte-identical goldens to catch it downstream. Observation-only: it
+// reads both values and either agrees (no effect) or aborts — never changes an
+// emitted region, so the suite stays byte-identical.
+//
+// `Pred` (DR-IR vocabulary, DR.h) and `MembershipPredicate` (Program.h) are
+// intentionally-distinct enums with no positional correspondence; this maps
+// them by NAME and reports any DR `Pred` that has no MembershipPredicate twin as
+// a mismatch (the cross-check must never silently accept an unmapped value).
+static bool PredMatches(Pred dr, MembershipPredicate emitted) {
+  switch (dr) {
+    case Pred::kPresent: return emitted == MembershipPredicate::kPresent;
+    case Pred::kInI: return emitted == MembershipPredicate::kInI;
+    case Pred::kInNew: return emitted == MembershipPredicate::kInNew;
+    case Pred::kSurvivesSoFar:
+      return emitted == MembershipPredicate::kSurvivesSoFar;
+    case Pred::kAliveAtClaim:
+      return emitted == MembershipPredicate::kAliveAtClaim;
+    case Pred::kInNewWithFrontier:
+      return emitted == MembershipPredicate::kInNewWithFrontier;
+    case Pred::kInNewSansFrontier:
+      return emitted == MembershipPredicate::kInNewSansFrontier;
+    case Pred::kRecursivelySupported:
+      return emitted == MembershipPredicate::kRecursivelySupported;
+    case Pred::kNetDeleted: return emitted == MembershipPredicate::kNetDeleted;
+    case Pred::kNetAdded: return emitted == MembershipPredicate::kNetAdded;
+  }
+  return false;
+}
+
+[[noreturn]] static void PredXCheckFail(const char *site) {
+  std::fprintf(stderr,
+               "V-PRED-XCHECK: emitter-chosen membership predicate at %s "
+               "differs from the DR op's stored predicate (a model/emitter "
+               "divergence — e.g. a reintroduced sign-keyed read)\n",
+               site);
+  std::abort();
+}
+
+// Assert the emitter's `emitted` predicate agrees with the DR-stored `dr`.
+static void PredXCheck(Pred dr, MembershipPredicate emitted, const char *site) {
+  if (!PredMatches(dr, emitted)) {
+    PredXCheckFail(site);
+  }
+}
 
 // One rule chain from a member view of a source table to its terminal: the
 // first table-backed view (a head, the chain's fold target) or the first
@@ -329,10 +382,27 @@ static OP *EmitChainStep(ProgramImpl *impl, Context &context,
     TABLE *const negated_table = negated_model->table;
     assert(negated_table != nullptr);
 
+    const MembershipPredicate negate_pred =
+        in_fixpoint ? MembershipPredicate::kInNew : MembershipPredicate::kInI;
+
+    // V-PRED-XCHECK (finding 1) — Site 1: cross-check the emitter's negate-gate
+    // choice against the DR model's AUTHORITATIVE predicate derivation
+    // (`NegateGatePred`), the sole function every DR negate gate node is
+    // populated from. A reintroduced F18 sign-keyed read — in EITHER the emitter
+    // here or the DR model — diverges and aborts at compile time. Observation-
+    // only. NOTE (residual, R3c-ii): this cross-checks against the model
+    // FUNCTION, not a threaded per-arm STORED gate node — the seed/fixpoint
+    // negate gate is a PlanKind::kGate sub-object on the owning seed/chain-fold
+    // arm's plan spine, and EmitChainStep is invoked deep inside EmitSeedLoop's
+    // branch walk (no DR arm correlated at this call depth). The eager
+    // NEGATE_GATE is a standalone DROp and is separately covered by V-NEG-CTX.
+    PredXCheck(NegateGatePred(in_fixpoint ? Ctx::kFixpoint : Ctx::kSeed,
+                              NegateHint::kNormal),
+               negate_pred, "EmitChainStep negate gate");
+
     OP *continuation = nullptr;
     CHECKMEMBER *const gate = BuildCheckMember(
-        impl, parent, negated_table, negated_view_cols,
-        in_fixpoint ? MembershipPredicate::kInNew : MembershipPredicate::kInI,
+        impl, parent, negated_table, negated_view_cols, negate_pred,
         [](ProgramImpl *, REGION *) -> REGION * { return nullptr; },
         [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
           continuation = impl_->operation_regions.CreateDerived<LET>(in_check);
@@ -472,7 +542,21 @@ static void EmitSeedLoop(ProgramImpl *impl, Context &context,
 // single-pass drain, whose claimed set is not iterated again.
 static void EmitClaimDrain(ProgramImpl *impl, Context &context, TABLE *table,
                            bool is_del, SERIES *seq,
-                           VECTOR *round_frontier = nullptr) {
+                           VECTOR *round_frontier = nullptr,
+                           const DROp *drain_op = nullptr) {
+  // V-PRED-XCHECK (finding 1) — Site 3: EmitClaimDrain's F17 dequeue gate is
+  // IMPLICIT in `is_del` (CLAIM lowers to TryClaimDel C_nr<=0 / TryClaimAdd
+  // total>0). Cross-check that `is_del` agrees with the DR op's STORED
+  // ClaimGate — a reintroduced sign-flipped gate then aborts at compile time.
+  // (This is a ClaimGate check, not a Pred one: the claim gate is a counter
+  // test, never a membership predicate — see finding 2.) Observation-only.
+  if (drain_op != nullptr) {
+    const ClaimGate want = is_del ? ClaimGate::kDelGateCnrNonPositive
+                                  : ClaimGate::kAddGateTotalPositive;
+    if (drain_op->claim_gate != want) {
+      PredXCheckFail("EmitClaimDrain (gate sign disagrees with DR ClaimGate)");
+    }
+  }
   VECTOR *const queue = TableDeltaVector(
       impl, context, table,
       is_del ? VectorKind::kDeleteQueue : VectorKind::kAddQueue);
@@ -694,7 +778,7 @@ static void EmitFrontierFilter(ProgramImpl *impl, Context &context,
 static void EmitJoinFire(ProgramImpl *impl, Context &context,
                          const RecursiveSccMap &sccs,
                          const JoinEmission &emission, bool is_del,
-                         SERIES *seq) {
+                         SERIES *seq, const DROp *fire_op = nullptr) {
   const QueryJoin join_view = QueryJoin::From(emission.join_view);
   DataModel *const join_model =
       impl->view_to_model[emission.join_view]->FindAs<DataModel>();
@@ -802,6 +886,44 @@ static void EmitJoinFire(ProgramImpl *impl, Context &context,
     }
     for (QueryView side : lower_sides) {
       scan_list.emplace_back(side, MembershipPredicate::kInNew);
+    }
+
+    // V-PRED-XCHECK (finding 1) — Site 2: cross-check every scanned side's
+    // emitter-chosen matrix predicate against the predicate the matching DR
+    // FIXPOINT_FIRE arm STORED (its access-plan spine's ACCESS nodes carry the
+    // per-side `Pred`, populated by FixpointSamePred/kInNew in BuildDRInventory).
+    // A reintroduced F18-style position/sign-keyed read here (or in the DR
+    // model) aborts at compile time. Observation-only.
+    if (fire_op != nullptr) {
+      // The arm driving delta position p_pos, this sign.
+      const DRArm *arm = nullptr;
+      for (const DRArm &a : fire_op->arms) {
+        if (a.delta_pos == static_cast<unsigned>(p_pos) &&
+            (a.sign < 0) == is_del) {
+          arm = &a;
+          break;
+        }
+      }
+      if (arm == nullptr) {
+        PredXCheckFail("EmitJoinFire (no DR arm for delta position)");
+      }
+      // Collect the STORED per-table predicate from the arm's plan spine.
+      std::unordered_map<TABLE *, Pred> stored;
+      for (const PlanNode *pn = arm->body.get(); pn != nullptr;
+           pn = pn->child.get()) {
+        if (pn->kind == PlanKind::kAccess && pn->table != nullptr) {
+          stored.emplace(pn->table, pn->pred);
+        }
+      }
+      for (const auto &[side, emitted_pred] : scan_list) {
+        TABLE *const st =
+            impl->view_to_model[side]->FindAs<DataModel>()->table;
+        auto it = stored.find(st);
+        if (it == stored.end()) {
+          PredXCheckFail("EmitJoinFire (scanned side absent from DR arm spine)");
+        }
+        PredXCheck(it->second, emitted_pred, "EmitJoinFire matrix");
+      }
     }
 
     // Fold ∓recursive into the join's persisted table at the deepest scan
@@ -1373,8 +1495,22 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
     if (ds == dr_flow.drain_stratum.end() || ds->second != stratum) {
       continue;
     }
-    EmitClaimDrain(impl, context, table, true /* is_del */, stratum_seq);
-    EmitClaimDrain(impl, context, table, false /* is_del */, stratum_seq);
+    // V-PRED-XCHECK (finding 1, Site 3): thread the DR drain ops. This loop is
+    // keyed on the DEL single-pass drain (`op`); find the matching ADD drain for
+    // the add call so BOTH signs cross-check against their own stored ClaimGate.
+    const DROp *add_op = nullptr;
+    for (const DROp &o : dr_flow.ops) {
+      if (o.kind == DROpKind::kClaimDrain &&
+          o.claim_form == ClaimForm::kSinglePass && o.table_op_sign == +1 &&
+          o.table_op_table == table) {
+        add_op = &o;
+        break;
+      }
+    }
+    EmitClaimDrain(impl, context, table, true /* is_del */, stratum_seq,
+                   nullptr, &op);
+    EmitClaimDrain(impl, context, table, false /* is_del */, stratum_seq,
+                   nullptr, add_op);
     EmitFrontierFilter(impl, context, table, true /* is_del */, stratum_seq);
     EmitFrontierFilter(impl, context, table, false /* is_del */, stratum_seq);
   }
@@ -1464,7 +1600,21 @@ static INDUCTION *LowerRoundBody(
   for (TABLE *table : scc_tables) {
     VECTOR *const round_frontier =
         TableDeltaVector(impl, context, table, frontier_kind);
-    EmitClaimDrain(impl, context, table, is_del, round_seq, round_frontier);
+    // V-PRED-XCHECK (finding 1, Site 3): the loop iterates tables, not DR ops,
+    // so look up this table's in-round drain op of the round's sign+group and
+    // thread it — both signs then cross-check against their stored ClaimGate.
+    const int want_sign = is_del ? -1 : +1;
+    const DROp *drain_op = nullptr;
+    for (const DROp &o : dr_flow.ops) {
+      if (o.kind == DROpKind::kClaimDrain &&
+          o.claim_form == ClaimForm::kInRound && o.table_op_table == table &&
+          o.table_op_sign == want_sign && o.scc_group == round.scc_group) {
+        drain_op = &o;
+        break;
+      }
+    }
+    EmitClaimDrain(impl, context, table, is_del, round_seq, round_frontier,
+                   drain_op);
   }
 
   // FIXPOINT_FIRE: re-fire every recursive JOIN in this SCC group DELTA over Δ.
@@ -1481,7 +1631,9 @@ static INDUCTION *LowerRoundBody(
       continue;
     }
     const JoinEmission emission(*op->fire_join, nullptr /* pivot */, 0u);
-    EmitJoinFire(impl, context, recursive_sccs, emission, is_del, round_seq);
+    // Thread the DR op for V-PRED-XCHECK (finding 1, Site 2): EmitJoinFire's
+    // matrix choice is cross-checked against this op's stored arm predicates.
+    EmitJoinFire(impl, context, recursive_sccs, emission, is_del, round_seq, op);
   }
 
   // CHAIN_FOLD: re-fire the same-SCC internal projection seeds DELTA over the

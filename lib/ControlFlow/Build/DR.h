@@ -132,6 +132,14 @@ enum class DROpKind : uint8_t {
 // InI (eager/seed) or InNew (fixpoint refire). NEVER sign-derived (V-NEG-CTX).
 enum class NegateHint : uint8_t { kNormal, kNever };
 
+// The AUTHORITATIVE (context, hint) → negate-gate predicate derivation (F-5 /
+// F18): eager reads Present(@never)/InI(normal), seed reads InI BOTH signs,
+// fixpoint refire reads InNew BOTH signs — NEVER sign-derived. This is the DR
+// model's sole source for a negate gate's predicate (every DR gate node + the
+// eager NEGATE_GATE op is populated from it). Exposed so V-PRED-XCHECK (Site 1)
+// can cross-check the emitter's EmitChainStep negate-gate choice against it.
+Pred NegateGatePred(Ctx ctx, NegateHint hint);
+
 // The claim-drain form (spec §2.1 CLAIM_DRAIN): single-pass for a lower
 // differential table (dead/edge), in-round for an SCC table (dual-append +
 // input-queue clear, B-7). DERIVED from whether the table is in a recursive SCC.
