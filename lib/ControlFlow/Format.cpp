@@ -620,6 +620,25 @@ OutputStream &operator<<(OutputStream &os, ProgramCommitSweepRegion region) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os, ProgramGroupUpdateRegion region) {
+  os << os.Indent() << "group-update sc#" << region.StateCellId() << " "
+     << (region.IsInvertible() ? "@invertible" : "@recompute") << " into "
+     << region.AggTable() << "\n";
+  os.PushIndent();
+  os << os.Indent() << "fold-neg " << region.NegFrontier() << " / fold-pos "
+     << region.PosFrontier() << " group@{";
+  auto sep = "";
+  for (auto p : region.GroupPositions()) { os << sep << p; sep = ", "; }
+  os << "} summary@{";
+  sep = "";
+  for (auto p : region.SummaryPositions()) { os << sep << p; sep = ", "; }
+  os << "}\n";
+  os << os.Indent() << "emit-touched one-net-pair -> " << region.DelQueue()
+     << " / " << region.AddQueue();
+  os.PopIndent();
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramClaimRegion region) {
   os << os.Indent() << (region.IsDelete() ? "claim-del" : "claim-add")
      << " {";
@@ -908,6 +927,7 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramChangeRecordRegion)
   MAKE_VISITOR(ProgramCheckRecordRegion)
   MAKE_VISITOR(ProgramCommitSweepRegion)
+  MAKE_VISITOR(ProgramGroupUpdateRegion)
   MAKE_VISITOR(ProgramClaimRegion)
   MAKE_VISITOR(ProgramRetireRegion)
   MAKE_VISITOR(ProgramNetBatchRegion)

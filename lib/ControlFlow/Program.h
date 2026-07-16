@@ -417,6 +417,11 @@ enum class ProgramOperation {
   // presence changes, seal the batch-start snapshot, clear scratch flags.
   kCommitSweep,
 
+  // R3 GROUP_UPDATE: fold one aggregate/KV view's input net frontiers into its
+  // StateCell store, then emit the occupancy-generalized one-net-pair into the
+  // aggregate's own differential table (v3-spec-statecell.md §2.2).
+  kGroupUpdate,
+
   // When dealing with MERGE/UNION nodes with an inductive cycle.
   kAppendToInductionVector,
   kLoopOverInductionVector,
@@ -543,6 +548,7 @@ class ProgramOperationRegionImpl : public REGION {
   virtual ProgramCheckMemberRegionImpl *AsCheckMember(void) noexcept;
   virtual ProgramCheckRecordRegionImpl *AsCheckRecord(void) noexcept;
   virtual ProgramCommitSweepRegionImpl *AsCommitSweep(void) noexcept;
+  virtual ProgramGroupUpdateRegionImpl *AsGroupUpdate(void) noexcept;  // R3
   virtual ProgramClaimRegionImpl *AsClaim(void) noexcept;
   virtual ProgramRetireRegionImpl *AsRetire(void) noexcept;
   virtual ProgramNetBatchRegionImpl *AsNetBatch(void) noexcept;
@@ -1034,9 +1040,79 @@ class ProgramCommitSweepRegionImpl final : public OP {
   // The `@differential` message fed by this table, if any: net presence
   // crossings publish through it.
   std::optional<ParsedMessage> message;
+
+  // R3: if this table is an aggregate's own DiffTable (V-AGG-SOLE), the id of
+  // the StateCell store to Seal at the commit tail — sealed := Emit(working)
+  // for touched groups (STATE_SEAL, spec §2.3 E5). std::nullopt otherwise.
+  std::optional<unsigned> seal_statecell_id;
 };
 
 using COMMITSWEEP = ProgramCommitSweepRegionImpl;
+
+// R3 GROUP_UPDATE (v3-spec-statecell.md §2.2): the emitted lowering of ONE
+// QueryAggregate / desugared QueryKVIndex view. It is the SOLE deriver of its
+// aggregate's differential DiffTable (V-AGG-SOLE). The region is self-contained
+// (no membership-check partner read) and its codegen writes the whole two-band
+// body directly: BAND (a) frontier_in — two VECTORLOOPs over the input's net
+// removal / net addition frontier vecs, each folding the projected (group,
+// summary) into the StateCell store (`statecell_id`, `algebra`); BAND (b)
+// emit_touched — a loop over the store's sort-unique touched set applying the
+// occupancy-generalized one-net-pair guard (spec §C-1) and folding ± into the
+// agg table's derivation counters + appending to its delete/add queues.
+//
+// The per-arm projections (which delta-row columns are the group key vs the
+// summary value) are carried as parallel var lists; the emit_touched counter
+// folds reuse the ordinary UPDATECOUNT machinery, so the agg table's whole
+// downstream claim/frontier/commit tail is identity to every acyclic table.
+class ProgramGroupUpdateRegionImpl final : public OP {
+ public:
+  virtual ~ProgramGroupUpdateRegionImpl(void);
+
+  inline ProgramGroupUpdateRegionImpl(REGION *parent_, unsigned statecell_id_,
+                                      bool invertible_)
+      : OP(parent_, ProgramOperation::kGroupUpdate),
+        statecell_id(statecell_id_),
+        invertible(invertible_) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+
+  ProgramGroupUpdateRegionImpl *AsGroupUpdate(void) noexcept override;
+
+  bool Equals(EqualitySet &eq, REGION *that,
+              uint32_t depth) const noexcept override;
+
+  // Input net-removal / net-addition frontier vectors (BAND (a) drains). Both
+  // arms drain the summarized input's frontier and fold the projected
+  // (group, summary) into the StateCell store.
+  UseRef<VECTOR> neg_frontier;
+  UseRef<VECTOR> pos_frontier;
+
+  // The agg table's delete / add queues (emit_touched appends, BAND (b)).
+  UseRef<VECTOR> del_queue;
+  UseRef<VECTOR> add_queue;
+
+  // The aggregate's OWN differential table (sole-deriver).
+  UseRef<TABLE> agg_table;
+
+  // The fold-arm projection: positions into the frontier row (== the input
+  // view's column order) that are the group-key columns and the summary
+  // columns. Both arms share the same shape (the input is one view). Codegen
+  // destructures the drained row into positional locals and folds
+  // (group_positions -> key, summary_positions -> value).
+  std::vector<unsigned> group_positions;
+  std::vector<unsigned> summary_positions;
+
+  // Index into the program's state-cell descriptor list (codegen names the
+  // matching `statecell_<id>` store member and its `Reduce_*`/`Key_*` types).
+  const unsigned statecell_id;
+
+  // `true` iff @invertible (O(1) fold/unfold); `false` iff @recompute.
+  const bool invertible;
+};
+
+using GROUPUPDATE = ProgramGroupUpdateRegionImpl;
 
 // A claim of one row of a differential table into the overdeletion set
 // (`is_del`) or the addition set, and into the current frontier round.
@@ -1766,6 +1842,21 @@ class ProgramInductionRegionImpl final : public REGION {
 
 using INDUCTION = ProgramInductionRegionImpl;
 
+// R3 codegen descriptor for one StateCell store (one GROUP_UPDATE view). Names
+// the generated `statecell_<id>` member, its `Key_<id>` / `Reduce_<id>` types,
+// and the driver-supplied reduction functor (C-5 free-function ABI). Populated
+// from the DR flow's statecells at stratum-phase build time.
+struct ProgramStateCell {
+  unsigned id{0u};
+  bool invertible{false};
+  std::vector<TypeLoc> key_types;      // group ++ config column types
+  std::vector<TypeLoc> summary_types;  // the folded value column type(s)
+  ParsedFunctor functor;               // the reduction (agg summary / kv merge)
+
+  ProgramStateCell(unsigned id_, bool invertible_, ParsedFunctor functor_)
+      : id(id_), invertible(invertible_), functor(functor_) {}
+};
+
 class ProgramImpl : public User {
  public:
   ~ProgramImpl(void);
@@ -1821,6 +1912,10 @@ class ProgramImpl : public User {
   // We build up "data models" of views that can share the same backing storage.
   std::vector<std::unique_ptr<DataModel>> models;
   std::unordered_map<QueryView, DataModel *> view_to_model;
+
+  // R3: one StateCell store descriptor per GROUP_UPDATE view (codegen emits a
+  // `statecell_<id>` member, its Key/Reduce types, and the commit-tail Seal).
+  std::vector<ProgramStateCell> state_cells;
 };
 
 }  // namespace hyde

@@ -27,6 +27,7 @@ ProgramChangeRecordRegionImpl::~ProgramChangeRecordRegionImpl(void) {}
 ProgramCheckMemberRegionImpl::~ProgramCheckMemberRegionImpl(void) {}
 ProgramCheckRecordRegionImpl::~ProgramCheckRecordRegionImpl(void) {}
 ProgramCommitSweepRegionImpl::~ProgramCommitSweepRegionImpl(void) {}
+ProgramGroupUpdateRegionImpl::~ProgramGroupUpdateRegionImpl(void) {}
 ProgramClaimRegionImpl::~ProgramClaimRegionImpl(void) {}
 ProgramRetireRegionImpl::~ProgramRetireRegionImpl(void) {}
 ProgramNetBatchRegionImpl::~ProgramNetBatchRegionImpl(void) {}
@@ -138,6 +139,11 @@ ProgramOperationRegionImpl::AsCheckRecord(void) noexcept {
 
 ProgramCommitSweepRegionImpl *
 ProgramOperationRegionImpl::AsCommitSweep(void) noexcept {
+  return nullptr;
+}
+
+ProgramGroupUpdateRegionImpl *
+ProgramOperationRegionImpl::AsGroupUpdate(void) noexcept {
   return nullptr;
 }
 
@@ -446,6 +452,47 @@ const bool ProgramCommitSweepRegionImpl::MergeEqual(
   (void) prog;
   (void) merges;
   return false;
+}
+
+// -----------------------------------------------------------------------------
+
+ProgramGroupUpdateRegionImpl *
+ProgramGroupUpdateRegionImpl::AsGroupUpdate(void) noexcept {
+  return this;
+}
+
+uint64_t ProgramGroupUpdateRegionImpl::Hash(uint32_t depth) const {
+  (void) depth;
+  uint64_t hash = static_cast<unsigned>(this->OP::op) * 59;
+  hash ^= RotateRight64(hash, 13) * (statecell_id + 1u) * 17;
+  if (agg_table) {
+    hash ^= RotateRight64(hash, 11) * agg_table->id * 13;
+  }
+  return hash;
+}
+
+bool ProgramGroupUpdateRegionImpl::IsNoOp(void) const noexcept {
+  // The fold + emit_touched always mutate the state cell and the agg table:
+  // a group update is never a no-op.
+  return false;
+}
+
+bool ProgramGroupUpdateRegionImpl::Equals(EqualitySet &eq, REGION *that_,
+                                          uint32_t depth) const noexcept {
+  (void) eq;
+  (void) depth;
+  const auto that_op = that_->AsOperation();
+  if (!that_op) {
+    FAILED_EQ(that_);
+    return false;
+  }
+  const auto that = that_op->AsGroupUpdate();
+  if (!that || statecell_id != that->statecell_id ||
+      agg_table.get() != that->agg_table.get()) {
+    FAILED_EQ(that_);
+    return false;
+  }
+  return true;
 }
 
 // -----------------------------------------------------------------------------

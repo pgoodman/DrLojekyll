@@ -45,6 +45,7 @@ class ProgramChangeRecordRegion;
 class ProgramCheckMemberRegion;
 class ProgramCheckRecordRegion;
 class ProgramCommitSweepRegion;
+class ProgramGroupUpdateRegion;
 class ProgramClaimRegion;
 class ProgramRetireRegion;
 class ProgramNetBatchRegion;
@@ -81,6 +82,7 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   ProgramRegion(const ProgramCheckMemberRegion &);
   ProgramRegion(const ProgramCheckRecordRegion &);
   ProgramRegion(const ProgramCommitSweepRegion &);
+  ProgramRegion(const ProgramGroupUpdateRegion &);
   ProgramRegion(const ProgramClaimRegion &);
   ProgramRegion(const ProgramRetireRegion &);
   ProgramRegion(const ProgramNetBatchRegion &);
@@ -108,6 +110,7 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   bool IsCheckMember(void) const noexcept;
   bool IsCheckRecord(void) const noexcept;
   bool IsCommitSweep(void) const noexcept;
+  bool IsGroupUpdate(void) const noexcept;
   bool IsClaim(void) const noexcept;
   bool IsRetire(void) const noexcept;
   bool IsNetBatch(void) const noexcept;
@@ -143,6 +146,7 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   friend class ProgramCheckMemberRegion;
   friend class ProgramCheckRecordRegion;
   friend class ProgramCommitSweepRegion;
+  friend class ProgramGroupUpdateRegion;
   friend class ProgramClaimRegion;
   friend class ProgramRetireRegion;
   friend class ProgramNetBatchRegion;
@@ -777,10 +781,55 @@ class ProgramCommitSweepRegion
   // crossings publish through it.
   std::optional<ParsedMessage> Message(void) const noexcept;
 
+  // R3: the StateCell store id to Seal at the commit tail (this table is an
+  // aggregate's own DiffTable), or std::nullopt.
+  std::optional<unsigned> SealStateCellId(void) const noexcept;
+
  private:
   friend class ProgramRegion;
 
   using Node<ProgramCommitSweepRegion, ProgramCommitSweepRegionImpl>::Node;
+};
+
+// R3 GROUP_UPDATE (v3-spec-statecell.md §2.2): the emitted lowering of one
+// aggregate / KV-index view. Folds the summarized input's net removal / net
+// addition frontiers into a per-view StateCell store (`StateCellId()`), then
+// emits the occupancy-generalized one-net-pair into the aggregate's own
+// differential table. The whole two-band body is written directly by codegen
+// from this region's carried data; there is no membership-check partner read.
+class ProgramGroupUpdateRegionImpl;
+class ProgramGroupUpdateRegion
+    : public Node<ProgramGroupUpdateRegion, ProgramGroupUpdateRegionImpl> {
+ public:
+  static ProgramGroupUpdateRegion From(ProgramRegion) noexcept;
+
+  // The state-cell descriptor index; codegen names the `statecell_<id>` store
+  // member and its generated `Reduce_<id>` / `Key_<id>` types.
+  unsigned StateCellId(void) const noexcept;
+
+  // `true` iff @invertible (O(1) fold/unfold); `false` iff @recompute.
+  bool IsInvertible(void) const noexcept;
+
+  // The summarized input's net-removal / net-addition frontier vectors
+  // (BAND (a) drains, the `-` and `+` fold arms).
+  DataVector NegFrontier(void) const noexcept;
+  DataVector PosFrontier(void) const noexcept;
+
+  // The fold-arm projection: positions into the drained frontier row (== the
+  // input view's column order) that form the group-key and the summary value.
+  const std::vector<unsigned> &GroupPositions(void) const noexcept;
+  const std::vector<unsigned> &SummaryPositions(void) const noexcept;
+
+  // The aggregate's OWN differential table (sole deriver) and its delete / add
+  // queues (emit_touched appends, BAND (b)).
+  DataTable AggTable(void) const;
+  DataVector DelQueue(void) const noexcept;
+  DataVector AddQueue(void) const noexcept;
+
+ private:
+  friend class ProgramRegion;
+
+  using Node<ProgramGroupUpdateRegion, ProgramGroupUpdateRegionImpl>::Node;
 };
 
 // Claims a row of a differential table into the overdeletion set
@@ -1263,6 +1312,30 @@ class ProgramQuery {
   ProgramQuery(ProgramQuery &&) noexcept = default;
 };
 
+// R3 codegen descriptor for one StateCell store (one aggregate / KV view).
+// Codegen emits a `statecell_<Id()>` member of type `StateCellStore<Key_<Id>,
+// Algebra_<Id>>`, the generated `Key_<Id>` / `Reduce_<Id>` structs, and the
+// commit-tail `Seal()`. The reduction functor's declared shape drives the
+// generated `Reduce_<Id>` policy (which forwards to the driver's C-5 free
+// functions).
+class ProgramStateCellInfo {
+ public:
+  unsigned Id(void) const noexcept;
+  bool IsInvertible(void) const noexcept;
+
+  // Column types of the group ++ config key and the summary value.
+  const std::vector<TypeLoc> &KeyTypes(void) const noexcept;
+  const std::vector<TypeLoc> &SummaryTypes(void) const noexcept;
+
+  // The reduction functor (over() summary or kv merge) backing this cell.
+  ParsedFunctor Functor(void) const noexcept;
+
+ private:
+  friend class Program;
+  explicit ProgramStateCellInfo(const void *impl_) : impl(impl_) {}
+  const void *impl;
+};
+
 // A program in its entirety.
 class Program {
  public:
@@ -1277,6 +1350,9 @@ class Program {
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;
+
+  // R3: the StateCell store descriptors (one per aggregate / KV view).
+  std::vector<ProgramStateCellInfo> StateCells(void) const;
 
   // List of all global constants.
   DefinedNodeRange<DataVariable> Constants(void) const;
@@ -1342,6 +1418,7 @@ class ProgramVisitor {
   virtual void Visit(ProgramCheckMemberRegion val);
   virtual void Visit(ProgramCheckRecordRegion val);
   virtual void Visit(ProgramCommitSweepRegion val);
+  virtual void Visit(ProgramGroupUpdateRegion val);
   virtual void Visit(ProgramClaimRegion val);
   virtual void Visit(ProgramRetireRegion val);
   virtual void Visit(ProgramNetBatchRegion val);

@@ -1096,3 +1096,96 @@ oracle needs the MAP functor implementations. Owner items:
 functor ABI (blocking); occupancy amendment; monotone/induction-owned
 aggregate inputs (incl. missing can_produce_deletions on
 QueryAggregateImpl); V-ALGEBRA layer ratification; STATE_SEAL pin.
+
+### R3 stage A + stage B landing record (2026-07-16)
+
+STAGE A (committed @ 3749a16a): the compiler-side aggregate cutover —
+GROUP_UPDATE / STATE_SEAL construction (`BuildGroupUpdateOps`,
+DR.cpp), strata lift (`group_update_stratum`), linearizer arms,
+data-model forcing (`force_agg_tables` in FillDataModel), differential
+classification, the V-ALGEBRA pre-pass (kv-undeclared reject +
+over-defaults-@recompute), the C-1 occupancy runtime
+(include/drlojekyll/Runtime/StateCell.h, unit-tested), and the corpus
+algebra annotations (average_weight / pairwise `@invertible` /
+`@recompute`). Emission FENCED as a clean feature-gap reject
+("...not yet fully lowered (StateCell emit path pending)"). Suite PASS
+162, 9/9 byte-identical, ctest 3/3.
+
+STAGE B (this record): the EMISSION LAYER, landed behind the STILL-
+ACTIVE stage-A fence (suite PASS 162 unchanged, byte-identical; the
+emitted code is dead until the fence flips). Landed:
+  - A new control-flow region kind `kGroupUpdate`
+    (ProgramGroupUpdateRegion) across the full surface: impl class +
+    public wrapper + As*/From*/IsGroupUpdate, the ProgramVisitor
+    entry, the ClearWithoutErasure teardown, and the -ir-out printer
+    ("group-update sc#N @invertible|@recompute ... fold-neg/pos ...
+    emit-touched one-net-pair").
+  - `LowerGroupUpdate` (Stratum.cpp): mints ONE GROUPUPDATE region per
+    aggregate/KV view, wiring the input net-removal/net-addition
+    frontier vecs (via `seed_vector`), the agg table's del/add queues,
+    and the group/summary PROJECTION POSITIONS (input-view-space
+    columns mapped to frontier-row positions — the handoff item-5
+    map). Hooked into LowerDRFlow between products and acyclic drains,
+    plus the `strata` set now includes `group_update_stratum` (a
+    stratum owning ONLY a group-update — average_weight's sum/count —
+    is now lowered).
+  - STATE_SEAL wiring: `LowerCommitSweeps` tags the agg table's
+    COMMITSWEEP with `seal_statecell_id`; codegen emits `Seal()` +
+    `DebugValidate()` at every commit-sweep exit (E5 trailing band).
+  - Codegen (Database.cpp): conditional `#include Runtime/StateCell.h`;
+    per-cell `Key_<id>` hash struct + `Reduce_<id>` policy; the
+    `statecell_<id>` store member + ctor mem-init; the two-band
+    GROUP_UPDATE body (two fold loops + the occupancy-generalized
+    one-net-pair emit_touched, C-1); `EffectsOf`/DetailState{Params,
+    Args} thread the stores into detail functions (transitively
+    through calls); ClassifyVector (Procedure.cpp) reads frontiers /
+    writes queues.
+  - C-5 FUNCTOR ABI (concrete, implementable): the reduction bodies
+    are DRIVER-SUPPLIED FREE FUNCTIONS, forward-declared in the
+    generated header and defined out-of-line by the driver (the
+    DatabaseLog declared-in-header/defined-by-driver idiom, but as
+    free functions — no ADL needed on builtin summary types). For a
+    reduction functor `F`: `@invertible` -> `F_identity()`,
+    `F_combine(w,v)`, `F_uncombine(w,v)` (Working==Summary, the
+    corpus abelian SUM/COUNT); `@recompute` -> `F_reduce(const S*
+    values, const int32_t* counts, size_t n)` (the from-scratch rescan
+    over the live multiset). Verified: average_weight generates
+    compilable, executable code linked against a hand-written driver
+    supplying these.
+  - Dataflow (Differential.cpp): AGGREGATE/KVINDEX seed
+    `can_produce_deletions` (§C-4 value churn is a deletion source),
+    so the downstream `can_receive` propagation reaches the summarized-
+    input relations (without it, the aggregate input is classified
+    monotone and its seeding branch is dropped by
+    FollowsDeltaEdge's CanReceiveDeletions gate). Suite-safe: only
+    fenced agg/KV programs have aggregates/kv_indices.
+
+FENCE NOT YET FLIPPED — the remaining blocker (a CONTROL-FLOW-BUILD
+seeding gap, the critique's HIGH #4 realized): with the emission +
+dataflow fixes in place, the aggregate INPUT relation's seeding branch
+(e.g. edge_weight -> pred(X,Weight)) fails in `EmitSeedLoop` ->
+`EmitHeadFold` -> `VariableFor` (Region.cpp:251, `var != nullptr`):
+the branch chain from a KVINDEX/AGGREGATE source THROUGH the pred
+projection does not bind every head column (`MapVariablesInEagerRegion`
+has no KV/agg-node column mapping, and the branch path improperly
+traverses the source KVINDEX node). The critique's recommended fix
+stands: make AGG/KVINDEX views chain-BREAKERS in SuffixesOf (assert no
+branch path CONTAINS one) and teach the eager-region column mapping
+the agg/KV node projection, so the aggregate input is seeded from its
+upstream table's net frontiers. Until that lands, aggregate programs
+compile to EMPTY output (the fold loops drain empty input frontiers) —
+hence the fence stays. Verified failure trace: average_weight, first
+add_edge batch, `avg_in(2)` empty (expected sum=30/count=2/avg=15).
+
+NEXT (stage C, the flip): the control-flow seeding fix above, THEN
+lift the two fences, author the corpus drivers (C-5 free functions +
+ADL state, SORTED keyed drains) + aggregate_1's driver, teach the
+oracle both aggregate paths + the MAP functors (div_i32/add_i32) + the
+merge/summary semantics, bless goldens from oracle truth, re-stage
+runall (aggregate_1 flips to a 4-mode golden; average_weight +
+pairwise become new cases; kvindex_1 KEEPS its mode-split — opt/nocf
+canonicalize the KVINDEX away, nodf/none V-ALGEBRA-reject the
+undeclared add_u32; kvindex_2/3/4 STAY diagnostic — same V-ALGEBRA
+reject in all modes; CONFIRMED against the debug compiler). The
+emission layer this record lands is the whole second half of R3c-ii +
+the R3d codegen; only the input-seeding + oracle/goldens remain.

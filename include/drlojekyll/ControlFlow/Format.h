@@ -31,6 +31,7 @@ OutputStream &operator<<(OutputStream &os, ProgramChangeRecordRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramCheckMemberRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramCheckRecordRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramCommitSweepRegion region);
+OutputStream &operator<<(OutputStream &os, ProgramGroupUpdateRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramClaimRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramRetireRegion region);
 OutputStream &operator<<(OutputStream &os, ProgramNetBatchRegion region);

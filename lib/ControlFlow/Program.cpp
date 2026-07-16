@@ -116,6 +116,13 @@ ProgramImpl::~ProgramImpl(void) {
     } else if (auto sweep = op->AsCommitSweep(); sweep) {
       sweep->table.ClearWithoutErasure();
 
+    } else if (auto gu = op->AsGroupUpdate(); gu) {
+      gu->neg_frontier.ClearWithoutErasure();
+      gu->pos_frontier.ClearWithoutErasure();
+      gu->del_queue.ClearWithoutErasure();
+      gu->add_queue.ClearWithoutErasure();
+      gu->agg_table.ClearWithoutErasure();
+
     } else if (auto claim = op->AsClaim(); claim) {
       claim->table.ClearWithoutErasure();
       claim->col_values.ClearWithoutErasure();
@@ -184,6 +191,37 @@ Program::~Program(void) {}
 // List of query entry points.
 const std::vector<ProgramQuery> &Program::Queries(void) const noexcept {
   return impl->queries;
+}
+
+// R3 StateCell descriptors (one per aggregate / KV view).
+std::vector<ProgramStateCellInfo> Program::StateCells(void) const {
+  std::vector<ProgramStateCellInfo> out;
+  for (const ProgramStateCell &cell : impl->state_cells) {
+    out.push_back(ProgramStateCellInfo(&cell));
+  }
+  return out;
+}
+
+unsigned ProgramStateCellInfo::Id(void) const noexcept {
+  return static_cast<const ProgramStateCell *>(impl)->id;
+}
+
+bool ProgramStateCellInfo::IsInvertible(void) const noexcept {
+  return static_cast<const ProgramStateCell *>(impl)->invertible;
+}
+
+const std::vector<TypeLoc> &
+ProgramStateCellInfo::KeyTypes(void) const noexcept {
+  return static_cast<const ProgramStateCell *>(impl)->key_types;
+}
+
+const std::vector<TypeLoc> &
+ProgramStateCellInfo::SummaryTypes(void) const noexcept {
+  return static_cast<const ProgramStateCell *>(impl)->summary_types;
+}
+
+ParsedFunctor ProgramStateCellInfo::Functor(void) const noexcept {
+  return static_cast<const ProgramStateCell *>(impl)->functor;
 }
 
 // Return the query used to build this program.
@@ -256,6 +294,7 @@ IS_OP(ChangeRecord)
 IS_OP(CheckMember)
 IS_OP(CheckRecord)
 IS_OP(CommitSweep)
+IS_OP(GroupUpdate)
 IS_OP(Claim)
 IS_OP(Retire)
 IS_OP(NetBatch)
@@ -338,6 +377,7 @@ FROM_OP(ProgramChangeRecordRegion, AsChangeRecord)
 FROM_OP(ProgramCheckMemberRegion, AsCheckMember)
 FROM_OP(ProgramCheckRecordRegion, AsCheckRecord)
 FROM_OP(ProgramCommitSweepRegion, AsCommitSweep)
+FROM_OP(ProgramGroupUpdateRegion, AsGroupUpdate)
 FROM_OP(ProgramClaimRegion, AsClaim)
 FROM_OP(ProgramRetireRegion, AsRetire)
 FROM_OP(ProgramNetBatchRegion, AsNetBatch)
@@ -626,6 +666,49 @@ DataTable ProgramCommitSweepRegion::Table(void) const {
 std::optional<ParsedMessage>
 ProgramCommitSweepRegion::Message(void) const noexcept {
   return impl->message;
+}
+
+std::optional<unsigned>
+ProgramCommitSweepRegion::SealStateCellId(void) const noexcept {
+  return impl->seal_statecell_id;
+}
+
+unsigned ProgramGroupUpdateRegion::StateCellId(void) const noexcept {
+  return impl->statecell_id;
+}
+
+bool ProgramGroupUpdateRegion::IsInvertible(void) const noexcept {
+  return impl->invertible;
+}
+
+DataVector ProgramGroupUpdateRegion::NegFrontier(void) const noexcept {
+  return DataVector(impl->neg_frontier.get());
+}
+
+DataVector ProgramGroupUpdateRegion::PosFrontier(void) const noexcept {
+  return DataVector(impl->pos_frontier.get());
+}
+
+const std::vector<unsigned> &
+ProgramGroupUpdateRegion::GroupPositions(void) const noexcept {
+  return impl->group_positions;
+}
+
+const std::vector<unsigned> &
+ProgramGroupUpdateRegion::SummaryPositions(void) const noexcept {
+  return impl->summary_positions;
+}
+
+DataTable ProgramGroupUpdateRegion::AggTable(void) const {
+  return DataTable(impl->agg_table.get());
+}
+
+DataVector ProgramGroupUpdateRegion::DelQueue(void) const noexcept {
+  return DataVector(impl->del_queue.get());
+}
+
+DataVector ProgramGroupUpdateRegion::AddQueue(void) const noexcept {
+  return DataVector(impl->add_queue.get());
 }
 
 unsigned ProgramClaimRegion::Arity(void) const noexcept {

@@ -180,6 +180,20 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
         read.insert(vec);
         break;
 
+      // R3 GROUP_UPDATE: it DRAINS the input net frontiers (read) and APPENDS
+      // the emit_touched one-net-pair to the agg table's del/add queues
+      // (write). Classify by which of the op's vecs `vec` matches.
+      case ProgramOperation::kGroupUpdate: {
+        auto *gu = op->AsGroupUpdate();
+        if (vec == gu->neg_frontier.get() || vec == gu->pos_frontier.get()) {
+          read.insert(vec);
+        }
+        if (vec == gu->del_queue.get() || vec == gu->add_queue.get()) {
+          written.insert(vec);
+        }
+        break;
+      }
+
       default: assert(false);
     }
   // Parameter; by construction, neither the entry nor the primary procedures

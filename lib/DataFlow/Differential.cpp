@@ -63,6 +63,17 @@ void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
     }
   }
 
+  // R3 (v3-spec-statecell.md §C-4): an AGGREGATE or KVINDEX produces deletions
+  // from VALUE CHURN — a group's summary changing retracts the old
+  // (group, old-value) row and asserts the new one — so it is a deletion
+  // PRODUCER unconditionally, seeding the downstream `can_receive` propagation.
+  for (auto agg : aggregates) {
+    agg->can_produce_deletions = true;
+  }
+  for (auto kv : kv_indices) {
+    kv->can_produce_deletions = true;
+  }
+
   for (auto changed = true; changed && log.IsEmpty();) {
     changed = false;
     ForEachView([&](VIEW *view) {

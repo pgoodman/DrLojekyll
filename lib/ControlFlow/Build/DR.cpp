@@ -915,15 +915,20 @@ DRFlowGraph BuildDRInventory(
   // — the agg view owns its own differential table). Provenance is carried for
   // V-ALGEBRA + the oracle; both provenances lower identically.
   for (QueryAggregate agg : query.Aggregates()) {
+    // The group/summary projection columns are taken in the INPUT VIEW's space
+    // (spec §5, stage-A handoff item 5): the StateCell folds over the input's
+    // net-frontier rows, so the key/value are positions in the input row, not
+    // the aggregate's output row. `InputGroupColumns` / `InputAggregatedColumns`
+    // are uses of the summarized predecessor's columns.
     std::vector<QueryColumn> group;
-    for (auto col : agg.GroupColumns()) {
+    for (auto col : agg.InputGroupColumns()) {
       group.push_back(col);
     }
-    for (auto col : agg.ConfigurationColumns()) {
+    for (auto col : agg.InputConfigurationColumns()) {
       group.push_back(col);
     }
     std::vector<QueryColumn> summary;
-    for (auto col : agg.SummaryColumns()) {
+    for (auto col : agg.InputAggregatedColumns()) {
       summary.push_back(col);
     }
     // The summarized input is the aggregate's predecessor carrying the
@@ -936,11 +941,11 @@ DRFlowGraph BuildDRInventory(
   }
   for (QueryKVIndex kv : query.KVIndices()) {
     std::vector<QueryColumn> group;  // config = () for a KV index
-    for (auto col : kv.KeyColumns()) {
+    for (auto col : kv.InputKeyColumns()) {
       group.push_back(col);
     }
     std::vector<QueryColumn> summary;
-    for (auto col : kv.ValueColumns()) {
+    for (auto col : kv.InputValueColumns()) {
       summary.push_back(col);
     }
     QueryView input = QueryView(kv).Predecessors()[0];

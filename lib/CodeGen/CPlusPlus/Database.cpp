@@ -252,6 +252,7 @@ class Generator {
     std::unordered_set<unsigned> tables;   // DataTable ids
     std::unordered_set<unsigned> indexes;  // DataIndex ids (member-backed)
     std::unordered_set<unsigned> globals;  // global DataVariable ids
+    std::unordered_set<unsigned> statecells;  // R3: StateCell store ids
     bool uses_log{false};       // publishes (publish region / commit sweep)
     bool uses_functors{false};  // calls a non-inline functor
   };
@@ -283,6 +284,10 @@ class Generator {
   // "db." inside a hidden friend).
   std::string DetailStateArgs(ProgramProcedure proc, const char *prefix);
 
+  // R3: the fully-qualified `StateCellStore<Key_<id>, Algebra_<id>>` type for
+  // one state cell (member declaration + detail reference-param type).
+  std::string StateCellStoreType(const ProgramStateCellInfo &cell);
+
   // Vector/scalar parameter tail shared by declarations and definitions.
   std::string ProcValueParams(ProgramProcedure proc);
 
@@ -298,6 +303,7 @@ class Generator {
                       const std::vector<std::pair<std::string, std::string>>
                           &typed_fields);
   void EmitRowStructs(void);
+  void EmitStateCellStructs(void);  // R3
   void EmitFunctorsDecl(void);
   void EmitLogDecl(void);
   void EmitDatabaseDecl(void);
@@ -324,6 +330,7 @@ class Generator {
   void EmitUpdateCount(ProgramUpdateCountRegion region);
   void EmitCheckMember(ProgramCheckMemberRegion region);
   void EmitCommitSweep(ProgramCommitSweepRegion region);
+  void EmitGroupUpdate(ProgramGroupUpdateRegion region);  // R3
   void EmitClaim(ProgramClaimRegion region);
   void EmitRetire(ProgramRetireRegion region);
   void EmitNetBatch(ProgramNetBatchRegion region);
@@ -734,6 +741,13 @@ void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
     if (sweep.Message()) {
       out.uses_log = true;
     }
+    if (auto id = sweep.SealStateCellId()) {
+      out.statecells.insert(*id);
+    }
+  } else if (region.IsGroupUpdate()) {
+    auto gu = ProgramGroupUpdateRegion::From(region);
+    out.tables.insert(gu.AggTable().Id());
+    out.statecells.insert(gu.StateCellId());
   } else if (region.IsClaim()) {
     auto claim = ProgramClaimRegion::From(region);
     out.tables.insert(claim.Table().Id());
@@ -793,6 +807,7 @@ void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
     out.tables.insert(callee.tables.begin(), callee.tables.end());
     out.indexes.insert(callee.indexes.begin(), callee.indexes.end());
     out.globals.insert(callee.globals.begin(), callee.globals.end());
+    out.statecells.insert(callee.statecells.begin(), callee.statecells.end());
     out.uses_log |= callee.uses_log;
     out.uses_functors |= callee.uses_functors;
     recurse(call.BodyIfTrue());
@@ -853,7 +868,22 @@ std::string Generator::DetailStateParams(ProgramProcedure proc) {
       parts.push_back(TypeName(module, var.Type()) + " &" + VarName(var));
     }
   }
+  // R3: StateCell stores used by this procedure ride as reference params.
+  for (const ProgramStateCellInfo &cell : program.StateCells()) {
+    if (fx.statecells.contains(cell.Id())) {
+      parts.push_back(StateCellStoreType(cell) + " &statecell_" +
+                      std::to_string(cell.Id()));
+    }
+  }
   return JoinExprs(parts, ", ");
+}
+
+std::string Generator::StateCellStoreType(const ProgramStateCellInfo &cell) {
+  const auto id = std::to_string(cell.Id());
+  const std::string algebra = cell.IsInvertible()
+      ? "::hyde::rt::Invertible<Reduce_" + id + ">"
+      : "::hyde::rt::Recompute<Reduce_" + id + ">";
+  return "::hyde::rt::StateCellStore<Key_" + id + ", " + algebra + ">";
 }
 
 std::string Generator::DetailStateArgs(ProgramProcedure proc,
@@ -881,6 +911,13 @@ std::string Generator::DetailStateArgs(ProgramProcedure proc,
   for (DataVariable var : program.GlobalVariables()) {
     if (fx.globals.contains(var.Id())) {
       parts.push_back(std::string(prefix) + VarName(var));
+    }
+  }
+  // R3: forward the used StateCell stores by name.
+  for (const ProgramStateCellInfo &cell : program.StateCells()) {
+    if (fx.statecells.contains(cell.Id())) {
+      parts.push_back(std::string(prefix) + "statecell_" +
+                      std::to_string(cell.Id()));
     }
   }
   return JoinExprs(parts, ", ");
@@ -1018,6 +1055,107 @@ void Generator::EmitRowStructs(void) {
       }
       EmitHashStruct(key_type[index.Id()], key_fields);
     }
+  }
+}
+
+// R3 (v3-spec-statecell.md §1.3/§C-5): emit, per StateCell store, a `Key_<id>`
+// hash struct (group ++ config columns) and a `Reduce_<id>` policy that bridges
+// the runtime Algebra interface (Invertible<Reduce> / Recompute<Reduce>, see
+// Runtime/StateCell.h) to the DRIVER-SUPPLIED reduction free functions. The
+// C-5 ABI (resolved by unqualified/ADL call from the generated template
+// context, no DatabaseFunctors membership) for a reduction functor named `F`:
+//   @invertible:  Summary  F_identity();
+//                 Summary  F_combine(Summary working, Summary value);
+//                 Summary  F_uncombine(Summary working, Summary value);
+//     (Working == Summary for the corpus abelian reductions SUM/COUNT; the
+//      finalizer is identity. AVG-style Working != Summary is a later ABI.)
+//   @recompute:   Summary  F_reduce(const Summary *values, const int32_t
+//                                   *counts, size_t n);
+//     (the from-scratch rescan over the live multiset; MIN/MAX/opaque merge.)
+// The driver defines these before its message calls (new-driver review gate).
+void Generator::EmitStateCellStructs(void) {
+  for (const ProgramStateCellInfo &cell : program.StateCells()) {
+    const auto id = std::to_string(cell.Id());
+    const std::string fname = Sanitize(ToString(cell.Functor().Name()));
+
+    // Key_<id>: a hash struct over the group ++ config column types.
+    std::vector<std::pair<std::string, std::string>> key_fields;
+    {
+      auto i = 0u;
+      for (TypeLoc t : cell.KeyTypes()) {
+        key_fields.emplace_back(TypeName(module, t), "c" + std::to_string(i++));
+      }
+    }
+    hh << "// StateCell #" << id << " group key.\n";
+    EmitHashStruct("Key_" + id, key_fields);
+
+    // The summary C++ type. Single-column summary for the corpus (SUM/COUNT/
+    // merge value); a multi-column summary would be a std::tuple (later ABI).
+    std::string summary_type = "int64_t";
+    if (cell.SummaryTypes().size() == 1u) {
+      summary_type = TypeName(module, cell.SummaryTypes()[0]);
+    } else if (cell.SummaryTypes().size() > 1u) {
+      summary_type = "std::tuple<";
+      auto sep = "";
+      for (TypeLoc t : cell.SummaryTypes()) {
+        summary_type += sep + TypeName(module, t);
+        sep = ", ";
+      }
+      summary_type += ">";
+    }
+
+    // C-5 free-function forward declarations: DECLARED in the generated header,
+    // DEFINED out-of-line by the driver (the DatabaseLog/DatabaseFunctors
+    // declared-in-header/defined-by-driver idiom, but as free functions so the
+    // engine owns the state layout). Ordinary unqualified lookup from the
+    // Reduce_<id> template context finds these (no ADL on builtin summary
+    // types).
+    hh << "// StateCell #" << id << " reduction functions over `" << fname
+       << "` (C-5 driver ABI; define these out-of-line in your driver TU).\n";
+    if (cell.IsInvertible()) {
+      hh << summary_type << " " << fname << "_identity();\n"
+         << summary_type << " " << fname << "_combine(" << summary_type
+         << " working, " << summary_type << " value);\n"
+         << summary_type << " " << fname << "_uncombine(" << summary_type
+         << " working, " << summary_type << " value);\n";
+    } else {
+      hh << summary_type << " " << fname << "_reduce(const " << summary_type
+         << " *values, const int32_t *counts, ::std::size_t n);\n";
+    }
+
+    const std::string reduce_name = "Reduce_" + id;
+    hh << "// StateCell #" << id << " reduction policy over `" << fname
+       << "` (C-5 driver ABI).\n";
+    hh << "struct " << reduce_name << " {\n";
+    hh.PushIndent();
+    hh << hh.Indent() << "using Summary = " << summary_type << ";\n";
+    if (cell.IsInvertible()) {
+      // Working == Summary (abelian running reduction). The driver supplies the
+      // step semantics; the engine owns the layout.
+      hh << hh.Indent() << "using Working = Summary;\n"
+         << hh.Indent() << "static void Identity(Working &w) { w = " << fname
+         << "_identity(); }\n"
+         << hh.Indent()
+         << "static void Combine(Working &w, const Summary &v) { w = " << fname
+         << "_combine(w, v); }\n"
+         << hh.Indent()
+         << "static void Uncombine(Working &w, const Summary &v) { w = " << fname
+         << "_uncombine(w, v); }\n"
+         << hh.Indent()
+         << "static Summary Finalize(const Working &w) { return w; }\n";
+    } else {
+      // @recompute: rescan the live multiset from scratch (the driver merge).
+      hh << hh.Indent()
+         << "static Summary ReduceLive(const ::hyde::rt::Vec<Summary> &values, "
+            "const ::hyde::rt::Vec<int32_t> &counts) {\n";
+      hh.PushIndent();
+      hh << hh.Indent() << "return " << fname
+         << "_reduce(values.begin(), counts.begin(), values.Size());\n";
+      hh.PopIndent();
+      hh << hh.Indent() << "}\n";
+    }
+    hh.PopIndent();
+    hh << "};\n\n";
   }
 }
 
@@ -1169,6 +1307,10 @@ void Generator::EmitDatabaseDecl(void) {
       }
     }
   }
+  // R3: StateCell stores, constructed with just the allocator.
+  for (const ProgramStateCellInfo &cell : program.StateCells()) {
+    hh << ",\n" << hh.Indent() << "  statecell_" << cell.Id() << "(allocator_)";
+  }
   hh << " {}\n\n";
   hh.PopIndent();
 
@@ -1259,6 +1401,19 @@ void Generator::EmitDatabaseDecl(void) {
     }
   }
   hh << "\n";
+
+  // R3: one StateCell store per aggregate / KV view (v3-spec-statecell.md §1).
+  for (const ProgramStateCellInfo &cell : program.StateCells()) {
+    const auto id = std::to_string(cell.Id());
+    const std::string algebra = cell.IsInvertible()
+        ? "::hyde::rt::Invertible<Reduce_" + id + ">"
+        : "::hyde::rt::Recompute<Reduce_" + id + ">";
+    hh << hh.Indent() << "::hyde::rt::StateCellStore<Key_" << id << ", "
+       << algebra << "> statecell_" << id << ";\n";
+  }
+  if (!program.StateCells().empty()) {
+    hh << "\n";
+  }
 
   // Mutable globals (condition ref-counts, init guards, fixpoint depth).
   for (DataVariable var : program.GlobalVariables()) {
@@ -1549,6 +1704,8 @@ void Generator::EmitRegion(ProgramRegion region) {
     EmitCheckMember(ProgramCheckMemberRegion::From(region));
   } else if (region.IsCommitSweep()) {
     EmitCommitSweep(ProgramCommitSweepRegion::From(region));
+  } else if (region.IsGroupUpdate()) {
+    EmitGroupUpdate(ProgramGroupUpdateRegion::From(region));
   } else if (region.IsClaim()) {
     EmitClaim(ProgramClaimRegion::From(region));
   } else if (region.IsRetire()) {
@@ -1758,6 +1915,127 @@ void Generator::EmitUpdateCount(ProgramUpdateCountRegion region) {
   cc << cc.Indent() << "}\n";
 }
 
+// R3 GROUP_UPDATE codegen (v3-spec-statecell.md §2.2). Writes the whole
+// two-band body: BAND (a) two fold loops over the input net removal / net
+// addition frontiers (folding the projected (group, summary) into the store);
+// BAND (b) an emit_touched loop over the store's sort-unique touched set,
+// applying the occupancy-generalized one-net-pair guard (spec §C-1) and
+// folding ± into the agg DiffTable's counters + appending to its del/add
+// queues (E3 seed-before-drain; the agg table's own claim/frontier/commit tail
+// drains them, identity to every acyclic table).
+void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
+  EmitComment(region);
+  const auto sc = "statecell_" + std::to_string(region.StateCellId());
+  const auto &gpos = region.GroupPositions();
+  const auto &spos = region.SummaryPositions();
+  const auto key_type = "Key_" + std::to_string(region.StateCellId());
+
+  const DataTable agg = region.AggTable();
+  const auto agg_member = table_member[agg.Id()];
+
+  // One fold arm: destructure the frontier row into positional locals, form the
+  // Key from the group positions, and fold the summary position with `sign`.
+  const auto emit_fold_arm = [&](DataVector frontier, int sign) {
+    // The frontier row is the input view's columns in order. Destructure it
+    // into positional locals f0..fn (arity == the vector's shape) and consume
+    // the group/summary positions.
+    const auto row_arity =
+        static_cast<unsigned>(frontier.ColumnTypes().size());
+    std::vector<std::string> binds;
+    for (unsigned i = 0u; i < row_arity; ++i) {
+      binds.push_back("f" + std::to_string(i));
+    }
+    cc << cc.Indent() << "for (const auto &[" << JoinExprs(binds, ", ")
+       << "] : " << VecName(frontier) << ") {\n";
+    cc.PushIndent();
+    // Silence unused-binding warnings on positions we don't consume.
+    for (unsigned i = 0u; i < row_arity; ++i) {
+      bool used = false;
+      for (auto p : gpos) { used |= (p == i); }
+      for (auto p : spos) { used |= (p == i); }
+      if (!used) {
+        cc << cc.Indent() << "(void) f" << i << ";\n";
+      }
+    }
+    std::vector<std::string> key_parts;
+    for (auto p : gpos) { key_parts.push_back("f" + std::to_string(p)); }
+    std::vector<std::string> sum_parts;
+    for (auto p : spos) { sum_parts.push_back("f" + std::to_string(p)); }
+    const std::string summary_expr =
+        sum_parts.size() == 1u
+            ? sum_parts[0]
+            : ("{" + JoinExprs(sum_parts, ", ") + "}");
+    cc << cc.Indent() << "const auto gid = " << sc << ".FindOrAddGroup("
+       << key_type << "{" << JoinExprs(key_parts, ", ") << "});\n";
+    cc << cc.Indent() << sc << ".Fold(gid, " << sign << ", " << summary_expr
+       << ");\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  };
+
+  emit_fold_arm(region.NegFrontier(), -1);
+  emit_fold_arm(region.PosFrontier(), +1);
+
+  // The agg row from a key + summary value. The agg table row is (group ++
+  // config ++ summary) in column order; the key contributes the leading
+  // group/config fields (key.c0..) and `val` the trailing summary field(s).
+  const auto agg_row = [&](const std::string &val) -> std::string {
+    std::vector<std::string> parts;
+    for (unsigned i = 0u; i < gpos.size(); ++i) {
+      parts.push_back("key.c" + std::to_string(i));
+    }
+    parts.push_back(val);
+    return "{" + JoinExprs(parts, ", ") + "}";
+  };
+
+  // BAND (b): emit_touched, the occupancy-generalized one-net-pair (spec §C-1).
+  cc << cc.Indent() << "for (const auto gid : " << sc << ".Touched()) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto &key = " << sc << ".KeyAt(gid);\n";
+  cc << cc.Indent() << "const bool w_occ = " << sc << ".WorkingOccupied(gid);\n";
+  cc << cc.Indent() << "const bool s_occ = " << sc << ".SealedOccupied(gid);\n";
+  cc << cc.Indent() << "if (w_occ) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto new_v = " << sc << ".Emit(gid);\n";
+  cc << cc.Indent() << "if (s_occ) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto old_v = " << sc << ".Old(gid);\n";
+  cc << cc.Indent() << "if (!(new_v == old_v)) {\n";
+  cc.PushIndent();
+  // change: -old, +new
+  cc << cc.Indent() << agg_member << ".SubDerivation(" << agg_row("old_v")
+     << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+  cc << cc.Indent() << VecName(region.DelQueue()) << ".Add(" << agg_row("old_v")
+     << ");\n";
+  cc << cc.Indent() << agg_member << ".AddDerivation(" << agg_row("new_v")
+     << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+  cc << cc.Indent() << VecName(region.AddQueue()) << ".Add(" << agg_row("new_v")
+     << ");\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // if new != old
+  cc.PopIndent();
+  cc << cc.Indent() << "} else {\n";  // birth: +new only
+  cc.PushIndent();
+  cc << cc.Indent() << agg_member << ".AddDerivation(" << agg_row("new_v")
+     << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+  cc << cc.Indent() << VecName(region.AddQueue()) << ".Add(" << agg_row("new_v")
+     << ");\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // s_occ ? change : birth
+  cc.PopIndent();
+  cc << cc.Indent() << "} else if (s_occ) {\n";  // death: -old only
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto old_v = " << sc << ".Old(gid);\n";
+  cc << cc.Indent() << agg_member << ".SubDerivation(" << agg_row("old_v")
+     << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+  cc << cc.Indent() << VecName(region.DelQueue()) << ".Add(" << agg_row("old_v")
+     << ");\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // occupancy cases
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // for touched
+}
+
 // The runtime method reading one named membership predicate.
 static const char *PredicateMethod(MembershipPredicate pred) {
   switch (pred) {
@@ -1873,11 +2151,24 @@ void Generator::EmitCommitSweep(ProgramCommitSweepRegion region) {
   const auto member = table_member[table.Id()];
   const auto &fields = col_field[table.Id()];
 
+  // R3: STATE_SEAL rides the commit-sweep tail — sealed := Emit(working) for
+  // this agg table's StateCell, AFTER emit_touched read working as `new`
+  // (spec §2.3 E5). Emitted at EVERY exit of the sweep.
+  const auto emit_seal = [&]() {
+    if (auto id = region.SealStateCellId()) {
+      cc << cc.Indent() << "statecell_" << *id << ".Seal();\n";
+      cc << "#ifndef NDEBUG\n";
+      cc << cc.Indent() << "statecell_" << *id << ".DebugValidate();\n";
+      cc << "#endif\n";
+    }
+  };
+
   // Monotone table: the sweep advances the sealed row-id watermark so the
   // next epoch's frozen-state reads see this epoch's rows.
   if (!table.IsDifferential()) {
     assert(!region.Message());
     cc << cc.Indent() << member << ".Seal();\n";
+    emit_seal();
     return;
   }
 
@@ -1917,6 +2208,7 @@ void Generator::EmitCommitSweep(ProgramCommitSweepRegion region) {
   }
   if (live_indices.empty()) {
     cc << cc.Indent() << member << ".CompactDead();\n";
+    emit_seal();
     return;
   }
   const auto cid = "cid" + std::to_string(next_ins_id++);
@@ -1943,6 +2235,7 @@ void Generator::EmitCommitSweep(ProgramCommitSweepRegion region) {
   cc << cc.Indent() << "}\n";
   cc.PopIndent();
   cc << cc.Indent() << "}\n";
+  emit_seal();
 }
 
 void Generator::EmitClaim(ProgramClaimRegion region) {
@@ -2543,8 +2836,14 @@ void Generator::Run(void) {
      << "#pragma once\n\n"
      << "#include <drlojekyll/Runtime/Allocator.h>\n"
      << "#include <drlojekyll/Runtime/Hash.h>\n"
-     << "#include <drlojekyll/Runtime/Table.h>\n"
-     << "#include <drlojekyll/Runtime/Vec.h>\n\n"
+     << "#include <drlojekyll/Runtime/Table.h>\n";
+  // R3: the StateCell store header is emitted ONLY when a program instantiates
+  // a store (a byte-identity guard for aggregate-free programs — the LOW note
+  // in the r3cd critique).
+  if (!program.StateCells().empty()) {
+    hh << "#include <drlojekyll/Runtime/StateCell.h>\n";
+  }
+  hh << "#include <drlojekyll/Runtime/Vec.h>\n\n"
      << "#include <cassert>\n"
      << "#include <cstdint>\n"
      << "#include <optional>\n"
@@ -2579,6 +2878,7 @@ void Generator::Run(void) {
   hh << "\n";
 
   EmitRowStructs();
+  EmitStateCellStructs();  // R3: Key_<id> + Reduce_<id> per state cell.
   EmitFunctorsDecl();
   EmitLogDecl();
 

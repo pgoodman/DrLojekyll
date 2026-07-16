@@ -1318,6 +1318,74 @@ static void LowerProductArm(
   scan_next(0u, body_seq);
 }
 
+// Lower ONE GROUP_UPDATE (spec §2.2): fold the summarized input's net removal
+// / net addition frontiers into the view's StateCell store, then emit the
+// occupancy-generalized one-net-pair into the aggregate's own DiffTable. The
+// whole two-band body is written by codegen from the `GROUPUPDATE` region's
+// carried data; here we just mint the region, wire its frontier / queue vecs
+// and the group/summary projection positions. Mirrors LowerProductArm's single
+// frontier-vec-consumer idiom, but with NO position-keyed partner read (one
+// input source), and the emit_touched pair rides the ordinary counter± + queue
+// machinery through the agg DiffTable's downstream acyclic tail.
+static void LowerGroupUpdate(
+    ProgramImpl *impl, Context &context, const DRFlowGraph &dr_flow,
+    const DROp &op,
+    const std::function<VECTOR *(TABLE *, VectorKind)> &seed_vector,
+    SERIES *seq) {
+  assert(op.kind == DROpKind::kGroupUpdate);
+  TABLE *const agg_table = op.agg_table;
+  const QueryView input = *op.input_view;
+
+  DataModel *const input_model =
+      impl->view_to_model[input]->FindAs<DataModel>();
+  TABLE *const input_table = input_model->table;
+  assert(input_table != nullptr);
+
+  // The input frontier vecs (the input stratum's FRONTIER_FILTER outputs, E1
+  // RAW) — shared/sort-uniqued via `seed_vector`, exactly like a product arm.
+  VECTOR *const neg_front =
+      seed_vector(input_table, VectorKind::kNetRemovals);
+  VECTOR *const pos_front =
+      seed_vector(input_table, VectorKind::kNetAdditions);
+
+  // The agg table's delete / add queues (emit_touched appends, E3).
+  VECTOR *const del_queue =
+      TableDeltaVector(impl, context, agg_table, VectorKind::kDeleteQueue);
+  VECTOR *const add_queue =
+      TableDeltaVector(impl, context, agg_table, VectorKind::kAddQueue);
+
+  // Map each group/summary column (input-view space, spec §5) to its position
+  // in the input frontier row (== `input.Columns()` order).
+  std::vector<QueryColumn> input_cols;
+  for (auto col : input.Columns()) {
+    input_cols.push_back(col);
+  }
+  const auto pos_of = [&](QueryColumn c) -> unsigned {
+    for (unsigned i = 0u; i < input_cols.size(); ++i) {
+      if (input_cols[i].Id() == c.Id()) {
+        return i;
+      }
+    }
+    assert(false && "group/summary column not found in input frontier row");
+    return 0u;
+  };
+
+  GROUPUPDATE *const gu = impl->operation_regions.CreateDerived<GROUPUPDATE>(
+      seq, op.statecell_id, op.algebra == Algebra::kInvertible);
+  seq->AddRegion(gu);
+  gu->neg_frontier.Emplace(gu, neg_front);
+  gu->pos_frontier.Emplace(gu, pos_front);
+  gu->del_queue.Emplace(gu, del_queue);
+  gu->add_queue.Emplace(gu, add_queue);
+  gu->agg_table.Emplace(gu, agg_table);
+  for (auto col : op.group_cols) {
+    gu->group_positions.push_back(pos_of(col));
+  }
+  for (auto col : op.summary_cols) {
+    gu->summary_positions.push_back(pos_of(col));
+  }
+}
+
 // Lower ONE stratum's ACYCLIC band from the DR-IR flow graph into `stratum_seq`:
 // seeds (SEED_FOLD branches via `EmitSeedLoop`), join section walks, crossovers
 // (CROSSOVER DROps), product arms (PRODUCT_ARM DROps), then acyclic single-pass
@@ -1475,6 +1543,24 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
     }
     LowerProductArm(impl, context, recursive_sccs, *op, seed_vector,
                     stratum_seq);
+  }
+
+  // (4b) GROUP_UPDATES at this stratum (spec §2.2). The op sits at its agg
+  // view's lifted stratum (E1: strictly above the input's frontier filters).
+  // Emitted after products, before the acyclic drains — the emit_touched pair
+  // it appends to the agg table's queues is drained by that table's own
+  // CLAIM_DRAIN below (E3 seed-before-drain), which for the corpus double-nest
+  // lives at a HIGHER stratum, so the ordering is a cross-stratum RAW handled
+  // by the strata lift.
+  for (const DROp *op : dr_flow.GroupUpdates()) {
+    if (!op->agg_view.has_value()) {
+      continue;
+    }
+    auto gs = dr_flow.group_update_stratum.find(*op->agg_view);
+    if (gs == dr_flow.group_update_stratum.end() || gs->second != stratum) {
+      continue;
+    }
+    LowerGroupUpdate(impl, context, dr_flow, *op, seed_vector, stratum_seq);
   }
 
   // (5) ACYCLIC claim drains + immediate frontier filters, per single-pass
@@ -1766,6 +1852,12 @@ void LowerCommitSweeps(ProgramImpl *impl, Context &context,
     table_to_message.emplace(pm->table, message);
   }
 
+  // R3: which agg table each STATE_SEAL seals (V-AGG-SOLE: one per table).
+  std::unordered_map<TABLE *, unsigned> table_to_statecell;
+  for (const DROp *seal : dr_flow.StateSeals()) {
+    table_to_statecell.emplace(seal->agg_table, seal->statecell_id);
+  }
+
   for (const DROp &op : dr_flow.ops) {
     if (op.kind != DROpKind::kCommitSweep) {
       continue;
@@ -1779,6 +1871,12 @@ void LowerCommitSweeps(ProgramImpl *impl, Context &context,
           it != table_to_message.end()) {
         sweep->message.emplace(it->second);
       }
+    }
+    // STATE_SEAL rides the commit-sweep tail (spec §2.3 E5): sealed := working
+    // for the agg table's StateCell, AFTER emit_touched read working as `new`.
+    if (auto it = table_to_statecell.find(table);
+        it != table_to_statecell.end()) {
+      sweep->seal_statecell_id = it->second;
     }
     seq->AddRegion(sweep);
   }
@@ -1850,6 +1948,24 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   context.dr_flow = std::make_shared<DRFlowGraph>(std::move(dr_flow));
   const DRFlowGraph &flow = *context.dr_flow;
 
+  // R3: publish one StateCell store descriptor per GROUP_UPDATE for codegen
+  // (the `statecell_<id>` member + Key/Reduce types + commit-tail Seal). The
+  // key/summary column types come from the DR statecell's projection columns
+  // (input-view space, which carry their declared TypeLoc).
+  impl->state_cells.clear();
+  for (unsigned i = 0u; i < flow.statecells.size(); ++i) {
+    const DRStateCell &cell = flow.statecells[i];
+    ProgramStateCell desc(i, cell.algebra == Algebra::kInvertible,
+                          *cell.algebra_functor);
+    for (auto col : cell.key_cols) {
+      desc.key_types.push_back(col.Type());
+    }
+    for (auto col : cell.summary_cols) {
+      desc.summary_types.push_back(col.Type());
+    }
+    impl->state_cells.push_back(std::move(desc));
+  }
+
   // No per-stratum phase work? (No branch/join/crossover/product op, no phase-
   // owned differential table.) Then the entry-body nesting + phase-series
   // emission below are skipped — but the stash above still feeds the sweeps.
@@ -1907,6 +2023,11 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     if (TableIsDifferential(table) && !TableIsInductionOwned(context, table)) {
       strata.insert(s);
     }
+  }
+  // R3: a stratum owning ONLY a GROUP_UPDATE (no branch/join/product there)
+  // must still be lowered — e.g. average_weight's sum/count aggregates.
+  for (const auto &[view, s] : flow.group_update_stratum) {
+    strata.insert(s);
   }
 
   // Nest the entry procedure's body (the ingest walk, which parks every
