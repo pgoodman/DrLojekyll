@@ -212,7 +212,12 @@ exact signatures before writing a driver.
   only the token; zero-pivot JOINs appear only under `@product`; a table's
   member-view list holds each view at most once, by IDENTITY — never dedup
   it structurally (distinct-but-equal views sharing a model are intentional,
-  the group_ids CSE guard).
+  the group_ids CSE guard). group_ids/InsertSetsOverlap is a CORRECTNESS
+  GUARD, never an optimization target (ratified at the ADL/functor-surface
+  close: the "cubic self-join" premise is false — the self-join already
+  lowers to one table + two hash indexes + a pivot loop, O(join output);
+  group_ids live only inside one CSE() call, recomputed after every merge;
+  see ADLFunctorSurface.artifacts/p3-tc-selfjoin-target.md).
 - Core invariants (differential): every inductive back-edge fold is an
   `UPDATECOUNT` whose propagation body is dominated by its zero crossing
   (termination of generated fixpoints); differential rows carry split SIGNED

@@ -1,6 +1,8 @@
 # ADL / functor-surface epoch — design ledger
 
-Status: EPOCH IN PROGRESS, opened 2026-07-16 on branch `adl-functor-surface`
+Status: EPOCH CLOSED 2026-07-16 (landing record: PerfRoadmap §13; next
+epoch seeded as PerfRoadmap §14, the subgraphs/demand epoch). Opened
+2026-07-16 on branch `adl-functor-surface`
 off main 88058879. This file is the epoch's working ledger, in the
 DeltaRelationalIR.md mold: the PerfRoadmap §12.2/§12.3 seed's
 re-verification record, the diff plan as amended, the hand-written

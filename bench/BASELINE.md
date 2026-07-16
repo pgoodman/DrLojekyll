@@ -274,3 +274,32 @@ kv_in_scc_1, algebra_{invertible,dup,conflict}_1, average_weight,
 pairwise_average_weight — the last two were feature-gap files since
 the project began), 4 modes, oracle + monotone sidecars; ctest 3/3
 with runtime_test 22→43.
+
+## Accepted run 9 (ADL/functor-surface epoch CLOSE, 2026-07-16)
+
+COMPILER-SIDE / SHAPE-ONLY epoch: every landed diff (P1 MAP-functor
+member→free migration; P2 R1e ingest inventory; P2 stage-1 cutover;
+P2 stage iv Site-4 cross-check) is RUNTIME-NEUTRAL BY CONSTRUCTION and
+was gated on generated-code byte-identity, so no timed flagship run
+exists to record — the witnesses stand in its place:
+
+- P1: functor-free programs byte-identical datalog.h pre/post (8
+  deterministic targets: booleans, cond_diff_flipflop,
+  transitive_closure_diff, product_diff + the four bench flagship
+  workloads); reduction-only programs byte-identical (Fable-review
+  witness, aggregate_1); functor-bearing headers change ONLY at the
+  delivery surface (call sites lose `functors.`, member decls become
+  free decls — semantics unchanged, stdout goldens byte-identical
+  164 × 4 modes with no bless).
+- P2 (all three stages): generated datalog.h AND datalog.cpp
+  byte-identical on the same 10 targets per stage; the cutover's §12.4
+  structural gate RAW-BYTE-IDENTICAL (full -ir-out + datalog.h, opt AND
+  nocf) on negate_lower_strata / cf13_6 / cf14_3.
+- Q5 spots @128 per diff (3-rep, idle machine): release/opt
+  0.11-0.12s, debug/opt 0.87-0.95s across the epoch — flat against the
+  run-8 close baselines (149.4ms / 925.1ms; the one 1.03s debug spot
+  re-measured to 0.87s, machine noise). No knee, no regression; the
+  >10% stop-line never approached.
+- Suite at close: 164 cases (UNCHANGED from run 8 — no new cases, no
+  golden churn anywhere in the epoch); ctest 3/3 (runtime_test 43);
+  oracle + monotone sidecars byte-identical throughout.
