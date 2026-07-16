@@ -73,7 +73,7 @@ index — see below):
   `@recompute` rescans the live multiset), and the emit step applies an
   occupancy-generalized one-net-pair guard (birth `+new`, death `−old`,
   change `−old,+new`) into the agg table. The reduction bodies themselves are
-  DRIVER-SUPPLIED (see `DatabaseFunctors` below).
+  DRIVER-SUPPLIED (see the functor surface below).
 
 Cursors iterate by row id and re-read through the container on each step, so
 tables and indexes may be mutated while a scan over them is live (an
@@ -93,15 +93,21 @@ For `#database points_to` the compiler emits `points_to.h` + `points_to.cpp`.
   `using <message>_input = Tup...;` alias per message.
 - **Enums** from `#enum` declarations, with enumerator values from their
   `#constant` definitions.
-- **`DatabaseFunctors`** — a plain struct declaring one member function per
-  `#functor`; the user defines them in their own translation unit (link-time
-  binding). Filters return `bool`, `@range(?)` returns `std::optional`,
-  `@range(*)`/`@range(+)` return `std::vector`. For an aggregate (`over(){}`)
-  or KV-index (`mutable(...)`) reduction functor `f`, the driver also supplies
-  FREE FUNCTIONS (forward-declared in the header, defined out-of-line, named
-  after the functor): `@invertible` needs `f_identity()`, `f_combine(w, v)`,
-  `f_uncombine(w, v)`; `@recompute` needs `f_reduce(const S *values, const
-  int32_t *counts, size_t n)` (a from-scratch rescan over the live multiset).
+- **The functor surface** — since the P1 MAP-functor migration
+  (ADL/functor-surface epoch), EVERY driver-supplied functor body is a FREE
+  FUNCTION: MAP functors are forward-declared in the header as
+  `<ret> <name>_<binding-pattern>(bound...)` and defined by the driver
+  out-of-line (the generated code calls them by unqualified name from its
+  template context). Filters return `bool`, `@range(?)` returns
+  `std::optional`, `@range(*)`/`@range(+)` return `std::vector`. For an
+  aggregate (`over(){}`) or KV-index (`mutable(...)`) reduction functor `f`
+  the driver supplies the C-5 free functions (same idiom, role-named):
+  `@invertible` needs `f_identity()`, `f_combine(w, v)`, `f_uncombine(w, v)`;
+  `@recompute` needs `f_reduce(const S *values, const int32_t *counts,
+  size_t n)` (a from-scratch rescan over the live multiset).
+  `struct DatabaseFunctors {}` survives EMPTY as the deduction anchor for
+  the entry points' `Functors` parameter — drivers still construct and pass
+  one; nothing reads it.
 - **`DatabaseLog`** — a plain struct with one no-op method per published
   message, emitted as a concrete default type. Nothing is virtual: the entry
   points deduce the log's static type, so any driver type providing the same

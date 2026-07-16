@@ -69,7 +69,7 @@ enum class VecRole : uint8_t {
 // G6: sort-unique is a per-vec attribute checked at the DRAIN site.
 enum class UniqueContract : uint8_t { kMultiset, kSortUniqueAtDrain };
 
-// The five effect sub-domains (F-1), plus the R3 statecell tail (reserved).
+// The five effect sub-domains (F-1), plus the R3 statecell tail.
 enum class EffKind : uint8_t {
   kVecAppend,
   kVecDrain,
@@ -78,9 +78,9 @@ enum class EffKind : uint8_t {
   kFlagRead,       // flags:read(T, F) — a membership-predicate bundle read
   kFlagWrite,      // flags:write(T, F)
   kInIReadFrozen,  // the distinguished always-legal frozen kInI read
-  kStateFold,      // R3 (aggregates) — reserved
-  kStateEmit,      // R3 — reserved
-  kStateOld,       // R3 — reserved
+  kStateFold,      // LIVE since the R3 stage-C flip (BuildGroupUpdateOps)
+  kStateEmit,      // LIVE since the R3 stage-C flip (BuildGroupUpdateOps)
+  kStateOld,       // LIVE since the R3 stage-C flip (BuildGroupUpdateOps)
 };
 
 // The membership/scan context that flavors a context-sensitive predicate.
@@ -107,9 +107,9 @@ enum class Pred : uint8_t {
 // The op families the DR-IR inventories. R1a built the two frontier-arm
 // families (crossover, product arm); R1c adds the seed/fixpoint/claim/retire/
 // rederive/filter/sweep families + the context-keyed negate gate (spec §2.1,
-// vocabulary v3). STILL construct-alongside: no op is emitted; each family is
-// DERIVED independently and cross-checked (V-OLD-EQUIV) against the old
-// emission driver's discovery state.
+// vocabulary v3). Emitted since R2 family #3: LowerDRFlow/LowerDRRounds/
+// LowerCommitSweeps/LowerGroupUpdate drive emission from these ops; each
+// family is still DERIVED independently from the Query and censused.
 enum class DROpKind : uint8_t {
   kCrossover,      // a non-@never negate's arm-pair (spec §2.1 CROSSOVER, B-3.1)
   kProductArm,     // one side×sign arm of an acyclic differential @product
@@ -123,8 +123,9 @@ enum class DROpKind : uint8_t {
   kCommitSweep,    // §2.1 COMMIT_SWEEP: per differential table (flavor)
   kNegateGate,     // §2.1 NEGATE_GATE: context∈{eager,seed,fixpoint} × hint
   kPivotAssemble,  // §2.1 PIVOT_ASSEMBLE: per SCC join (union → shared pivot vec)
-  kIngestFold,     // §2.1 INGEST_FOLD: entry-proc message→table seed (R1d cut —
-                   //   see the eager-walk inventory note; NOT populated in R1d)
+  kIngestFold,     // §2.1 INGEST_FOLD: entry-proc message→table seed —
+                   //   populated in P2/R1e (deletion-capable receives stage-1;
+                   //   monotone/descent deferred to the P2 artifact's §6)
   kGroupUpdate,    // R3 GROUP_UPDATE: one per QueryAggregate/desugared-KVIndex
                    //   view (v3-spec-statecell.md §2.2). The first family whose
                    //   delta semantics is a StateCell value-fold, not a counter
@@ -498,6 +499,27 @@ class DROp {
   Pred gate_pred{Pred::kInI};
   NegateHint gate_hint{NegateHint::kNormal};
 
+  // ---- INGEST_FOLD data (kind == kIngestFold) ------------------------------
+  // One entry-proc message→table seed fold (P2/R1e; §3a of the P2 artifact),
+  // derived per (io × receive × polarity) from `query.IOs()`. A deletion-
+  // capable receive yields a stage-1 PAIR ({+1,kAddQueue}, {-1,kDeleteQueue},
+  // both is_explicit); a monotone receive with a table yields ONE stage-1=false
+  // walk-metadata op (kNetAddition | kEmpty from the boundary predicate).
+  // `ingest_message` is the source message identity; `ingest_receive` the
+  // receive view; `ingest_table` its model table; `ingest_sign` -1/+1;
+  // `ingest_is_explicit` the message-support-bit toggle (see LowerIngestFold,
+  // no GROUP_UPDATE analog); `ingest_role` the DR-side VecRole (net-* SINGULAR,
+  // mapped to the CF-side plural only at the LOWER-time TableDeltaVector call —
+  // §9); `ingest_stage1` marks the deletion-capable ops that lower at cutover
+  // (the monotone/descent ops stay hand-coded, §6).
+  std::optional<ParsedMessage> ingest_message;
+  std::optional<QueryView> ingest_receive;
+  TABLE *ingest_table{nullptr};
+  int ingest_sign{0};
+  bool ingest_is_explicit{false};
+  VecRole ingest_role{VecRole::kEmpty};
+  bool ingest_stage1{false};
+
   // ---- GROUP_UPDATE / STATE_SEAL data (kind == kGroupUpdate | kStateSeal) ---
   // The aggregate VIEW (a QueryAggregate or a desugared QueryKVIndex — the
   // provenance distinguishes). `agg_view` is set for both kinds; the rest only
@@ -761,5 +783,27 @@ void DeriveDRStrata(DRFlowGraph &flow, ProgramImpl *impl, Context &context,
 // on `context.dr_flow`.
 void LowerCommitSweeps(ProgramImpl *impl, Context &context,
                        const DRFlowGraph &dr_flow, SERIES *seq);
+
+// P2 CUTOVER (family #4, stage 1): the two STAGE-1 ingest-fold ops of one
+// deletion-capable receive, +1 BEFORE -1 (the emitted add-before-remove
+// order). SINGLE AUTHORITY for the stage-1 op payload: `BuildDRInventory`
+// enrolls copies in the flow (the census's subject) and `ExtendEagerProcedure`
+// lowers copies AT THE ORIGINAL WALK POSITION — both call this. Lowering at
+// the walk position (not phase time) is load-bearing for byte-identity: the
+// fold's VECTORLOOP/VAR ids must occupy the same slots in the shared
+// `impl->next_id` stream they did before the cutover (CompleteProcedure and
+// the stratum machinery mint ids in between, so a phase-time dispatch would
+// shift every subsequent id — the p2 artifact §12.3 amendment, corrected).
+std::vector<DROp> MakeStageOneIngestFolds(ParsedMessage message,
+                                          QueryView receive, TABLE *table);
+
+// P2 CUTOVER: emit ONE stage-1 ingest fold — VECTORLOOP over `loop_vec` →
+// explicit UPDATECOUNT± → VECTORAPPEND into the receive table's add/delete
+// queue (the memoized TableDeltaVector; VecRole→VectorKind mapped only here,
+// §9) — from the DROp payload. Byte-identical to the deleted
+// build_explicit_loop (Procedure.cpp), driven by op data (the F1 discipline:
+// the lowering CONSUMES sign/is_explicit/role/table, never re-derives them).
+void LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
+                     PARALLEL *parent, VECTOR *loop_vec);
 
 }  // namespace hyde

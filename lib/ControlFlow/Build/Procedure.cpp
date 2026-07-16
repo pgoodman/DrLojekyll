@@ -17,7 +17,6 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
 
   assert(io.Declaration().IsMessage());
   const auto message = ParsedMessage::From(io.Declaration());
-  (void) message;
 
   const auto vec =
       proc->VectorFor(impl, VectorKind::kParameter, receives[0].Columns());
@@ -33,59 +32,26 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     }
   }
 
-  // One loop per receive per polarity. The message handler nets the two
-  // parameter vectors before calling the entry procedure (one received
-  // batch is one epoch), so a row added and removed in one batch has
-  // already vanished and each surviving row folds exactly one explicit
-  // crossing. The fold toggles the row's message-support bit; its zero
-  // crossing parks the row in the receive table's add or delete queue,
-  // drained by the table's stratum phases.
-  const auto build_explicit_loop = [&](QueryView receive, VECTOR *loop_vec,
-                                       bool is_add) {
-    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
-    parent->AddRegion(loop);
-    loop->vector.Emplace(loop, loop_vec);
-
-    DataModel *const model = impl->view_to_model[receive]->FindAs<DataModel>();
-    TABLE *const table = model->table;
-    assert(table != nullptr);
-
-    UPDATECOUNT *const fold =
-        impl->operation_regions.CreateDerived<UPDATECOUNT>(
-            loop, is_add, DerivClass::kNonRecursive, true /* is_explicit */);
-    fold->table.Emplace(fold, table);
-    loop->body.Emplace(loop, fold);
-
-    for (auto col : receive.Columns()) {
-      VAR *const var = loop->defined_vars.Create(
-          impl->next_id++, VariableRole::kVectorVariable);
-      var->query_column = col;
-      loop->col_id_to_var.emplace(col.Id(), var);
-      fold->col_values.AddUse(var);
-    }
-
-    VECTOR *const queue = TableDeltaVector(
-        impl, context, table,
-        is_add ? VectorKind::kAddQueue : VectorKind::kDeleteQueue);
-    VECTORAPPEND *const append =
-        impl->operation_regions.CreateDerived<VECTORAPPEND>(
-            fold, ProgramOperation::kAppendToInductionVector);
-    append->vector.Emplace(append, queue);
-    for (auto col : receive.Columns()) {
-      append->tuple_vars.AddUse(fold->VariableFor(impl, col));
-    }
-    fold->body.Emplace(fold, append);
-  };
-
   for (auto receive : receives) {
 
     // A deletion-capable receive: both polarities park in the receive
-    // table's queues; its consumers run in the table's stratum phases.
+    // table's queues (one explicit loop per polarity, +add before -del; the
+    // message handler nets the two parameter vectors first, so each surviving
+    // row folds exactly one explicit crossing — the message-support bit —
+    // whose zero crossing parks the row); its consumers run in the table's
+    // stratum phases. P2 CUTOVER: the fold ops are the DR-IR's stage-1
+    // kIngestFold pair (the same MakeStageOneIngestFolds payload the flow
+    // enrolls and the census counts), lowered here — at the original walk
+    // position, for id-stream identity — by LowerIngestFold (Stratum.cpp).
     if (receive.CanReceiveDeletions()) {
       assert(removal_vec != nullptr);
-      build_explicit_loop(receive, vec, true);
-      build_explicit_loop(receive, removal_vec, false);
+      DataModel *const model =
+          impl->view_to_model[receive]->FindAs<DataModel>();
+      for (const DROp &op :
+           MakeStageOneIngestFolds(message, receive, model->table)) {
+        LowerIngestFold(impl, context, op, parent,
+                        (0 < op.ingest_sign) ? vec : removal_vec);
+      }
       continue;
     }
 

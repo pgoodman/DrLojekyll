@@ -702,8 +702,43 @@ static void EmitRederive(ProgramImpl *impl, Context &context, TABLE *table,
 // the overdeletion set, net-added rows of the addition set) lands in the
 // consolidated frontier that higher strata's seeds range over. A row both
 // overdeleted and re-added this batch passes neither filter.
+// Find the DR kFrontierFilter op for (table, sign, deferral). Threaded into
+// EmitFrontierFilter for the Site-4 cross-check; a missing op is itself a
+// model/emitter divergence (the census guarantees per-kind counts, not
+// per-(table, sign, deferral) coverage — this lookup closes that gap).
+static const DROp *FindFrontierFilterOp(const DRFlowGraph &dr_flow,
+                                        TABLE *table, bool is_del,
+                                        Deferral deferral) {
+  for (const DROp &o : dr_flow.ops) {
+    if (o.kind == DROpKind::kFrontierFilter && o.table_op_table == table &&
+        o.table_op_sign == (is_del ? -1 : +1) && o.deferral == deferral) {
+      return &o;
+    }
+  }
+  PredXCheckFail("EmitFrontierFilter (no matching DR kFrontierFilter op)");
+}
+
 static void EmitFrontierFilter(ProgramImpl *impl, Context &context,
-                               TABLE *table, bool is_del, SERIES *seq) {
+                               TABLE *table, bool is_del, SERIES *seq,
+                               const DROp *filter_op = nullptr) {
+  const MembershipPredicate emitted_pred = is_del
+                                               ? MembershipPredicate::kNetDeleted
+                                               : MembershipPredicate::kNetAdded;
+
+  // V-PRED-XCHECK (finding 1) — Site 4 (P2 stage iv; closes the §12.2(B)
+  // "EmitFrontierFilter reads un-cross-checked" residual): the filter's
+  // membership read is IMPLICIT in `is_del`. Cross-check it against the DR
+  // kFrontierFilter op's stored kFlagRead predicate — a reintroduced
+  // sign-flipped or wrong-frontier read aborts at compile time.
+  // Observation-only.
+  if (filter_op != nullptr) {
+    for (const DREffect &e : filter_op->effects) {
+      if (e.kind == EffKind::kFlagRead) {
+        PredXCheck(e.pred, emitted_pred, "EmitFrontierFilter");
+      }
+    }
+  }
+
   VECTOR *const claimed_set = TableDeltaVector(
       impl, context, table,
       is_del ? VectorKind::kOverdeleteSet : VectorKind::kAdditionSet);
@@ -723,9 +758,7 @@ static void EmitFrontierFilter(ProgramImpl *impl, Context &context,
   }
 
   CHECKMEMBER *const check =
-      impl->operation_regions.CreateDerived<CHECKMEMBER>(
-          loop, is_del ? MembershipPredicate::kNetDeleted
-                       : MembershipPredicate::kNetAdded);
+      impl->operation_regions.CreateDerived<CHECKMEMBER>(loop, emitted_pred);
   check->table.Emplace(check, table);
   for (VAR *var : row_vars) {
     check->col_values.AddUse(var);
@@ -1597,8 +1630,12 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
                    nullptr, &op);
     EmitClaimDrain(impl, context, table, false /* is_del */, stratum_seq,
                    nullptr, add_op);
-    EmitFrontierFilter(impl, context, table, true /* is_del */, stratum_seq);
-    EmitFrontierFilter(impl, context, table, false /* is_del */, stratum_seq);
+    EmitFrontierFilter(
+        impl, context, table, true /* is_del */, stratum_seq,
+        FindFrontierFilterOp(dr_flow, table, true, Deferral::kImmediate));
+    EmitFrontierFilter(
+        impl, context, table, false /* is_del */, stratum_seq,
+        FindFrontierFilterOp(dr_flow, table, false, Deferral::kImmediate));
   }
 }
 
@@ -1818,15 +1855,76 @@ static void LowerDRRounds(ProgramImpl *impl, Context &context,
     // hosted in the INSERT round's output (V-DEFER); del filter band then add
     // filter band (the deferred kFrontierFilter output ops).
     for (TABLE *table : scc_tables) {
-      EmitFrontierFilter(impl, context, table, true /* is_del */, add_output);
+      EmitFrontierFilter(
+          impl, context, table, true /* is_del */, add_output,
+          FindFrontierFilterOp(dr_flow, table, true, Deferral::kAddLoopOutput));
     }
     for (TABLE *table : scc_tables) {
-      EmitFrontierFilter(impl, context, table, false /* is_del */, add_output);
+      EmitFrontierFilter(impl, context, table, false /* is_del */, add_output,
+                         FindFrontierFilterOp(dr_flow, table, false,
+                                              Deferral::kAddLoopOutput));
     }
   }
 }
 
 }  // namespace
+
+// P2 CUTOVER (family #4, stage 1) — INGEST-FOLD LOWERING (dr → cf).
+//
+// Replaces the deleted `build_explicit_loop` (Procedure.cpp): one VECTORLOOP
+// over the message parameter vector, one EXPLICIT nonrecursive UPDATECOUNT±
+// (the message-support-bit toggle; its zero crossing parks the row), one
+// VECTORAPPEND into the receive table's add/delete queue (the memoized
+// TableDeltaVector — no new vector id; VecRole→VectorKind mapped only here).
+// Called from `ExtendEagerProcedure` at the ORIGINAL walk position so the
+// VECTORLOOP/VAR ids occupy their pre-cutover slots in the shared
+// `impl->next_id` stream (byte-identity; see MakeStageOneIngestFolds' doc).
+// The shape is driven by the DROp payload — sign, is_explicit, role, table —
+// never re-derived from the Query here (the F1 discipline).
+void LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
+                     PARALLEL *parent, VECTOR *loop_vec) {
+  assert(op.kind == DROpKind::kIngestFold);
+  assert(op.ingest_stage1 && op.ingest_is_explicit);
+  assert(op.ingest_sign == 1 || op.ingest_sign == -1);
+  assert(op.ingest_role == VecRole::kAddQueue ||
+         op.ingest_role == VecRole::kDeleteQueue);
+
+  const QueryView receive = *op.ingest_receive;
+  TABLE *const table = op.ingest_table;
+  assert(table != nullptr);
+  const bool is_add = 0 < op.ingest_sign;
+
+  const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+      impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+  parent->AddRegion(loop);
+  loop->vector.Emplace(loop, loop_vec);
+
+  UPDATECOUNT *const fold = impl->operation_regions.CreateDerived<UPDATECOUNT>(
+      loop, is_add, DerivClass::kNonRecursive, op.ingest_is_explicit);
+  fold->table.Emplace(fold, table);
+  loop->body.Emplace(loop, fold);
+
+  for (auto col : receive.Columns()) {
+    VAR *const var = loop->defined_vars.Create(impl->next_id++,
+                                               VariableRole::kVectorVariable);
+    var->query_column = col;
+    loop->col_id_to_var.emplace(col.Id(), var);
+    fold->col_values.AddUse(var);
+  }
+
+  VECTOR *const queue = TableDeltaVector(
+      impl, context, table,
+      op.ingest_role == VecRole::kAddQueue ? VectorKind::kAddQueue
+                                           : VectorKind::kDeleteQueue);
+  VECTORAPPEND *const append =
+      impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          fold, ProgramOperation::kAppendToInductionVector);
+  append->vector.Emplace(append, queue);
+  for (auto col : receive.Columns()) {
+    append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+  }
+  fold->body.Emplace(fold, append);
+}
 
 // R2 FAMILY #3 — COMMIT-SWEEP BAND LOWERING (dr → cf).
 //

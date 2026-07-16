@@ -23,17 +23,17 @@ constexpr uint32_t RightOf(uint64_t node) {
 
 }  // namespace
 
-uint32_t DatabaseFunctors::left_corner_bf(uint64_t node) {
+uint32_t left_corner_bf(uint64_t node) {
   return LeftOf(node);
 }
 
-uint32_t DatabaseFunctors::right_corner_bf(uint64_t node) {
+uint32_t right_corner_bf(uint64_t node) {
   return RightOf(node);
 }
 
 // Fixed token stream: 10 `function`, 11 `(`, 12 <base type>, 13 `)`,
 // 14 <ident>; 20 `function`, 21 `(`, 22 <junk>, 23 <ident>.
-uint16_t DatabaseFunctors::lexeme_of_token_bf(uint32_t tok) {
+uint16_t lexeme_of_token_bf(uint32_t tok) {
   switch (tok) {
     case 10: return 4;   // KEYWORD_FUNCTION
     case 11: return 1;   // PUNC_L_PAREN
@@ -48,18 +48,18 @@ uint16_t DatabaseFunctors::lexeme_of_token_bf(uint32_t tok) {
   }
 }
 
-uint64_t DatabaseFunctors::start_function_type_bbf(uint32_t func_tok,
-                                                   uint32_t l_paren) {
+uint64_t start_function_type_bbf(uint32_t func_tok,
+                                 uint32_t l_paren) {
   return Enc(func_tok, l_paren, 1);
 }
 
-uint64_t DatabaseFunctors::add_function_type_param_bbf(uint64_t header,
-                                                       uint64_t param_type) {
+uint64_t add_function_type_param_bbf(uint64_t header,
+                                     uint64_t param_type) {
   return Enc(LeftOf(header), RightOf(param_type), 1);
 }
 
-uint64_t DatabaseFunctors::finish_function_type_params_bbf(uint64_t header,
-                                                           uint32_t r_paren) {
+uint64_t finish_function_type_params_bbf(uint64_t header,
+                                         uint32_t r_paren) {
   return Enc(LeftOf(header), r_paren, 2);
 }
 

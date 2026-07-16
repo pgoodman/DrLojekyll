@@ -5,11 +5,11 @@
 
 #include "datalog.h"
 
-int32_t DatabaseFunctors::add_i32_bbf(int32_t l, int32_t r) {
+int32_t add_i32_bbf(int32_t l, int32_t r) {
   return l + r;
 }
 
-bool DatabaseFunctors::is_even_b(int32_t x) {
+bool is_even_b(int32_t x) {
   return (x % 2) == 0;
 }
 

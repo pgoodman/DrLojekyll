@@ -1659,3 +1659,708 @@ arrays); NEVER rebuild the compiler mid-suite; NEVER time bench runs
 concurrently with suite runs; generated-code TEXT is not run-stable
 (pointer-keyed container orders — key comparisons on case+mode+knobs
 semantics, never generated-text hashes).
+
+## 13. Landing record (2026-07-16) — ADL/FUNCTOR-SURFACE EPOCH CLOSED
+
+Branch `adl-functor-surface` off main 88058879. The epoch's working
+ledger is docs/proposals/ADLFunctorSurface.md (§0 baseline, §1 the seed
+re-verification errata E-18..E-26, §2/§2.1 the judged diff plans + owner
+decisions, §3 the per-diff implementation records); the hand-written and
+binding artifacts are ADLFunctorSurface.artifacts/ (p1-map1-target.md,
+p2-ingest-inventory-target.md §§0-13, p3-tc-selfjoin-target.md).
+Commits: 490a00a1 (ledger §0-§1, the fleet record), 482b9c1c (§2 + P1/P3
+artifacts), 4596c317 (P2 revision record), 0a0f8ba9 (P1 LANDED),
+3c7bf417 (P2 artifact §12 splice design), cdd139aa (P2/R1e LANDED),
+a1fa617d (P2 CUTOVER LANDED), cf84efab (P2 stage iv LANDED), plus this
+docs/close commit.
+
+Method executed (the checkpoint method, per §12.4): fleet re-verification
+of the §12.2/§12.3 seed BEFORE building (5 opus derivation lanes + 5
+adversarial verifiers; the precedent held — errata below); the three
+designs each written WITH its hand-written identity-target artifact and
+adversarially judged (P1 REVISE→amended; P2 REVISE→full revision
+round→re-judged; P3 GO); owner decisions taken BEFORE emission-changing
+code (P1 golden policy, P2 staging, P3 scope); a Fable review before
+EACH emission cutover (P1: APPROVE-WITH-NITS, nits landed in-commit;
+P2 cutover: APPROVE-WITH-NITS, incl. independent confirmation that the
+committed splice design was infeasible). EVERY review round found
+something real: the P1 judge caught the unverifiable evm_func_parse
+driver + the wrong byte-compare target; the P1 byte-compare gate caught
+the identity artifact's unconditional-banner defect; the P2 judge proved
+the original seam boundary was not a tree cut; the P2 re-judge caught
+the unspecified splice mechanism; the R1e §7d cross-check ABORTED on the
+artifact's wrong monotone queue-role rule (deep_chain_retract) on day
+one; the implementation caught §12.3's id-stream infeasibility, and the
+cutover Fable review proved it independently.
+
+### Seed errata found by the pre-code re-verification (precedent held;
+### full text in the ledger §1)
+
+- E-18 (REAL-DEFECT): §12.2(A) said new_weight_i32 "carries
+  kAggregate/kSummary" — false (bbf @range @recompute; it stays on the
+  member surface and P1 migrates it).
+- E-19: the "ADL" characterization is wrong corpus-wide — builtin args
+  have no associated namespaces; the mechanism is ordinary unqualified
+  lookup bound at template-definition point (decl-before-detail-defs is
+  the load-bearing ordering, already satisfied at the :2918 slot).
+- E-20: the threading list omitted the FORCED-QUERY entry point
+  (EmitQueryFriends) — three Functors param families, not two.
+- E-21: new_weight_i32_bbf is decl-only (no emitted call site); the
+  two-ABI witness is a declaration-surface witness.
+- E-22: the eager ingest surface is NOT one InTryInsert funnel —
+  BuildEagerInsertRegion mints its own fold + the IsStream() PUBLISH
+  branch (Insert.cpp).
+- E-23 (the R4 pivot): group_ids NEVER outlive one CSE() call
+  (window [Optimize.cpp:305, :378]; recomputed from scratch after every
+  merge; CopyDifferentialAndGroupIdsTo transient).
+- E-24: in-code stale cites (DR.cpp:1645 "Build.cpp:1002"; DR.h
+  reserved/construct-alongside comments) — all fixed in R1e.
+- E-25: GROUP_UPDATE shipped with NO census coverage — kIngestFold must
+  not copy the gap (it didn't; GROUP_UPDATE's own census is residue).
+- E-26: V-PRED-XCHECK site numbering; the impure-MAP assert is
+  structurally unreachable behind the pre-pass diagnostic.
+
+### What landed
+
+P1 — THE TWO-ABI FUNCTOR SPLIT IS DEAD. Every driver-supplied functor
+body is now a FREE FUNCTION: EmitGenerate's callee dropped the
+`functors.` prefix (the sole emitted member-call shape); EmitFunctorsDecl
+hoists per-functor declarations to free forward-decls before a
+now-EMPTY `struct DatabaseFunctors {}` (the deduction anchor drivers
+still construct and pass); banners gated on any_map_decl so functor-free
+AND reduction-only headers are byte-identical to pre-P1; 13 corpus
+drivers dropped `DatabaseFunctors::` in the same diff; the uses_functors
+detail-threading web is left dead, not deleted (P4 residue, WASM-gated);
+all three entry-point families keep the vestigial templated Functors
+param. average_weight's driver now shows ONE convention.
+
+P2 — THE EAGER INGEST SEAM, deletion-capable-first (stages R1e + cutover
++ iv): kIngestFold is populated (BuildDRInventory derives one op per
+io × receive × polarity from the Query, never by copying the walk),
+censused (expect + order-free per-op key multiset) and guarded by four
+always-on validators including the monotone queue-role cross-check
+against the walk-produced map; build_explicit_loop is DELETED —
+a deletion-capable receive's two explicit folds lower from the DR-IR's
+stage-1 op pair via LowerIngestFold at the ORIGINAL WALK POSITION
+(id-stream identity), with MakeStageOneIngestFolds the single payload
+authority; V-PRED-XCHECK Site 4 (EmitFrontierFilter) closed with per-key
+op lookup. The monotone/descent surface (IF-1/IF-4, the hole contract)
+is re-seeded to §14 with its prerequisites.
+
+P3 — R4 RETIRED, NOT DEFERRED. Measured on dual witnesses and
+independently re-derived by the judge: the "cubic tc⋈tc materialization"
+premise is FALSE at HEAD — the self-join lowers to ONE table + TWO
+hash-keyed indexes + a pivot loop, O(join output), and the self-pivot
+access path is already first-class DR-IR vocabulary
+(Lowering::kSectionWalk + PlanNode::bound_cols/pivot_col). The
+invariant-preservation argument is discharged by the empty diff;
+group_ids/InsertSetsOverlap re-labeled a CORRECTNESS GUARD (CLAUDE.md).
+Any future R4 is an access-path item gated on a WCOJ/3+-way self-join
+witness. The one real residual (the provably-redundant pivot re-compare,
+elidable iff kSectionWalk with valid pivot_col) is measure-first P4
+residue.
+
+### THE NUMBERS (bench/BASELINE.md run 9)
+
+A shape-only epoch: zero golden churn across all landed diffs (permcheck
+never exercised — nothing to bless); generated code byte-identical on
+the 10 pre-registered targets per diff; the P2 cutover raw-byte-identical
+on full -ir-out + datalog.h in opt AND nocf; suite 164 unchanged; ctest
+3/3 (runtime 43); Q5 spots flat all epoch (release/opt 0.11-0.12s,
+debug/opt 0.87-0.95s @128 vs the run-8 149.4ms/925.1ms baselines).
+
+### Deviations for ratification (SEED TO NEXT EPOCH)
+
+1. P1 BANNER GATING: the identity artifact emitted the new header
+   banners unconditionally, breaking its own functor-free byte-identity
+   prediction; the landed form gates them on any_map_decl. The gate
+   caught it — ratify the landed form.
+2. R1e MONOTONE QUEUE-ROLE RULE: the artifact's receive-site successor
+   test is wrong (deep_chain_retract — the cut is met at an interior
+   same-table view); the landed rule quantifies over the table's member
+   views. The mandated §7d cross-check caught it in-stage. Plus two
+   §7(c) scoping corrections and no publication DROp field (artifact
+   §13).
+3. P2 CUTOVER AUTHORITY SHAPE (artifact §12.6): §12.3's phase-time
+   dispatch via Context.ingest_par was INFEASIBLE (fold ids + the queue
+   vecs' first mint would move past CompleteProcedure in the shared
+   next_id stream); the landed shape lowers constructor-fresh copies of
+   the ops at the original walk position, MakeStageOneIngestFolds the
+   single authority, tie = shared constructor + frozen view_to_model +
+   census abort. A per-compile emitted-tree↔flow cross-check is the §6
+   follow-on's obligation.
+4. P3 RETIREMENT (owner-ratified): R4-as-group_ids-reshape retired on a
+   false premise, re-chartered as access-path work behind a WCOJ
+   witness.
+5. FINDINGS.md UNCHANGED: nothing escaped to a golden. All catches
+   (banner defect, monotone-rule defect, splice infeasibility) were
+   pre-commit, caught by the epoch's own gates/validators — recorded in
+   the ledger per the §11 dev.9 convention.
+
+EPOCH CLOSED. Next epoch per §14 (the subgraphs/demand seed, owner
+theme §12.0(b)). The remaining hand-coded emission surface is the
+MONOTONE receive fold + eager successor walk (the §6 hole-contract
+follow-on, carried with prerequisites); the F17/F18 bug-class kill now
+covers EmitFrontierFilter (Site 4) with the eager-web tree↔flow
+cross-check as the recorded completion step.
+
+## 14. Epoch-start addendum (2026-07-16, at the ADL/functor-surface
+## close): the NEXT EPOCH SEED — the SUBGRAPHS / DEMAND epoch
+## (SINGLE-PASS SEED by the closing session — to-be-re-verified per the
+## house precedent: E-1..E-26 across SIX epochs, EVERY pre-code
+## re-verification has found a real seed defect; budget for it. The
+## §14.2/§14.3 pseudocode below was written FROM a structural read of
+## HEAD (branch adl-functor-surface, tip cf84efab) and never
+## fleet-reviewed — the anchors are HEAD line numbers, re-derive every
+## one before building. Continue the E-numbering at E-27.)
+
+### 14.0 Why an epoch here
+
+OWNER DECISION was pre-registered at the delta-relational-IR close
+(§12.0): theme (b), SUBGRAPHS / DEMAND, re-seeds after the ADL/functor-
+surface epoch. That epoch has now closed (§13 landing record): P1
+unified the functor-delivery ABI onto free functions, P2 externalized
+the eager INGEST web into the DR-IR (kIngestFold, family #4, stage 1)
+and closed V-PRED-XCHECK Site 4, and P3 RETIRED the R4 group_ids charter
+(the cubic-blowup premise was false at HEAD — the self-join already
+lowers to one physical table + two hash indexes + a pivot loop, worst-
+case-optimal). The DR-IR now owns the ENTIRE stratum machinery AND the
+last hand-coded emission surface (the ingest folds); it has ONE mature
+new operator family (aggregates / GROUP_UPDATE) and ONE genuine rewrite
+substrate proven twice (the R1e census caught a real interior-fold
+divergence on day one; the P2 cutover deleted build_explicit_loop).
+
+SUBGRAPHS / DEMAND is the NEXT operator family in the recorded plan
+(AggregatingFunctors.md §4). The §4 sequencing is explicit about WHY it
+comes after aggregates and WHAT substrate it shares:
+
+  "→ aggregating functors + KV indices → subgraphs (sharing the
+   keyed-instance substrate: an aggregate object keyed on (group,
+   config) IS a keyed nested instance in miniature; config columns that
+   are compile-time constants specialize the instantiation — the same
+   lexical-scope move as the carve-outs and SLDMagic's use_query_const
+   knob)."
+
+That is the load-bearing claim this epoch cashes in: the StateCellStore
+(a peer table keyed on (group ++ config), dense-group-id namespace,
+engine-owned) that R3 built for aggregates IS the miniature of the
+keyed-instance store a subgraph/demand family needs. A subgraph is a
+demand-driven, keyed, nested query instance; an aggregate is the
+degenerate case where the instance holds one folded scalar rather than a
+whole sub-relation. The epoch's thesis: subgraphs EXTEND the R3
+state-cell family the way R3 EXTENDED the §5.1 counter family — a new
+effect sub-domain filled in an already-total matrix, a new op family
+plugged into the R3 GROUP_UPDATE integration points, a new peer runtime
+store generalizing StateCellStore.
+
+CANDIDATE SCOPE (owner picks the cut at epoch start; this seed sketches
+the whole surface so the boundary is an informed choice, not a default):
+  (a) DEMAND TRANSFORM as a dataflow rewrite — the SLDMagic direction
+      (memory: push-method-origin-and-negation; SLDMagic is "a
+      transformation, never an evaluator"). Rewrite a query into a
+      demand-guarded form so only reachable ground instances
+      materialize. This is a Query-level (DataFlow) pass, upstream of
+      the DR-IR, and is the biggest design surface.
+  (b) KEYED NESTED INSTANCES as a DR-IR operator family in the R3 mold
+      — a SUBGRAPH_INSTANTIATE op keyed on (context, config), a
+      generalized peer store (InstanceStore, the StateCellStore's
+      non-degenerate parent), demand frontiers as the input, published
+      instance rows as the output. This is the R3-shaped increment: one
+      new op family, one new effect sub-domain, census + validators from
+      day one.
+  (c) CONFIG-COLUMN SPECIALIZATION — the compile-time-constant config
+      columns AggregatingFunctors §4 names ("config columns that are
+      compile-time constants specialize the instantiation"). This is the
+      bridge that also closes the R3 residue item "aggregates with
+      configuration columns" (a clean-diagnostic gap today, CLAUDE.md).
+      A config column is either a demand key (runtime) or a
+      specialization constant (compile-time) — the same lexical-scope
+      move for both families.
+
+RECOMMENDATION ON RECORD (owner to ratify): scope stage 1 as (c)+(b)
+narrowly — land config-column aggregates FIRST (the smallest real
+extension of the R3 family, closing a named gap and exercising the
+(group ++ config) key that is already in the StateCell key projection),
+THEN generalize the state cell to a keyed instance store. Defer (a) the
+full demand transform to a follow-on, the way R2 took acyclic families
+before recursive ones and R3 took KV-as-degenerate-aggregate before the
+general aggregate. The demand transform is the payoff; the keyed-
+instance substrate is the prerequisite the recorded plan says to build
+first.
+
+### 14.0.1 Carried residue (early work under this epoch — the §13 ledger
+### + the ADLFunctorSurface epoch's open records, each with its home)
+
+RIDES §6 (the eager monotone/descent stage — see §14.0.2, EARLY WORK):
+  - The §6 hole contract (LowerIngestFold owns the vector-loop /
+    update-count / if-crossed region, exposes the if-crossed body as a
+    HOLE the hand-coded descent fills; a validator asserts the hole is
+    filled exactly once). Prerequisite: the interior-fold net-additions
+    .dr WITNESS (Build.cpp:870-893: the net-additions append may sit at
+    an ANCESTOR fold of a deeper view — never assume the receive owns
+    it; the R1e census already caught this beyond nls on
+    deep_chain_retract, §13 P2/R1e record). Prerequisite: the emitted-
+    tree↔flow CROSS-CHECK obligation — the P2 cutover deviation left
+    "no per-compile V-PRED-XCHECK analog ties the emitted CF tree back
+    to the flow ops yet" (artifact §12.6); §6 is where the eager web
+    finally enters the cross-checked model, completing the F17/F18
+    bug-class kill for the last surface.
+  - The interior-fold CSE-collapse QUESTION (artifact §5): once the
+    net-additions append can migrate across the seam, does the shared
+    interior fold become a CSE candidate (two receives folding into the
+    same interior TUPLE)? This is the FIRST place shared-input drain
+    fusion (below) would fire on a real corpus shape — resolve the
+    question here or record it as fusion's first witness.
+
+THE R3 STATE-CELL / GROUP_UPDATE RESIDUE (this epoch's own substrate):
+  - GROUP_UPDATE / STATE_SEAL census coverage — E-25's carried gap,
+    live at HEAD (DR.cpp:2761 `TODO(P4): the R3 GROUP_UPDATE/STATE_SEAL
+    family still has NO census`; its only always-on guard is a plain
+    assert DR.cpp:629, stripped under NDEBUG). THE NEW FAMILY MUST NOT
+    COPY THIS GAP (E-25's lesson, promoted to a charter): census +
+    op-family structural validators from day one. Closing GROUP_UPDATE's
+    own gap is the FIRST task — it is the template the subgraph family's
+    census follows, and leaving it open means the substrate this epoch
+    extends is itself un-censused.
+  - StateCell dead-group compaction — the D5-style moved() callback
+    (StateCell.h:20-23: "StateCell compaction … is explicitly OUT of R3
+    scope — a D5-style residue if a future COST measurement shows dead-
+    group accumulation"). A keyed-instance store makes this sharper
+    (instances can die; a dead-instance sweep is the InstanceStore
+    analog). Measure-first (a COST witness of dead-group accumulation)
+    before building.
+  - Algebra class (II) mergeable-sketch lowering (ships (I) @invertible
+    + (III) @recompute today; the sketch class is a lowering selector,
+    v3-spec-statecell §0 C-0e).
+  - Sorted-multiset MIN/MAX (the seekable-iterators §9-D5 residue,
+    memory: seekable-iterators-wcoj; a sorted-layout hook exists at
+    CompactRowsInPlace).
+  - KVINDEX dataflow-node deletion (AggregatingFunctors §4.1(a): the
+    KVINDEX node becomes a desugaring candidate for deletion once
+    mutable() desugars to a degenerate aggregate; an upstream
+    simplification, v3-spec-statecell §3 records the concrete
+    recommendation).
+  - Aggregates over MONOTONE inputs (the §C-4 enrollment path,
+    untested — the corpus is all-differential-input today, CLAUDE.md
+    "aggregates over INDUCTION-OWNED inputs" is a separate reject).
+  - Aggregates with CONFIGURATION COLUMNS (a clean-diagnostic gap
+    today) — this is candidate (c) above, PROMOTED from residue to the
+    recommended stage-1 core.
+
+THE ADL/FUNCTOR-SURFACE EPOCH'S OTHER OPEN RECORDS (§13):
+  - Shared-input drain FUSION (effect-graph CSE — the DR-IR's FIRST
+    genuine REWRITE, the optimizability thesis's still-unclaimed
+    payoff). The R1e census + the P2 cutover PROVED the substrate is
+    optimizable but did not yet OPTIMIZE. Fusion's first witness is the
+    §6 interior-fold CSE question (above); a demand transform
+    (candidate (a)) multiplies the shared-input opportunities (many
+    demand-guarded subgoals read the same base relation). Fusion is the
+    natural rewrite the subgraph family's shared demand frontiers ask
+    for — the epoch's chance to cash the thesis.
+  - uses_functors DEAD-ARM excision (§13 P1 record: the detail-threading
+    arms went DEAD, NOT DELETED, after the free-function migration; the
+    entry-point Functors params stay for ABI stability). Clean excision
+    is gated on the WASM object-owned-state decision (memory: wasm-
+    functor-direction — the functor surface P1 just unified is the WASM
+    substrate; the vestigial Functors param is the ABI seam a WASM
+    engine-owned-state functor design reclaims). Keep it dead this epoch
+    UNLESS a WASM spike (permitted early work, AggregatingFunctors
+    §4 last para) reclaims the param.
+  - The func.Name()-vs-Sanitize decl/call ASYMMETRY (§13 P1 FABLE
+    review, recorded for P4): the free-function forward-decl uses
+    `func.Name()` (Database.cpp:1271) while call sites use `Sanitize(...)`
+    — a latent divergence for any functor name needing sanitization
+    (none in-corpus today). A one-line correctness cleanup; fold into
+    the first Database.cpp comment sweep.
+  - The kSectionWalk REDUNDANT PIVOT-COMPARE elision (P3's one genuine
+    residual, artifact §3: the `if (v27 == v30 && v27 == v31)` inner-
+    loop compare the section-walk index already guarantees, elidable iff
+    the ACCESS node is kSectionWalk with a valid pivot_col, DR.h:330/344).
+    MEASURE-FIRST (P3's estimate: "at best one redundant register
+    compare in the inner loop" — decoupled from group_ids, filed as
+    measure-first emission cleanup). Do NOT build without a COST witness.
+
+RE-CHARTERED (P3 retirement, owner-ratified §2.1 decision 3): R4 is now
+a MATERIALIZATION / ACCESS-PATH item gated on a CONCRETE WCOJ / 3+-way
+self-join WITNESS (memory: seekable-iterators-wcoj — the retired R4's
+re-motivation bar). group_ids / InsertSetsOverlap are a CORRECTNESS
+GUARD, never an optimization target (E-23: they never outlive one CSE()
+call). A 3+-way self-join witness that measurably blows up would be an
+ACCESS-PATH-epoch item, NOT this epoch — subgraphs/demand does not
+depend on it. Note it here so the re-motivation bar is not lost.
+
+### 14.0.2 The §6 monotone/descent stage is EARLY WORK this epoch (its
+### prerequisites, restated as a checklist)
+
+The ADL/functor-surface epoch landed P2 stage 1 (deletion-capable ingest
+folds lower from the DR-IR) but explicitly DEFERRED the monotone/descent
+folds (IF-1/IF-4 receive classes) behind the §6 hole contract
+(ADLFunctorSurface.artifacts/p2-ingest-inventory-target.md §6). That
+stage is the natural EARLY WORK of this epoch — it finishes externalizing
+the last hand-coded emission surface, and it is the setting where
+shared-input drain fusion first has a corpus witness. The §6 stage ships
+IFF these prerequisites are met (all named in the artifact, re-verify):
+
+  1. THE HOLE CONTRACT (artifact §6:436-448): LowerIngestFold emits the
+     fold and RETURNS the if-crossed body OP* cursor;
+     BuildEagerInsertionRegions (still hand-coded) is invoked with that
+     cursor as `next_parent` so the descent emits INTO the DR-owned fold
+     body; a validator asserts the hole is filled EXACTLY ONCE (empty
+     for kEmpty monotone-no-successor; one descent subtree otherwise).
+  2. THE INTERIOR-FOLD WITNESS (artifact §5/§6:446-448 + §13 P2/R1e
+     record): a .dr case where the net-additions append sits at an
+     ANCESTOR fold of a deeper view (Build.cpp:870-893). deep_chain_retract
+     already witnesses this for the R1e census; §6 needs it as a LOWERING
+     witness (does the descent claim the append, or does the seed?).
+  3. THE CSE-COLLAPSE QUESTION (§14.0.1, ties §6 to fusion): if the
+     net-additions append can migrate across the seam, is the shared
+     interior fold a fusion candidate? Resolve or record as fusion's
+     first witness.
+  4. THE EMITTED-TREE↔FLOW CROSS-CHECK OBLIGATION (P2 cutover deviation,
+     artifact §12.6:1017-1024): the stage-1 cutover left the emitted CF
+     tree un-cross-checked against the flow ops. §6 must ADD the
+     per-compile V-PRED-XCHECK analog for ingest (the eager web's entry
+     into the cross-checked model). Site numbering continues after Site 4
+     (EmitFrontierFilter, §13 P2 stage iv).
+
+### 14.2 The surfaces this epoch extends, as pseudocode (SINGLE-PASS SEED
+### at the ADL/functor-surface close, from a structural read of the R3
+### state-cell family + the parse/dataflow surface — re-verify per the
+### E-1..E-26 precedent before building; the anchors below are HEAD line
+### numbers on branch adl-functor-surface, tip cf84efab)
+
+    (A) THE KEYED-INSTANCE SUBSTRATE TODAY — R3's StateCellStore, the
+    miniature a subgraph family generalizes. This is the surface the
+    epoch EXTENDS, not replaces.
+
+      RUNTIME: StateCellStore (include/drlojekyll/Runtime/StateCell.h) —
+        standing per-group state for ONE aggregating functor. Keyed by
+        (group cols ++ config cols) → a DENSE GROUP ID (0..num_groups),
+        allocated on first touch exactly like RowStore::FindOrAdd
+        (StateCell.h:9-25 doc; the NON-ALIASING invariant: StateCell
+        dense group ids are a SEPARATE id space from the agg DiffTable's
+        row ids — a DiffTable compaction does not touch the store,
+        StateCell.h:10-25). TWO-WORD CELL per group (StateCell.h:26-37):
+        `working` (WRITTEN by Fold, READ by Emit — a real read/write
+        hazarded value) + `sealed` (batch-start snapshot, WRITTEN only by
+        Seal, READ by Old — a frozen kInI-like value). OCCUPANCY bit +
+        per-group WORKING member count (StateCell.h:38-48: the batch-1
+        abort fix; occupied ⇔ count > 0; drives the occupancy-generalized
+        emit_touched guard — birth: +new only; death: −old only; change:
+        −old,+new). The store is "the SINGLE new emitted primitive R3
+        adds" (v3-spec-statecell §1:130-132).
+        THE GENERALIZATION: an INSTANCE store is a StateCellStore whose
+        per-key cell holds a whole nested query instance (a sub-DiffTable
+        or an instance handle) rather than a two-word scalar. The keying
+        ((context ++ config) → dense instance id), the non-aliasing
+        invariant, the occupancy/birth-death guard, and the dead-instance
+        compaction residue ALL transfer. This is the R3-mold increment.
+
+      DATAFLOW: the AGG / KVINDEX view (Query.h node classes) → ONE
+        GROUP_UPDATE op (BuildGroupUpdateOps, DR.cpp:638). The op carries
+        agg_view (a QueryAggregate or desugared QueryKVIndex,
+        distinguished by AggProvenance), algebra (the lowering selector),
+        agg_table (its OWN differential DiffTable — V-AGG-SOLE), input_view
+        (the single summarized relation, NO join partner), statecell_id,
+        and group_cols / summary_cols (the state-cell key / value column
+        projections — DR.h:523-540). group_cols is ALREADY "group ++
+        config (the cell key)" (DR.h, the field comment) — config columns
+        are already in the key projection; the residue gap is that no
+        corpus case EXERCISES a non-empty config today.
+
+    (B) THE EFFECT MATRIX A NEW OPERATOR FAMILY EXTENDS — the R3 pattern
+    to follow, verbatim.
+
+      The v3-spec §2 effect domain (v3-spec.md §2:107-126) declares FIVE
+      sub-domains, TOTAL from day one so the scheduler and validators are
+      R3-ready before R3 exists:
+        vector:    append(V) | drain(V) | clear(V)
+        table:     counter±(T, class∈{NonRecursive,Recursive,Explicit})
+        flags:     read(T, F) | write(T, F)  for F ∈ RowFlags
+        kInI:      read-frozen(T)  — a distinguished always-legal read,
+                     never a WAR/WAW hazard (the scheduler treats it as a
+                     constant)
+        statecell: fold(SC) | emit(SC) | old(SC)  — was RESERVED for R3
+                     (v3-spec.md §2:123-126: "the domain exists so the
+                     scheduler and validators are R3-total from day one"),
+                     now LIVE (EffKind::kStateFold/kStateEmit/kStateOld,
+                     emitted by BuildGroupUpdateOps at DR.cpp:699/709/713;
+                     the E-24b in-code stale-comment "R3 — reserved" was
+                     the ADL epoch's first comment-sweep fix).
+      HOW R3 EXTENDED IT (the template, v3-spec-statecell.md §0): R3 did
+      NOT add a sixth top-level domain — it FILLED the reserved statecell
+      sub-domain and resolved the three conflicts that filling it exposed
+      (§0 C-0b/C-0c/C-0e):
+        - C-0b: a StateCell is NOT a pure constant like kInI (fold() WRITES
+          the working value in the SAME band, so a within-band Fold-then-
+          Emit is a real RAW hazard) NOR a plain counter (no presence
+          crossing). It needed the two-word cell (working hazarded, sealed
+          frozen) to keep the frozen-read dichotomy intact.
+        - C-0c: a value-fold ≠ a counter-fold — "value-fold without
+          immediate crossing" is a FIRST-CLASS effect kind, not an
+          overloaded counter (resolves G-2).
+        - C-0e: the algebra attribute (@invertible/@recompute) is a
+          LOWERING SELECTOR (fold-via-unfold vs fold-via-rescan), exactly
+          like ACCESS's `Lowering how` (point-test | section-walk | scan |
+          seek, v3-spec.md §2:159) — NOT the ordering-as-enum anti-pattern
+          §9 F-1 rejects. It picks an implementation; it pins no order and
+          no def/use edge.
+      THE SUBGRAPH EXTENSION FOLLOWS THIS SHAPE: a keyed-instance family
+      adds an effect sub-domain (candidate spelling: `instance:
+      instantiate(I) | demand(I) | publish(I)`), declared TOTAL from day
+      one, and resolves the conflicts filling it exposes — the sharpest
+      being: is a demand frontier a new hazarded write (like fold) or a
+      frozen read (like kInI)? A demand is READ by the instantiation and
+      WRITTEN by the demanding subgoal in a possibly-earlier band — the
+      C-0b question, one level up. The seed does NOT resolve it (that is
+      the epoch's first design task); it flags that the R3 resolution
+      pattern (two-word cell = hazarded working + frozen snapshot) is the
+      precedent to test against.
+
+    (C) THE ABSENCE OF ANY SUBGRAPH/DEMAND HOOK — this is NEW surface,
+    so the pseudocode is the SURROUNDING code the family must plug into.
+
+      GREP CONFIRMS NO OPERATOR-FAMILY HOOK EXISTS (verified at HEAD):
+        no `subgraph` / `demand` / `magic` / `SLDMagic` / `sideways` /
+        `use_query_const` operator surface in lib/Parse, lib/DataFlow,
+        lib/ControlFlow, or include/drlojekyll. The 18 `subgraph`/`demand`
+        hits are INCIDENTAL PROSE — dataflow "subgraphs" (Optimize.cpp:31,
+        :708; Compare.cpp:56), column "demand" (Compare.cpp:569-874,
+        Join.cpp:155), and a clause-factoring "demand" (Clause.cpp:12).
+        The family is entirely NEW; the seed must pseudocode the plug-in
+        points, not an existing surface.
+
+      THE R3 GROUP_UPDATE INTEGRATION POINTS — THE PLUG-IN CHECKLIST
+      (verified at HEAD; the new family shadows each):
+        1. df→dr CONSTRUCTION: BuildGroupUpdateOps (DR.cpp:638) — called
+           per AGG (DR.cpp:1034) and per desugared KVINDEX (DR.cpp:1048),
+           mints ONE kGroupUpdate op (DR.cpp:676) with its effect set
+           (kStateFold/Emit/Old, DR.cpp:699-713) + a kStateSeal op
+           (DR.cpp:754). The subgraph analog: a BuildSubgraphOps minting a
+           SUBGRAPH_INSTANTIATE op per subgraph view.
+        2. STRATUM LIFT: DeriveDRStrata (DR.cpp:2058) — a monotone integer
+           lift replicating TableOwnerStratum (the max spec stratum over a
+           table's member views, DR.cpp:2064-2072); the initial-stratum
+           rules per unit (DR.cpp:2090-2094: head→owner_stratum, join→join
+           view stratum, crossover→negate stratum, product→product stratum).
+           The subgraph op needs its OWN initial-stratum rule (a nested
+           instance's stratum vs its demanding context's — the
+           stratification design question).
+        3. LINEARIZER BAND KEY: LinearizeAndValidateDRFlow (DR.cpp:2963) —
+           a Kahn linearizer under a band-key tie-break (DR.cpp:3543-3555:
+           ready-set ordered by band key; the band key IS the emission
+           walk order). GROUP_UPDATE rides an existing band; a demand
+           frontier introduces a NEW ordering question (demand must be
+           satisfied BEFORE the instance materializes — a band-hazard the
+           V-BAND-HAZARD validator must be taught).
+        4. CENSUS + VALIDATORS: ValidateDROps (DR.cpp:2323) — the DERIVED-
+           vs-DERIVED census (recompute expected op counts + per-op key
+           multisets from impl/context/query, NEVER a tree walk, DR.cpp:
+           2646-2813). THE R3 GAP (E-25, LIVE): GROUP_UPDATE/STATE_SEAL is
+           NOT in the expect() list (DR.cpp:2810-2813 has kSeedFold/
+           kChainFold/kFixpointFire/kClaimDrain/kIngestFold — no
+           kGroupUpdate); the TODO(P4) at DR.cpp:2761 records it. THE NEW
+           FAMILY SHIPS ITS CENSUS FROM DAY ONE (E-25 promoted to charter),
+           and closing the GROUP_UPDATE gap is the first task (the
+           template the subgraph census copies).
+        5. dr→cf LOWERING: LowerGroupUpdate (Stratum.cpp:1363) — folds the
+           input table's net frontiers into the cell (band a) + emit_touched
+           (band b), dispatched from LowerDRFlow (Stratum.cpp:1596). The
+           subgraph analog: a LowerSubgraphInstantiate emitting the demand-
+           guarded instantiation + publication.
+        6. cf→c++ EMISSION: EmitGroupUpdate (Database.cpp:1970, region
+           ProgramGroupUpdateRegionImpl at Program.h:1067) — folds into
+           the StateCellStore via the Reduce_<id> policy struct; the store
+           structs emitted by EmitStateCellStructs (Database.cpp:1076,
+           Key_<id> + Reduce_<id> per cell, Database.cpp:2967 in the header
+           assembly). The subgraph analog: an EmitSubgraphInstantiate + an
+           InstanceStore struct generalizing the StateCell blob.
+        7. REDUCTION-BODY ABI: the C-5 driver-supplied free functions
+           (post-P1, the WHOLE functor surface is free functions,
+           Database.cpp:1271 decl / Sanitize call sites) — a subgraph
+           instance needs no reduction body, but a DEMAND PREDICATE (which
+           ground instances to materialize) may want the same driver-hook
+           ABI. The unified free-function surface P1 landed is the seam.
+
+### 14.3 The path forward as DIFFS against §14.2 (SINGLE-PASS SEED — re-
+### rank and re-verify per precedent; prediction slots are PRE-REGISTERED,
+### not results; the recommended cut is (c)→(b)→(a), owner ratifies)
+
+    P0  CLOSE THE R3 CENSUS GAP FIRST (E-25 residue → charter
+        prerequisite). Before adding a new op family, the substrate it
+        extends must be censused.
+        THE DIFF (ValidateDROps, DR.cpp:2646-2813):
+      +   exp_group_update = count of AGG + desugared-KVINDEX views;
+      +   exp_state_seal   = count of statecells;
+      +   expect(DROpKind::kGroupUpdate, exp_group_update, "group updates");
+      +   expect(DROpKind::kStateSeal,   exp_state_seal,   "state seals");
+      +   per-op key multiset (statecell_id, agg_table*, provenance,
+      +     algebra) recomputed from the Query, compared order-free.
+        Plus the missing op-family STRUCTURAL validator (effect-set
+        totality: every kGroupUpdate has {kStateFold, kStateEmit,
+        kStateOld}; every kStateSeal has {kStateFold global:rmw}; the
+        promote-the-assert-DR.cpp:629 discipline). PRE-REGISTERED
+        PREDICTION: zero emission change (observation-only, like V-PRED-
+        XCHECK Site 4); SUITE PASS 164 byte-identical; the census may FIRE
+        on a real GROUP_UPDATE miscount (the house bet — E-1..E-26 says a
+        first-time census finds a divergence; the R1e ingest census did on
+        day one). This is the template §14.3-P2's census copies.
+
+    P1  §6 MONOTONE/DESCENT STAGE (the ADL epoch's deferred P2 stage 2;
+        §14.0.2). EARLY WORK — finishes the last hand-coded emission
+        surface + adds the eager web's V-PRED-XCHECK.
+        THE DIFF (from artifact §6): LowerIngestFold (Stratum.cpp:1884)
+        gains the hole-return shape —
+      -   LowerIngestFold emits the fold, returns void;
+      +   LowerIngestFold emits vector-loop / update-count / if-crossed,
+      +     RETURNS the if-crossed body OP* cursor;
+      +   BuildEagerInsertionRegions invoked with cursor as next_parent
+      +     (descent emits INTO the DR-owned fold body);
+      +   validator: hole filled EXACTLY ONCE (empty for kEmpty
+      +     monotone-no-successor; one descent subtree otherwise);
+      +   the net-additions append emitted by the DESCENT at its actual
+      +     fold-nesting site, gated on the interior-fold witness;
+      +   V-PRED-XCHECK Site 5+: emitted-tree↔flow cross-check for ingest.
+        THE INTERIOR-FOLD CSE QUESTION resolved here or recorded as
+        fusion's first witness (§14.0.2). PRE-REGISTERED PREDICTION:
+        goldens are the SEMANTIC net (permutation-only bless per §7,
+        oracle + monotone referees) — emission shape MAY move as the
+        descent reparents into the DR-owned hole; expected SUITE churn
+        ZERO (the emission is token-equivalent, the R2/P2 cutover
+        precedent); FINDINGS entry iff the hole contract or the cross-
+        check fires (the house bet).
+
+    P2  THE NEW OPERATOR FAMILY — config-column aggregates (candidate (c),
+        the smallest real R3 extension) then keyed nested instances
+        (candidate (b)). Follows the §14.2(C) plug-in checklist.
+        STAGE (c) — CONFIG-COLUMN AGGREGATES: the group_cols projection
+        ALREADY carries "group ++ config" (DR.h:523-540); the gap is that
+        no case exercises a non-empty config. The diff is mostly a
+        DIAGNOSTIC-REMOVAL + a corpus case:
+      -   configuration-column aggregates rejected (clean diagnostic);
+      +   a config column is a demand key (runtime) OR a specialization
+      +     constant (compile-time — AggregatingFunctors §4: "config
+      +     columns that are compile-time constants specialize the
+      +     instantiation"); the StateCell key already accommodates it;
+      +     ADD an oracle-refereed corpus case (config_agg_1.dr +
+      +     .batches + oracle/monotone goldens, the R3 corpus mold).
+        STAGE (b) — KEYED NESTED INSTANCES: the R3-mold increment. ONE
+        new op family (SUBGRAPH_INSTANTIATE) plugging into all seven
+        §14.2(C) points; a new effect sub-domain (`instance:
+        instantiate|demand|publish`, declared TOTAL); a new peer store
+        (InstanceStore generalizing StateCellStore — same (context ++
+        config) → dense id keying, same non-aliasing invariant, same
+        occupancy/birth-death guard, same dead-instance compaction
+        residue). CENSUS + VALIDATORS FROM DAY ONE (E-25 charter — do NOT
+        copy the GROUP_UPDATE gap P0 just closed). THE FIRST DESIGN TASK
+        (unresolved by this seed, §14.2(B)): is a demand frontier a
+        hazarded write (fold-like) or a frozen read (kInI-like)? Test
+        against the R3 two-word-cell resolution. HAND-WRITE THE TARGET IR
+        for ONE real subgraph case before generalizing (the checkpoint
+        method). PRE-REGISTERED PREDICTION: new corpus (suite grows past
+        164 with the config + subgraph cases, each oracle-refereed —
+        aggregate_1 FLIPPED diagnostic→golden at the R3 flip is the
+        precedent); Q5 neutral (subgraphs are a new-feature path, not a
+        Q5-chain change); the census fires at least once (the house bet).
+
+    P3  THE DEMAND TRANSFORM (candidate (a), the payoff — DEFER to a
+        follow-on unless owner scopes it in). The SLDMagic direction as a
+        DataFlow REWRITE (memory: push-method-origin-and-negation —
+        SLDMagic is a TRANSFORMATION, never an evaluator; keep it a Query-
+        level pass upstream of the DR-IR). Rewrite a query into demand-
+        guarded form so only reachable ground instances materialize;
+        demand frontiers feed the §14.2(B) instance family's input.
+        THE INVARIANT-PRESERVATION OBLIGATION (the R4-style gate — a
+        DataFlow rewrite CAN silently miscompile; a reviewed argument
+        required before code): (a) the demand rewrite preserves the
+        stratification the Stratify pass computes (demand does not create
+        an unstratified cycle the reject would have caught); (b) the
+        group_ids CSE guard (E-23, a correctness guard never an
+        optimization target) is untouched — demand-guarded copies of a
+        subgoal must not wrongly CSE-merge; (c) the keep-last-edge and
+        unit-relation CSE rules survive; (d) the transform is a rewrite
+        the DR-IR then lowers, NOT a second evaluator. IF the argument
+        does not pass review, P3 re-seeds (as R4 did for THREE epochs
+        before its P3 retirement). PRE-REGISTERED PREDICTION: P3 lands
+        ONLY with the reviewed argument; measure-first on a demand-benefit
+        witness (a query that materializes far fewer instances under
+        demand — the COST honesty referee, memory: perf-guiding-oracles);
+        otherwise re-seeds.
+
+    P4  RESIDUE as early work (§14.0.1; one line each, homed):
+        - shared-input drain FUSION (the DR-IR's first genuine rewrite;
+          first witness = P1's interior-fold CSE question; the demand
+          transform multiplies its opportunities);
+        - StateCell / instance DEAD-GROUP compaction (D5-style moved()
+          callback; MEASURE-FIRST on a dead-group-accumulation witness);
+        - algebra class (II) mergeable-sketch lowering;
+        - sorted-multiset MIN/MAX (the §9-D5 seekable-iterators residue);
+        - KVINDEX dataflow-node deletion (upstream simplification, once
+          mutable() desugars to a degenerate aggregate);
+        - aggregates over MONOTONE inputs (the §C-4 enrollment path);
+        - uses_functors dead-arm excision (WASM-gated; a WASM whole-module
+          spike is permitted early work, AggregatingFunctors §4);
+        - the func.Name()-vs-Sanitize decl/call asymmetry (Database.cpp:
+          1271; a one-line cleanup, fold into the first comment sweep);
+        - the kSectionWalk redundant pivot-compare elision (MEASURE-FIRST,
+          P3 artifact §3 — do not build without a COST witness);
+        - R4 re-motivation: a concrete WCOJ / 3+-way self-join witness
+          promotes the retired charter to an ACCESS-PATH epoch (NOT this
+          one).
+
+### 14.4 Bootstrap (next session)
+
+Branch: off main once adl-functor-surface merges. Read IN ORDER:
+docs/proposals/ADLFunctorSurface.md END TO END (this epoch's ledger —
+the §1 errata E-18..E-26, the §2 designs incl. the P3/R4 RETIREMENT, the
+§2.1 owner decisions, the §3 implementation records for P1 / P2-R1e / P2-
+cutover / P2-stage-iv, the §3.1 artifact index); THIS file's §13 landing
+record (the ADL/functor-surface epoch close); AggregatingFunctors.md §4
+END TO END (the operator-family sequencing — subgraphs shares the keyed-
+instance substrate; §4.1 the mutable() surface decision) + §5 (the
+implementing-session method); the R3 binding artifacts
+(DeltaRelationalIR.artifacts/v3-spec.md §2 — the five-domain effect
+matrix the new family extends; v3-spec-statecell.md §0/§1/§2 — HOW R3
+filled the reserved statecell domain, the pattern to follow, and the
+StateCellStore the InstanceStore generalizes); and the P2 artifact
+(ADLFunctorSurface.artifacts/p2-ingest-inventory-target.md §6 + §12.6 —
+the deferred monotone/descent stage that is THIS epoch's early work, its
+hole contract + interior-fold witness + emitted-tree↔flow obligation).
+Code anchors: include/drlojekyll/Runtime/StateCell.h (the substrate the
+InstanceStore generalizes); lib/ControlFlow/Build/DR.{h,cpp}
+(BuildGroupUpdateOps DR.cpp:638, DeriveDRStrata DR.cpp:2058,
+LinearizeAndValidateDRFlow DR.cpp:2963, ValidateDROps DR.cpp:2323 with
+the LIVE E-25 census gap at DR.cpp:2761; the kIngestFold field block
+DR.h:502, the GROUP_UPDATE field block DR.h:523); the Lower* family in
+Stratum.cpp (LowerGroupUpdate Stratum.cpp:1363, LowerIngestFold
+Stratum.cpp:1884, the dispatch in LowerDRFlow Stratum.cpp:1436/:1596);
+lib/CodeGen/CPlusPlus/Database.cpp (EmitGroupUpdate Database.cpp:1970,
+EmitStateCellStructs Database.cpp:1076, the header assembly Database.cpp:
+2967); and lib/DataFlow (Query.h node classes + the Stratify pass) for
+the P3 demand transform if scoped in.
+Method: the checkpoint method — re-verify §14.0 AND §14.2/§14.3 against
+HEAD before building (§14.2/§14.3 are the SINGLE-PASS SEED, never fleet-
+reviewed; the E-1..E-26 precedent across SIX epochs says it WILL find a
+defect — continue the numbering at E-27, report loudly). Do P0 (the
+GROUP_UPDATE census gap) FIRST — it is the smallest real diff, closes a
+carried gap, and is the template the new family's census copies.
+Design critique (minimum: is a demand frontier a hazarded write or a
+frozen read — the C-0b question one level up; does the demand transform
+preserve stratification; the config-column runtime-key vs compile-time-
+constant fork). Hand-write the target IR for ONE real config-column
+aggregate AND ONE real subgraph case before generalizing. For any
+emission-shape change (P1's descent reparenting), decide the golden
+policy with the owner FIRST (permutation-only bless with the derivation-
+counter oracle + monotone projection referees, per §7). Gates: SUITE
+PASS (164 baseline, growing with new oracle-refereed corpus) with the §7
+golden policy; ctest 3/3; the DR-IR always-on validators compile-time
+green (now INCLUDING the GROUP_UPDATE census P0 adds); bench neutral at
+the flagship points for any runtime-touching diff; landing record
+appended to PerfRoadmap §15 with deviations for ratification.
+Environment gotchas carried (per §6.4/§8.4/§10.6/§12.4): export
+PATH="/Users/pag/Code/.brew/bin:$PATH"; macOS bash 3.2 (no `declare -A`);
+zsh does NOT word-split $flags (use `${=var}` or arg arrays); NEVER
+rebuild the compiler mid-suite; NEVER time bench runs concurrently with
+suite runs; generated-code TEXT is not run-stable (pointer-keyed
+container orders — key comparisons on case+mode+knobs semantics, never
+generated-text hashes).

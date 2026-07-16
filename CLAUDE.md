@@ -125,8 +125,13 @@ anything else (entry points and queries assert it). Messages are
 with a forcing function also take `(log, functors)` after `db`. Log and
 functor types flow by deduction — a driver observes published deltas by
 providing ITS OWN type with the message-hook signatures (no inheritance,
-no virtual, no `override`); `DatabaseFunctors` members are declared in
-the header and defined by the driver out-of-line. CURSOR CONTRACTS
+no virtual, no `override`); since the P1 MAP-functor migration
+(ADL/functor-surface epoch) EVERY functor body is a driver-supplied FREE
+FUNCTION — MAP functors are forward-declared in the header as
+`<ret> <name>_<pattern>(bound...)` and defined out-of-line (unqualified
+call from the generated template context; `struct DatabaseFunctors {}`
+survives EMPTY as the deduction anchor drivers still construct and
+pass). CURSOR CONTRACTS
 (normative since the data-structures epoch — dead-row compaction
 renumbers row ids): any entry-point call invalidates open cursors
 (drain fully before the next message), and keyed-cursor enumeration
@@ -139,9 +144,9 @@ in the header, defined out-of-line, named after the functor) — an
 `@invertible` functor `f` needs `f_identity()`, `f_combine(w, v)`,
 `f_uncombine(w, v)`; an `@recompute` functor needs
 `f_reduce(const S *values, const int32_t *counts, size_t n)` (a rescan
-over the live multiset). The functor's own MAP members
-(e.g. `DatabaseFunctors::div_i32_bbf`) are declared in the header and
-defined out-of-line as usual. See `tests/OptDiff/cases/average_weight.main.cpp`
+over the live multiset). The functor's own MAP deliveries (e.g.
+`div_i32_bbf`) are free functions too, declared in the header and
+defined out-of-line. See `tests/OptDiff/cases/average_weight.main.cpp`
 for the exact landed shape. Always read the generated `datalog.h` for
 exact signatures before writing a driver.
 
@@ -187,8 +192,13 @@ exact signatures before writing a driver.
   `LowerDRFlow` (acyclic seeds/crossovers/product arms/claim drains/
   frontier filters), `LowerDRRounds` (per-SCC×phase fixpoint round shells),
   `LowerCommitSweeps` (commit + Seal), `LowerGroupUpdate` (R3 aggregates),
-  all in `Stratum.cpp`. The eager INGEST web (`Build.cpp`) is the last
-  hand-coded emission surface (`kIngestFold` reserved).
+  all in `Stratum.cpp`. Since the P2 cutover (ADL/functor-surface epoch),
+  a deletion-capable receive's two explicit ingest folds lower from the
+  DR-IR's stage-1 `kIngestFold` pair (`MakeStageOneIngestFolds` the single
+  payload authority, `LowerIngestFold` at the original walk position —
+  id-stream identity); the MONOTONE receive folds + the eager successor
+  walk (`BuildEagerRegion`, `Build.cpp`) remain the last hand-coded
+  emission surface (the P2 artifact §6 hole-contract follow-on).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —
@@ -202,7 +212,12 @@ exact signatures before writing a driver.
   only the token; zero-pivot JOINs appear only under `@product`; a table's
   member-view list holds each view at most once, by IDENTITY — never dedup
   it structurally (distinct-but-equal views sharing a model are intentional,
-  the group_ids CSE guard).
+  the group_ids CSE guard). group_ids/InsertSetsOverlap is a CORRECTNESS
+  GUARD, never an optimization target (ratified at the ADL/functor-surface
+  close: the "cubic self-join" premise is false — the self-join already
+  lowers to one table + two hash indexes + a pivot loop, O(join output);
+  group_ids live only inside one CSE() call, recomputed after every merge;
+  see ADLFunctorSurface.artifacts/p3-tc-selfjoin-target.md).
 - Core invariants (differential): every inductive back-edge fold is an
   `UPDATECOUNT` whose propagation body is dominated by its zero crossing
   (termination of generated fixpoints); differential rows carry split SIGNED

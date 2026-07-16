@@ -7,7 +7,7 @@
 
 // Deterministic id generator: a pure function of `Time` so the result does
 // not depend on how many times the generated code invokes the functor.
-uint32_t DatabaseFunctors::generate_next_id_bf(int64_t Time) {
+uint32_t generate_next_id_bf(int64_t Time) {
   return static_cast<uint32_t>(Time * 10 + 3);
 }
 

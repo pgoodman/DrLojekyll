@@ -1,7 +1,7 @@
 // Driver for average_weight (R3 aggregate flagship). ADL hidden-friend surface;
 // C-5 driver-supplied reduction free functions (@invertible sum/count →
-// identity/combine/uncombine; @recompute KV merge → reduce); DatabaseFunctors
-// MAP members (div_i32, new_weight_i32) defined out-of-line. The per-X query
+// identity/combine/uncombine; @recompute KV merge → reduce); free MAP
+// functions (div_i32, new_weight_i32) defined out-of-line. The per-X query
 // drains are SORTED before printing (cursor contract, CLAUDE.md).
 //
 // FUNCTOR SEMANTICS (must match the oracle's by-name interpretation, spec §4):
@@ -37,11 +37,11 @@ int32_t new_weight_i32_reduce(const int32_t *values, const int32_t *counts,
   return res;
 }
 
-int32_t DatabaseFunctors::div_i32_bbf(int32_t LHS, int32_t RHS) {
+int32_t div_i32_bbf(int32_t LHS, int32_t RHS) {
   return RHS != 0 ? LHS / RHS : 0;
 }
-int32_t DatabaseFunctors::new_weight_i32_bbf(int32_t /*OldWeight*/,
-                                             int32_t NewWeight) {
+int32_t new_weight_i32_bbf(int32_t /*OldWeight*/,
+                           int32_t NewWeight) {
   return NewWeight;  // last-writer merge (matches the @recompute rescan)
 }
 
