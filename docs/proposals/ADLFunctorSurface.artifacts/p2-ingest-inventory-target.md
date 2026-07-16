@@ -979,3 +979,46 @@ cannot.
    for a monotone receive over a shared differential table.
 3. No publication walk-metadata DROp field (binding §3a omits it; the
    census key is the 5-tuple; publish stays a walk effect until §6).
+
+---
+
+## §12.6. CUTOVER AS LANDED (2026-07-16) — §12.2/§12.3/§12.5-R-ID SUPERSEDED
+
+§12.3's phase-time dispatch (Context.ingest_par) was INFEASIBLE AS
+COMMITTED, found at implementation and independently confirmed by the
+pre-commit Fable review: the fold VECTORLOOP/VAR ids — and, once
+build_explicit_loop is deleted, the FIRST MINT of the add/delete queue
+vecs (§12.5 R-ID's "reuses the walk-minted queue vec" premise deletes
+its own minting site) — would move past CompleteProcedure and the
+stratum machinery in the shared impl->next_id stream, renumbering every
+subsequent id in -ir-out AND datalog.h (verified empirically on the nls
+nocf IR: fold ids 25-29 sit interleaved MID-WALK; the queue-vec ids
+recur in the ^flow call signature). §12.2's "byte-identical in all four
+modes" solved the parent-pointer problem and missed the id stream (it
+conflated relative order with absolute values in a shared counter).
+The §12.4 gate stands unchanged and would have caught the failure.
+
+THE LANDED SHAPE (byte-identity by construction; §12.4 gate came back
+RAW-BYTE-IDENTICAL — full -ir-out + datalog.h, opt AND nocf, all three
+witnesses):
+- MakeStageOneIngestFolds (DR.cpp, exported) is the SINGLE AUTHORITY
+  constructing a deletion-capable receive's two stage-1 DROps (+1
+  before −1); pure function of (message, receive, table), no ids.
+- BuildDRInventory enrolls copies in the flow — the R1e census +
+  §7(a)-(d) validators are UNCHANGED and still the independent recount.
+- ExtendEagerProcedure lowers copies AT THE ORIGINAL WALK POSITION via
+  LowerIngestFold (Stratum.cpp), token-equivalent to the deleted
+  build_explicit_loop, consuming the op payload (sign / is_explicit /
+  role→VectorKind / table / receive-columns) — the F1 discipline.
+- No Context map; the per-io par is in hand at the call site; the
+  R-EMPTY-PAR/R-CLASSIFY/R-ORDER risks dissolve (same-parent,
+  same-order, same-vec emission).
+
+DEVIATION FOR RATIFICATION (the authority shape): stage-1 ingest
+lowering consumes CONSTRUCTOR-FRESH copies of the ops, not
+context.dr_flow's instances (the flow does not exist at walk time).
+The tie between lowered and censused payloads is constructor-sharing +
+provably-congruent arguments (view_to_model is frozen at BuildDataModel,
+before any procedure building) + the census key-multiset abort. No
+per-compile V-PRED-XCHECK analog ties the emitted CF tree back to the
+flow ops yet — recorded as the stage-2/§6 follow-on's obligation.

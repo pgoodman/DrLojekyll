@@ -1828,6 +1828,63 @@ static void LowerDRRounds(ProgramImpl *impl, Context &context,
 
 }  // namespace
 
+// P2 CUTOVER (family #4, stage 1) — INGEST-FOLD LOWERING (dr → cf).
+//
+// Replaces the deleted `build_explicit_loop` (Procedure.cpp): one VECTORLOOP
+// over the message parameter vector, one EXPLICIT nonrecursive UPDATECOUNT±
+// (the message-support-bit toggle; its zero crossing parks the row), one
+// VECTORAPPEND into the receive table's add/delete queue (the memoized
+// TableDeltaVector — no new vector id; VecRole→VectorKind mapped only here).
+// Called from `ExtendEagerProcedure` at the ORIGINAL walk position so the
+// VECTORLOOP/VAR ids occupy their pre-cutover slots in the shared
+// `impl->next_id` stream (byte-identity; see MakeStageOneIngestFolds' doc).
+// The shape is driven by the DROp payload — sign, is_explicit, role, table —
+// never re-derived from the Query here (the F1 discipline).
+void LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
+                     PARALLEL *parent, VECTOR *loop_vec) {
+  assert(op.kind == DROpKind::kIngestFold);
+  assert(op.ingest_stage1 && op.ingest_is_explicit);
+  assert(op.ingest_sign == 1 || op.ingest_sign == -1);
+  assert(op.ingest_role == VecRole::kAddQueue ||
+         op.ingest_role == VecRole::kDeleteQueue);
+
+  const QueryView receive = *op.ingest_receive;
+  TABLE *const table = op.ingest_table;
+  assert(table != nullptr);
+  const bool is_add = 0 < op.ingest_sign;
+
+  const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+      impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+  parent->AddRegion(loop);
+  loop->vector.Emplace(loop, loop_vec);
+
+  UPDATECOUNT *const fold = impl->operation_regions.CreateDerived<UPDATECOUNT>(
+      loop, is_add, DerivClass::kNonRecursive, op.ingest_is_explicit);
+  fold->table.Emplace(fold, table);
+  loop->body.Emplace(loop, fold);
+
+  for (auto col : receive.Columns()) {
+    VAR *const var = loop->defined_vars.Create(impl->next_id++,
+                                               VariableRole::kVectorVariable);
+    var->query_column = col;
+    loop->col_id_to_var.emplace(col.Id(), var);
+    fold->col_values.AddUse(var);
+  }
+
+  VECTOR *const queue = TableDeltaVector(
+      impl, context, table,
+      op.ingest_role == VecRole::kAddQueue ? VectorKind::kAddQueue
+                                           : VectorKind::kDeleteQueue);
+  VECTORAPPEND *const append =
+      impl->operation_regions.CreateDerived<VECTORAPPEND>(
+          fold, ProgramOperation::kAppendToInductionVector);
+  append->vector.Emplace(append, queue);
+  for (auto col : receive.Columns()) {
+    append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+  }
+  fold->body.Emplace(fold, append);
+}
+
 // R2 FAMILY #3 — COMMIT-SWEEP BAND LOWERING (dr → cf).
 //
 // Replaces the hand-coded end-of-batch sweep band (the deleted

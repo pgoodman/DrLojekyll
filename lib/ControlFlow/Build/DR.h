@@ -507,7 +507,7 @@ class DROp {
   // walk-metadata op (kNetAddition | kEmpty from the boundary predicate).
   // `ingest_message` is the source message identity; `ingest_receive` the
   // receive view; `ingest_table` its model table; `ingest_sign` -1/+1;
-  // `ingest_is_explicit` the message-support-bit toggle (Procedure.cpp:36-42,
+  // `ingest_is_explicit` the message-support-bit toggle (see LowerIngestFold,
   // no GROUP_UPDATE analog); `ingest_role` the DR-side VecRole (net-* SINGULAR,
   // mapped to the CF-side plural only at the LOWER-time TableDeltaVector call —
   // §9); `ingest_stage1` marks the deletion-capable ops that lower at cutover
@@ -783,5 +783,27 @@ void DeriveDRStrata(DRFlowGraph &flow, ProgramImpl *impl, Context &context,
 // on `context.dr_flow`.
 void LowerCommitSweeps(ProgramImpl *impl, Context &context,
                        const DRFlowGraph &dr_flow, SERIES *seq);
+
+// P2 CUTOVER (family #4, stage 1): the two STAGE-1 ingest-fold ops of one
+// deletion-capable receive, +1 BEFORE -1 (the emitted add-before-remove
+// order). SINGLE AUTHORITY for the stage-1 op payload: `BuildDRInventory`
+// enrolls copies in the flow (the census's subject) and `ExtendEagerProcedure`
+// lowers copies AT THE ORIGINAL WALK POSITION — both call this. Lowering at
+// the walk position (not phase time) is load-bearing for byte-identity: the
+// fold's VECTORLOOP/VAR ids must occupy the same slots in the shared
+// `impl->next_id` stream they did before the cutover (CompleteProcedure and
+// the stratum machinery mint ids in between, so a phase-time dispatch would
+// shift every subsequent id — the p2 artifact §12.3 amendment, corrected).
+std::vector<DROp> MakeStageOneIngestFolds(ParsedMessage message,
+                                          QueryView receive, TABLE *table);
+
+// P2 CUTOVER: emit ONE stage-1 ingest fold — VECTORLOOP over `loop_vec` →
+// explicit UPDATECOUNT± → VECTORAPPEND into the receive table's add/delete
+// queue (the memoized TableDeltaVector; VecRole→VectorKind mapped only here,
+// §9) — from the DROp payload. Byte-identical to the deleted
+// build_explicit_loop (Procedure.cpp), driven by op data (the F1 discipline:
+// the lowering CONSUMES sign/is_explicit/role/table, never re-derives them).
+void LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
+                     PARALLEL *parent, VECTOR *loop_vec);
 
 }  // namespace hyde

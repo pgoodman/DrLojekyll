@@ -416,6 +416,45 @@ re-run on the exact tree; Q5 spot @128 release ~0.11s / debug ~0.95s
 (flat). Construction-only: byte-identity by construction, verified
 anyway.
 
+### P2 CUTOVER — stage-1 ingest folds lower from the DR-IR (2026-07-16)
+
+FAMILY #4 STAGE 1 LANDED, delete-with-cutover: build_explicit_loop
+(Procedure.cpp) is DELETED; a deletion-capable receive's two explicit
+folds now lower from the DR-IR's stage-1 kIngestFold pair.
+MakeStageOneIngestFolds (DR.cpp, exported) is the single payload
+authority — BuildDRInventory enrolls copies in the flow (the R1e
+census + §7 validators unchanged, still the independent recount);
+ExtendEagerProcedure lowers copies via LowerIngestFold (Stratum.cpp),
+token-equivalent to the deleted lambda and driven by op payload
+(sign/is_explicit/role/table — F1 honored). +141/−75 across four files.
+
+DESIGN SHIFT AT IMPLEMENTATION (artifact §12.6; Fable-confirmed): the
+committed §12.3 phase-time dispatch was INFEASIBLE — fold ids and the
+queue vecs' first mint would move past CompleteProcedure in the shared
+next_id stream, renumbering everything after (§12.5 R-ID's premise
+deleted its own minting site). The landed walk-position lowering is
+byte-identical BY CONSTRUCTION; the §12.4 gate verified it anyway.
+
+DEVIATIONS FOR RATIFICATION: (1) authority shape — stage-1 lowering
+consumes constructor-fresh op copies, not context.dr_flow instances
+(the flow doesn't exist at walk time); tie = shared constructor +
+frozen view_to_model + the census key-multiset abort; a per-compile
+emitted-tree↔flow cross-check (V-PRED-XCHECK analog for ingest) is the
+stage-2/§6 obligation. (2) No Context.ingest_par map (§12.3 superseded).
+
+GATES: §12.4 STRUCTURAL GATE RAW-BYTE-IDENTICAL — full -ir-out AND
+datalog.h, opt AND nocf, on negate_lower_strata / cf13_6 / cf14_3
+(exceeds the tree-shape requirement); 10-target byte-compare IDENTICAL;
+FULL SUITE PASS (164) ZERO golden churn (permcheck not exercised —
+nothing to bless); ctest 3/3; debug+release green; Q5 spot @128 release
+~0.12s, debug ~1.03s first spot (+8%, byte-identical codegen ⇒
+compile-side; re-measured post-review — see below). FABLE REVIEW:
+APPROVE-WITH-NITS — confirmed the id-stream argument ("option (a) as
+committed was infeasible"), verified token-equivalence and single
+authority, assessed Q5 as noise; nits (two self-inflicted stale
+anchors, CLAUDE.md kIngestFold-reserved line, artifact §12.6 + this
+record) all landed pre-commit.
+
 ## 3.1 Artifact index
 
 - p1-map1-target.md — P1 identity target: the exact post-P1 datalog.h

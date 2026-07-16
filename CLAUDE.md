@@ -192,8 +192,13 @@ exact signatures before writing a driver.
   `LowerDRFlow` (acyclic seeds/crossovers/product arms/claim drains/
   frontier filters), `LowerDRRounds` (per-SCC×phase fixpoint round shells),
   `LowerCommitSweeps` (commit + Seal), `LowerGroupUpdate` (R3 aggregates),
-  all in `Stratum.cpp`. The eager INGEST web (`Build.cpp`) is the last
-  hand-coded emission surface (`kIngestFold` reserved).
+  all in `Stratum.cpp`. Since the P2 cutover (ADL/functor-surface epoch),
+  a deletion-capable receive's two explicit ingest folds lower from the
+  DR-IR's stage-1 `kIngestFold` pair (`MakeStageOneIngestFolds` the single
+  payload authority, `LowerIngestFold` at the original walk position —
+  id-stream identity); the MONOTONE receive folds + the eager successor
+  walk (`BuildEagerRegion`, `Build.cpp`) remain the last hand-coded
+  emission surface (the P2 artifact §6 hole-contract follow-on).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —

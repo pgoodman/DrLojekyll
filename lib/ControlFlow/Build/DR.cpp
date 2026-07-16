@@ -758,6 +758,44 @@ static void BuildGroupUpdateOps(
   flow.ops.push_back(std::move(seal));
 }
 
+// P2 CUTOVER: the single authority for a deletion-capable receive's two
+// stage-1 ingest-fold ops (+1 before -1). Both the flow enrollment
+// (BuildDRInventory's INGEST_FOLD block) and the walk-position lowering
+// (ExtendEagerProcedure → LowerIngestFold) construct their ops here, so the
+// censused payload and the lowered payload cannot diverge. Pure function of
+// (message, receive, table) — no ids, no context.
+std::vector<DROp> MakeStageOneIngestFolds(ParsedMessage message,
+                                          QueryView receive, TABLE *table) {
+  assert(receive.CanReceiveDeletions());
+  assert(table != nullptr);
+  std::vector<DROp> ops;
+  ops.reserve(2u);
+  for (int sign : {+1, -1}) {
+    DROp op(DROpKind::kIngestFold);
+    op.ctx = Ctx::kEager;
+    op.ingest_message = message;
+    op.ingest_receive = receive;
+    op.ingest_table = table;
+    op.ingest_sign = sign;
+    op.ingest_is_explicit = true;  // the message-support-bit toggle
+    op.ingest_role = (sign > 0) ? VecRole::kAddQueue : VecRole::kDeleteQueue;
+    op.ingest_stage1 = true;
+    DREffect cnt;
+    cnt.kind = EffKind::kCounter;
+    cnt.counter_table = table;
+    cnt.sign = sign;
+    cnt.klass = DerivClass::kNonRecursive;
+    op.effects.push_back(cnt);
+    DREffect app;
+    app.kind = EffKind::kVecAppend;
+    app.value_table = table;
+    app.vec_role = op.ingest_role;
+    op.effects.push_back(app);
+    ops.push_back(std::move(op));
+  }
+  return ops;
+}
+
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map) {
@@ -1711,7 +1749,7 @@ DRFlowGraph BuildDRInventory(
   // polarity), derived from `query.IOs()` — NEVER by copying the eager walk.
   // A DELETION-CAPABLE receive yields TWO stage-1 ops (+1 then -1, is_explicit,
   // roles kAddQueue/kDeleteQueue from polarity alone — the two
-  // build_explicit_loop folds, Procedure.cpp:43-90; fold body = counter± +
+  // LowerIngestFold folds (Stratum.cpp, ex-build_explicit_loop); fold body = counter± +
   // queue append, nothing nested below). A MONOTONE receive with a table
   // yields ONE stage1=false walk-metadata op: its role re-runs the boundary
   // predicate (Build.cpp:857-858 cut successors + :886-889 monotone-negated ∨
@@ -1727,7 +1765,8 @@ DRFlowGraph BuildDRInventory(
   // compile). The fold body hosts the eager descent, so the op stays
   // hand-coded (§0/§6 — its INSERT stream publish is a WALK effect of the
   // descent, never an ingest-seed effect). A table-less monotone receive
-  // mints no counter fold (Procedure.cpp:104) and is not an ingest fold.
+  // mints no counter fold (ExtendEagerProcedure's monotone arm) and is not an
+  // ingest fold.
   // Construction is ID-NEUTRAL (no region/vector ids); the queue-vec ids are
   // minted at LOWER time in the same (message, receive, polarity) order (§4).
   for (QueryIO io : query.IOs()) {
@@ -1741,30 +1780,12 @@ DRFlowGraph BuildDRInventory(
           impl->view_to_model[receive]->FindAs<DataModel>()->table;
 
       // Deletion-capable (STAGE-1 IN): the +1 op BEFORE the -1 op (the
-      // add-before-remove emitted order, Procedure.cpp:87-88).
+      // add-before-remove emitted order). Since the cutover, the SAME helper
+      // constructs the ops `ExtendEagerProcedure` lowers — the flow's copies
+      // and the lowered copies cannot diverge (single authority), and the
+      // census recount stays the independent check.
       if (receive.CanReceiveDeletions()) {
-        for (int sign : {+1, -1}) {
-          DROp op(DROpKind::kIngestFold);
-          op.ctx = Ctx::kEager;
-          op.ingest_message = message;
-          op.ingest_receive = receive;
-          op.ingest_table = table;
-          op.ingest_sign = sign;
-          op.ingest_is_explicit = true;  // the message-support-bit toggle
-          op.ingest_role =
-              (sign > 0) ? VecRole::kAddQueue : VecRole::kDeleteQueue;
-          op.ingest_stage1 = true;
-          DREffect cnt;
-          cnt.kind = EffKind::kCounter;
-          cnt.counter_table = table;
-          cnt.sign = sign;
-          cnt.klass = DerivClass::kNonRecursive;  // Procedure.cpp:56
-          op.effects.push_back(cnt);
-          DREffect app;
-          app.kind = EffKind::kVecAppend;
-          app.value_table = table;
-          app.vec_role = op.ingest_role;
-          op.effects.push_back(app);
+        for (DROp &op : MakeStageOneIngestFolds(message, receive, table)) {
           const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
           const VecRole role = op.ingest_role;
           flow.ops.push_back(std::move(op));
@@ -1772,7 +1793,7 @@ DRFlowGraph BuildDRInventory(
           // differential, so MintTableVec minted it above); A-4 multi-def.
           flow.vecs[flow.TableVec(table, role)].defs.push_back(op_idx);
         }
-        continue;  // no cut/descent — Procedure.cpp:89.
+        continue;  // no cut/descent for a deletion-capable receive.
       }
 
       // Monotone with a table (STAGE-1 OUT): inventoried + censused, never
@@ -2847,8 +2868,8 @@ void ValidateDROps(
   // monotone (stage-1 OUT) op, the boundary-predicate-derived role must agree
   // with the walk-produced `context.table_delta_vecs` — the map holds a
   // kNetAdditions vec for the receive table iff the predicate said
-  // kNetAddition. Both read at phase time (the map is full: the eager walk at
-  // Procedure.cpp:714 ran before BuildStratumPhases at :756). A disagreement
+  // kNetAddition. Both read at phase time (the map is full: BuildEntryProcedure
+  // runs the eager walk before BuildStratumPhases). A disagreement
   // means the table-level member-view predicate (MonotoneIngestRoleDR) and
   // the walk's actual append-site provisioning diverged — abort.
   for (const DROp &op : flow.ops) {
