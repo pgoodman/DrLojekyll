@@ -48,21 +48,40 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, ~150 corner-case programs) has one
-committed expected output in `tests/OptDiff/goldens/<name>.stdout`, and the
-4 optimization modes are just execution variants — EVERY mode's stdout is
-byte-compared against the same golden (cross-mode agreement is implied).
-A case with a `<name>.batches` sidecar additionally runs the
-derivation-counter oracle (`bin/Oracle`, built as `drlojekyll-oracle`) and
-the monotone projection, each against its own golden
-(`<name>.oracle.stdout` / `<name>.monotone.stdout`).
+(`<name>.dr` + `<name>.main.cpp`, 164 corner-case programs as of the
+delta-relational-IR epoch) has one committed expected output in
+`tests/OptDiff/goldens/<name>.stdout`, and the 4 optimization modes are
+just execution variants — EVERY mode's stdout is byte-compared against the
+same golden (cross-mode agreement is implied). A case with a
+`<name>.batches` sidecar additionally runs the derivation-counter oracle
+(`bin/Oracle`, built as `drlojekyll-oracle`) and the monotone projection,
+each against its own golden (`<name>.oracle.stdout` / `<name>.monotone.stdout`).
+Notable directed witnesses: `fixpoint_stress_1` (same-round double-claim +
+REDERIVE partial-restore + phantom pairs + add-side stale drops),
+`reconverge_1` (reconvergent table-less plumbing, the DiscoverBranches-
+memoization guard), and the R3 aggregate corpus (`average_weight`,
+`pairwise_average_weight`, `aggregate_1`, all with `.batches` +
+oracle/monotone goldens; `algebra_invertible_1` witnesses the `@invertible`
+surface). `tests/OptDiff/permcheck.py` mechanizes the permutation-only
+bless referee (published-delta tokens compare order-free per epoch, all
+other lines byte-identical) for any emission-shape change under the
+delta-relational-IR golden policy.
 
 - One case: `tests/OptDiff/diffrun.sh <case.dr> <driver.cpp> <workdir>`
   (env: `DR=` compiler path, `TIMEOUT=` seconds).
 - Full suite: `DR=build/debug/bin/drlojekyll tests/OptDiff/runall.sh
-  <workroot> [jobs] [name-filter-regex]` — must end `SUITE: PASS`.
-  Expected-diagnostic cases (aggregate_1, kvindex_1–4, evm_func_parse,
-  nonascii_1, truncated_decl_1) are encoded in runall.sh.
+  <workroot> [jobs] [name-filter-regex]` — must end `SUITE: PASS`. The
+  expected-diagnostic cases are encoded in runall.sh (READ IT for the
+  authoritative list): all-4-modes-diagnostic = `kvindex_2/3/4`,
+  `agg_in_scc_1`, `kv_in_scc_1` (unstratified aggregation — an aggregate/KV
+  index over its own recursive result, rejected by the same Stratify pass
+  as the negation reject), `algebra_dup_1`, `algebra_conflict_1` (the
+  @-algebra pragma surface: a duplicate pragma / the mutually-exclusive
+  @invertible+@recompute pair, rejected in Functor.cpp), `evm_func_parse`,
+  `nonascii_1`, `truncated_decl_1`; `kvindex_1` is MODE-SPLIT (compiles
+  under opt/nocf where KVINDEX→TUPLE elimination fires, V-ALGEBRA-rejects
+  under nodf/none). `aggregate_1` FLIPPED from diagnostic to a 4-mode
+  golden at the R3 stage-C flip.
 - Blessing: goldens change ONLY via explicit
   `runall.sh --bless <workroot> [filter]` after reviewing a run's outputs —
   never automatically on failure, and never to make a red case green.
@@ -112,8 +131,19 @@ the header and defined by the driver out-of-line. CURSOR CONTRACTS
 renumbers row ids): any entry-point call invalidates open cursors
 (drain fully before the next message), and keyed-cursor enumeration
 order is unspecified — drivers must sort keyed drains before printing
-(every corpus driver does; review gate on new ones). Always read the
-generated `datalog.h` for exact signatures before writing a driver.
+(every corpus driver does; review gate on new ones). AGGREGATE / KV
+DRIVER CONTRACT (since the R3 delta-relational-IR flip): a program with
+an `over(){}` aggregate or a `mutable(...)` KV merge additionally needs
+its reduction bodies as DRIVER-SUPPLIED FREE FUNCTIONS (forward-declared
+in the header, defined out-of-line, named after the functor) — an
+`@invertible` functor `f` needs `f_identity()`, `f_combine(w, v)`,
+`f_uncombine(w, v)`; an `@recompute` functor needs
+`f_reduce(const S *values, const int32_t *counts, size_t n)` (a rescan
+over the live multiset). The functor's own MAP members
+(e.g. `DatabaseFunctors::div_i32_bbf`) are declared in the header and
+defined out-of-line as usual. See `tests/OptDiff/cases/average_weight.main.cpp`
+for the exact landed shape. Always read the generated `datalog.h` for
+exact signatures before writing a driver.
 
 ## Key internals
 
@@ -137,6 +167,28 @@ generated `datalog.h` for exact signatures before writing a driver.
   — no deaths, and `sealed` is an id-order watermark); join/scan body
   membership gates read predicates on the scan cursor id (the emitter's
   row-binding scope stack — the value-keyed re-Find is gone).
+- Delta-relational IR (`lib/ControlFlow/Build/DR.{h,cpp}`, the DR-IR
+  epoch): a typed-value flow graph between Query and Program that is now
+  the SOLE authority for the stratum machinery (the hand-coded scheduling
+  fixpoint + DiscoverBranches path-DFS were deleted). Objects: typed DRVecs
+  (queues/frontiers/pivots) with def/use edges; DROps carrying sign /
+  position (InNew/InI read placement) / claim-context as ATTRIBUTES + the
+  ten membership predicates (semantics from `Runtime/Table.h`, never a
+  header comment — E-12) + per-arm effect sets + access-plan spines;
+  DR strata DERIVED (`DeriveDRStrata`, a monotone integer lift) and an
+  independent Kahn linearizer under a band-key tie-break
+  (`LinearizeAndValidateDRFlow`), the schedule a CHECKED linearization of
+  the dependence graph. Always-on graph validators (fprintf+abort, survive
+  NDEBUG): V-XOVER-ONE/V-PROD-MONO/V-PROD-CLASS/V-JOIN-ONE (the promoted
+  B-3 asserts), the census (V-ONE-FOLD/V-SEED-SUP/V-NEG-CTX/V-CLAIM-GATE/
+  V-DEFER/V-RETIRE-AFTER), V-LINEAR/V-LOOP/V-READY/V-BAND-HAZARD, and
+  V-PRED-XCHECK (ties the DR model to the surviving Emit* templates — a
+  reintroduced F17/F18 divergence aborts on compile). Emission path:
+  `LowerDRFlow` (acyclic seeds/crossovers/product arms/claim drains/
+  frontier filters), `LowerDRRounds` (per-SCC×phase fixpoint round shells),
+  `LowerCommitSweeps` (commit + Seal), `LowerGroupUpdate` (R3 aggregates),
+  all in `Stratum.cpp`. The eager INGEST web (`Build.cpp`) is the last
+  hand-coded emission surface (`kIngestFold` reserved).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —
@@ -200,8 +252,10 @@ BRANCH CHAIN-BREAKER (`SuffixesOf`/`CollectSectionTargetsDR`, DR.cpp; the
 eager walk stops at it, Build.cpp) — no branch traverses one; its monotone
 message input is provisioned a net-additions frontier as a cut successor.
 REDUCTION BODIES are C-5 driver-supplied FREE FUNCTIONS (forward-declared in
-the header, defined out-of-line): `F_identity/F_combine/F_uncombine` for
-`@invertible`, `F_reduce(values, counts, n)` for `@recompute`. Corpus +
+the header, defined out-of-line, NAMED AFTER THE FUNCTOR): for a functor `f`,
+`f_identity()/f_combine(w, v)/f_uncombine(w, v)` for `@invertible`,
+`f_reduce(const S *values, const int32_t *counts, size_t n)` for
+`@recompute` (e.g. `sum_i32_combine`, `new_weight_i32_reduce`). Corpus +
 oracle: `tests/OptDiff/cases/{average_weight, pairwise_average_weight,
 aggregate_1}` (drivers + `.batches` + oracle/monotone goldens; the oracle
 `bin/Oracle/Main.cpp` does the definitional per-group recompute in both

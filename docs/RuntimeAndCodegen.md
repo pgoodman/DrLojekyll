@@ -12,7 +12,10 @@ third-party dependencies.
 
 ## The runtime
 
-Four headers plus one source file:
+Four core headers plus one source file (two further headers are
+conditional: `BenchCounters.h`, the default-off bench counter seam; and
+`StateCell.h`, included only by generated code that has an aggregate or KV
+index — see below):
 
 - **`Allocator.h`** — a Zig-style allocator: a two-pointer-wide value
   (`ctx` + `alloc`/`free` function pointers) passed to every container at
@@ -61,6 +64,17 @@ Four headers plus one source file:
   `added` is true) once, in row-id order, and readers filter liveness through
   the owning table's membership predicates.
 
+- **`StateCell.h`** (conditional, aggregate/KV only) — a `StateCellStore`
+  holds the standing per-group state for one aggregate or KV-index view (the
+  R3 delta-relational-IR family): a dense group-id space, a two-word
+  sealed/working cell per group, and an occupancy count. It is a peer of the
+  view's own `DiffTable`. `Fold(gid, sign, summary)` accumulates the
+  summarized input's net-frontier rows (`@invertible` folds/unfolds in O(1);
+  `@recompute` rescans the live multiset), and the emit step applies an
+  occupancy-generalized one-net-pair guard (birth `+new`, death `−old`,
+  change `−old,+new`) into the agg table. The reduction bodies themselves are
+  DRIVER-SUPPLIED (see `DatabaseFunctors` below).
+
 Cursors iterate by row id and re-read through the container on each step, so
 tables and indexes may be mutated while a scan over them is live (an
 invariant the generated fixpoint code relies on). A query cursor filters its
@@ -82,7 +96,12 @@ For `#database points_to` the compiler emits `points_to.h` + `points_to.cpp`.
 - **`DatabaseFunctors`** — a plain struct declaring one member function per
   `#functor`; the user defines them in their own translation unit (link-time
   binding). Filters return `bool`, `@range(?)` returns `std::optional`,
-  `@range(*)`/`@range(+)` return `std::vector`.
+  `@range(*)`/`@range(+)` return `std::vector`. For an aggregate (`over(){}`)
+  or KV-index (`mutable(...)`) reduction functor `f`, the driver also supplies
+  FREE FUNCTIONS (forward-declared in the header, defined out-of-line, named
+  after the functor): `@invertible` needs `f_identity()`, `f_combine(w, v)`,
+  `f_uncombine(w, v)`; `@recompute` needs `f_reduce(const S *values, const
+  int32_t *counts, size_t n)` (a from-scratch rescan over the live multiset).
 - **`DatabaseLog`** — a plain struct with one no-op method per published
   message, emitted as a concrete default type. Nothing is virtual: the entry
   points deduce the log's static type, so any driver type providing the same

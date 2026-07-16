@@ -955,3 +955,341 @@ Stratum.cpp must be re-derived from code before R1's vocabulary is
 fixed. R0's profile is the epoch's first artifact and gates all
 design. Owner decisions to collect at epoch start: mutable(...)
 syntax (§4.1), the R2 golden policy, and whether R4 is in scope.
+
+## 11. Landing record (2026-07-16) — DELTA-RELATIONAL-IR EPOCH CLOSED
+
+Branch `delta-relational-ir` off main 9e1a092. The epoch's working
+ledger is docs/proposals/DeltaRelationalIR.md (§1-§12: R0 profile, the
+verified pipeline pseudocode, the diff plan, every per-diff record, the
+big review, and the §12 stage records); the hand-written and spec
+artifacts are DeltaRelationalIR.artifacts/. Commits, grouped by R-stage:
+
+- Ledger/seed: 30567273 (§1 R0 profile + fleet-verified pseudocode +
+  seed errata E-12..E-17), 862b57cc (E-12 stale-enum fix), e8fbb113
+  (§5 the path as diffs, RQ5a/RQ5b first, R1-R4 re-ranked), dedd9b30
+  (§6 vocabulary v2 + 4-judge critique + B-1/B-2/B-3), e0a17062 (§7
+  owner decisions), 3108a046 + b68acfdf (v2/v3 binding spec + judge),
+  efbe0a28 (§B amendments B-7..B-13), 07679c6f (B-14 restatement),
+  0b3ec874 (DR-IR v3 statecell extension for R3).
+- RQ5a/RQ5b (the measured Q5 fix): 5e393944 (RQ5a — delete the dead
+  taint passes), cd1d0349 (RQ5b — CSE color-refinement bucketing),
+  e89541b6 (BASELINE runs 6-7).
+- R1 (construct-alongside, golden-frozen): bdcea2ff (R1a inventory
+  layer), 8adc85ff (R1b DRVec materialization + reconverge_1),
+  7c43edac (fixpoint_stress_1 witness), 5d959121 (R1c op families +
+  per-arm effects + Σ-terms), 0d8d00ef (R1d checked linearization +
+  region shells), 124b499d (permcheck.py, the R2 bless referee),
+  3108a046 (§10 vocabulary-v3 record).
+- R2 (generic lowering, one family at a time, delete-with-cutover):
+  a83ce1cc (family #1 acyclic band), 6c4ca4fb (family #2 SCC/recursive
+  band), c794761a (family #3 commit sweeps + THE OLD-DISCOVERY
+  DELETION).
+- Big review + fixes: 7dacc097 (§11 big-review record), ecfe6746
+  (review fixes F2/F3/F6/F7), e3559592 (V-PRED-XCHECK), 8fec79d7 (§8
+  review-fixes record).
+- R3 (aggregates + KV indices, the inaugural new operator family):
+  8c1d169c (§7.1 algebra-pragma decision), 50f936bb (R3c-i @-algebra
+  pragma surface), 504c9e4a (R3a StateCellStore runtime), 10599717
+  (R3b AGG/KVINDEX stratification), be13cc9c + 012df83a + d07d89e5
+  (§12 as-landed model + critique + C-1 occupancy amendment), 3749a16a
+  (R3 stage A compiler-side cutover), 8dec9cbf (R3 stage B emission
+  layer behind the fence), d6e31b79 (R3 stage C — THE FLIP),
+  plus this docs/close commit.
+
+Method executed (the checkpoint method, per §10.6): R0 profile FIRST —
+NO IR design committed before it landed (§10.5's gate honored); fleet
+re-verification of the §10.4/§10.5 seed BEFORE building (4 opus agents;
+the E-1..E-11 precedent held again — errata E-12..E-17 below); v2/v3
+vocabulary through THREE judge rounds (the 4-judge design critique with
+B-1/B-2/B-3, the independent Fable optimizability review with F-1..F-8,
+and the vocabulary-v3 dependence-completeness judge with §A amendments)
+PLUS the owner-requested big review (§11 of the ledger) PLUS the §12
+as-landed modelling round (pseudocode + diff plan + critique) — the
+pre-code re-verification precedent held at EVERY review (each found a
+real defect or oversell before code: RQ5b merge-set drift, the eager
+INGEST_FOLD non-seam, the F1 decorative-payload finding, the C-1
+birth/death occupancy CRITICAL). R1 was construct-alongside with a
+byte-identical-golden hard gate; R2 cut over one family at a time,
+deleting the replaced Emit* in the same diff, with the derivation-
+counter oracle + permcheck.py as bless referees; R3 landed in three
+staged commits (A compiler-side, B emission behind a fence, C the
+flip) with the fence keeping the suite green until the whole path was
+proven end to end.
+
+### Seed errata found by the pre-code re-verification (precedent held)
+
+- E-12 (the real defect): Program.h:621's enum comment said
+  kNetAdded = `kAdd && !kDel`; the runtime is `kAdd && !kDel && !kInI`
+  (Table.h:429-433 — the `!kInI` conjunct is load-bearing against a
+  same-batch −e1/+e2 double count). An R1 vocabulary derived from the
+  header comment would encode the wrong frontier predicate. Fixed the
+  comment; R1 derives predicate semantics from Table.h only.
+- E-13: the negate SEED read is CONTEXT-keyed for the whole chain
+  (Stratum.cpp:519-521: in_fixpoint ? kInNew : kInI), never the §5.1
+  per-position split — exactly the F18 shape. R1's NEGATE_GATE keys on
+  context, not position.
+- E-14: the membership-predicate vocabulary is TEN, not §5.1's eight —
+  kNetDeleted and kNetAdded are first-class frontier-filter predicates.
+- E-15: §10.4's dataflow order was wrong — Stratify runs LAST in
+  Query::Build (after Optimize), Simplify is a separate unconditional
+  pre-pass, and Optimize is CSE-first/interleaved, not a linear
+  4-stage pipeline.
+- E-16: BuildStratumPhases is NESTED inside BuildEntryProcedure
+  (Procedure.cpp:769), ~872 lines of a 2330-line file, ONE function
+  body with shared mutable state {branches, joins, crossovers,
+  products, drain_stratum, recursive_sccs, table_delta_vecs} — the R1
+  cut had to externalize exactly that state as the DR-IR object.
+- E-17: DiscoverBranches is sign-agnostic (sign chosen at emission);
+  the seed conflated the scheduling fixpoint (integer lift only) with
+  emitted order, and missed that SCC-table frontier filters are
+  deferred into the add-loop output for correctness.
+
+### What landed
+
+THE DR-IR IS NOW THE SOLE AUTHORITY for the stratum machinery.
+lib/ControlFlow/Build/DR.{h,cpp} (the v3 object model: typed DRVec
+values with def/use edges, per-arm effect sets, access-plan spines,
+the ten membership predicates, derived strata + a checked
+linearization, always-on graph validators) is constructed alongside
+the build and, after the R2 cutovers, drives emission via
+LowerDRFlow / LowerDRRounds / LowerCommitSweeps / LowerGroupUpdate
+(Stratum.cpp). What died in R2: the hand-coded scheduling fixpoint,
+DiscoverBranches (the §1.4 un-memoized path-DFS hazard),
+CollectSectionTargets, TableOwnerStratum, the Crossover/Product
+Emission structs, SeedDRStrata, the entire #ifndef NDEBUG readiness-
+assert block, and the hand-coded commit-sweep loop — DELETIONS totalling
+−1070/+590 in lib/ControlFlow/Build/ across the three families (family
+#3 alone: −974/+415, BuildStratumPhases shrank ~530→~160 body lines).
+STRATA became DERIVED (DeriveDRStrata, B-13 retired); every cutover was
+raw-byte-identical on its anchors (B-14 exceeded — bijection = identity).
+
+RQ5a/RQ5b (the measured Q5 fix, dataflow-side per R0): RQ5a removed the
+dead taint passes end to end (Taint.cpp, the two Build.cpp calls, the
+QueryColumnImpl/QueryImpl members, the four public accessors, the
+write-only STRONG Use edges — net −310); RQ5b replaced CSE's shallow
+HashInit-bucket + pairwise-Equals with color-refinement bucketing
+(round-0 color = HashInit + Select/Insert identity, position-salted
+refinement to partition stability), keeping the B-2 deletion-flag
+discipline and the group_ids guard inside Equals.
+
+R3 (aggregates + KV indices, the inaugural NEW operator family): AGG
+and KVINDEX (the degenerate aggregate) lower end to end as ONE
+GROUP_UPDATE op per view (BuildGroupUpdateOps), standing per-group
+state in a StateCellStore (Runtime/StateCell.h — own dense-group-id
+space, two-word sealed/working cell + C-1 occupancy). Band (a) folds
+the summarized-input net frontiers into the cell; band (b)
+emit_touched applies the occupancy-generalized ONE-NET-PAIR guard into
+the agg table's counters + del/add queues, riding the acyclic
+claim/frontier/commit tail. The C-5 ADL ABI: reduction bodies are
+DRIVER-SUPPLIED FREE FUNCTIONS forward-declared in the header and
+defined out-of-line — `<f>_identity()/<f>_combine(w,v)/<f>_uncombine
+(w,v)` for `@invertible`, `<f>_reduce(values, counts, n)` for
+`@recompute`. Suite 155→164 across the epoch (157 at R1b with
+fixpoint_stress_1; 159 at R3b with agg_in_scc_1/kv_in_scc_1; 162 at
+R3c-i with the algebra pragma cases; 164 at R3c/stage C with
+average_weight + pairwise_average_weight new and aggregate_1 flipped
+from diagnostic to a 4-mode golden). permcheck.py (tests/OptDiff)
+mechanizes the §7.1 permutation-only bless referee (never exercised —
+every cutover was byte-identical, nothing to bless). Witness cases
+authored along the way: reconverge_1 (reconvergent table-less
+plumbing, the DiscoverBranches-memoization guard), fixpoint_stress_1
+(§9-risk-#2: same-round double-claim + REDERIVE partial-restore +
+phantom pairs + add-side stale drops), and the R3 corpus
+(average_weight / pairwise_average_weight / aggregate_1 with drivers +
+.batches + oracle/monotone goldens; algebra_invertible_1 additionally
+witnesses the @invertible surface).
+
+### THE NUMBERS (details in the ledger §8 + bench/BASELINE.md runs 6-7)
+
+Q5 (the epoch's flagship metric, @128 rules): release opt
+1077→149.4ms (−86.1%) (the measured RQ5b landing was 146.5ms — the 32→128
+tail went from ~n^3 to ~LINEAR, 3.5x time per 4x rules); debug opt
+7833→925.1 (−88.2%) (RQ5b landing 970ms). RQ5a alone: nodf/none −88..95%
+(the dead-taint explosion, R0's §1.2 finding); RQ5b: opt −86..88% at
+128 (the CSE hot pass, R0's §1.2 finding — ~72-80% of opt samples).
+R1/R2 held Q5 flat (CF build is ~3% of compile — R0 demoted "the IR
+fixes Q5" to "the IR must not regress Q5"); R3 stage C measured
+median dr_wall +0.3% (<10%) with a byte-identical header for non-agg
+programs.
+
+Runtime neutrality (the golden-master invariant): generated code was
+BYTE-IDENTICAL through all of R2 — neutrality by construction, proven
+by cpp-out byte-compare of the flagship workloads (tc_random,
+pure_cycle, deep_chain, flip_storm) against the frozen pre-R2 compiler
+(the interleaved A/B was vacuous, recorded as the perf-neutrality
+witness in lieu of a tautological timed run). R3 touches only
+aggregate programs — the non-agg generated header stays byte-identical
+at stage C (the +0.3% above is the compile-time dr_wall A/B, not a
+runtime move).
+
+### Deviations for ratification (SEED TO NEXT EPOCH)
+
+Collected from the ledger:
+
+1. B-2 (RQ5b merge-set gate) AMENDED and RATIFIED: the original
+   "identical merge set" is unmeasurable across a bucketing change
+   (bucket granularity shifts the fixpoint trajectory — 30/156 corpus
+   programs differ in merge-EVENT counts, each Equals-verified at
+   application); the operational gate is identical final per-kind view
+   counts on the full corpus + suite byte-identical + oracle green
+   (0/156 final view-count diffs measured). The deep hash KEEPS
+   can_receive/produce_deletions (matches today's merge set byte-for-
+   byte) + the no-unit-with-non-unit bucketing assert.
+2. B-14 (family-#1 identity gate) RESTATED and RATIFIED: raw IR-text
+   byte identity is unachievable from a rewritten builder without
+   sequence replay, so the gate is tree-shape-modulo-id-bijection +
+   stdout; in fact EVERY family landed raw-byte-identical (bijection =
+   identity), exceeding the restated gate.
+3. R0 RE-RANKING ratified: the Q5 fix is dataflow-side (RQ5a/RQ5b),
+   not the emission web; RQ5a is FULL taint removal (passes + members
+   + accessors), RQ5b is a deep hash keeping deletion flags — both
+   land before R1. The IR's carry is optimizability + the F17/F18/F22
+   bug-class + the unified access operator, not Q5.
+4. MERGE-TRAJECTORY AMENDMENT (the F-3 tripwire): mechanized old-vs-new
+   bucketing A/B over all 156 programs before commit; the amendment
+   above (view counts, not event counts) is the ratified form.
+5. R2 FENCE STAGING vs the one-atomic-unit critique: F-2 adopted
+   ACYCLIC-FAMILIES-FIRST (families #1-#3), fixpoint families are the
+   round-shell lowering inside them; R3c-ii+R3d were merged into ONE
+   suite-gated unit (the big-review F9 disposition — F14 retirement
+   flips aggregate_1/kvindex_1-4 to compiling before R3d's goldens
+   exist), and R3 itself landed as A/B/C with a fence rather than one
+   atomic diff (stage A compiler-side FENCED, stage B emission behind
+   the fence, stage C the flip). Disposition: staging kept the suite
+   green at every commit; the "one atomic unit" concern was met at the
+   SUITE level, not the commit level.
+6. STATE_SEAL riding COMMITSWEEP: the aggregate table's Seal() +
+   DebugValidate() are tagged onto its COMMITSWEEP (seal_statecell_id)
+   and emitted at commit-sweep exit rather than as a standalone region
+   — placement UNCHANGED from the monotone Seal band; ratified as a
+   lowering default.
+7. §C-5 ABI DECISION TRAIL: the critique found §4's compiler-known
+   reduction semantics FABRICATED; the real dependency is the never-
+   written functor driver ABI (an owner decision). Resolved (C-5) to
+   ADL-free driver-supplied free functions over driver-owned state
+   (the DatabaseLog declared-in-header/defined-by-driver idiom, no ADL
+   needed on builtin summary types); verified compilable+executable
+   against a hand-written average_weight driver. MAP-functor migration
+   onto this surface is a recorded follow-on (its own epoch).
+8. R4 (group_ids reshape) and FAMILY #4 (eager INGEST_FOLD
+   externalization) NOT in scope this epoch — R4 stays gated (re-seeded
+   to §12), and kIngestFold stays a reserved DROpKind (the eager web,
+   ExtendEagerProcedure/build_explicit_loop, is the last hand-coded
+   emission surface; it has no externalized discovery seam to mirror
+   faithfully — an R1e/R2-entry-family seam).
+9. FINDINGS.md UNCHANGED: no correctness bug escaped to a golden. The
+   three in-stage catches (R1c use-after-move in FillSeedFoldArm, R2#1
+   VectorFor non-memoization, R2#2 kFixpointFire scc_group filter) were
+   all pre-commit and anchor-caught; the big review found no live
+   miscompile. Rationale: FINDINGS.md records golden-master-discovered
+   bugs in shipped compiler behavior, not caught-before-commit
+   construction bugs (recorded in the ledger instead).
+
+### Epoch-close residue (verbatim from the §12 stage-C record; out of
+### R3 scope, seed to §12)
+
+- StateCell dead-group compaction (§1.1, D5-style, own moved() callback);
+- shared-input drain FUSION (§2.2 G-6, effect-graph CSE);
+- algebra class (II) mergeable-sketch lowering (§1.3, ships (I)+(III)
+  only);
+- sorted-multiset MIN/MAX (§6 b', the seekable-iterators residue);
+- KVINDEX dataflow-node deletion (§3, a later upstream simplification);
+- aggregates over MONOTONE inputs (§C-4 enrollment path exists but the
+  corpus is all differential-input — untested);
+- configuration-column aggregates (clean feature-gap reject);
+- MAP-functor migration onto the C-5 free-function surface (§C-5
+  recorded follow-on, its own epoch);
+- the recorded V-PRED-XCHECK residuals (thread the per-arm gate node
+  into EmitChainStep; EmitFrontierFilter un-cross-checked) carried
+  forward.
+
+EPOCH CLOSED. Next epoch per §12 (owner picks the theme). The DR-IR is
+the sole authority for the stratum machinery; the one remaining
+hand-coded emission surface is the eager INGEST web (kIngestFold
+reserved), and the F17/F18 bug-class kill is REAL through the walked
+lowering paths + V-PRED-XCHECK but not yet complete (the per-arm gate
+threading and EmitFrontierFilter cross-check are the recorded
+residuals).
+
+## 12. Epoch-start addendum (2026-07-16, at the delta-relational-IR
+## close): the NEXT EPOCH SEED
+## (SINGLE-PASS SEED by the closing session — to-be-re-verified per the
+## house precedent: E-1..E-17 across five epochs, EVERY pre-code
+## re-verification has found a real seed defect; budget for it)
+
+### 12.0 Why an epoch here (candidate themes; owner decides)
+
+The DR-IR now owns the stratum machinery and has ONE new operator
+family (aggregates) proving the rewrite substrate works. Two coherent
+next themes, plus the residue as early work either way:
+
+(a) THE ADL / FUNCTOR-SURFACE EPOCH — finish what R3's C-5 ABI opened.
+    Three deferred web items, all recorded in the §11 residue:
+    - MAP-functor migration onto the C-5 free-function surface: today
+      MAP functors are DatabaseFunctors members; the aggregate
+      reductions are C-5 free functions. Unify the two surfaces (the
+      §C-5 recorded follow-on) so functor bodies have one calling
+      convention. This is behavior-neutral shape work with a golden
+      policy to decide (the emitted functor call sites change).
+    - FAMILY #4 = eager-INGEST externalization: the eager web
+      (ExtendEagerProcedure / build_explicit_loop / BuildEagerRegion)
+      is the LAST hand-coded emission surface; kIngestFold is a
+      reserved DROpKind with no discovery seam. Build the seam (an R1e
+      eager-web externalization), then lower kIngestFold from the
+      DR-IR, deleting the hand-coded ingest folds — the same
+      delete-with-cutover discipline R2 used.
+    - R4 = JOIN group_ids reshape for native self-joins (IdeasTriage
+      #6, the measured cubic tc⋈tc witness blowup) — gated in-scope
+      per §7 owner decision, ONLY with a reviewed invariant-
+      preservation argument for the CSE guard. Belongs inside the
+      rebuild, not as a bolt-on.
+
+(b) SUBGRAPHS / DEMAND per the original AggregatingFunctors §4
+    sequencing — the next operator family after aggregates in the
+    recorded plan. A DR-IR operator family in the R3 mold.
+
+Residue items (early work under EITHER theme, from §11):
+StateCell dead-group compaction; shared-input drain fusion (effect-
+graph CSE — the DR-IR's first genuine REWRITE, the optimizability
+thesis's first payoff); algebra class (II) mergeable-sketch lowering;
+sorted-multiset MIN/MAX (the seekable-iterators residue, PerfRoadmap
+§9-D5); KVINDEX dataflow-node deletion; aggregates over monotone
+inputs (test the §C-4 enrollment path); the V-PRED-XCHECK residuals
+(per-arm gate threading into EmitChainStep; EmitFrontierFilter cross-
+check — finish the F17/F18 bug-class kill).
+
+### 12.1 Bootstrap (next session)
+
+Branch: off main once delta-relational-ir merges. Read IN ORDER:
+docs/proposals/DeltaRelationalIR.md END TO END (§1-§12 — the epoch's
+working ledger: R0 profile, the verified pipeline pseudocode, the
+vocabulary v2/v3 evolution, every per-diff record, the big review, and
+the §12 stage records incl. the epoch-close residue); THIS file's §11
+landing record; AggregatingFunctors.md §4 (the operator-family
+sequencing — subgraphs is next in the recorded plan); the binding
+artifacts in DeltaRelationalIR.artifacts/ (v3-spec.md, v3-spec-
+statecell.md, big-review-2026-07-16.md). Code anchors:
+lib/ControlFlow/Build/DR.{h,cpp} (the object model + the always-on
+validators + BuildGroupUpdateOps + DeriveDRStrata + LinearizeAndValidate
+DRFlow), the Lower* family in Stratum.cpp (LowerDRFlow / LowerDRRounds
+/ LowerCommitSweeps / LowerGroupUpdate), Runtime/StateCell.h,
+lib/CodeGen/CPlusPlus/Database.cpp EmitGroupUpdate, and — for the
+eager-web theme — Build.cpp's ExtendEagerProcedure / build_explicit_loop
+/ BuildEagerRegion (the un-externalized ingest surface).
+Method: the checkpoint method — re-verify §12.0 against HEAD before
+building (single-pass seed; the E-1..E-17 precedent says it WILL find a
+defect); design critique; hand-write the target IR for ONE real case
+before generalizing; for any emission-shape change, decide the golden
+policy with the owner FIRST (permutation-only bless with the
+derivation-counter oracle + monotone projection as referees, per §7 —
+zero churn is not automatic once functor call sites move). Gates: SUITE
+PASS (164 baseline) with the §7 golden policy; ctest 3/3; the DR-IR
+always-on validators compile-time green; bench neutral at the flagship
+points for any runtime-touching diff; landing record appended HERE with
+deviations for ratification. Environment gotchas carried (per §6.4/§8.4/
+§10.6): export PATH="/Users/pag/Code/.brew/bin:$PATH"; macOS bash 3.2
+(no `declare -A`); zsh does NOT word-split $flags (use `${=var}` or arg
+arrays); NEVER rebuild the compiler mid-suite; NEVER time bench runs
+concurrently with suite runs; generated-code TEXT is not run-stable
+(pointer-keyed container orders — key comparisons on case+mode+knobs
+semantics, never generated-text hashes).
