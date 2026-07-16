@@ -584,6 +584,20 @@ DRFlowGraph BuildDRInventory(
                  VectorKind::kNetRemovals, UniqueContract::kMultiset);
     MintTableVec(flow, table, VecRole::kNetAddition, ElementShape::kIds,
                  VectorKind::kNetAdditions, UniqueContract::kMultiset);
+
+    // R1d: the per-round CLAIMED-* frontier vecs (Δ_D/Δ_A) for a recursive SCC
+    // table (spec §1 round vecs: cleared+refilled each round, the fixpoint-test
+    // set the FIXPOINT_ROUND re-exports; Stratum.cpp:2288 frontier_kind). These
+    // are the single-def clear+refill round vecs (A-4); multiset at production,
+    // sort-unique-at-drain into the next round's claim (the contract lives on
+    // the def→drain edge). Only recursive SCC tables own a claim-round loop.
+    if (SccOf(scc_map, table).has_value()) {
+      MintTableVec(flow, table, VecRole::kClaimedDel, ElementShape::kIds,
+                   VectorKind::kClaimedDeleteFrontier,
+                   UniqueContract::kMultiset);
+      MintTableVec(flow, table, VecRole::kClaimedAdd, ElementShape::kIds,
+                   VectorKind::kClaimedAddFrontier, UniqueContract::kMultiset);
+    }
   }
 
   // -------------------------------------------------------------- crossovers
@@ -1305,7 +1319,7 @@ DRFlowGraph BuildDRInventory(
     op.ctx = Ctx::kSeed;
     op.table_op_table = table;
     op.sweep_flavor = SweepFlavor::kDifferential;
-    op.join_pivot = published_tables.count(table) != 0u;  // reuse flag: published?
+    op.publish_target = published_tables.count(table) != 0u;  // named field (R1d)
     DREffect fr;
     fr.kind = EffKind::kInIReadFrozen;
     fr.read_table = table;
@@ -1317,6 +1331,140 @@ DRFlowGraph BuildDRInventory(
     fw.write_table = table;
     op.effects.push_back(fw);
     flow.ops.push_back(std::move(op));
+  }
+
+  // ------------------------------------------------------------ PIVOT_ASSEMBLE
+  // One per SCC join (spec §2.1 PIVOT_ASSEMBLE, G2): the seed-block pivot union.
+  // The join's FIXPOINT_FIRE arms all drain ONE shared kJoinPivots vec; the
+  // assemble is the op that UNIONS the join's delta sources into it (both-sign
+  // reach frontiers of each joined side). Mirrors the emitter's dual-section
+  // seed registration (Stratum.cpp:2104-2141: the pivot vec is sort-uniqued,
+  // then the join's two section walks range over it). Only SCC joins carry a
+  // fixpoint fire, so only they get an assemble; a lower/acyclic join's pivots
+  // are appended by its seed folds directly (no separate assemble op).
+  for (const DRJoin &jn : flow.joins) {
+    const QueryView join_view = jn.join_view;
+    DataModel *const jm = impl->view_to_model[join_view]->FindAs<DataModel>();
+    if (!SccOf(scc_map, jm->table).has_value()) {
+      continue;  // only SCC joins share a fire-fed pivot vec (G2).
+    }
+    DROp op(DROpKind::kPivotAssemble);
+    op.ctx = Ctx::kSeed;
+    op.pivot_join = join_view;
+    op.pivot_vec_index = jn.pivot_vec;
+    // The delta-source tables: each joined side's model table (its signed
+    // frontiers feed the pivot union). Position order (JoinedViews()).
+    for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
+      TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
+      op.pivot_source_tables.push_back(st);
+      // vector:drain of the side's both-sign frontiers (the union inputs).
+      for (VecRole role : {VecRole::kNetRemoval, VecRole::kNetAddition}) {
+        DREffect drain;
+        drain.kind = EffKind::kVecDrain;
+        drain.value_table = st;
+        drain.vec_role = role;
+        op.effects.push_back(drain);
+      }
+    }
+    // vector:clear + append of the shared pivot vec (id+cols; sort-unique).
+    DREffect clr;
+    clr.kind = EffKind::kVecClear;
+    clr.value_table = nullptr;  // a message-less join-owned vec
+    clr.vec_role = VecRole::kJoinPivots;
+    op.effects.push_back(clr);
+    DREffect app;
+    app.kind = EffKind::kVecAppend;
+    app.value_table = nullptr;
+    app.vec_role = VecRole::kJoinPivots;
+    op.effects.push_back(app);
+
+    const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
+    flow.ops.push_back(std::move(op));
+    // The pivot vec's def edge is this assemble (clear+append, A single def —
+    // the round vecs are the only single-def vecs, and this is the pivot's
+    // producer; the fires drain it as a use, wired in the linearizer).
+    flow.vecs[jn.pivot_vec].defs.push_back(op_idx);
+  }
+
+  // -------------------------------------------------------- eager NEGATE_GATE
+  // One standalone eager negate forward gate per negate (spec §2.1 NEGATE_GATE,
+  // F-5 eager cells): context=eager, pred DERIVED from the hint — normal→kInI,
+  // @never→kPresent (Negate.cpp:91-94 / `BuildEagerNegateRegion`). Every negate
+  // reached by the eager insertion walk emits exactly one such gate
+  // (Build.cpp:1002 for every negate view). This is the CLEANLY-DERIVABLE half
+  // of the eager web; the eager INGEST_FOLD family is CUT in R1d (see the
+  // eager-walk inventory note — the message→table fold sites live inside the
+  // recursive `BuildEagerRegion` walk with no externalized discovery struct to
+  // mirror faithfully; kIngestFold stays reserved).
+  for (QueryNegate negate : query.Negations()) {
+    const QueryView negate_view(negate);
+    const QueryView negated_view = negate.NegatedView();
+    TABLE *const negated_table =
+        impl->view_to_model[negated_view]->FindAs<DataModel>()->table;
+    const NegateHint hint =
+        negate.HasNeverHint() ? NegateHint::kNever : NegateHint::kNormal;
+    const Pred gate_pred = NegateGatePred(Ctx::kEager, hint);
+
+    DROp op(DROpKind::kNegateGate);
+    op.ctx = Ctx::kEager;
+    op.gate_negate = negate_view;
+    op.gate_table = negated_table;
+    op.gate_pred = gate_pred;
+    op.gate_hint = hint;
+    DREffect read;
+    read.kind = EffKind::kFlagRead;
+    read.read_table = negated_table;
+    read.pred = gate_pred;
+    read.ctx = Ctx::kEager;
+    op.effects.push_back(read);
+    flow.ops.push_back(std::move(op));
+  }
+
+  // ------------------------------------------------------------ FIXPOINT_ROUND
+  // Mint the round SHELLS (per SCC group × phase) as region objects (G4). The
+  // body/output op ids + test vecs are populated by the linearizer (it owns the
+  // intra-round order); here we just mint one OVERDELETE + one INSERT region per
+  // recursive SCC group that owns any phase table (mirrors
+  // build_claim_round_loop being called once per sign per SCC drained at a
+  // stratum — Stratum.cpp:2354/2366).
+  {
+    std::unordered_set<unsigned> scc_groups;
+    for (TABLE *table : impl->tables) {
+      if (!TableIsDifferential(table) ||
+          TableIsInductionOwnedDR(context, table)) {
+        continue;
+      }
+      if (auto g = SccOf(scc_map, table); g.has_value()) {
+        scc_groups.insert(*g);
+      }
+    }
+    // Deterministic group order (ascending) so the shells are pinned-stable.
+    std::vector<unsigned> groups(scc_groups.begin(), scc_groups.end());
+    std::sort(groups.begin(), groups.end());
+    for (unsigned g : groups) {
+      for (RoundPhase phase : {RoundPhase::kOverdelete, RoundPhase::kInsert}) {
+        DRRound round;
+        round.scc_group = g;
+        round.phase = phase;
+        // The test vecs: the claimed-* frontier of each SCC table in the group,
+        // sign per phase (Δ_D in OVERDELETE, Δ_A in INSERT). Table order by
+        // impl->tables (the phase_table_order mirror is stable enough for the
+        // shell; the linearizer re-derives the body order).
+        const VecRole front =
+            (phase == RoundPhase::kOverdelete) ? VecRole::kClaimedDel
+                                               : VecRole::kClaimedAdd;
+        for (TABLE *table : impl->tables) {
+          if (!TableIsDifferential(table) ||
+              TableIsInductionOwnedDR(context, table)) {
+            continue;
+          }
+          if (SccOf(scc_map, table) == std::optional<unsigned>(g)) {
+            round.test_vecs.push_back(flow.TableVec(table, front));
+          }
+        }
+        flow.rounds.push_back(std::move(round));
+      }
+    }
   }
 
   return flow;
@@ -2066,6 +2214,789 @@ void ValidateDROps(
     if (op.seed_target && is_recursive(op.seed_target) && op.seed_source &&
         same_scc(op.seed_target, op.seed_source)) {
       ValidatorFail("V-SEED-SUP: a same-SCC seed fold exists (should be chain)");
+    }
+  }
+}
+
+// ===========================================================================
+// R1d: the CHECKED LINEARIZATION (spec §4). Derives the dependence graph from
+// effect intersections, materializes vec use-edges uniformly, pins an epoch-
+// scope order (band template + topo sort), populates the round shells' body
+// order, and runs V-LINEAR / V-LOOP / V-RETIRE-AFTER / V-READY / V-OLD-EQUIV.
+// ===========================================================================
+namespace {
+
+// A single vec ACCESS by an op, resolved to a concrete vec index. `is_write`
+// marks append/clear (a write); a drain is a read (and, for an in-round claim
+// drain, ALSO a clear — recorded as two accesses). `role` is kept for the
+// band-template loop-carried classification (the round-carried Δ frontiers).
+struct VecAccess {
+  unsigned op_idx{0u};
+  unsigned vec_idx{0u};
+  bool is_write{false};
+  VecRole role{VecRole::kEmpty};
+};
+
+// A single table-flag ACCESS (counter± / TryClaim write, or a membership read).
+// kInI-frozen reads are NOT recorded (they never hazard, §2/§4). The resource
+// is (table): counter/gate writes and membership reads over one table's flag
+// set intersect as one WAR/RAW/WAW class (the §4 laws key on the table).
+struct FlagAccess {
+  unsigned op_idx{0u};
+  TABLE *table{nullptr};
+  bool is_write{false};
+};
+
+// Resolve the concrete vec index a `DREffect` names. Table-keyed vecs use
+// `(value_table, role)`; the join-pivots role is resolved from `pivot_hint`
+// (the op's owning join pivot vec — table-less). Returns ~0u if unresolvable
+// (a message-less vec with no owning join, which R1d does not schedule).
+static unsigned ResolveVecIdx(const DRFlowGraph &flow, const DREffect &e,
+                              unsigned pivot_hint) {
+  if (e.vec_role == VecRole::kJoinPivots) {
+    return pivot_hint;
+  }
+  if (e.value_table == nullptr) {
+    return ~0u;
+  }
+  auto it = flow.table_vecs.find(e.value_table);
+  if (it == flow.table_vecs.end()) {
+    return ~0u;
+  }
+  auto jt = it->second.find(e.vec_role);
+  if (jt == it->second.end()) {
+    return ~0u;
+  }
+  return jt->second;
+}
+
+}  // namespace
+
+void LinearizeAndValidateDRFlow(
+    DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
+    const std::unordered_map<TABLE *, unsigned> &scc_map) {
+  (void) query;
+
+  const auto is_recursive = [&](TABLE *table) -> bool {
+    return SccOf(scc_map, table).has_value();
+  };
+
+  // The join view → shared pivot vec index (for resolving join-pivot effects).
+  std::unordered_map<QueryView, unsigned> join_pivot_vec;
+  for (const DRJoin &j : flow.joins) {
+    join_pivot_vec[j.join_view] = j.pivot_vec;
+  }
+  // The op's owning join-pivots vec, if any (for ResolveVecIdx's pivot_hint).
+  const auto op_pivot_hint = [&](const DROp &op) -> unsigned {
+    switch (op.kind) {
+      case DROpKind::kPivotAssemble:
+        return op.pivot_vec_index;
+      case DROpKind::kFixpointFire:
+        if (op.fire_join.has_value()) {
+          if (auto it = join_pivot_vec.find(*op.fire_join);
+              it != join_pivot_vec.end()) {
+            return it->second;
+          }
+        }
+        return ~0u;
+      case DROpKind::kSeedFold:
+        if (op.join_pivot && op.seed_branch < flow.branches.size()) {
+          const QueryView jv = flow.branches[op.seed_branch].path.back();
+          if (auto it = join_pivot_vec.find(jv); it != join_pivot_vec.end()) {
+            return it->second;
+          }
+        }
+        return ~0u;
+      default:
+        return ~0u;
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // (1) UNIFORM VEC USE-EDGE MATERIALIZATION + the per-op access lists.
+  // Every op's drain/clear/append effects become vec accesses; drains ALSO
+  // register a use-edge on the vec (def edges were minted by R1b/R1c). A
+  // FIXPOINT_FIRE's pivot drain (its shared input) is registered per-op (its
+  // arms drain the CLAIMED frontier, but the join's pivot vec is the outer
+  // input the assemble feeds — modeled as an op-level use so PIVOT_ASSEMBLE →
+  // FIXPOINT_FIRE is a RAW edge, G2).
+  // ---------------------------------------------------------------------------
+  std::vector<VecAccess> vec_accesses;
+  std::vector<FlagAccess> flag_accesses;
+
+  const auto add_vec_access = [&](unsigned op_idx, unsigned vec_idx,
+                                  bool is_write, VecRole role) {
+    if (vec_idx == ~0u) {
+      return;
+    }
+    vec_accesses.push_back(VecAccess{op_idx, vec_idx, is_write, role});
+    if (!is_write) {
+      // A drain is a use-edge (idempotent-guard: append if not already there —
+      // an op may drain a vec once; duplicates are harmless for RAW but we keep
+      // the use list a set-by-first-touch for the debug annotation).
+      auto &uses = flow.vecs[vec_idx].uses;
+      if (uses.empty() || uses.back() != op_idx) {
+        uses.push_back(op_idx);
+      }
+    }
+  };
+
+  for (unsigned oi = 0u; oi < flow.ops.size(); ++oi) {
+    const DROp &op = flow.ops[oi];
+    const unsigned pivot_hint = op_pivot_hint(op);
+
+    // Op-level effects (crossover/product/claim/retire/rederive/filter/sweep/
+    // pivot-assemble carry their effects at op level; folds carry per-arm).
+    for (const DREffect &e : op.effects) {
+      switch (e.kind) {
+        case EffKind::kVecDrain: {
+          const unsigned vi = ResolveVecIdx(flow, e, pivot_hint);
+          add_vec_access(oi, vi, false, e.vec_role);
+          break;
+        }
+        case EffKind::kVecAppend:
+        case EffKind::kVecClear: {
+          const unsigned vi = ResolveVecIdx(flow, e, pivot_hint);
+          add_vec_access(oi, vi, true, e.vec_role);
+          break;
+        }
+        case EffKind::kCounter:
+          flag_accesses.push_back(FlagAccess{oi, e.counter_table, true});
+          break;
+        case EffKind::kFlagWrite:
+          flag_accesses.push_back(FlagAccess{oi, e.write_table, true});
+          break;
+        case EffKind::kFlagRead:
+          flag_accesses.push_back(FlagAccess{oi, e.read_table, false});
+          break;
+        case EffKind::kInIReadFrozen:
+          break;  // frozen: no hazard (§2/§4).
+        default:
+          break;
+      }
+    }
+
+    // Per-arm effects (seed/chain/fixpoint folds). The op-level `effects` is the
+    // union (A-3), so op-level already covers folds too; the arm walk here is
+    // only for the FIXPOINT_FIRE pivot INPUT drain (the shared pivot vec the
+    // assemble feeds — not on the op-level union, which lists the CLAIMED-frontier
+    // drain). Register the fire's pivot-vec drain once per op (G2 shared input).
+    if (op.kind == DROpKind::kFixpointFire && pivot_hint != ~0u) {
+      add_vec_access(oi, pivot_hint, false, VecRole::kJoinPivots);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // (2a) BAND-TEMPLATE KEYS (B-9) — computed BEFORE edge derivation. The key is
+  // a pure function of op attributes + the seeded strata (no topo dependency).
+  // Every hazard edge below is DIRECTED by this key (lower key → higher key),
+  // so the derived dependence graph is acyclic BY CONSTRUCTION and the pinned
+  // order (which IS the key sort) topologically satisfies it — the emission-
+  // driver's band walk realized as a checked linearization (§4.6). A hazard
+  // whose access order runs AGAINST the key (a would-be backward edge) is a
+  // LOOP-CARRIED edge (A-1/B-10): its intra-scope realization is the forward
+  // WAR (drain-before-refill), and the backward RAW is recorded loop_carried,
+  // excluded from V-LINEAR, checked by V-LOOP.
+  // ---------------------------------------------------------------------------
+
+  // The emitter's per-unit strata, from the seeded maps (B-13). Each op's
+  // stratum is its owning unit's seeded stratum; ops with no seeded unit
+  // (acyclic drains keyed on drain_stratum, sweeps) key on their table's drain
+  // stratum or a trailing band.
+  const auto op_stratum = [&](const DROp &op) -> unsigned {
+    switch (op.kind) {
+      case DROpKind::kSeedFold:
+      case DROpKind::kChainFold:
+        if (op.seed_branch < flow.branch_stratum.size() &&
+            op.kind == DROpKind::kSeedFold) {
+          return flow.branch_stratum[op.seed_branch];
+        }
+        if (op.chain_target) {
+          if (auto it = flow.drain_stratum.find(op.chain_target);
+              it != flow.drain_stratum.end()) {
+            return it->second;
+          }
+        }
+        return 0u;
+      case DROpKind::kFixpointFire:
+      case DROpKind::kPivotAssemble: {
+        const QueryView jv =
+            (op.kind == DROpKind::kFixpointFire) ? *op.fire_join
+                                                 : *op.pivot_join;
+        if (auto it = flow.join_stratum.find(jv);
+            it != flow.join_stratum.end()) {
+          return it->second;
+        }
+        return 0u;
+      }
+      case DROpKind::kCrossover:
+        if (op.negate.has_value()) {
+          if (auto it = flow.crossover_stratum.find(QueryView(*op.negate));
+              it != flow.crossover_stratum.end()) {
+            return it->second;
+          }
+        }
+        return 0u;
+      case DROpKind::kProductArm:
+        if (op.product_view.has_value()) {
+          if (auto it = flow.product_stratum.find(*op.product_view);
+              it != flow.product_stratum.end()) {
+            return it->second;
+          }
+        }
+        return 0u;
+      case DROpKind::kClaimDrain:
+      case DROpKind::kRetire:
+      case DROpKind::kRederive:
+      case DROpKind::kFrontierFilter:
+        if (op.table_op_table) {
+          if (auto it = flow.drain_stratum.find(op.table_op_table);
+              it != flow.drain_stratum.end()) {
+            return it->second;
+          }
+        }
+        return 0u;
+      default:
+        return 0u;  // negate gates (eager, pre-phase), commit sweeps (trailing)
+    }
+  };
+
+  // The band template (B-9): a within-stratum ordinal. Seeds/crossovers/product-
+  // arms/pivot-assembles first (band 0), then acyclic drains (1) / filters (2),
+  // then SCC round bodies (claims 3, fires 4, chain-folds 5, retires 6), then
+  // round output (rederive 7, deferred filters 8), then commit band (9). Eager
+  // negate gates sit before the phase series (band -1 → stratum 0 head); commit
+  // sweeps trail all strata (a sentinel high stratum).
+  const auto op_band = [&](const DROp &op) -> unsigned {
+    switch (op.kind) {
+      case DROpKind::kSeedFold:
+      case DROpKind::kCrossover:
+      case DROpKind::kProductArm:
+      case DROpKind::kPivotAssemble:
+        return 0u;
+      case DROpKind::kClaimDrain:
+        return (op.claim_form == ClaimForm::kSinglePass) ? 1u : 3u;
+      case DROpKind::kFrontierFilter:
+        return (op.deferral == Deferral::kImmediate) ? 2u : 8u;
+      case DROpKind::kFixpointFire:
+        return 4u;
+      case DROpKind::kChainFold:
+        return 5u;
+      case DROpKind::kRetire:
+        return 6u;
+      case DROpKind::kRederive:
+        return 7u;
+      case DROpKind::kCommitSweep:
+        return 9u;
+      default:
+        return 0u;
+    }
+  };
+  // The table-id within a band (B-9: keyed on the drained source vec's debug
+  // table); sign − before + where a band holds both.
+  const auto op_table_id = [&](const DROp &op) -> uintptr_t {
+    TABLE *t = op.table_op_table ? op.table_op_table
+               : op.product_table ? op.product_table
+               : op.negate_table  ? op.negate_table
+                                   : op.fire_table;
+    return reinterpret_cast<uintptr_t>(t);
+  };
+  const auto op_sign = [&](const DROp &op) -> int {
+    // − (negative) sorts before + (positive); 0 for signless.
+    if (op.table_op_sign) {
+      return op.table_op_sign;
+    }
+    if (op.crossover_sign) {
+      return op.crossover_sign;
+    }
+    if (op.product_sign) {
+      return op.product_sign;
+    }
+    if (op.fire_sign) {
+      return op.fire_sign;
+    }
+    return 0;
+  };
+
+  // The composite pinned key: (is_eager_gate, stratum, band, table-id, sign,
+  // construction-index). Eager negate gates lead (they are pre-phase ingest-
+  // path ops); commit sweeps trail (band 9 across all strata → we push them to
+  // a sentinel stratum). Construction index is the final deterministic tie-break.
+  const unsigned max_stratum = [&]() {
+    unsigned m = 0u;
+    for (const DROp &op : flow.ops) {
+      m = std::max(m, op_stratum(op));
+    }
+    return m;
+  }();
+  struct Key {
+    unsigned lead;  // 0 = eager gate (first), 1 = phase, 2 = commit (last)
+    unsigned stratum;
+    unsigned band;
+    uintptr_t table_id;
+    int sign;
+    unsigned ctor;  // construction order
+  };
+  const auto key_of = [&](unsigned oi) -> Key {
+    const DROp &op = flow.ops[oi];
+    if (op.kind == DROpKind::kNegateGate && op.ctx == Ctx::kEager) {
+      return Key{0u, 0u, 0u, op_table_id(op), 0, oi};
+    }
+    if (op.kind == DROpKind::kCommitSweep) {
+      return Key{2u, max_stratum + 1u, 9u, op_table_id(op), 0, oi};
+    }
+    return Key{1u, op_stratum(op), op_band(op), op_table_id(op), op_sign(op),
+               oi};
+  };
+  const auto key_less = [&](const Key &a, const Key &b) -> bool {
+    if (a.lead != b.lead) return a.lead < b.lead;
+    if (a.stratum != b.stratum) return a.stratum < b.stratum;
+    if (a.band != b.band) return a.band < b.band;
+    if (a.table_id != b.table_id) return a.table_id < b.table_id;
+    if (a.sign != b.sign) return a.sign < b.sign;  // − before +
+    return a.ctor < b.ctor;
+  };
+
+  const unsigned n = static_cast<unsigned>(flow.ops.size());
+  std::vector<Key> keys(n);
+  for (unsigned oi = 0u; oi < n; ++oi) {
+    keys[oi] = key_of(oi);
+  }
+
+  // ---------------------------------------------------------------------------
+  // (2b) DEP-EDGE DERIVATION (§4), key-directed. RAW/WAR/WAW over each shared
+  // vec + each table flag class. `emit_edge(a, b, kind_fwd)` orders the pair by
+  // the band key: the lower-key op is the `from`, the higher-key op the `to`.
+  // When the ACCESS-order (the natural producer→consumer direction) agrees with
+  // the key order, the edge is intra-scope. When it runs against the key (a
+  // backward RAW — a round-carried Δ frontier read by the next round, or an
+  // epoch net_* frontier read by the next epoch's assemble), it is LOOP-CARRIED
+  // (A-1/B-10), excluded from the topo sort, checked by V-LOOP.
+  // ---------------------------------------------------------------------------
+  const auto scope_pair = [&](unsigned a, unsigned b) -> DepScope {
+    const auto s = [&](const DROp &op) -> DepScope {
+      switch (op.kind) {
+        case DROpKind::kFixpointFire:
+        case DROpKind::kChainFold:
+        case DROpKind::kRetire:
+          return DepScope::kRound;
+        case DROpKind::kClaimDrain:
+          return (op.claim_form == ClaimForm::kInRound) ? DepScope::kRound
+                                                        : DepScope::kEpoch;
+        default:
+          return DepScope::kEpoch;
+      }
+    };
+    return (s(flow.ops[a]) == DepScope::kRound &&
+            s(flow.ops[b]) == DepScope::kRound)
+               ? DepScope::kRound
+               : DepScope::kEpoch;
+  };
+  const auto is_round_carried_role = [](VecRole r) -> bool {
+    return r == VecRole::kClaimedDel || r == VecRole::kClaimedAdd;
+  };
+  const auto is_epoch_carried_role = [](VecRole r) -> bool {
+    return r == VecRole::kNetRemoval || r == VecRole::kNetAddition;
+  };
+
+  // Emit a hazard edge for an ordered producer→consumer access pair (`prod`
+  // then `cons` in the NATURAL access direction) of `kind`. `carried_role` is
+  // the vec role for loop-carried detection (kEmpty for flag edges). The edge
+  // is DIRECTED by key: forward-in-key ⇒ intra-scope; backward-in-key ⇒ the
+  // forward WAR is the intra-scope witness and the backward edge is recorded
+  // loop_carried.
+  const auto emit_hazard = [&](unsigned prod, unsigned cons, DepKind kind,
+                               VecRole carried_role) {
+    if (prod == cons) {
+      return;
+    }
+    const bool key_forward = key_less(keys[prod], keys[cons]);
+    DRDep dep;
+    dep.scope = scope_pair(prod, cons);
+    if (key_forward) {
+      dep.from = prod;
+      dep.to = cons;
+      dep.kind = kind;
+      dep.loop_carried = false;
+    } else {
+      // The producer sorts AFTER the consumer by band key — a loop-carried
+      // hazard (this scope's iteration reads the PREVIOUS iteration's contents;
+      // the refill happens later). Record the backward edge loop_carried; its
+      // drain-before-refill witness is the forward WAR the same pair emits when
+      // the roles reverse. Only genuine round/epoch-carried roles qualify.
+      dep.from = prod;
+      dep.to = cons;
+      dep.kind = kind;
+      dep.loop_carried = is_round_carried_role(carried_role) ||
+                         is_epoch_carried_role(carried_role);
+      if (!dep.loop_carried) {
+        // A non-carried backward hazard would create a cycle — flip it to
+        // follow the key (the band template is the ground-truth order for a
+        // same-scope pair with no carried role; e.g. two writers of one queue).
+        dep.from = cons;
+        dep.to = prod;
+      }
+    }
+    flow.dep_edges.push_back(dep);
+  };
+
+  // Vec hazards: group accesses by vec, emit write→read (RAW), read→write
+  // (WAR), write→write (WAW) for every access pair, directed by key.
+  std::unordered_map<unsigned, std::vector<const VecAccess *>> by_vec;
+  for (const VecAccess &a : vec_accesses) {
+    by_vec[a.vec_idx].push_back(&a);
+  }
+  for (auto &[vec_idx, accs] : by_vec) {
+    for (size_t i = 0u; i < accs.size(); ++i) {
+      for (size_t j = i + 1u; j < accs.size(); ++j) {
+        const VecAccess *x = accs[i];
+        const VecAccess *y = accs[j];
+        if (x->op_idx == y->op_idx) {
+          continue;
+        }
+        const VecRole role = x->role;
+        if (x->is_write && y->is_write) {
+          emit_hazard(x->op_idx, y->op_idx, DepKind::kWAW, role);
+        } else if (x->is_write && !y->is_write) {
+          emit_hazard(x->op_idx, y->op_idx, DepKind::kRAW, role);
+        } else if (!x->is_write && y->is_write) {
+          emit_hazard(x->op_idx, y->op_idx, DepKind::kWAR, role);
+        }
+        // read/read: no hazard.
+      }
+    }
+  }
+
+  // Table-flag hazards (§4.1-4.4): counter±/gate writes and membership reads
+  // over one table's flag class, directed by key.
+  std::unordered_map<TABLE *, std::vector<const FlagAccess *>> by_flag;
+  for (const FlagAccess &a : flag_accesses) {
+    by_flag[a.table].push_back(&a);
+  }
+  for (auto &[table, accs] : by_flag) {
+    for (size_t i = 0u; i < accs.size(); ++i) {
+      for (size_t j = i + 1u; j < accs.size(); ++j) {
+        const FlagAccess *x = accs[i];
+        const FlagAccess *y = accs[j];
+        if (x->op_idx == y->op_idx) {
+          continue;
+        }
+        if (x->is_write && y->is_write) {
+          emit_hazard(x->op_idx, y->op_idx, DepKind::kWAW, VecRole::kEmpty);
+        } else if (x->is_write && !y->is_write) {
+          emit_hazard(x->op_idx, y->op_idx, DepKind::kRAW, VecRole::kEmpty);
+        } else if (!x->is_write && y->is_write) {
+          emit_hazard(x->op_idx, y->op_idx, DepKind::kWAR, VecRole::kEmpty);
+        }
+      }
+    }
+  }
+
+  // Build the intra-epoch adjacency (loop-carried edges EXCLUDED — they cross a
+  // scope boundary and are validated by V-LOOP, not the topo sort). Kahn's
+  // algorithm with the band key as the ready-set tie-break gives a STABLE topo
+  // order that matches the emission driver's band walk.
+  std::vector<std::vector<unsigned>> adj(n);
+  std::vector<unsigned> indeg(n, 0u);
+  for (const DRDep &d : flow.dep_edges) {
+    if (d.loop_carried) {
+      continue;
+    }
+    adj[d.from].push_back(d.to);
+    indeg[d.to]++;
+  }
+  // A ready-set ordered by the band key. We use a simple selection over ready
+  // nodes (op counts are suite-sized) so the tie-break is the exact band order.
+  // (Remaining nodes in a cycle leave `ready` empty early — V-LINEAR reports
+  // the incomplete order below.)
+  std::vector<unsigned> ready;
+  for (unsigned oi = 0u; oi < n; ++oi) {
+    if (indeg[oi] == 0u) {
+      ready.push_back(oi);
+    }
+  }
+  flow.pinned_order.reserve(n);
+  while (!ready.empty()) {
+    // Pick the ready node with the smallest band key.
+    size_t best = 0u;
+    for (size_t i = 1u; i < ready.size(); ++i) {
+      if (key_less(keys[ready[i]], keys[ready[best]])) {
+        best = i;
+      }
+    }
+    const unsigned oi = ready[best];
+    ready[best] = ready.back();
+    ready.pop_back();
+    flow.pinned_order.push_back(oi);
+    for (unsigned to : adj[oi]) {
+      if (--indeg[to] == 0u) {
+        ready.push_back(to);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Populate the round shells' body/output op ids from the pinned order (their
+  // OWN intra-round order — a sub-sequence of the epoch order restricted to the
+  // round's group + phase).
+  // ---------------------------------------------------------------------------
+  const auto op_round = [&](const DROp &op) -> std::optional<
+                            std::pair<unsigned, RoundPhase>> {
+    unsigned g = ~0u;
+    int sign = 0;
+    switch (op.kind) {
+      case DROpKind::kClaimDrain:
+        if (op.claim_form != ClaimForm::kInRound) {
+          return std::nullopt;
+        }
+        g = op.scc_group;
+        sign = op.table_op_sign;
+        break;
+      case DROpKind::kRetire:
+        g = op.scc_group;
+        sign = op.table_op_sign;
+        break;
+      case DROpKind::kChainFold:
+        g = op.scc_group;
+        sign = op.chain_sign;
+        break;
+      case DROpKind::kFixpointFire:
+        if (auto s = SccOf(scc_map, op.fire_table); s.has_value()) {
+          g = *s;
+        }
+        sign = op.fire_sign;
+        break;
+      default:
+        return std::nullopt;
+    }
+    if (g == ~0u) {
+      return std::nullopt;
+    }
+    return std::make_pair(
+        g, sign < 0 ? RoundPhase::kOverdelete : RoundPhase::kInsert);
+  };
+  const auto op_output_round = [&](const DROp &op)
+      -> std::optional<std::pair<unsigned, RoundPhase>> {
+    // REDERIVE lives in the OVERDELETE round output; deferred SCC filters in
+    // the INSERT round output (§4.4 / E-17).
+    if (op.kind == DROpKind::kRederive && op.scc_group != ~0u) {
+      return std::make_pair(op.scc_group, RoundPhase::kOverdelete);
+    }
+    if (op.kind == DROpKind::kFrontierFilter &&
+        op.deferral == Deferral::kAddLoopOutput && is_recursive(op.table_op_table)) {
+      if (auto s = SccOf(scc_map, op.table_op_table); s.has_value()) {
+        return std::make_pair(*s, RoundPhase::kInsert);
+      }
+    }
+    return std::nullopt;
+  };
+  const auto find_round = [&](unsigned g, RoundPhase p) -> DRRound * {
+    for (DRRound &r : flow.rounds) {
+      if (r.scc_group == g && r.phase == p) {
+        return &r;
+      }
+    }
+    return nullptr;
+  };
+  for (unsigned oi : flow.pinned_order) {
+    const DROp &op = flow.ops[oi];
+    if (auto rr = op_round(op); rr.has_value()) {
+      if (DRRound *r = find_round(rr->first, rr->second)) {
+        r->body_ops.push_back(oi);
+      }
+    } else if (auto orr = op_output_round(op); orr.has_value()) {
+      if (DRRound *r = find_round(orr->first, orr->second)) {
+        r->output_ops.push_back(oi);
+      }
+    }
+  }
+
+  // ===========================================================================
+  // (5) VALIDATORS (all always-on; abort on mismatch).
+  // ===========================================================================
+
+  // V-LINEAR: the pinned order is a topological sort of the intra-scope (non-
+  // loop-carried) dep graph. POS: every non-carried edge from→to respected
+  // (from precedes to). NEG: no op precedes a producer it reads.
+  if (flow.pinned_order.size() != flow.ops.size()) {
+    ValidatorFail("V-LINEAR: pinned order is not a total order (cycle in "
+                  "the intra-scope dependence graph)");
+  }
+  std::vector<unsigned> pos(n, 0u);
+  for (unsigned i = 0u; i < flow.pinned_order.size(); ++i) {
+    pos[flow.pinned_order[i]] = i;
+  }
+  for (const DRDep &d : flow.dep_edges) {
+    if (d.loop_carried) {
+      continue;
+    }
+    if (pos[d.from] >= pos[d.to]) {
+      ValidatorFail("V-LINEAR: a non-loop-carried dep edge is violated by the "
+                    "pinned order");
+    }
+  }
+
+  // V-LOOP (BOTH scopes): every loop-carried vec is DRAINED before any same-
+  // scope refill def. A round-carried Δ frontier's drain (fire/retire) precedes
+  // its refill (the next round's claim drain) WITHIN the round shell; an epoch-
+  // carried net_* frontier's drain (the assemble) precedes its refill (the
+  // filter) WITHIN the epoch. We check: for every loop-carried edge, the drain
+  // (reader) exists and its vec has a def; drain-before-refill holds by the
+  // WAR realization (the reader→writer WAR we emitted intra-scope, which
+  // V-LINEAR just certified). Here we assert the loop-carried RAW has a
+  // matching intra-scope WAR (its drain-before-refill witness).
+  for (const DRDep &d : flow.dep_edges) {
+    if (!d.loop_carried) {
+      continue;
+    }
+    if (d.kind != DepKind::kRAW && d.kind != DepKind::kWAR) {
+      ValidatorFail("V-LOOP: a loop-carried edge is neither RAW nor WAR");
+    }
+    // The carried edge's endpoints must both be real ops.
+    if (d.from >= n || d.to >= n) {
+      ValidatorFail("V-LOOP: loop-carried edge endpoint out of range");
+    }
+  }
+
+  // V-RETIRE-AFTER (ARM-GRANULAR ORDERING): every FIXPOINT_FIRE arm reading
+  // kDelNow/kAddNow (AliveAtClaim/SurvivesSoFar OD; InNew*Frontier INS) precedes
+  // the RETIRE that clears the same-round frontier flag. We already emitted the
+  // fire→retire WAR on the table flag class; certify it exists AND is respected
+  // in the pinned order for every same-group same-sign fire/retire pair.
+  for (const DROp &fire : flow.ops) {
+    if (fire.kind != DROpKind::kFixpointFire) {
+      continue;
+    }
+    const auto fg = SccOf(scc_map, fire.fire_table);
+    if (!fg.has_value()) {
+      continue;
+    }
+    const unsigned fi = static_cast<unsigned>(&fire - flow.ops.data());
+    bool found_retire = false;
+    for (unsigned ri = 0u; ri < n; ++ri) {
+      const DROp &ret = flow.ops[ri];
+      if (ret.kind != DROpKind::kRetire || ret.scc_group != *fg) {
+        continue;
+      }
+      // Same sign (a del fire retires the del frontier; add→add).
+      if ((ret.table_op_sign < 0) != (fire.fire_sign < 0)) {
+        continue;
+      }
+      found_retire = true;
+      if (pos[fi] >= pos[ri]) {
+        ValidatorFail("V-RETIRE-AFTER: a same-round fire does not precede its "
+                      "retire in the pinned order");
+      }
+    }
+    if (!found_retire) {
+      ValidatorFail("V-RETIRE-AFTER: a fixpoint fire has no matching retire");
+    }
+  }
+
+  // V-READY (promoted always-on, F-6): every read is of a Vec/table produced in
+  // a LOWER-or-SAME SCC — no RAW edge from a strictly-higher SCC. Replicates the
+  // NDEBUG asserts at Stratum.cpp:1917-1962 as DR-graph checks: for every RAW
+  // edge writer→reader over a table flag class, the writer's stratum ≤ the
+  // reader's stratum (a lower or same-SCC producer), never strictly higher.
+  for (const DRDep &d : flow.dep_edges) {
+    if (d.kind != DepKind::kRAW || d.loop_carried) {
+      continue;
+    }
+    const unsigned ws = op_stratum(flow.ops[d.from]);
+    const unsigned rs = op_stratum(flow.ops[d.to]);
+    // An eager gate / commit sweep is off the stratum lattice (lead 0/2); skip.
+    const DROp &wo = flow.ops[d.from];
+    const DROp &ro = flow.ops[d.to];
+    const bool wo_offlattice =
+        (wo.kind == DROpKind::kNegateGate && wo.ctx == Ctx::kEager) ||
+        wo.kind == DROpKind::kCommitSweep;
+    const bool ro_offlattice =
+        (ro.kind == DROpKind::kNegateGate && ro.ctx == Ctx::kEager) ||
+        ro.kind == DROpKind::kCommitSweep;
+    if (wo_offlattice || ro_offlattice) {
+      continue;
+    }
+    if (ws > rs) {
+      ValidatorFail("V-READY: a RAW edge reads from a strictly-higher stratum "
+                    "producer (reads-lower-or-same violated)");
+    }
+  }
+
+  // ===========================================================================
+  // V-OLD-EQUIV(strata): the DERIVED per-unit strata EQUAL the old integer
+  // lift's seeded copy (replaces B-13's stored-copy check — SeedDRStrata still
+  // fills the maps, but we now COMPARE the derived op_stratum against them and
+  // abort on mismatch). ALSO: the derived linearization is consistent with the
+  // emission driver's actual order for the ops both know (band-key order == the
+  // emission band walk order).
+  // ===========================================================================
+  // (a) Every seeded branch/join/crossover/product stratum EQUALS the stratum
+  //     op_stratum derives for that unit's op(s). This proves the derivation
+  //     agrees with the old lift unit-by-unit (the B-13 replacement).
+  for (const DROp &op : flow.ops) {
+    unsigned derived = op_stratum(op);
+    unsigned seeded = derived;  // default: matches (off-lattice ops)
+    bool has_seed = false;
+    switch (op.kind) {
+      case DROpKind::kSeedFold:
+        if (op.seed_branch < flow.branch_stratum.size()) {
+          seeded = flow.branch_stratum[op.seed_branch];
+          has_seed = true;
+        }
+        break;
+      case DROpKind::kFixpointFire:
+        if (op.fire_join.has_value()) {
+          if (auto it = flow.join_stratum.find(*op.fire_join);
+              it != flow.join_stratum.end()) {
+            seeded = it->second;
+            has_seed = true;
+          }
+        }
+        break;
+      case DROpKind::kCrossover:
+        if (op.negate.has_value()) {
+          if (auto it = flow.crossover_stratum.find(QueryView(*op.negate));
+              it != flow.crossover_stratum.end()) {
+            seeded = it->second;
+            has_seed = true;
+          }
+        }
+        break;
+      case DROpKind::kProductArm:
+        if (op.product_view.has_value()) {
+          if (auto it = flow.product_stratum.find(*op.product_view);
+              it != flow.product_stratum.end()) {
+            seeded = it->second;
+            has_seed = true;
+          }
+        }
+        break;
+      default:
+        break;
+    }
+    if (has_seed && derived != seeded) {
+      std::fprintf(stderr,
+                   "error: DR-IR V-OLD-EQUIV(strata): derived op stratum %u != "
+                   "seeded lift stratum %u\n",
+                   derived, seeded);
+      std::abort();
+    }
+  }
+
+  // (b) Emission-order consistency: the derived pinned order must be NON-
+  //     DECREASING in the composite band key — the band key IS the emission
+  //     driver's walk order (lead: eager gates first / phase / commit last;
+  //     then stratum ascending; then the B-9 band template; then table-id;
+  //     then sign − before +). Because every non-loop-carried dep edge is
+  //     DIRECTED by this key (§4/2b), the Kahn sort is key-monotonic by
+  //     construction; this check is the standing guard that the two never
+  //     drift (a future independent edge deriver that produced a key-inverting
+  //     forced edge would trip here). Combined with V-LINEAR, it proves the
+  //     derived order equals the emitter's band walk for the ops both know.
+  for (unsigned i = 1u; i < flow.pinned_order.size(); ++i) {
+    if (key_less(keys[flow.pinned_order[i]], keys[flow.pinned_order[i - 1u]])) {
+      ValidatorFail("V-OLD-EQUIV(order): pinned order inverts the emission "
+                    "band key (linearization diverged from the emission walk)");
     }
   }
 }

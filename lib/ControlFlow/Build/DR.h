@@ -122,6 +122,9 @@ enum class DROpKind : uint8_t {
   kFrontierFilter, // §2.1 FRONTIER_FILTER: table × sign (immediate|deferred)
   kCommitSweep,    // §2.1 COMMIT_SWEEP: per differential table (flavor)
   kNegateGate,     // §2.1 NEGATE_GATE: context∈{eager,seed,fixpoint} × hint
+  kPivotAssemble,  // §2.1 PIVOT_ASSEMBLE: per SCC join (union → shared pivot vec)
+  kIngestFold,     // §2.1 INGEST_FOLD: entry-proc message→table seed (R1d cut —
+                   //   see the eager-walk inventory note; NOT populated in R1d)
 };
 
 // The negate-gate hint (F-5): a normal negate vs an @never negate. Distinct
@@ -425,6 +428,23 @@ class DROp {
   Pred claim_gate{Pred::kNetDeleted};  // the F17 dequeue re-test, AS DATA
   unsigned scc_group{~0u};             // the owning SCC id for in-round/scc ops
 
+  // R1d: the COMMIT_SWEEP publish-target, its OWN named field (drops the
+  // reused `join_pivot` bool the R1c sweep block borrowed — flagged in the
+  // R1c ledger). True iff the swept table backs a @differential TRANSMIT (G9).
+  bool publish_target{false};
+
+  // ---- PIVOT_ASSEMBLE data (kind == kPivotAssemble) ------------------------
+  // The seed-block pivot union per SCC join (G2): the dual-section walk unions
+  // each feeding branch/sign's pivots into the join's ONE shared kJoinPivots
+  // vec (the FIXPOINT_FIRE arms' shared input). `pivot_join` is the join view;
+  // `pivot_vec_index` indexes `DRFlowGraph::vecs` (== the DRJoin's pivot_vec);
+  // `pivot_source_tables` are the delta-source tables whose signed frontiers
+  // the assemble drains (dual-section registration mirror). The effects carry
+  // one vector:drain per source×sign + the vector:clear+append of the pivot vec.
+  std::optional<QueryView> pivot_join;
+  unsigned pivot_vec_index{0u};
+  std::vector<TABLE *> pivot_source_tables;
+
   // ---- NEGATE_GATE data (kind == kNegateGate) ------------------------------
   // An ACCESS whose pred is the negate forward gate, polarity=ABSENT, derived
   // from (context, hint) — NEVER sign-derived (F-5 / V-NEG-CTX). `gate_negate`
@@ -444,6 +464,58 @@ class DROp {
 };
 
 // ---------------------------------------------------------------------------
+// §2.1 FIXPOINT_ROUND — a STRUCTURED REGION (container) per SCC × phase (G4).
+// R1d models the round SHELL: it OWNS its body op ids + test vecs (the per-SCC-
+// table claimed-* frontiers re-exported as the loop break condition) and the
+// per-round bookkeeping FACTS: the round-start frontier CLEAR (one per SCC
+// table, Stratum.cpp:2287-2297) and the Δ-emptiness BREAK (the loop terminates
+// when a round claims nothing — NOT queue-emptiness; Stratum.cpp:2262-2264).
+// The round is a scheduling BLACK BOX to the epoch linearizer (its internal
+// order is its own checked linearization, §4.6); round-carried vecs are
+// loop-carried at ROUND scope (A-1/B-10, V-LOOP).
+// ---------------------------------------------------------------------------
+enum class RoundPhase : uint8_t { kOverdelete, kInsert };
+
+class DRRound {
+ public:
+  unsigned scc_group{~0u};
+  RoundPhase phase{RoundPhase::kOverdelete};
+
+  // The claimed-* frontier vec of each SCC table this round clears/re-exports
+  // (the fixpoint-test vec set — Δ-emptiness break reads these). Index into
+  // `DRFlowGraph::vecs`. Cleared at round start, refilled by the in-round
+  // claim drains, drained by the fires/chain-folds, retired at round tail.
+  std::vector<unsigned> test_vecs;
+
+  // The body op ids (claim drains, fires, chain-folds, retires), in the round's
+  // OWN pinned order (band template: clears → claims → fires → chain-folds →
+  // retires; §4.6 / B-9). Index into `DRFlowGraph::ops`.
+  std::vector<unsigned> body_ops;
+
+  // The output-region op ids: REDERIVE (OVERDELETE round) or the deferred
+  // FRONTIER_FILTERs (INSERT round) — E-17 / §4.4.
+  std::vector<unsigned> output_ops;
+};
+
+// ---------------------------------------------------------------------------
+// §4 DEPENDENCE EDGE. A derived RAW/WAR/WAW edge X→Y over a shared Value W
+// (a Vec, or a (table,flag-class) counter/flag-set). `loop_carried` marks a
+// cross-scope RAW whose intra-scope realization is a WAR (drain-before-refill):
+// A-1 at epoch scope, B-10 at round scope. Loop-carried edges are EXCLUDED
+// from intra-scope topo checking (V-LINEAR) and validated by V-LOOP instead.
+// ---------------------------------------------------------------------------
+enum class DepKind : uint8_t { kRAW, kWAR, kWAW };
+enum class DepScope : uint8_t { kEpoch, kRound };
+
+struct DRDep {
+  unsigned from{0u};    // op index (producer/earlier)
+  unsigned to{0u};      // op index (consumer/later)
+  DepKind kind{DepKind::kRAW};
+  DepScope scope{DepScope::kEpoch};
+  bool loop_carried{false};
+};
+
+// ---------------------------------------------------------------------------
 // §0 FLOW GRAPH — owns the value/op vectors and the recursive-SCC map. R1b
 // populates the crossover + product-arm ops, the table inventory, the
 // materialized per-table/per-join DRVecs, the independently-derived branch/join
@@ -455,6 +527,13 @@ class DRFlowGraph {
   std::vector<DRVec> vecs;      // R1b: per-table queues/sets/frontiers + pivots
   std::vector<DRTable> tables;  // debug-labelled models referenced by ops
   std::vector<DROp> ops;        // R1a: crossover pairs + product arms
+
+  // R1d: the FIXPOINT_ROUND region shells (per SCC × phase), the derived §4
+  // dependence graph, and the pinned linearization (op ids in emission order —
+  // the epoch-scope order; each round's internal order is on `DRRound`).
+  std::vector<DRRound> rounds;
+  std::vector<DRDep> dep_edges;
+  std::vector<unsigned> pinned_order;  // §4.6 checked linearization (epoch scope)
 
   // The independently-derived branch/join inventory (§1.4, memoized worklist).
   std::vector<DRBranch> branches;
@@ -586,6 +665,35 @@ void ValidateDRInventory(
 // abort (survives NDEBUG, matching `ValidateDRInventory`).
 void ValidateDROps(
     const DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
+    const std::unordered_map<TABLE *, unsigned> &scc_map);
+
+// R1d: the LAST construction stage. In one pass over `flow` (already carrying
+// R1a-R1c's ops + R1d's PIVOT_ASSEMBLE / eager NEGATE_GATE / round shells,
+// minted by `BuildDRInventory`), this:
+//   (1) uniformly MATERIALIZES every op's vec use-edges from its drain/gate
+//       effects (def-edges stay as R1b/R1c minted them, multi-def per A-4);
+//   (2) DERIVES the §4 RAW/WAR/WAW dependence graph from effect intersections
+//       over vecs + flag-classes + counters (kInI reads frozen — no hazard),
+//       with loop-carried classification at BOTH epoch and round scope
+//       (A-1/B-10);
+//   (3) LINEARIZES independently: `pinned_order` = a topological sort of the
+//       intra-epoch dep graph + the B-9 band-template tie-breaks; each round's
+//       `body_ops`/`output_ops` are its own intra-round order.
+// Then it VALIDATES (all always-on, abort on mismatch):
+//   V-LINEAR (pinned order is a topo sort of intra-scope edges),
+//   V-LOOP (drain-before-refill per scope),
+//   V-RETIRE-AFTER (arm-granular ordering: fires reading kDelNow/kAddNow
+//     precede the retire clearing them),
+//   V-READY (every read strictly-lower-or-same-SCC),
+//   V-OLD-EQUIV(strata): the DERIVED per-unit strata EQUAL the old integer
+//     lift's seeded copy (replaces B-13's stored-copy check), AND the derived
+//     linearization is consistent with the emission driver's actual order for
+//     the ops both know (the census keys give the mapping).
+//
+// Takes the live discovery inputs (like `ValidateDROps`) to recompute the
+// emitter's per-unit strata + census-order independently.
+void LinearizeAndValidateDRFlow(
+    DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map);
 
 }  // namespace hyde

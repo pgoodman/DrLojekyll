@@ -1888,6 +1888,14 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     // drains, retires, rederives, filters, sweeps, negate gates) + the op-
     // inventory census against this emission driver's counting rules.
     ValidateDROps(dr_flow, impl, context, query, recursive_sccs);
+
+    // R1d (LAST construction stage): materialize vec use-edges uniformly,
+    // derive the §4 RAW/WAR/WAW dependence graph + loop-carried edges (A-1/
+    // B-10), independently linearize (pinned order = band-template topo sort),
+    // populate the FIXPOINT_ROUND shells, and run V-LINEAR / V-LOOP /
+    // V-RETIRE-AFTER (arm-granular) / V-READY / V-OLD-EQUIV(strata + emission
+    // order). Still construct-alongside: no emission below is touched.
+    LinearizeAndValidateDRFlow(dr_flow, impl, context, query, recursive_sccs);
   }
 
   // Cash the readiness precondition, SPLIT by emission-site kind (A4).

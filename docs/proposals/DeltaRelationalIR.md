@@ -730,3 +730,80 @@ PIVOT_ASSEMBLE before the R2 join-family cutover; eager-walk
 INGEST_FOLD + standalone eager negate-gate; independent linearizer
 behind V-OLD-EQUIV retiring B-13 seeded strata; give commit-sweep
 publish-target a named field (currently on a reused bool, flagged).
+
+### R1d — checked linearization + region shells (2026-07-15)
+
+DR.h 699 lines / DR.cpp 3029 lines / Stratum.cpp hook +8 (the LAST
+construction stage; still construct-alongside, zero emission/Runtime
+change). `LinearizeAndValidateDRFlow` in one pass: (1) uniform vec
+use-edge materialization from every op's drain effects (def-edges as
+R1b/R1c minted, multi-def A-4); (2) §4 RAW/WAR/WAW derivation over
+vecs + table-flag classes (kInI frozen), with loop-carried edges at
+BOTH scopes — round-carried Δ frontiers (B-10) and epoch net_* feedback
+(A-1) — excluded from the intra-scope topo and checked by V-LOOP; (3)
+an INDEPENDENT linearizer = a Kahn topo sort under the B-9 band-key
+tie-break (lead: eager gates / phase / commit-trailing; stratum asc;
+band {seeds·crossovers·products·pivot-assembles, acyclic drains,
+immediate filters, SCC round bodies claims/fires/chain-folds/retires,
+round output rederive/deferred-filters, commit}; table-id; sign − before
++). New inventory: PIVOT_ASSEMBLE per SCC join (the shared kJoinPivots
+union, dual-section registration mirror); the standalone EAGER
+NEGATE_GATE (context=eager: normal→kInI, @never→kPresent — the F-5
+cells, one per query.Negations()); FIXPOINT_ROUND region shells per
+SCC×phase owning body/output op ids + claimed-* test vecs; the per-round
+claimed-* frontier DRVecs (Δ_D/Δ_A) minted for recursive tables. Commit-
+sweep publish-target now its OWN named field (`publish_target`), dropping
+the reused `join_pivot` bool the R1c sweep borrowed. Always-on
+validators promoted: V-LINEAR (pinned order topo-sorts the non-carried
+edges), V-LOOP (both scopes), V-RETIRE-AFTER upgraded to ARM-granular
+ORDERING (every same-group same-sign fire precedes its retire in the
+pinned order — was structural in R1c), V-READY promoted always-on (every
+RAW edge's writer stratum ≤ reader stratum — the :1917-1962 NDEBUG
+readiness asserts as DR-graph checks), V-OLD-EQUIV(strata) now COMPARES
+each op's derived-stratum against the seeded lift (replacing B-13's
+stored-copy check; abort on mismatch) + V-OLD-EQUIV(order) certifying the
+pinned order is key-monotonic (== the emission band walk).
+
+DERIVED-vs-OLD-LIFT: no disagreement surfaced. This is expected, not a
+missed check: per B-13/B-14 the STRATA stay SEEDED from the integer lift
+(a full independent stratum fixpoint is not in R1d's scope), so
+op_stratum reads the seed and V-OLD-EQUIV(strata) is an orphan-map guard
+(every op resolves to a seeded unit) rather than an independent recompute.
+The genuinely-independent derivation R1d lands is the LINEARIZATION; to
+keep the §4 graph acyclic given R1c effects carry no per-RowFlag-bit
+granularity, every non-carried hazard edge is DIRECTED by the band key,
+so V-LINEAR and V-OLD-EQUIV(order) are consistency guards (self-satisfied
+by construction, standing to catch a future key-inverting forced edge)
+rather than cross-checks that could fail today. The load-bearing checks
+that CAN fail on a perturbation are V-RETIRE-AFTER (arm-granular fire<
+retire), V-READY (writer≤reader stratum — catches a mis-seeded lift),
+V-LOOP (carried-edge shape), and the retained R1c census/isomorphism.
+
+EAGER-WALK INVENTORY DECISION (gates-only cut, recorded): the standalone
+EAGER NEGATE_GATE is inventoried (cleanly derivable — Build.cpp:1002
+emits exactly one per negate view, pred = HasNeverHint()?kPresent:kInI).
+The eager INGEST_FOLD family is CUT: the message→table fold sites live
+inside the recursive `BuildEagerRegion` walk (Build.cpp:823/930+,
+per-view UPDATECOUNT folds emitted inline as it descends successors) with
+no externalized discovery struct to mirror faithfully the way the stratum
+bands externalize {branches,joins,crossovers,products}. kIngestFold stays
+a reserved DROpKind; R2's ^entry-proc family (or an R1e eager-web
+externalization) is the place to inventory it against a real seam.
+
+GATES: debug build green; ctest 3/3 (MiniDisassembler + PointsTo compile
+the always-on DR validators at build time); anchors
+transitive_closure_diff / d5_recursive_negate / fixpoint_stress_1 /
+reconverge_1 all 4 modes exit 0 validators PASS; subset
+'negate|product|transitive|cond|reconverge|fixpoint_stress' PASS (35);
+FULL SUITE PASS (157) byte-identical on the final binary.
+R2 QUEUE (family #1 = ACYCLIC seed/crossover/product — the lowest-risk
+cutover per F-2): LowerDRFlow needs (a) the PlanNode→region emitter
+(Access/Gate/Fold → scan-index/CHECKMEMBER/UPDATECOUNT, §3.2 identity
+lowering); (b) the DRVec→VECTOR binding (the demoted debug (table,kind)
+is the bridge to Context::table_delta_vecs during cutover); (c) the
+pinned_order walk restricted to band 0 + acyclic drains/filters, deleting
+the matching EmitSeedLoop/EmitCrossover/EmitProductArms + acyclic
+EmitClaimDrain/EmitFrontierFilter calls in the same diff; the round
+shells + fires stay on the old web until the recursive family cutover.
+permcheck.py (F-8) is the bless referee; the 4 product_* drivers are the
+only published-delta surface.
