@@ -147,6 +147,19 @@ enum class Deferral : uint8_t { kImmediate, kAddLoopOutput };
 // table's model flavor.
 enum class SweepFlavor : uint8_t { kDifferential, kMonotone };
 
+// The F17 claim-drain DEQUEUE re-test (spec §2.1 CLAIM_DRAIN; F17). A DEDICATED
+// vocabulary for the two gates the emitter's TryClaimDel/TryClaimAdd apply —
+// NOT a `Pred` membership predicate (finding 2: the earlier encoding abused
+// Pred::kNetDeleted/kNetAdded as a stand-in, which is semantically WRONG if ever
+// consumed — those are flag-read predicates, not the C_nr/total counter gates).
+// DERIVED purely from the drain sign: a `-` drain gates on C_nr<=0 (the row's
+// net-delete counter is non-positive — nothing left to overdelete), a `+` drain
+// gates on total>0 (the row's total derivation count is positive — it is live).
+enum class ClaimGate : uint8_t {
+  kDelGateCnrNonPositive,  // TryClaimDel: C_nr <= 0
+  kAddGateTotalPositive,   // TryClaimAdd: total > 0
+};
+
 // ---------------------------------------------------------------------------
 // §2 EFFECT SET. One entry of an op's effect vector (A-3: an op's set is the
 // union of its per-arm sets; R1a carries the op-level union directly). A
@@ -425,7 +438,10 @@ class DROp {
   ClaimForm claim_form{ClaimForm::kSinglePass};
   Deferral deferral{Deferral::kImmediate};
   SweepFlavor sweep_flavor{SweepFlavor::kDifferential};
-  Pred claim_gate{Pred::kNetDeleted};  // the F17 dequeue re-test, AS DATA
+  // The F17 dequeue re-test carried AS DATA (finding 2): a dedicated ClaimGate,
+  // NOT a Pred. Set per sign at the CLAIM_DRAIN mint; checked by V-CLAIM-GATE to
+  // be semantically correct for the drain's sign (del ⇒ C_nr<=0, add ⇒ total>0).
+  ClaimGate claim_gate{ClaimGate::kDelGateCnrNonPositive};
   unsigned scc_group{~0u};             // the owning SCC id for in-round/scc ops
 
   // R1d: the COMMIT_SWEEP publish-target, its OWN named field (drops the
@@ -493,11 +509,15 @@ class DRRound {
   // claim drains, drained by the fires/chain-folds, retired at round tail.
   std::vector<unsigned> test_vecs;
 
+  // R2+ SUBSTRATE (dead-but-alive): populated by LinearizeAndValidateDRFlow from
+  // the pinned order, never read — the round's OWN intra-round op sequence an
+  // R2+ lowering will emit from instead of re-deriving the sub-order.
   // The body op ids (claim drains, fires, chain-folds, retires), in the round's
   // OWN pinned order (band template: clears → claims → fires → chain-folds →
   // retires; §4.6 / B-9). Index into `DRFlowGraph::ops`.
   std::vector<unsigned> body_ops;
 
+  // R2+ SUBSTRATE (dead-but-alive): populated, never read — see `body_ops`.
   // The output-region op ids: REDERIVE (OVERDELETE round) or the deferred
   // FRONTIER_FILTERs (INSERT round) — E-17 / §4.4.
   std::vector<unsigned> output_ops;
@@ -531,7 +551,9 @@ struct DRDep {
 class DRFlowGraph {
  public:
   std::vector<DRVec> vecs;      // R1b: per-table queues/sets/frontiers + pivots
-  std::vector<DRTable> tables;  // debug-labelled models referenced by ops
+  // R2+ SUBSTRATE (dead-but-alive): populated (BuildDRInventory), never read —
+  // the debug-labelled table models an R2+ lowering will resolve ops through.
+  std::vector<DRTable> tables;
   std::vector<DROp> ops;        // R1a: crossover pairs + product arms
 
   // R1d: the FIXPOINT_ROUND region shells (per SCC × phase), the derived §4
@@ -604,17 +626,20 @@ void ValidateDRInventory(const DRFlowGraph &flow);
 //  (1) INTERNAL graph validators (spec §5, evaluated over `flow` alone):
 //      V-QCLEAR, V-CLAIM-GATE, V-NEG-CTX, V-RETIRE-AFTER (structural),
 //      V-DEFER, V-ONE-FOLD, V-SEED-SUP.
-//  (2) V-OLD-EQUIV extension: the DR op INVENTORY (per-kind counts + keys)
-//      must match what the OLD emission driver EMITS. The expected census is
-//      recomputed HERE by replicating the emission driver's counting rules
-//      (branches×signs minus suppressed, joins with same-SCC side counts,
-//      per-table drains/filters/sweeps) from the same discovery inputs (impl/
-//      context/query/scc_map), then compared count-for-count and key-for-key.
+//  (2) OP-INVENTORY CENSUS: the DR op inventory (per-kind counts + keys) must
+//      match an EXPECTED census recomputed HERE. There is no live "old emission
+//      driver" left to compare against (R2 family #3 deleted the old discovery);
+//      the census is an INDEPENDENT RECOUNT that replicates the emitter's
+//      counting RULES (branches×signs minus suppressed, joins with same-SCC side
+//      counts, per-table drains/filters/sweeps) as a pure function of the same
+//      discovery inputs (impl/context/query/scc_map) — re-deriving the branch/
+//      join inventory the way BuildDRInventory does — then compares count-for-
+//      count and key-for-key against `flow`'s ops.
 //
-// This validator needs the live discovery inputs to recompute the emitter's
-// census independently (the flat Old*Refs alone cannot express the per-join
-// same-SCC side test), so it takes them directly. On ANY mismatch: fprintf +
-// abort (survives NDEBUG, matching `ValidateDRInventory`).
+// This validator needs the live discovery inputs to recompute the census
+// independently (the flat op lists alone cannot express the per-join same-SCC
+// side test), so it takes them directly. On ANY mismatch: fprintf + abort
+// (survives NDEBUG, matching `ValidateDRInventory`).
 void ValidateDROps(
     const DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map);
@@ -633,14 +658,22 @@ void ValidateDROps(
 //       `body_ops`/`output_ops` are its own intra-round order.
 // Then it VALIDATES (all always-on, abort on mismatch):
 //   V-LINEAR (pinned order is a topo sort of intra-scope edges),
-//   V-LOOP (drain-before-refill per scope),
+//   V-LOOP (every loop-carried RAW has a matching intra-scope WAR drain-before-
+//     refill witness on the same resource; abort otherwise — finding 3(b)),
+//   V-BAND-HAZARD (a non-carried RAW never runs against the band key —
+//     finding 3(a)),
 //   V-RETIRE-AFTER (arm-granular ordering: fires reading kDelNow/kAddNow
 //     precede the retire clearing them),
 //   V-READY (every read strictly-lower-or-same-SCC),
-//   V-OLD-EQUIV(strata): the DERIVED per-unit strata EQUAL the old integer
-//     lift's seeded copy (replaces B-13's stored-copy check), AND the derived
-//     linearization is consistent with the emission driver's actual order for
-//     the ops both know (the census keys give the mapping).
+//   V-OLD-EQUIV(order): the derived pinned order is non-decreasing in the
+//     emission band key (the standing guard that the independent linearization
+//     never drifts from the emitter's band walk).
+// NOTE: the former V-OLD-EQUIV(strata) leg — a per-op `derived == seeded-copy`
+// comparison — is RETIRED. R2 family #3 made `DeriveDRStrata` the SOLE writer of
+// the `*_stratum` maps, so that check compared a value against itself (a
+// tautology, and B-13's separate seeded copy is gone). Strata authority is now
+// `DeriveDRStrata`, cross-checked against the emitter only through V-OLD-EQUIV
+// (order) above and the byte-identical golden gate.
 //
 // Takes the live discovery inputs (like `ValidateDROps`) to recompute the
 // emitter's per-unit strata + census-order independently.

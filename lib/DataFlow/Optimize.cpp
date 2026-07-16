@@ -140,6 +140,20 @@ static uint64_t InitColor(VIEW *v) {
 
 static uint64_t StepColor(const ColorMap &colors, VIEW *v) {
   uint64_t acc = colors.at(v);
+
+  // The generic input/attached-column folds below fold EVERY view's column
+  // colors positionally. This is sound only because, for a kind whose `Equals`
+  // does NOT compare these lists, they are EMPTY — otherwise a fold would refine
+  // color CLASSES that `Equals` would still merge, splitting equal views and
+  // breaking the "color partition ⊇ Equals partition" invariant CSE relies on
+  // (finding 6). JOIN's `Equals` keys on `out_to_in`/`joined_views` (folded in
+  // the AsJoin() block below), SELECT's on stream/relation identity, MERGE's on
+  // `merged_views` — none read input/attached columns, so all three MUST carry
+  // them empty. Assert it (cheap, positive-space); if a future rewrite ever
+  // parks columns on one of these, the fold would silently over-split.
+  assert(!(v->AsJoin() || v->AsSelect() || v->AsMerge()) ||
+         (v->input_columns.Empty() && v->attached_columns.Empty()));
+
   unsigned pos = 0u;
   for (auto col : v->input_columns) {
     acc = FoldCol(colors, acc, pos++, col);

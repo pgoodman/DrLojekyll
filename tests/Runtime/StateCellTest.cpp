@@ -12,7 +12,9 @@
 
 #include <DrTest.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <new>
 #include <set>
 #include <vector>
 
@@ -217,7 +219,7 @@ TEST(StateCell, OneNetPairPerGroupRegardlessOfFoldCount) {
     sc.Fold(g, +1, I32{2});
     sc.Fold(g, -1, I32{1});
   }
-  Vec<uint32_t> &touched = sc.Touched();
+  const Vec<uint32_t> &touched = sc.Touched();
   ASSERT_EQ(touched.Size(), 1u);
   ASSERT_EQ(touched[0], g);
 
@@ -250,7 +252,7 @@ TEST(StateCell, AnnihilationEmitsNoNetPair) {
   sc.Fold(g, +1, I32{3});
 
   // The group WAS touched, but new == old, so no net pair is emitted.
-  Vec<uint32_t> &touched = sc.Touched();
+  const Vec<uint32_t> &touched = sc.Touched();
   ASSERT_EQ(touched.Size(), 1u);
   ASSERT_EQ(sc.Emit(g), sc.Old(g));  // new == old: emit nothing.
 
@@ -334,7 +336,7 @@ TEST(StateCell, TouchedSetSortUnique) {
   sc.Fold(g1, +1, I32{1});
   sc.Fold(g0, +1, I32{1});
 
-  Vec<uint32_t> &touched = sc.Touched();
+  const Vec<uint32_t> &touched = sc.Touched();
   ASSERT_EQ(touched.Size(), 3u);
   ASSERT_EQ(touched[0], g0);
   ASSERT_LT(touched[0], touched[1]);  // Ascending.
@@ -416,7 +418,7 @@ TEST(StateCell, SumInvertibleRetractAndAddOneNetPair) {
   // Retract 3 (16 -> 13), add 10 (13 -> 23): two folds, one net pair.
   sc.Fold(g, -1, I32{3});
   sc.Fold(g, +1, I32{10});
-  Vec<uint32_t> &touched = sc.Touched();
+  const Vec<uint32_t> &touched = sc.Touched();
   ASSERT_EQ(touched.Size(), 1u);
   ASSERT_EQ(sc.Old(g), (I32{16}));
   ASSERT_EQ(sc.Emit(g), (I32{23}));
@@ -495,7 +497,7 @@ TEST(StateCell, IndependentGroupsDoNotAlias) {
   ASSERT_EQ(sc.Old(gb), (I32{5}));    // b's sealed untouched.
 
   // Only group a is touched; the emit sweep would visit a alone.
-  Vec<uint32_t> &touched = sc.Touched();
+  const Vec<uint32_t> &touched = sc.Touched();
   ASSERT_EQ(touched.Size(), 1u);
   ASSERT_EQ(touched[0], ga);
 }
@@ -516,4 +518,107 @@ TEST(StateCell, DebugValidateAlgebraLawsOnManyGroups) {
   sc.Seal();
   sc.DebugValidate();  // Asserts internally; a clean return is the pass.
   ASSERT_EQ(sc.NumGroups(), 500u);
+}
+
+// --------------------------------------------------------------------------
+// (Review finding 1) @recompute membership handle SURVIVAL across rehash: a
+// @recompute Working is a POD handle {values*, counts*} into store-owned Vecs
+// (the membership pool). The open-addressing slot array rehashes as groups
+// accumulate (InsertSlot grows past the 7/8 load), but a rehash only rewires
+// `slots` — the `working` column (and thus every group's membership handle) is
+// indexed by the STABLE dense gid and is never moved. So each group's rescan
+// (Emit re-runs the functor over its own surviving members) must remain correct
+// after many rehashes: the handle still points at THAT group's Vecs, never at a
+// neighbor's. Regression guard for a rehash that mistakenly touched `working`.
+// --------------------------------------------------------------------------
+TEST(StateCell, RecomputeHandleSurvivesRehash) {
+  MinCell sc(hyde::rt::MallocAllocator());
+  constexpr int32_t kN = 5000;  // Well past the first several rehashes.
+
+  // Each group i gets a distinct three-member multiset {i+100, i+50, i+200};
+  // its MIN is i+50. The distinct per-group members let a mis-wired handle
+  // (pointing at a neighbor's Vecs) surface as a wrong rescan result.
+  for (int32_t i = 0; i < kN; ++i) {
+    const uint32_t g = sc.FindOrAddGroup({i});
+    ASSERT_EQ(g, static_cast<uint32_t>(i));  // Dense, first-touch order.
+    sc.Fold(g, +1, I32{i + 100});
+    sc.Fold(g, +1, I32{i + 50});
+    sc.Fold(g, +1, I32{i + 200});
+  }
+  ASSERT_EQ(sc.NumGroups(), static_cast<uint32_t>(kN));
+
+  // After all the rehashes: every group's handle still rescans ITS members.
+  for (int32_t i = 0; i < kN; ++i) {
+    const uint32_t g = sc.FindGroup({i});
+    ASSERT_EQ(g, static_cast<uint32_t>(i));
+    ASSERT_EQ(sc.Emit(g), (I32{i + 50}));  // MIN of the group's own members.
+  }
+
+  // Retract each group's min through the surviving handle: the rescan must
+  // surface that group's next-smallest (i+100), never a neighbor's.
+  for (int32_t i = 0; i < kN; ++i) {
+    const uint32_t g = static_cast<uint32_t>(i);
+    sc.Fold(g, -1, I32{i + 50});
+    ASSERT_EQ(sc.Emit(g), (I32{i + 100}));
+  }
+}
+
+// --------------------------------------------------------------------------
+// (Review finding 1) TEARDOWN with a non-trivial allocator: the store is the
+// SOLE allocation authority (StateCell.h §1: `slots`, the key/hash/working/
+// sealed/touched columns, and every @recompute membership Vec flow through the
+// injected `allocator`). A counting allocator proves the destructor frees
+// everything it allocated — in particular FreeMembership + the slots array + the
+// column Vecs — so no store-owned block leaks. Exercised on @recompute (the pool
+// path) so the membership Vecs' allocate/free pairs are in the ledger too.
+// --------------------------------------------------------------------------
+namespace {
+struct CountingAlloc {
+  size_t live_bytes{0};
+  size_t live_blocks{0};
+  size_t total_allocs{0};
+  size_t total_frees{0};
+
+  static void *Alloc(void *ctx, size_t size, size_t align) {
+    auto *self = static_cast<CountingAlloc *>(ctx);
+    self->live_bytes += size;
+    self->live_blocks += 1;
+    self->total_allocs += 1;
+    return ::operator new(size, std::align_val_t{align});
+  }
+  static void Free(void *ctx, void *ptr, size_t size, size_t align) {
+    auto *self = static_cast<CountingAlloc *>(ctx);
+    self->live_bytes -= size;
+    self->live_blocks -= 1;
+    self->total_frees += 1;
+    ::operator delete(ptr, std::align_val_t{align});
+  }
+  hyde::rt::Allocator View(void) {
+    return hyde::rt::Allocator{this, &Alloc, &Free};
+  }
+};
+}  // namespace
+
+TEST(StateCell, TeardownFreesEverythingNonTrivialAllocator) {
+  CountingAlloc ca;
+  {
+    MinCell sc(ca.View());  // @recompute: exercises the membership pool.
+    for (int32_t i = 0; i < 300; ++i) {
+      const uint32_t g = sc.FindOrAddGroup({i});
+      sc.Fold(g, +1, I32{i});
+      sc.Fold(g, +1, I32{i + 1});
+      sc.Fold(g, +1, I32{i + 2});
+    }
+    sc.Seal();
+    ASSERT_EQ(sc.NumGroups(), 300u);
+    // The store is holding live allocations right now (columns + pool + slots).
+    ASSERT_GT(ca.live_blocks, 0u);
+    ASSERT_GT(ca.total_allocs, 0u);
+  }
+  // After destruction: every block the store allocated is freed. No leak, and
+  // FreeMembership (the @recompute pool teardown) ran for every group.
+  ASSERT_EQ(ca.live_blocks, 0u);
+  ASSERT_EQ(ca.live_bytes, 0u);
+  ASSERT_EQ(ca.total_allocs, ca.total_frees);
+  ASSERT_GT(ca.total_frees, 0u);
 }

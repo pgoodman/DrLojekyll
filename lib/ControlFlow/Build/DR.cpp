@@ -1150,7 +1150,11 @@ DRFlowGraph BuildDRInventory(
     op.table_op_table = table;
     op.table_op_sign = sign;
     op.claim_form = form;
-    op.claim_gate = is_del ? Pred::kNetDeleted : Pred::kNetAdded;  // F17 gate DATA
+    // F17 gate DATA (finding 2): a dedicated ClaimGate per sign — del gates on
+    // C_nr<=0 (TryClaimDel), add on total>0 (TryClaimAdd). NOT a Pred: those are
+    // flag-read predicates and would be semantically WRONG if consumed as a gate.
+    op.claim_gate = is_del ? ClaimGate::kDelGateCnrNonPositive
+                           : ClaimGate::kAddGateTotalPositive;
     if (is_recursive(table)) {
       op.scc_group = *SccOf(scc_map, table);
     }
@@ -1961,9 +1965,13 @@ void ValidateDROps(
   for (const DROp &op : flow.ops) {
     switch (op.kind) {
       case DROpKind::kClaimDrain: {
-        // V-CLAIM-GATE (F17): every claim drain carries its gate as DATA.
+        // V-CLAIM-GATE (F17): every claim drain carries the SEMANTICALLY-CORRECT
+        // gate for its sign AS DATA (finding 2): a `-` drain must gate on
+        // C_nr<=0, a `+` drain on total>0. Checked against the dedicated
+        // ClaimGate value (not a Pred stand-in).
         const bool is_del = (op.table_op_sign < 0);
-        const Pred want = is_del ? Pred::kNetDeleted : Pred::kNetAdded;
+        const ClaimGate want = is_del ? ClaimGate::kDelGateCnrNonPositive
+                                      : ClaimGate::kAddGateTotalPositive;
         if (op.claim_gate != want) {
           ValidatorFail("V-CLAIM-GATE: claim drain gate not sign-appropriate");
         }
@@ -2648,52 +2656,124 @@ void LinearizeAndValidateDRFlow(
     return r == VecRole::kClaimedDel || r == VecRole::kClaimedAdd;
   };
   const auto is_epoch_carried_role = [](VecRole r) -> bool {
-    return r == VecRole::kNetRemoval || r == VecRole::kNetAddition;
+    // The net_* frontiers (assemble-fills, filter-drains across the epoch) AND
+    // the delete/add INPUT QUEUES are epoch-carried accumulators: a queue is
+    // filled by seeds/folds AND by the OVERDELETE round's REDERIVE output, then
+    // DRAINED-and-cleared by the (later-phase) claim drain. The REDERIVE fill
+    // sorts AFTER the drain in the FLAT band key (rederive is OVERDELETE-round
+    // OUTPUT, band-numbered high) even though the OVERDELETE phase executes
+    // BEFORE the INSERT phase's drain — the flat key cannot see the round-phase
+    // nesting, so the write legitimately runs against the band key. That is a
+    // loop-carried refill, NOT a band hazard (finding 3(a)): classifying the
+    // queue roles here makes it a loop-carried RAW + WAR witness (the same topo
+    // outcome the pre-review silent flip produced), so V-BAND-HAZARD stays
+    // reserved for a GENUINE non-carried same-scope inversion.
+    return r == VecRole::kNetRemoval || r == VecRole::kNetAddition ||
+           r == VecRole::kDeleteQueue || r == VecRole::kAddQueue;
   };
 
-  // Emit a hazard edge for an ordered producer→consumer access pair (`prod`
-  // then `cons` in the NATURAL access direction) of `kind`. `carried_role` is
-  // the vec role for loop-carried detection (kEmpty for flag edges). The edge
-  // is DIRECTED by key: forward-in-key ⇒ intra-scope; backward-in-key ⇒ the
-  // forward WAR is the intra-scope witness and the backward edge is recorded
-  // loop_carried.
-  const auto emit_hazard = [&](unsigned prod, unsigned cons, DepKind kind,
-                               VecRole carried_role) {
-    if (prod == cons) {
+  // Emit a WAW hazard for a WRITE/WRITE pair (SYMMETRIC — no natural
+  // producer→consumer direction). Two writers of one vec/flag class have no
+  // read to order against; the band-template key IS the ground-truth order, so
+  // the edge always follows the key (lower-key → higher-key). This is the ONLY
+  // caller of the flip that finding 3(a) leaves legitimate: a WAW has no
+  // "natural direction" to run against the band key, so it never band-hazards.
+  const auto emit_waw = [&](unsigned a, unsigned b) {
+    if (a == b) {
       return;
     }
-    const bool key_forward = key_less(keys[prod], keys[cons]);
     DRDep dep;
-    dep.scope = scope_pair(prod, cons);
-    if (key_forward) {
-      dep.from = prod;
-      dep.to = cons;
-      dep.kind = kind;
-      dep.loop_carried = false;
+    dep.scope = scope_pair(a, b);
+    dep.kind = DepKind::kWAW;
+    dep.loop_carried = false;
+    if (key_less(keys[a], keys[b])) {
+      dep.from = a;
+      dep.to = b;
     } else {
-      // The producer sorts AFTER the consumer by band key — a loop-carried
-      // hazard (this scope's iteration reads the PREVIOUS iteration's contents;
-      // the refill happens later). Record the backward edge loop_carried; its
-      // drain-before-refill witness is the forward WAR the same pair emits when
-      // the roles reverse. Only genuine round/epoch-carried roles qualify.
-      dep.from = prod;
-      dep.to = cons;
-      dep.kind = kind;
-      dep.loop_carried = is_round_carried_role(carried_role) ||
-                         is_epoch_carried_role(carried_role);
-      if (!dep.loop_carried) {
-        // A non-carried backward hazard would create a cycle — flip it to
-        // follow the key (the band template is the ground-truth order for a
-        // same-scope pair with no carried role; e.g. two writers of one queue).
-        dep.from = cons;
-        dep.to = prod;
-      }
+      dep.from = b;
+      dep.to = a;
     }
     flow.dep_edges.push_back(dep);
   };
 
-  // Vec hazards: group accesses by vec, emit write→read (RAW), read→write
-  // (WAR), write→write (WAW) for every access pair, directed by key.
+  // Emit the hazard(s) for a WRITE/READ pair, classified by ACCESSOR KINDS +
+  // KEY ORDER (finding 3(c)): whether the pair is a RAW or a WAR is a property
+  // of which access is the write and which the read, composed with their
+  // EXECUTION (band-key) order — NEVER the op-construction order the outer loop
+  // happens to visit them in. (The earlier code keyed RAW/WAR on the (i,j)
+  // iteration order of the access list; a write appended to the list AFTER the
+  // read it feeds — a legal construction order — was then mislabelled WAR, and
+  // a true RAW recorded as WAR silently skips V-READY's reads-lower-or-same
+  // check. Order of DISCOVERY is not order of EXECUTION.)
+  //
+  // Execution order is the band key: the writer W and reader R execute in key
+  // order. If W precedes R ⇒ RAW (from=W, to=R): the reader consumes what the
+  // writer produced this scope. If R precedes W ⇒ WAR (from=R, to=W): the read
+  // drains before the writer refills — the drain-before-refill witness.
+  //
+  // For a LOOP-CARRIED role (round Δ frontier / epoch net_* frontier / the
+  // delete/add input queues) the R-before-W case ALSO carries a loop-carried
+  // RAW (this iteration's read sees the PREVIOUS-phase fill; the refill sorts
+  // later in the flat key because the round-phase nesting is invisible to it):
+  // we emit the intra-scope WAR *and* the loop-carried RAW W→R (excluded from
+  // the topo sort, its witness certified by V-LOOP, finding 3(b)). For a
+  // NON-carried role, R-before-W is a plain WAR — the read consumed the old
+  // value and the write clobbers after (e.g. a REDERIVE reads a table's flags
+  // that the end-of-batch COMMIT_SWEEP later clears): legitimate, no carry.
+  //
+  // Every edge is DIRECTED from the lower-key op to the higher-key op (execution
+  // order): a RAW is writer→reader (writer earlier), a WAR is reader→writer
+  // (reader earlier). The band hazard finding 3(a) guards against — a non-loop-
+  // carried edge that RUNS AGAINST the band key — therefore cannot arise from
+  // THIS function by construction; it is asserted globally as V-BAND-HAZARD
+  // below, replacing the pre-review SILENT FLIP that hid exactly such an edge.
+  const auto emit_rw_hazard = [&](unsigned writer, unsigned reader,
+                                  VecRole carried_role) {
+    if (writer == reader) {
+      return;
+    }
+    const bool carried = is_round_carried_role(carried_role) ||
+                         is_epoch_carried_role(carried_role);
+    if (key_less(keys[writer], keys[reader])) {
+      // Writer executes first ⇒ RAW, intra-scope (from=writer so V-READY reads
+      // the true producer stratum — finding 3(c)).
+      DRDep dep;
+      dep.scope = scope_pair(writer, reader);
+      dep.kind = DepKind::kRAW;
+      dep.from = writer;
+      dep.to = reader;
+      dep.loop_carried = false;
+      flow.dep_edges.push_back(dep);
+    } else {
+      // Reader executes first (in band-key order) ⇒ an intra-scope WAR
+      // (from=reader, to=writer): the read drained before the write refilled.
+      DRDep war;
+      war.scope = scope_pair(writer, reader);
+      war.kind = DepKind::kWAR;
+      war.from = reader;
+      war.to = writer;
+      war.loop_carried = false;
+      flow.dep_edges.push_back(war);
+      // For a carried role this WAR is the drain-before-refill witness for a
+      // loop-carried RAW (this iteration reads the previous phase's fill); emit
+      // that RAW too (loop-carried, topo-excluded, checked by V-LOOP).
+      if (carried) {
+        DRDep raw;
+        raw.scope = scope_pair(writer, reader);
+        raw.kind = DepKind::kRAW;
+        raw.from = writer;
+        raw.to = reader;
+        raw.loop_carried = true;
+        flow.dep_edges.push_back(raw);
+      }
+    }
+  };
+
+  // Vec hazards: group accesses by vec; for every access pair classify by
+  // ACCESSOR KINDS (finding 3(c)) — a write/write pair is a WAW (symmetric,
+  // band-ordered), a write/read pair (either construction order) is a RAW or
+  // WAR determined by the writer/reader EXECUTION order in `emit_rw_hazard`,
+  // NOT by which of (i,j) the outer loop visits first.
   std::unordered_map<unsigned, std::vector<const VecAccess *>> by_vec;
   for (const VecAccess &a : vec_accesses) {
     by_vec[a.vec_idx].push_back(&a);
@@ -2708,11 +2788,12 @@ void LinearizeAndValidateDRFlow(
         }
         const VecRole role = x->role;
         if (x->is_write && y->is_write) {
-          emit_hazard(x->op_idx, y->op_idx, DepKind::kWAW, role);
-        } else if (x->is_write && !y->is_write) {
-          emit_hazard(x->op_idx, y->op_idx, DepKind::kRAW, role);
-        } else if (!x->is_write && y->is_write) {
-          emit_hazard(x->op_idx, y->op_idx, DepKind::kWAR, role);
+          emit_waw(x->op_idx, y->op_idx);
+        } else if (x->is_write != y->is_write) {
+          // Identify writer/reader SEMANTICALLY (by is_write), not by (i,j).
+          const VecAccess *w = x->is_write ? x : y;
+          const VecAccess *r = x->is_write ? y : x;
+          emit_rw_hazard(w->op_idx, r->op_idx, role);
         }
         // read/read: no hazard.
       }
@@ -2720,7 +2801,7 @@ void LinearizeAndValidateDRFlow(
   }
 
   // Table-flag hazards (§4.1-4.4): counter±/gate writes and membership reads
-  // over one table's flag class, directed by key.
+  // over one table's flag class, classified by accessor kinds (as above).
   std::unordered_map<TABLE *, std::vector<const FlagAccess *>> by_flag;
   for (const FlagAccess &a : flag_accesses) {
     by_flag[a.table].push_back(&a);
@@ -2734,13 +2815,37 @@ void LinearizeAndValidateDRFlow(
           continue;
         }
         if (x->is_write && y->is_write) {
-          emit_hazard(x->op_idx, y->op_idx, DepKind::kWAW, VecRole::kEmpty);
-        } else if (x->is_write && !y->is_write) {
-          emit_hazard(x->op_idx, y->op_idx, DepKind::kRAW, VecRole::kEmpty);
-        } else if (!x->is_write && y->is_write) {
-          emit_hazard(x->op_idx, y->op_idx, DepKind::kWAR, VecRole::kEmpty);
+          emit_waw(x->op_idx, y->op_idx);
+        } else if (x->is_write != y->is_write) {
+          const FlagAccess *w = x->is_write ? x : y;
+          const FlagAccess *r = x->is_write ? y : x;
+          // Flag classes carry no loop-carried role (kInI reads are frozen and
+          // never recorded; the recorded reads/writes are within-scope).
+          emit_rw_hazard(w->op_idx, r->op_idx, VecRole::kEmpty);
         }
       }
+    }
+  }
+
+  // V-BAND-HAZARD (finding 3(a)): every INTRA-SCOPE (non-loop-carried) edge must
+  // run FORWARD in the band key — from the lower-key op to the higher-key op.
+  // The band key IS the emission walk order, so an intra-scope edge that ran
+  // against it would force the topo sort to invert the walk (a producer emitted
+  // after its consumer, with no loop-carried role to make the read a legal
+  // cross-iteration read). emit_rw_hazard/emit_waw direct every edge from the
+  // lower-key op by construction, so this can only trip if a FUTURE edge deriver
+  // introduced a key-inverting forced edge — we ABORT rather than let the old
+  // code's silent flip hide it. (Loop-carried edges legitimately run backward in
+  // the flat key — the round-phase nesting is invisible to it — so they are
+  // excluded here and validated by V-LOOP instead.)
+  for (const DRDep &d : flow.dep_edges) {
+    if (d.loop_carried) {
+      continue;
+    }
+    if (key_less(keys[d.to], keys[d.from])) {
+      ValidatorFail("V-BAND-HAZARD: a non-loop-carried dep edge runs against the "
+                    "band key (its producer sorts after its consumer with no "
+                    "loop-carried role — a genuine ordering fault)");
     }
   }
 
@@ -2892,11 +2997,16 @@ void LinearizeAndValidateDRFlow(
   // scope refill def. A round-carried Δ frontier's drain (fire/retire) precedes
   // its refill (the next round's claim drain) WITHIN the round shell; an epoch-
   // carried net_* frontier's drain (the assemble) precedes its refill (the
-  // filter) WITHIN the epoch. We check: for every loop-carried edge, the drain
-  // (reader) exists and its vec has a def; drain-before-refill holds by the
-  // WAR realization (the reader→writer WAR we emitted intra-scope, which
-  // V-LINEAR just certified). Here we assert the loop-carried RAW has a
-  // matching intra-scope WAR (its drain-before-refill witness).
+  // filter) WITHIN the epoch.
+  //
+  // THE DOCUMENTED CHECK (finding 3(b)): a loop-carried RAW (writer W → reader
+  // R, W after R in the band key) is only SOUND if the read genuinely drains
+  // THIS scope BEFORE the writer refills — i.e. there is a matching intra-scope
+  // WAR witness R→W over the SAME resource, and V-LINEAR has certified it
+  // (R precedes W in the pinned order). Without that witness a loop-carried RAW
+  // would let the refill clobber unread contents. We ASSERT the witness exists,
+  // is not itself loop-carried, is in the same scope, and (belt-and-suspenders)
+  // R actually precedes W in the pinned order. Abort otherwise — no silent pass.
   for (const DRDep &d : flow.dep_edges) {
     if (!d.loop_carried) {
       continue;
@@ -2904,9 +3014,33 @@ void LinearizeAndValidateDRFlow(
     if (d.kind != DepKind::kRAW && d.kind != DepKind::kWAR) {
       ValidatorFail("V-LOOP: a loop-carried edge is neither RAW nor WAR");
     }
-    // The carried edge's endpoints must both be real ops.
     if (d.from >= n || d.to >= n) {
       ValidatorFail("V-LOOP: loop-carried edge endpoint out of range");
+    }
+    // A loop-carried WAR is the witness FOR some RAW, not a carried dep itself
+    // (emit_rw_hazard only ever marks the RAW loop-carried); require RAW here.
+    if (d.kind != DepKind::kRAW) {
+      ValidatorFail("V-LOOP: a WAR edge is marked loop-carried (only RAWs carry)");
+    }
+    // The drain-before-refill witness: an intra-scope WAR from the reader (d.to)
+    // back to the writer (d.from) over the same resource+scope.
+    bool has_witness = false;
+    for (const DRDep &w : flow.dep_edges) {
+      if (!w.loop_carried && w.kind == DepKind::kWAR && w.from == d.to &&
+          w.to == d.from && w.scope == d.scope) {
+        has_witness = true;
+        break;
+      }
+    }
+    if (!has_witness) {
+      ValidatorFail("V-LOOP: a loop-carried RAW has no matching intra-scope WAR "
+                    "drain-before-refill witness on the same resource");
+    }
+    // And that witness must be respected by the linearization (reader precedes
+    // writer), the actual drain-before-refill fact.
+    if (pos[d.to] >= pos[d.from]) {
+      ValidatorFail("V-LOOP: the drain-before-refill witness is violated "
+                    "(the reader does not precede its refilling writer)");
     }
   }
 

@@ -23,12 +23,12 @@ struct BranchChain {
   // targets belong to the join emission's section walk).
   TABLE *target{nullptr};
 
-  // The stratum whose phase series emits this chain. Starts at the spec
-  // stratum — the owner stratum of the head table for a head chain, the
-  // join view's stratum for a join chain — and is lifted by the scheduling
-  // fixpoint until every read the chain performs (the source frontier,
-  // negated tables, join sides) is phase-final when it runs; every fold
-  // targets a queue drained at or after this stratum.
+  // R2+ SUBSTRATE (dead-but-alive): set by BranchChainOf, never read. The
+  // stratum whose phase series emits this chain — retained as a landing pad for
+  // an R2+ stage that reads the chain's own stratum instead of the caller's.
+  // Formerly: the spec stratum lifted by the scheduling fixpoint until every
+  // read the chain performs is phase-final; every fold targets a queue drained
+  // at or after this stratum.
   unsigned stratum{0u};
 };
 

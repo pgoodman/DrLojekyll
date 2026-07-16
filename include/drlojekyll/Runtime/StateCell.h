@@ -321,7 +321,16 @@ class StateCellStore {
   // Iteration for emit_touched: the SORT-UNIQUE touched set (spec §2.5
   // V-TOUCH-SORTED / G-8). Touch appends each gid at most once, so the
   // underlying vector is already unique; Sort makes the emit order canonical.
-  Vec<uint32_t> &Touched(void) {
+  //
+  // Returns a CONST reference (review finding 1): the caller must never be
+  // handed a mutable ref to `touched`, because appending/clearing through it
+  // would DESYNC `touched` from `touched_flag` (the two are a paired dedup
+  // structure — Touch keeps them in lockstep, Seal clears both). The in-place
+  // SortAndUnique only REORDERS the same gids (Seal iterates order-
+  // independently), so it preserves the pairing; only external mutation could
+  // break it, and the const result forbids that. This is NOT declared `const`
+  // (SortAndUnique mutates the member) but the RESULT is const per the spec.
+  const Vec<uint32_t> &Touched(void) {
     touched.SortAndUnique();
     return touched;
   }
