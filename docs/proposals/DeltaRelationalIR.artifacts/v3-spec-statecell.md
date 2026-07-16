@@ -827,3 +827,51 @@ StackSafeNegation.md §5.5, Table.h (full), Query.h (QueryAggregate/
 QueryKVIndex accessors), Stratify.cpp:260-296, bin/Oracle/Main.cpp
 (header + from-scratch path + sidecar grammar), Build.cpp:955-956/
 1015-1053, data/examples/average_weight.dr + pairwise_average_weight.dr.
+
+======================================================================
+§C. AMENDMENTS (2026-07-16, after the r3cd-critique + owner decisions;
+    BINDING over the sections above)
+======================================================================
+C-1 (OCCUPANCY — fixes the critique's CRITICAL batch-1 abort): the
+    store tracks per-group OCCUPANCY (empty | occupied). The
+    emit_touched guard generalizes:
+      birth  (empty→occupied): emit ONLY +new (no phantom −old);
+      death  (occupied→empty): emit ONLY −old (no phantom +new);
+      change (occupied, new≠old): the one net pair (−old, +new);
+      no-op  (occupancy and value unchanged, incl. OQ3 annihilation
+              and zero-sum-nonempty states): emit nothing.
+    Occupancy is part of the SEALED word's snapshot semantics (old()
+    is defined only for sealed-occupied groups). StateCell.h grows the
+    occupancy bit + birth/death/zero-sum-nonempty unit traces (R3a
+    follow-up, landing inside the R3c-ii+R3d unit).
+C-2 (V-ALGEBRA placement): the declared-algebra policy check runs in
+    the Build.cpp PRE-PASS slot the retiring F14 rows vacate (the
+    Aggregates()/KVIndices() loops give over-vs-kv provenance; the
+    num_errors→nullopt gate is already downstream). over() undeclared
+    → default @recompute; kv undeclared → clean reject (§7.1).
+C-3 (STATE_SEAL pin): Seal() lands at the commit-sweep tail; the
+    fold→emit→seal edges are pinned as specified (E2/E5), with the
+    linearizer band keys for kGroupUpdate (emit_stratum, its own band)
+    and kStateSeal (trailing band, V-READY skip) made explicit diffs.
+C-4 (AGGREGATE INPUTS, owner-decided): monotone inputs SUPPORTED via
+    FindMonotoneNegatedTables-style enrollment (net-additions frontier
+    + Seal); QueryAggregateImpl sets can_produce_deletions
+    unconditionally (value churn implies downstream retraction);
+    induction-owned inputs get a clean feature-gap diagnostic this
+    epoch.
+C-5 (FUNCTOR ABI, owner-directed — the free-function/ADL trick
+    generalized to functors): aggregate/merge reduction bodies are
+    DRIVER-SUPPLIED FREE FUNCTIONS over DRIVER-OWNED state types,
+    resolved by unqualified call from generated template context
+    (the DatabaseLog deduction contract: no inheritance, no virtuals,
+    no members). Generated code requires: agg_fold(State&, summary...),
+    agg_emit(const State&) -> value, agg_unfold(State&, summary...)
+    REQUIRED iff @invertible, agg_init(State&) or
+    default-construction. The engine owns layout via
+    StateCellStore<Key, State, Algebra> over the driver's POD state
+    (trivially-copyable enforced). @recompute functors supply the
+    rescan reduction instead. The corpus drivers define these before
+    their message calls (new-driver review gate applies). RECORDED
+    FOLLOW-ON (not this epoch): migrating MAP functors out of
+    DatabaseFunctors onto the same free-function surface (touches
+    every corpus driver — its own diff/epoch).
