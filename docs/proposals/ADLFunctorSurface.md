@@ -234,5 +234,73 @@ DEFER and re-charter R4 as a materialization/access-path item gated on
 a concrete WCOJ/3+-way self-join witness; re-label group_ids/
 InsertSetsOverlap a correctness guard, never an optimization target.
 
-### P2 — eager-web externalization (revision round in progress;
-### record lands on re-judge)
+### P2 — eager-web externalization (artifact:
+### ADLFunctorSurface.artifacts/p2-ingest-inventory-target.md, revised;
+### re-judge: R1e LANDABLE, cutover gated on one amendment)
+
+The original design drew the seam as {seed folds externalized, descent
+hand-coded} for all receives; its judge found that boundary is NOT a
+tree cut (a monotone receive NESTS the descent — including the
+INSERT-stream `publish` — inside the ingest fold's own if-crossed body,
+verified on cf16_4's entry proc), the hoisted construction point read
+the lazily-populated context.table_delta_vecs before the walk filled it,
+and the DR band key's sign-major order inverts the emitted
+ADD-before-REMOVE. The REVISION resolves all seven findings
+(re-derived and confirmed by a second judge):
+- SCOPE: stage 1 cuts over DELETION-CAPABLE receives ONLY (IF-2/IF-3 —
+  build_explicit_loop×2, fold body = pure queue append, NO descent; a
+  clean tree cut verified on nls). Monotone receives + the eager
+  descent (IF-1/IF-4) stay hand-coded, deferred behind an explicit
+  if-crossed-body HOLE CONTRACT (§6 of the artifact) with the
+  interior-fold net-additions .dr witness as prerequisite (Build.cpp
+  :870-893: the append may sit at an ANCESTOR fold of a deeper view —
+  never assume the receive owns it).
+- CONSTRUCTION: BuildIngestInventory runs INSIDE BuildStratumPhases
+  after the eager walk (context.table_delta_vecs full); ONE
+  DRFlowGraph — the censused flow IS the stashed context.dr_flow the
+  lowering consumes (the LowerCommitSweeps precedent). Stage-1 queue
+  roles derive from polarity alone; the monotone kNetAddition/kEmpty
+  derivation is cross-checked against the walk-produced map on all 164
+  (always-on abort).
+- ORDERING: the R2 family-#1 lesson verbatim — LowerIngestFolds
+  iterates query.IOs()×Receives()×(+before−) construction order (the
+  lowering default); the lead-0 band Key is validator-only.
+- VALIDATORS (E-25 honored): DERIVED-vs-DERIVED census in the
+  ValidateDROps mold (expect(kIngestFold, exp_ingest) + order-free
+  per-op key multiset recomputed from the Query) — NEVER a region-tree
+  walk (no precedent; immune to the :716-719 body-swap); + effect-set
+  totality, one-op-per-(message,receive,polarity), queue-role
+  agreement (in DR VecRole terms; VecRole::kNetAddition singular ↔
+  VectorKind::kNetAdditions plural mapped only at TableDeltaVector).
+- V-PRED-XCHECK completion: Site 4 (EmitFrontierFilter) rides the
+  cutover as an additive cross-check; the position-keyed site-2
+  correlation stays deferred (an R4/self-join concern, retired with
+  P3).
+RE-JUDGE VERDICT: all original findings resolved; ONE new HIGH confined
+to the CUTOVER stage — the splice mechanism (which parent region the
+lowered folds attach to; the per-io `par` at Procedure.cpp:712 has no
+Context handle and is EMPTY for a deletion-capable-only message once
+:85-90 is deleted) must be specified + verified by a REGION-TREE
+STRUCTURAL COMPARISON gate (not a next_id count) before the cutover is
+authorized. R1e (construct-alongside: inventory + census + validators
++ cross-check + the E-24 comment sweep, zero emission change) is
+LANDABLE AS-IS under the hard byte-identical gate.
+PRE-REGISTERED PREDICTIONS (P2): R1e suite churn ZERO byte-identical;
+cutover byte-identity the gated TARGET (fallback: permutation-only
+bless, permcheck + oracle/monotone referees, never to green a red
+case); suite stays 164 through stages 1-2 (both witnesses in-corpus);
+FINDINGS entry (F23+) iff a census/cross-check fires on a real
+divergence (the house bet); Q5 neutral.
+
+## 3. Artifact index
+
+- p1-map1-target.md — P1 identity target: the exact post-P1 datalog.h
+  unified diff for map_1 + average_weight hunks + driver diffs + the
+  contract analysis (§5) + the gate proposal (§6).
+- p2-ingest-inventory-target.md — P2 seam: the IF-1..IF-4 receive
+  classes, the stage-1 deletion-capable scope, the kIngestFold
+  inventory with effect sets mapped to verbatim region-tree lines (nls
+  + cf16_4 witnesses), staging + gates, the re-judge record (§11).
+- p3-tc-selfjoin-target.md — P3/R4: today's dataflow + emission for
+  tc⋈tc (measured), the three candidates, the DEFER argument, the
+  retirement recommendation.
