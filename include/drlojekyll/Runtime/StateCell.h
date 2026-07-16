@@ -34,6 +34,24 @@
 // load. Two words (not one + a history log) make new != old exact and O(1):
 // a SUM cell folded -1 then +1 within a batch must still let Old report the
 // pre-batch value while working already moved.
+//
+// OCCUPANCY (spec §C-1, the batch-1 abort fix): a group is EMPTY or OCCUPIED.
+// The identity-initialized sealed value of a never-touched group is NOT a real
+// batch-start row — a SUM of 0 is ambiguous between an empty group and a
+// zero-sum group, so value-based suppression cannot distinguish group birth
+// (empty -> occupied, emit +new only, no phantom -old) from group death
+// (occupied -> empty, emit -old only, no phantom +new). The store therefore
+// tracks a per-group WORKING member count (net signed, occupied <=> count > 0,
+// algebra-independent — it counts folds, not values) and a SEALED occupancy bit
+// (the batch-start snapshot, advanced by Seal alongside the sealed value).
+// old() is defined only for a sealed-OCCUPIED group; WorkingOccupied()/
+// SealedOccupied() drive the occupancy-generalized emit_touched guard (the
+// generated code and the oracle read them; StateCell.h only maintains them):
+//   birth  (empty->occupied):  emit ONLY +new;
+//   death  (occupied->empty):  emit ONLY -old;
+//   change (occupied, new!=old): the one net pair (-old, +new);
+//   no-op  (occupancy unchanged and, if occupied, new==old): emit nothing
+//          (covers OQ3 annihilation and the zero-sum-nonempty state).
 
 #pragma once
 
@@ -205,7 +223,9 @@ class StateCellStore {
         keys(allocator_),
         hashes(allocator_),
         working(allocator_),
+        working_count(allocator_),
         sealed(allocator_),
+        sealed_occupied(allocator_),
         touched(allocator_),
         touched_flag(allocator_),
         mem_values_pool(allocator_),
@@ -266,10 +286,14 @@ class StateCellStore {
     Algebra::Identity(w);
     InitMembership(w);
     working.Add(w);
+    working_count.Add(0);  // Fresh group is EMPTY (no members folded yet).
     Sealed s{};
     // The batch-start snapshot of a never-touched group is the algebra
-    // identity's Emit — the group's summary before any fold ever ran.
+    // identity's Emit — the group's summary before any fold ever ran. It is a
+    // placeholder; old() is only meaningful once the group is sealed-OCCUPIED,
+    // which a never-touched group is not.
     sealed.Add(Algebra::SealFrom(w));
+    sealed_occupied.Add(0u);  // Never occupied at batch start.
     (void) s;
     touched_flag.Add(0u);
     InsertSlot(gid, hash);
@@ -290,6 +314,23 @@ class StateCellStore {
     Working w = working[gid];
     Algebra::Fold(w, sign, Summary(static_cast<Summary_ &&>(s)...));
     working.Set(gid, w);
+    // Occupancy (spec §C-1): each fold is one signed member; the net count
+    // drives WorkingOccupied. A COUNT algebra's working value happens to equal
+    // this count, but SUM/MIN do not, so occupancy is tracked separately and
+    // algebra-independently. May dip below zero mid-epoch (a retraction seen
+    // before its addition), exactly like the split derivation counters.
+    working_count.Set(gid, working_count[gid] + sign);
+  }
+
+  // Occupancy queries (spec §C-1) — the occupancy-generalized emit_touched
+  // guard reads these. WorkingOccupied: does the group have live members THIS
+  // epoch (net fold count > 0). SealedOccupied: was the group occupied at batch
+  // start (old() is defined only when this is true).
+  bool WorkingOccupied(uint32_t gid) const noexcept {
+    return 0 < working_count[gid];
+  }
+  bool SealedOccupied(uint32_t gid) const noexcept {
+    return 0u != sealed_occupied[gid];
   }
 
   // Current working value reduced to output columns. emit(g) — a VALUED read
@@ -313,6 +354,9 @@ class StateCellStore {
     HYDE_RT_BENCH_COUNT_N(commit_visits, touched.Size());
     for (uint32_t gid : touched) {
       sealed.Set(gid, Algebra::SealFrom(working[gid]));
+      // Advance the batch-start occupancy snapshot alongside the value (spec
+      // §C-1): next epoch's SealedOccupied/Old reflect THIS epoch's final state.
+      sealed_occupied.Set(gid, (0 < working_count[gid]) ? 1u : 0u);
       touched_flag.Set(gid, 0u);
     }
     touched.Clear();
@@ -474,7 +518,10 @@ class StateCellStore {
   Vec<Key> keys;          // Dense group id -> key (KeyAt + debug).
   Vec<uint64_t> hashes;   // Parallel to keys; cached key hashes.
   Vec<Working> working;   // Columnar by dense group id (the mutated value).
+  Vec<int32_t> working_count;  // Net signed member count this epoch (spec §C-1;
+                               // occupied <=> > 0; algebra-independent).
   Vec<Sealed> sealed;     // Batch-start snapshot (old()).
+  Vec<uint8_t> sealed_occupied;  // Batch-start occupancy bit (spec §C-1).
   Vec<uint32_t> touched;  // Groups folded this epoch.
   Vec<uint8_t> touched_flag;      // Per-group append-once bit (kTouched mirror).
   Vec<ValuesVec *> mem_values_pool;  // Owned @recompute value Vecs (else empty).
@@ -492,6 +539,11 @@ void StateCellStore<Key, Algebra>::DebugValidate(void) const {
   assert(touched.Empty());
   for (uint32_t gid = 0u; gid < NumGroups(); ++gid) {
     assert(0u == touched_flag[gid]);
+    // OCCUPANCY COHERENCE (spec §C-1): after Seal the sealed occupancy bit
+    // agrees with the (now stable) working member count, and the count is never
+    // negative at a batch boundary (it may only dip below zero mid-epoch).
+    assert(0 <= working_count[gid]);
+    assert((0u != sealed_occupied[gid]) == (0 < working_count[gid]));
   }
 
   // ALGEBRA LAWS (spec §1.5; AggregatingFunctors §3 "annotations can lie").

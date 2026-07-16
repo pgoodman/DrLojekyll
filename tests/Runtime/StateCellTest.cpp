@@ -599,6 +599,202 @@ struct CountingAlloc {
 };
 }  // namespace
 
+// --------------------------------------------------------------------------
+// OCCUPANCY (spec §C-1, the batch-1 abort fix). A never-touched group is
+// EMPTY: WorkingOccupied/SealedOccupied are both false, and its identity-
+// initialized sealed value is NOT a real batch-start row. The occupancy-
+// generalized emit_touched guard (which the generated code and the oracle
+// apply, reading these accessors) is:
+//   birth  (empty->occupied):  +new only;
+//   death  (occupied->empty):  -old only;
+//   change (occupied, new!=old): -old, +new;
+//   no-op  (else):              nothing.
+// These traces exercise the three occupancy transitions on the store.
+// --------------------------------------------------------------------------
+
+// A tiny model of the generated/oracle emit_touched guard, returning how many
+// (-old, +new) counter events a group's transition would emit. Proves the
+// store's occupancy accessors express the C-1 guard with no phantom row.
+namespace {
+template <typename Cell>
+struct EmitCounts {
+  int retract_old{0};  // -old counter events (0 or 1)
+  int assert_new{0};   // +new counter events (0 or 1)
+};
+template <typename Cell>
+EmitCounts<Cell> EmitTouchedGuard(Cell &sc, uint32_t gid) {
+  const bool old_occ = sc.SealedOccupied(gid);
+  const bool new_occ = sc.WorkingOccupied(gid);
+  EmitCounts<Cell> out;
+  if (!old_occ && !new_occ) {
+    return out;  // never present; nothing (also the identity-init first touch).
+  }
+  if (old_occ && !new_occ) {
+    out.retract_old = 1;  // death: -old only.
+    return out;
+  }
+  if (!old_occ && new_occ) {
+    out.assert_new = 1;  // birth: +new only.
+    return out;
+  }
+  if (sc.Emit(gid) != sc.Old(gid)) {  // both occupied.
+    out.retract_old = 1;  // change: the one net pair.
+    out.assert_new = 1;
+  }
+  return out;  // else no-op (value unchanged / zero-sum-nonempty).
+}
+}  // namespace
+
+// BIRTH: the first batch of every aggregate case is all births. A group's
+// first fold moves empty->occupied; the guard emits ONLY +new and NEVER a
+// phantom -old against the identity-initialized sealed value. (Without C-1 the
+// commit sweep's >=0-per-class assert aborts on batch 1 — the CRITICAL fix.)
+TEST(StateCell, OccupancyBirthEmitsPlusNewOnly) {
+  SumCell sc(hyde::rt::MallocAllocator());
+  const uint32_t g = sc.FindOrAddGroup({7});
+
+  // Never-touched: empty in both words. Its sealed value is identity but NOT a
+  // real row — occupancy, not value, decides.
+  ASSERT_FALSE(sc.SealedOccupied(g));
+  ASSERT_FALSE(sc.WorkingOccupied(g));
+
+  // First fold: empty -> occupied (birth).
+  sc.Fold(g, +1, I32{5});
+  ASSERT_FALSE(sc.SealedOccupied(g));  // old still empty this epoch.
+  ASSERT_TRUE(sc.WorkingOccupied(g));
+
+  const EmitCounts<SumCell> e = EmitTouchedGuard(sc, g);
+  ASSERT_EQ(e.retract_old, 0);  // NO phantom retraction of the identity row.
+  ASSERT_EQ(e.assert_new, 1);   // +new only.
+
+  sc.Seal();
+  ASSERT_TRUE(sc.SealedOccupied(g));  // now occupied at next batch start.
+  ASSERT_EQ(sc.Old(g), (I32{5}));
+  sc.DebugValidate();
+}
+
+// DEATH: a group emptied by retracting its last member moves occupied->empty;
+// the guard emits ONLY -old and NEVER a phantom +new. Value-based suppression
+// cannot see this (SUM=0 is ambiguous) — occupancy makes it exact.
+TEST(StateCell, OccupancyDeathEmitsMinusOldOnly) {
+  SumCell sc(hyde::rt::MallocAllocator());
+  const uint32_t g = sc.FindOrAddGroup({1});
+  sc.Fold(g, +1, I32{9});
+  sc.Seal();  // sealed-occupied, old()=9.
+  ASSERT_TRUE(sc.SealedOccupied(g));
+
+  // Retract the sole member: working value returns to identity (0), but the
+  // group is now EMPTY, not a zero-sum group.
+  sc.Fold(g, -1, I32{9});
+  ASSERT_EQ(sc.Emit(g), (I32{0}));  // value ambiguous with a zero-sum group...
+  ASSERT_FALSE(sc.WorkingOccupied(g));  // ...but occupancy is unambiguous.
+  ASSERT_TRUE(sc.SealedOccupied(g));
+
+  const EmitCounts<SumCell> e = EmitTouchedGuard(sc, g);
+  ASSERT_EQ(e.retract_old, 1);  // -old only.
+  ASSERT_EQ(e.assert_new, 0);   // NO phantom +new for the emptied group.
+
+  sc.Seal();
+  ASSERT_FALSE(sc.SealedOccupied(g));  // dead at next batch start.
+  sc.DebugValidate();
+}
+
+// ZERO-SUM-NONEMPTY: a group whose members sum to zero (e.g. {+3, -3}) is
+// OCCUPIED (two live members) even though its SUM value is the identity. The
+// guard must NOT treat value==identity as death; a same-value re-seal emits
+// nothing (no-op), and only a real value change emits the one net pair.
+TEST(StateCell, OccupancyZeroSumNonEmptyIsOccupied) {
+  SumCell sc(hyde::rt::MallocAllocator());
+  const uint32_t g = sc.FindOrAddGroup({2});
+
+  // Members {+3, -3}: SUM = 0 but the group has two members (occupied).
+  sc.Fold(g, +1, I32{3});
+  sc.Fold(g, +1, I32{-3});
+  ASSERT_EQ(sc.Emit(g), (I32{0}));      // value is the identity...
+  ASSERT_TRUE(sc.WorkingOccupied(g));   // ...but the group is NOT empty.
+
+  // Birth into a zero-SUM value: occupancy says +new (a real (g,0) row exists).
+  EmitCounts<SumCell> e = EmitTouchedGuard(sc, g);
+  ASSERT_EQ(e.retract_old, 0);
+  ASSERT_EQ(e.assert_new, 1);  // the zero-valued row is asserted, not skipped.
+  sc.Seal();
+  ASSERT_TRUE(sc.SealedOccupied(g));
+  ASSERT_EQ(sc.Old(g), (I32{0}));
+
+  // Next epoch: add another zero-sum pair {+8,-8}. Still occupied, value still
+  // 0 == old -> NO net pair (a genuine no-op, not a death).
+  sc.Fold(g, +1, I32{8});
+  sc.Fold(g, +1, I32{-8});
+  ASSERT_TRUE(sc.WorkingOccupied(g));
+  ASSERT_EQ(sc.Emit(g), sc.Old(g));
+  e = EmitTouchedGuard(sc, g);
+  ASSERT_EQ(e.retract_old, 0);
+  ASSERT_EQ(e.assert_new, 0);  // value unchanged AND still occupied: nothing.
+  sc.Seal();
+  sc.DebugValidate();
+}
+
+// Full lifecycle across occupancy: birth -> change -> death on one group, each
+// transition emitting the C-1-correct event count. This is the batch-sequence
+// shape an aggregate case drives; every step keeps the commit-sweep >=0-per-
+// class invariant (no phantom either side).
+TEST(StateCell, OccupancyBirthChangeDeathLifecycle) {
+  SumCell sc(hyde::rt::MallocAllocator());
+  const uint32_t g = sc.FindOrAddGroup({1});
+
+  // Batch 1 — BIRTH: +new only.
+  sc.Fold(g, +1, I32{10});
+  EmitCounts<SumCell> e = EmitTouchedGuard(sc, g);
+  ASSERT_EQ(e.retract_old + e.assert_new, 1);
+  ASSERT_EQ(e.assert_new, 1);
+  sc.Seal();
+
+  // Batch 2 — CHANGE: -old, +new (the one net pair).
+  sc.Fold(g, +1, I32{5});
+  e = EmitTouchedGuard(sc, g);
+  ASSERT_EQ(e.retract_old, 1);
+  ASSERT_EQ(e.assert_new, 1);
+  sc.Seal();
+  ASSERT_EQ(sc.Old(g), (I32{15}));
+
+  // Batch 3 — DEATH: -old only (retract both members).
+  sc.Fold(g, -1, I32{10});
+  sc.Fold(g, -1, I32{5});
+  ASSERT_FALSE(sc.WorkingOccupied(g));
+  e = EmitTouchedGuard(sc, g);
+  ASSERT_EQ(e.retract_old, 1);
+  ASSERT_EQ(e.assert_new, 0);
+  sc.Seal();
+  ASSERT_FALSE(sc.SealedOccupied(g));
+  sc.DebugValidate();
+}
+
+// @recompute occupancy: a group emptied by retracting every member (all counts
+// back to 0) is EMPTY, so Emit-over-all-dead-membership is never consulted for
+// a live row (the guard's death arm fires first). Guards the "Recompute::Emit
+// over an all-dead membership is undefined" corner the critique names.
+TEST(StateCell, OccupancyRecomputeAllDeadMembershipIsDeath) {
+  MinCell sc(hyde::rt::MallocAllocator());
+  const uint32_t g = sc.FindOrAddGroup({1});
+  sc.Fold(g, +1, I32{5});
+  sc.Fold(g, +1, I32{3});
+  sc.Seal();
+  ASSERT_TRUE(sc.SealedOccupied(g));
+  ASSERT_EQ(sc.Old(g), (I32{3}));
+
+  // Retract both members: every count is 0 (all-dead membership).
+  sc.Fold(g, -1, I32{5});
+  sc.Fold(g, -1, I32{3});
+  ASSERT_FALSE(sc.WorkingOccupied(g));  // death, regardless of the rescan value.
+
+  const EmitCounts<MinCell> e = EmitTouchedGuard(sc, g);
+  ASSERT_EQ(e.retract_old, 1);  // -old only; the rescan-over-empty is not a row.
+  ASSERT_EQ(e.assert_new, 0);
+  sc.Seal();
+  ASSERT_FALSE(sc.SealedOccupied(g));
+  sc.DebugValidate();
+}
+
 TEST(StateCell, TeardownFreesEverythingNonTrivialAllocator) {
   CountingAlloc ca;
   {
