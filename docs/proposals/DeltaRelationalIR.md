@@ -1065,3 +1065,34 @@ the actual per-arm gate node into EmitChainStep (currently checked
 against the model function); EmitFrontierFilter reads un-cross-checked;
 site-2 correlation is table-keyed (position-keyed wanted for
 self-joins).
+
+## 12. As-landed model + R3c-ii/R3d diff plan + reviews (2026-07-16)
+
+Owner-directed checkpoint round: pseudocode-model the as-landed
+pipeline, express pending work as diffs, review both. Artifacts:
+as-landed-model.md (the §2 successor, with AUTHORITY/STRENGTH
+annotations; verifier-confirmed modulo the e355959 timing skew noted
+in its errata), r3cd-diff-plan.md (the R3c-ii+R3d unit as diffs),
+as-landed-model-verify.md, r3cd-critique.md (Fable). CRITIQUE
+VERDICT: REVISE BEFORE IMPLEMENTATION — architecturally right (the
+lift rule survived the constructed attacks; GROUP_UPDATE correctly
+becomes the first sole-authority payload-consuming family), but five
+load-bearing gaps: (1) CRITICAL — one-net-pair is WRONG at group
+birth/death (phantom retract on first touch, phantom assert on
+death: batch-1 abort on every aggregate case); fix = per-group
+OCCUPANCY, amending the binding statecell spec + StateCell.h;
+(2) CRITICAL — §4 fabricated compiler-known reduction semantics; the
+real dependency is the never-written functor driver ABI — OWNER
+DECISION; (3) V-ALGEBRA's gating mechanism broken as placed — belongs
+in the pre-pass slot the F14 rows vacate; (4) never-executed
+subsystems need explicit diffs (data-model table forcing, eager-walk
+termination at the aggregate boundary, SuffixesOf chain-breaking,
+linearizer band keys for the two new op kinds — else V-BAND-HAZARD
+aborts every aggregate compile; V-READY provably does NOT catch the
+equal-strata WRONG-A shape); (5) runall re-staging order bug + the
+kvindex flips contradict the ratified kv-reject unless the four test
+.dr files are annotated + stale pre-ADL drivers rewritten + the
+oracle needs the MAP functor implementations. Owner items:
+functor ABI (blocking); occupancy amendment; monotone/induction-owned
+aggregate inputs (incl. missing can_produce_deletions on
+QueryAggregateImpl); V-ALGEBRA layer ratification; STATE_SEAL pin.
