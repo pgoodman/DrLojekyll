@@ -359,6 +359,63 @@ re-suite-verified PASS after the whitespace fix). Recorded for P4: the
 pre-existing `func.Name()`-vs-`Sanitize` decl/call asymmetry (unchanged
 by P1); add a reduction-only target to future byte-compare lists.
 
+### P2 stage R1e — ingest inventory construct-alongside LANDED (2026-07-16)
+
+DR.h +31/−9 (the seven ingest_* DROp fields; 3 E-24 comment fixes),
+DR.cpp +347/−7 (MonotoneIngestRoleDR/AnyCutSuccessorDR; the INGEST_FOLD
+construction block in BuildDRInventory — per (io × receive × polarity)
+from query.IOs(), NEVER by copying the walk; deletion-capable receives
+= two stage-1 ops (+1 before −1, is_explicit, kAddQueue/kDeleteQueue
+from polarity, A-4 def-edges into the minted queue DRVecs); monotone
+receives with a table = one stage-1=false walk-metadata op; the census
+expect(kIngestFold, exp_ingest) + order-free per-op key multiset; the
+§7(a)-(d) always-on validators incl. the monotone queue-role
+cross-check vs context.table_delta_vecs; lead-0 off-lattice band Key;
+the E-24a stale-cite fix). Zero emission change, zero Runtime change,
+ID-neutral construction; kIngestFold is censused + validated on every
+compile, lowered by nothing (the cutover is task-gated on artifact
+§12). Census witnesses: negate_lower_strata 3 ops (2 stage-1 + 1
+monotone kNetAddition), cf16_4 1 (monotone kEmpty), deep_chain_retract
+3, average_weight 1 (the R3 agg-cut provisioning), booleans 2 (both
+kEmpty).
+
+THE CROSS-CHECK EARNED ITS KEEP ON DAY ONE (the house bet, cashed
+in-stage): the artifact's §2 monotone queue-role rule (receive-site
+successor test) is WRONG in-corpus — deep_chain_retract's monotone
+receive reaches its cut JOIN through a NON-cut same-table interior
+TUPLE, so the walk provisions kNetAdditions at the interior fold site
+(Build.cpp:868-893) while the receive-site predicate said kEmpty; the
+mandated §7d cross-check ABORTED on all 4 modes until the rule was
+corrected. This is the artifact's own §5 interior-fold caveat
+materializing beyond nls, caught pre-commit by exactly the validator
+designed to catch it.
+
+DEVIATIONS FOR RATIFICATION (recorded in artifact §13):
+1. The monotone queue-role rule is TABLE-level member-view
+   quantification: kNetAddition iff !TableIsDifferential(T) &&
+   (monotone_negated(T) || ∃ member view of T with a cut successor) —
+   sound because every member view of a monotone table is itself
+   monotone plumbing (a deletion-receiving member would make the table
+   differential) and hence eager-walked. Still derived independently of
+   table_delta_vecs, so §7d remains a genuine cross-check.
+2. §7(c)'s table-keyed clause scoped to the sound directions: explicit
+   ⇒ queue role ∧ differential table; monotone ⇒ {kNetAddition,
+   kEmpty} ∧ (kNetAddition ⇒ monotone table) — the literal reading
+   contradicted §2's own kEmpty derivation for a monotone receive over
+   a shared differential table.
+3. No publication walk-metadata field on the DROp (the binding §3a
+   field list omits it; §7's key is the 5-tuple; IF-4's consequence
+   forbids modeling publish as an ingest effect this stage).
+
+GATES (the hard R1e gate, §2.1 decision 2): FULL SUITE PASS (164),
+ZERO golden churn; generated datalog.h AND datalog.cpp byte-IDENTICAL
+on all 10 pre-registered targets; corpus sanity 164×4 = 656 compiles,
+zero validator aborts, the expected-diagnostic matrix exact; debug +
+release builds green (validators always-on under NDEBUG); ctest 3/3
+re-run on the exact tree; Q5 spot @128 release ~0.11s / debug ~0.95s
+(flat). Construction-only: byte-identity by construction, verified
+anyway.
+
 ## 3.1 Artifact index
 
 - p1-map1-target.md — P1 identity target: the exact post-P1 datalog.h

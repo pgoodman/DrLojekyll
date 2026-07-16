@@ -959,3 +959,23 @@ cannot.
     this ordering in a one-line comment at the dispatch site and confirm via
     the nls opt-mode structural PASS (an erased-then-refilled par would
     renumber or reparent, failing §12.4).
+
+---
+
+## §13. R1e AS-LANDED DEVIATIONS (2026-07-16; ledger §3 has the full record)
+
+1. §2's monotone queue-role rule (receive-site successor test) was WRONG
+   in-corpus — deep_chain_retract's monotone receive reaches its cut
+   JOIN through a non-cut same-table interior TUPLE; the §7d cross-check
+   aborted (all 4 modes) exactly as designed. LANDED RULE (table-level):
+   kNetAddition iff `!TableIsDifferential(T) && (monotone_negated(T) ||
+   ∃ member view of T with a cut successor)`; every member view of a
+   monotone table is itself monotone plumbing, hence eager-walked. Still
+   independent of context.table_delta_vecs — §7d remains a live
+   cross-check (and now passes 656/656 compiles).
+2. §7(c) scoped to the sound directions (explicit ⇒ queue ∧ differential;
+   monotone ⇒ {kNetAddition, kEmpty} ∧ (kNetAddition ⇒ monotone table)) —
+   the literal table-keyed clause contradicted §2's own kEmpty derivation
+   for a monotone receive over a shared differential table.
+3. No publication walk-metadata DROp field (binding §3a omits it; the
+   census key is the 5-tuple; publish stays a walk effect until §6).

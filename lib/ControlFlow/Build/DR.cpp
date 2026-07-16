@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <tuple>
 #include <unordered_set>
 
 #include "Build.h"
@@ -121,6 +122,41 @@ static void CollectSectionTargetsDR(ProgramImpl *impl, Context &context,
       CollectSectionTargetsDR(impl, context, succ, targets);
     }
   }
+}
+
+// Replicate the cut-successor test (Build.cpp:857-858) EXACTLY: a deletion-
+// capable / aggregate / KV-index successor is fed by phases or its
+// GROUP_UPDATE, never by the eager walk.
+static bool AnyCutSuccessorDR(QueryView view) {
+  for (QueryView succ : view.Successors()) {
+    if (succ.CanReceiveDeletions() || succ.IsAggregate() || succ.IsKVIndex()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// P2/R1e: the monotone-boundary net-additions rule at TABLE level (Build.cpp
+// :886-893). The walk provisions a monotone table's kNetAdditions frontier at
+// WHICHEVER same-table fold site meets the cut during descent (Build.cpp
+// :868-872 — not necessarily the receive), so the rule quantifies over every
+// member view: each member of a monotone table is itself monotone plumbing (a
+// deletion-receiving member would make the table differential) and hence
+// eager-walked. Shared by the kIngestFold construction and its census recount;
+// §7d cross-checks it against the walk-produced map on every compile.
+static VecRole MonotoneIngestRoleDR(Context &context, TABLE *table) {
+  if (TableIsDifferential(table)) {
+    return VecRole::kEmpty;
+  }
+  if (context.monotone_negated_tables.count(table) != 0u) {
+    return VecRole::kNetAddition;
+  }
+  for (const QueryView &member : table->views) {
+    if (AnyCutSuccessorDR(member)) {
+      return VecRole::kNetAddition;
+    }
+  }
+  return VecRole::kEmpty;
 }
 
 // One terminal outcome of the walk suffix rooted at a view: the path SUFFIX
@@ -1642,11 +1678,10 @@ DRFlowGraph BuildDRInventory(
   // F-5 eager cells): context=eager, pred DERIVED from the hint — normal→kInI,
   // @never→kPresent (Negate.cpp:91-94 / `BuildEagerNegateRegion`). Every negate
   // reached by the eager insertion walk emits exactly one such gate
-  // (Build.cpp:1002 for every negate view). This is the CLEANLY-DERIVABLE half
-  // of the eager web; the eager INGEST_FOLD family is CUT in R1d (see the
-  // eager-walk inventory note — the message→table fold sites live inside the
-  // recursive `BuildEagerRegion` walk with no externalized discovery struct to
-  // mirror faithfully; kIngestFold stays reserved).
+  // (Build.cpp:1048-1051 for every negate view). This is one cleanly-derivable
+  // half of the eager web; the other, the eager INGEST_FOLD family, is
+  // populated in P2/R1e below (deletion-capable receives stage-1; the
+  // monotone/descent surface is deferred — P2 artifact §6).
   for (QueryNegate negate : query.Negations()) {
     const QueryView negate_view(negate);
     const QueryView negated_view = negate.NegatedView();
@@ -1669,6 +1704,108 @@ DRFlowGraph BuildDRInventory(
     read.ctx = Ctx::kEager;
     op.effects.push_back(read);
     flow.ops.push_back(std::move(op));
+  }
+
+  // --------------------------------------------------------------- INGEST_FOLD
+  // P2/R1e (p2-ingest-inventory-target.md §2/§3a): one op per (io × receive ×
+  // polarity), derived from `query.IOs()` — NEVER by copying the eager walk.
+  // A DELETION-CAPABLE receive yields TWO stage-1 ops (+1 then -1, is_explicit,
+  // roles kAddQueue/kDeleteQueue from polarity alone — the two
+  // build_explicit_loop folds, Procedure.cpp:43-90; fold body = counter± +
+  // queue append, nothing nested below). A MONOTONE receive with a table
+  // yields ONE stage1=false walk-metadata op: its role re-runs the boundary
+  // predicate (Build.cpp:857-858 cut successors + :886-889 monotone-negated ∨
+  // cut ⇒ kNetAddition, else kEmpty) over EVERY member view of the receive
+  // table — NOT the receive's own successors alone, a deliberate deviation
+  // from the artifact's §2 rule: the walk's append sits inside the table's
+  // fold crossing wherever the descent meets the cut (Build.cpp:868-872, the
+  // §5 migration), witnessed in-corpus by deep_chain_retract, whose receive
+  // reaches its cut JOIN through a same-table TUPLE. Every member view of a
+  // monotone table is itself monotone plumbing (a deletion-receiving member
+  // would make the table differential) and hence eager-walked, so member-set
+  // existence == the walk's provisioning (§7d cross-checks that on every
+  // compile). The fold body hosts the eager descent, so the op stays
+  // hand-coded (§0/§6 — its INSERT stream publish is a WALK effect of the
+  // descent, never an ingest-seed effect). A table-less monotone receive
+  // mints no counter fold (Procedure.cpp:104) and is not an ingest fold.
+  // Construction is ID-NEUTRAL (no region/vector ids); the queue-vec ids are
+  // minted at LOWER time in the same (message, receive, polarity) order (§4).
+  for (QueryIO io : query.IOs()) {
+    const auto receives = io.Receives();
+    if (receives.empty()) {
+      continue;
+    }
+    const ParsedMessage message = ParsedMessage::From(io.Declaration());
+    for (QueryView receive : receives) {
+      TABLE *const table =
+          impl->view_to_model[receive]->FindAs<DataModel>()->table;
+
+      // Deletion-capable (STAGE-1 IN): the +1 op BEFORE the -1 op (the
+      // add-before-remove emitted order, Procedure.cpp:87-88).
+      if (receive.CanReceiveDeletions()) {
+        for (int sign : {+1, -1}) {
+          DROp op(DROpKind::kIngestFold);
+          op.ctx = Ctx::kEager;
+          op.ingest_message = message;
+          op.ingest_receive = receive;
+          op.ingest_table = table;
+          op.ingest_sign = sign;
+          op.ingest_is_explicit = true;  // the message-support-bit toggle
+          op.ingest_role =
+              (sign > 0) ? VecRole::kAddQueue : VecRole::kDeleteQueue;
+          op.ingest_stage1 = true;
+          DREffect cnt;
+          cnt.kind = EffKind::kCounter;
+          cnt.counter_table = table;
+          cnt.sign = sign;
+          cnt.klass = DerivClass::kNonRecursive;  // Procedure.cpp:56
+          op.effects.push_back(cnt);
+          DREffect app;
+          app.kind = EffKind::kVecAppend;
+          app.value_table = table;
+          app.vec_role = op.ingest_role;
+          op.effects.push_back(app);
+          const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
+          const VecRole role = op.ingest_role;
+          flow.ops.push_back(std::move(op));
+          // The queue vec exists (a deletion-capable receive's table is
+          // differential, so MintTableVec minted it above); A-4 multi-def.
+          flow.vecs[flow.TableVec(table, role)].defs.push_back(op_idx);
+        }
+        continue;  // no cut/descent — Procedure.cpp:89.
+      }
+
+      // Monotone with a table (STAGE-1 OUT): inventoried + censused, never
+      // lowered this stage (the hand-coded walk still emits it).
+      if (table != nullptr) {
+        DROp op(DROpKind::kIngestFold);
+        op.ctx = Ctx::kEager;
+        op.ingest_message = message;
+        op.ingest_receive = receive;
+        op.ingest_table = table;
+        op.ingest_sign = 1;
+        op.ingest_is_explicit = false;
+        op.ingest_stage1 = false;
+        op.ingest_role = MonotoneIngestRoleDR(context, table);
+        DREffect cnt;
+        cnt.kind = EffKind::kCounter;
+        cnt.counter_table = table;
+        cnt.sign = 1;
+        cnt.klass = EmissionDerivClass(impl, context, receive);
+        op.effects.push_back(cnt);
+        if (op.ingest_role != VecRole::kEmpty) {
+          DREffect app;
+          app.kind = EffKind::kVecAppend;
+          app.value_table = table;
+          app.vec_role = op.ingest_role;
+          op.effects.push_back(app);
+        }
+        flow.ops.push_back(std::move(op));
+        // NO def-edge: the monotone kNetAddition vec is not minted by the
+        // differential-only MintTableVec loop; the append parks via
+        // TableDeltaVector at LOWER time (§3a).
+      }
+    }
   }
 
   // ------------------------------------------------------------ FIXPOINT_ROUND
@@ -2367,6 +2504,86 @@ void ValidateDROps(
         }
         break;
       }
+      case DROpKind::kIngestFold: {
+        // V-INGEST (P2 artifact §7a): EFFECT-SET TOTALITY — exactly one
+        // kCounter (sign == the op's, klass kNonRecursive) plus at most one
+        // kVecAppend (present iff the role is non-empty), nothing else.
+        unsigned counters = 0u, appends = 0u, others = 0u;
+        for (const DREffect &e : op.effects) {
+          if (e.kind == EffKind::kCounter) {
+            ++counters;
+            if (e.sign != op.ingest_sign ||
+                e.klass != DerivClass::kNonRecursive ||
+                e.counter_table != op.ingest_table) {
+              ValidatorFail("V-INGEST: ingest counter effect disagrees with "
+                            "the op (sign/klass/table)");
+            }
+          } else if (e.kind == EffKind::kVecAppend) {
+            ++appends;
+            if (e.vec_role != op.ingest_role ||
+                e.value_table != op.ingest_table) {
+              ValidatorFail("V-INGEST: ingest append effect disagrees with "
+                            "the op's queue role");
+            }
+          } else {
+            ++others;
+          }
+        }
+        if (counters != 1u || others != 0u ||
+            appends != ((op.ingest_role != VecRole::kEmpty) ? 1u : 0u)) {
+          ValidatorFail("V-INGEST: ingest fold effect set is not "
+                        "{kCounter} or {kCounter, kVecAppend}");
+        }
+        if (op.ingest_sign != 1 && op.ingest_sign != -1) {
+          ValidatorFail("V-INGEST: ingest fold sign not in {-1, +1}");
+        }
+        if (op.ingest_table == nullptr || !op.ingest_message.has_value() ||
+            !op.ingest_receive.has_value()) {
+          ValidatorFail("V-INGEST: ingest fold missing table/message/receive");
+        }
+        // Stage-1 membership IS deletion-capability (== is_explicit) in R1e.
+        if (op.ingest_stage1 != op.ingest_is_explicit) {
+          ValidatorFail("V-INGEST: stage1 bit disagrees with is_explicit");
+        }
+        // §7c QUEUE-ROLE AGREEMENT (pure DR VecRole terms, never VectorKind):
+        // sign<0 ⇒ kDeleteQueue; sign>0 ⇒ {kAddQueue, kNetAddition, kEmpty};
+        // an explicit (deletion-capable) op parks into a Queue role and its
+        // receive table is differential; a monotone op parks into
+        // kNetAddition|kEmpty, and kNetAddition only over a monotone table
+        // (mirrors TableIsDifferential — the Build.cpp:888 guard).
+        if (op.ingest_sign < 0 && op.ingest_role != VecRole::kDeleteQueue) {
+          ValidatorFail("V-INGEST: a `-` ingest fold does not park into the "
+                        "delete queue");
+        }
+        if (op.ingest_sign > 0 && op.ingest_role != VecRole::kAddQueue &&
+            op.ingest_role != VecRole::kNetAddition &&
+            op.ingest_role != VecRole::kEmpty) {
+          ValidatorFail("V-INGEST: a `+` ingest fold has an invalid role");
+        }
+        if (op.ingest_is_explicit) {
+          if (op.ingest_role != VecRole::kAddQueue &&
+              op.ingest_role != VecRole::kDeleteQueue) {
+            ValidatorFail("V-INGEST: a deletion-capable ingest fold does not "
+                          "park into a queue role");
+          }
+          if (!TableIsDifferential(op.ingest_table)) {
+            ValidatorFail("V-INGEST: a deletion-capable receive's table is "
+                          "not differential");
+          }
+        } else {
+          if (op.ingest_role != VecRole::kNetAddition &&
+              op.ingest_role != VecRole::kEmpty) {
+            ValidatorFail("V-INGEST: a monotone ingest fold parks into a "
+                          "queue role");
+          }
+          if (op.ingest_role == VecRole::kNetAddition &&
+              TableIsDifferential(op.ingest_table)) {
+            ValidatorFail("V-INGEST: a differential table's monotone ingest "
+                          "fold claims the net-additions frontier");
+          }
+        }
+        break;
+      }
       default:
         break;
     }
@@ -2513,6 +2730,43 @@ void ValidateDROps(
     }
   }
 
+  // Expected INGEST_FOLD count + per-op key multiset (P2/R1e, artifact §7):
+  // an INDEPENDENT recount over query.IOs()×Receives()×polarity (the same
+  // discovery-input re-derivation discipline as exp_branches above — never a
+  // region-tree walk). A deletion-capable receive counts 2 (stage-1 add +
+  // delete); a monotone receive with a table counts 1 (stage-1 OUT, still
+  // censused); a table-less monotone receive counts 0. The key is
+  // (table, sign, is_explicit, role, message), compared order-free.
+  // TODO(P4): the R3 GROUP_UPDATE/STATE_SEAL family still has NO census
+  // coverage here (E-25) — P4 residue, not expanded in this diff.
+  unsigned exp_ingest = 0u;
+  using IngestKey = std::tuple<uintptr_t, int, bool, uint8_t, uint64_t>;
+  std::vector<IngestKey> exp_ingest_keys;
+  for (QueryIO io : query.IOs()) {
+    const auto io_receives = io.Receives();
+    if (io_receives.empty()) {
+      continue;
+    }
+    const uint64_t mid = ParsedMessage::From(io.Declaration()).Id();
+    for (QueryView receive : io_receives) {
+      TABLE *const table =
+          impl->view_to_model[receive]->FindAs<DataModel>()->table;
+      const auto tid = reinterpret_cast<uintptr_t>(table);
+      if (receive.CanReceiveDeletions()) {
+        exp_ingest += 2u;
+        exp_ingest_keys.emplace_back(
+            tid, 1, true, static_cast<uint8_t>(VecRole::kAddQueue), mid);
+        exp_ingest_keys.emplace_back(
+            tid, -1, true, static_cast<uint8_t>(VecRole::kDeleteQueue), mid);
+      } else if (table != nullptr) {
+        exp_ingest += 1u;
+        const VecRole role = MonotoneIngestRoleDR(context, table);
+        exp_ingest_keys.emplace_back(tid, 1, false,
+                                     static_cast<uint8_t>(role), mid);
+      }
+    }
+  }
+
   // Compare against the DERIVED op inventory.
   const auto count_kind = [&](DROpKind k) -> unsigned {
     unsigned n = 0u;
@@ -2540,6 +2794,81 @@ void ValidateDROps(
   expect(DROpKind::kRederive, exp_rederive, "rederives");
   expect(DROpKind::kFrontierFilter, exp_filter, "frontier filters");
   expect(DROpKind::kCommitSweep, exp_sweep, "commit sweeps");
+  expect(DROpKind::kIngestFold, exp_ingest, "ingest folds");
+
+  // The INGEST_FOLD per-op key multiset (order-free; artifact §7): the
+  // recomputed (table, sign, is_explicit, role, message) keys must equal the
+  // multiset read off `flow`'s ops. This is the E-22 completeness half of the
+  // census — a dropped or double-inventoried receive/polarity mismatches here
+  // even when the count happens to agree.
+  {
+    std::vector<IngestKey> got_ingest_keys;
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kIngestFold) {
+        continue;
+      }
+      got_ingest_keys.emplace_back(
+          reinterpret_cast<uintptr_t>(op.ingest_table), op.ingest_sign,
+          op.ingest_is_explicit, static_cast<uint8_t>(op.ingest_role),
+          op.ingest_message->Id());
+    }
+    std::sort(exp_ingest_keys.begin(), exp_ingest_keys.end());
+    std::sort(got_ingest_keys.begin(), got_ingest_keys.end());
+    if (exp_ingest_keys != got_ingest_keys) {
+      std::fprintf(stderr,
+                   "error: DR-IR op census mismatch (ingest fold keys): the "
+                   "derived (table, sign, is_explicit, role, message) multiset "
+                   "disagrees with the independent recount\n");
+      std::abort();
+    }
+  }
+
+  // §7b ONE-OP-PER-(message, receive, polarity): no receive owns two ingest
+  // folds of one sign. (The message is determined by the receive — one io per
+  // receive — so (receive, sign) is the full key; the message identity is
+  // already pinned by the key-multiset census above.)
+  {
+    std::unordered_map<QueryView, unsigned> receive_signs;  // → sign bitmask
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kIngestFold) {
+        continue;
+      }
+      const unsigned bit = (op.ingest_sign < 0) ? 1u : 2u;
+      unsigned &mask = receive_signs[*op.ingest_receive];
+      if (mask & bit) {
+        ValidatorFail("V-INGEST: two ingest folds share one "
+                      "(message, receive, polarity) key");
+      }
+      mask |= bit;
+    }
+  }
+
+  // §7d MONOTONE QUEUE-ROLE CROSS-CHECK (the §5 R1e-phase check): for every
+  // monotone (stage-1 OUT) op, the boundary-predicate-derived role must agree
+  // with the walk-produced `context.table_delta_vecs` — the map holds a
+  // kNetAdditions vec for the receive table iff the predicate said
+  // kNetAddition. Both read at phase time (the map is full: the eager walk at
+  // Procedure.cpp:714 ran before BuildStratumPhases at :756). A disagreement
+  // means the table-level member-view predicate (MonotoneIngestRoleDR) and
+  // the walk's actual append-site provisioning diverged — abort.
+  for (const DROp &op : flow.ops) {
+    if (op.kind != DROpKind::kIngestFold || op.ingest_is_explicit) {
+      continue;
+    }
+    bool map_has_net_additions = false;
+    if (auto it = context.table_delta_vecs.find(op.ingest_table);
+        it != context.table_delta_vecs.end()) {
+      map_has_net_additions =
+          it->second.count(
+              static_cast<unsigned>(VectorKind::kNetAdditions)) != 0u;
+    }
+    const bool pred_says = (op.ingest_role == VecRole::kNetAddition);
+    if (map_has_net_additions != pred_says) {
+      ValidatorFail("V-INGEST: a monotone receive's derived queue role "
+                    "disagrees with the walk-produced net-additions frontier "
+                    "(table_delta_vecs membership)");
+    }
+  }
 
   // V-SEED-SUP negative space: no SEED_FOLD folds into an all-same-SCC join's
   // table (the tc G1 bug). POSITIVE: an all-same-SCC join has ≥1 fixpoint fire.
@@ -2871,6 +3200,7 @@ void LinearizeAndValidateDRFlow(
                : op.product_table ? op.product_table
                : op.agg_table     ? op.agg_table
                : op.negate_table  ? op.negate_table
+               : op.ingest_table  ? op.ingest_table
                                    : op.fire_table;
     return reinterpret_cast<uintptr_t>(t);
   };
@@ -2914,6 +3244,14 @@ void LinearizeAndValidateDRFlow(
     const DROp &op = flow.ops[oi];
     if (op.kind == DROpKind::kNegateGate && op.ctx == Ctx::kEager) {
       return Key{0u, 0u, 0u, op_table_id(op), 0, oi};
+    }
+    // P2/R1e: ingest folds are lead-0 off-lattice (VALIDATOR-ORDERING ONLY —
+    // emission never reads this key; the lowering default is the old walk's
+    // query.IOs()×Receives()×(+before−) construction order, artifact §4).
+    // Lead 0 puts every ingest→drain RAW forward in the key (ingest seeds the
+    // queue the lead-1 phase drain reads — seed_before_drain).
+    if (op.kind == DROpKind::kIngestFold) {
+      return Key{0u, 0u, 0u, op_table_id(op), op.ingest_sign, oi};
     }
     if (op.kind == DROpKind::kCommitSweep) {
       return Key{2u, max_stratum + 1u, 9u, op_table_id(op), 0, oi};
@@ -3414,10 +3752,12 @@ void LinearizeAndValidateDRFlow(
     const DROp &ro = flow.ops[d.to];
     const bool wo_offlattice =
         (wo.kind == DROpKind::kNegateGate && wo.ctx == Ctx::kEager) ||
-        wo.kind == DROpKind::kCommitSweep || wo.kind == DROpKind::kStateSeal;
+        wo.kind == DROpKind::kCommitSweep || wo.kind == DROpKind::kStateSeal ||
+        wo.kind == DROpKind::kIngestFold;
     const bool ro_offlattice =
         (ro.kind == DROpKind::kNegateGate && ro.ctx == Ctx::kEager) ||
-        ro.kind == DROpKind::kCommitSweep || ro.kind == DROpKind::kStateSeal;
+        ro.kind == DROpKind::kCommitSweep || ro.kind == DROpKind::kStateSeal ||
+        ro.kind == DROpKind::kIngestFold;
     if (wo_offlattice || ro_offlattice) {
       continue;
     }
