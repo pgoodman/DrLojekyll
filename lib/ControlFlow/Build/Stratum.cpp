@@ -1567,6 +1567,223 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
   }
 }
 
+// ===========================================================================
+// R2 FAMILY #2 — SCC/RECURSIVE-BAND LOWERING (dr → cf).
+//
+// `LowerDRRounds` (below) replaces the hand-coded SCC driver band — the old
+// driver's `build_claim_round_loop` closure + the two-call del/add loop
+// structure + REDERIVE + the two deferred frontier filters (Stratum.cpp
+// :2140-2321). It lowers the per-SCC×phase FIXPOINT_ROUND shells the DR-IR
+// constructs (`DRFlowGraph::rounds`, DR.cpp:1423-1468), driving the surviving
+// Emit* primitives (EmitClaimDrain in-round form, EmitJoinFire, EmitSeedLoop
+// in-fixpoint form for CHAIN_FOLD, EmitRetireFrontier, EmitRederive,
+// EmitFrontierFilter) 1:1 from the round's DR ops.
+//
+// Structure reproduced verbatim (the lowering DEFAULT, not the sign-major
+// pinned order — family #1's lesson, DeltaRelationalIR.md §8): per SCC group
+// drained at this stratum, an OVERDELETE INDUCTION (round body: clear each
+// Δ_D, in-round del claim drains, del fires, del chain-folds, del retires;
+// output: REDERIVE per table) then an INSERT INDUCTION (mirror on the add
+// side; output: BOTH deferred FRONTIER_FILTERs, E-17). The DR round shells
+// decide WHICH groups/tables/joins/folds; the Emit* primitives do the codegen.
+//
+// VECTOR reuse discipline (the (table,kind)→VECTOR* bridge): every round
+// frontier / queue / set is fetched via `TableDeltaVector` (memoized in
+// `context.table_delta_vecs`), so the vecs the old driver minted are REUSED,
+// never re-minted (VectorFor is NOT memoized — a fresh call would shift every
+// downstream id and break identity; §8 family-#1 hazard).
+
+// Recover the SCC table set of a round from its test vecs (Δ frontiers), in
+// vec order == `impl->tables` order (the DR shell minted them so — DR.cpp:1456)
+// == the old driver's `scc_tables` order (phase_table_order filtered).
+static std::vector<TABLE *> RoundTables(const DRFlowGraph &dr_flow,
+                                        const DRRound &round) {
+  std::vector<TABLE *> tables;
+  for (unsigned vi : round.test_vecs) {
+    tables.push_back(dr_flow.vecs[vi].debug_table);
+  }
+  return tables;
+}
+
+// Lower ONE FixpointRound region body into an INDUCTION whose cyclic region is
+// the round body (absorbed from the deleted `build_claim_round_loop`): per
+// round — clear each SCC table's Δ; in-round claim-drain each SCC table (dual-
+// append + B-7 queue clear); fire the recursive joins DELTA over Δ; re-fire the
+// same-SCC internal projections (CHAIN_FOLD ≡ in-fixpoint EmitSeedLoop); retire
+// each Δ. Δ-emptiness break is the INDUCTION's own maintained-vector discipline
+// (loop->vectors == the round frontiers). Driven by the round's DR ops.
+static INDUCTION *LowerRoundBody(
+    ProgramImpl *impl, Context &context, const RecursiveSccMap &recursive_sccs,
+    const DRFlowGraph &dr_flow, const DRRound &round,
+    const std::vector<TABLE *> &scc_tables, SERIES *out_seq) {
+  const bool is_del = (round.phase == RoundPhase::kOverdelete);
+  const VectorKind frontier_kind = is_del ? VectorKind::kClaimedDeleteFrontier
+                                          : VectorKind::kClaimedAddFrontier;
+
+  INDUCTION *const loop = impl->induction_regions.Create(impl, out_seq);
+  loop->parent = out_seq;
+  out_seq->AddRegion(loop);
+
+  PARALLEL *const round_par = impl->parallel_regions.Create(loop);
+  loop->cyclic_region.Emplace(loop, round_par);
+  SERIES *const round_seq = impl->series_regions.Create(round_par);
+  round_par->AddRegion(round_seq);
+
+  // Round-start CLEAR of each Δ frontier + register it as a maintained vector
+  // (the fixpoint-test vec set — the Δ-emptiness break condition). These are the
+  // DRRound `test_vecs`, recovered as SCC tables (RoundTables), each fetched via
+  // the memoized `TableDeltaVector`.
+  for (TABLE *table : scc_tables) {
+    VECTOR *const round_frontier =
+        TableDeltaVector(impl, context, table, frontier_kind);
+    loop->vectors.AddUse(round_frontier);
+
+    VECTORCLEAR *const clear =
+        impl->operation_regions.CreateDerived<VECTORCLEAR>(
+            round_seq, ProgramOperation::kClearInductionVector);
+    clear->vector.Emplace(clear, round_frontier);
+    round_seq->AddRegion(clear);
+  }
+
+  // In-round CLAIM_DRAIN per SCC table (the round's kClaimDrain in-round ops —
+  // one del, one add per SCC table; we emit the phase sign here). Dual-append +
+  // B-7 clear live inside EmitClaimDrain's round_frontier path.
+  for (TABLE *table : scc_tables) {
+    VECTOR *const round_frontier =
+        TableDeltaVector(impl, context, table, frontier_kind);
+    EmitClaimDrain(impl, context, table, is_del, round_seq, round_frontier);
+  }
+
+  // FIXPOINT_FIRE: re-fire every recursive JOIN in this SCC group DELTA over Δ.
+  // Driven by the group's kFixpointFire ops of this sign (in flow.joins order ==
+  // discovery `joins` order, V-OLD-EQUIV-proven). Each op carries `fire_join`;
+  // EmitJoinFire reads only `emission.join_view`, so a lightweight JoinEmission
+  // suffices.
+  for (const DROp *op : dr_flow.OpsOfKind(DROpKind::kFixpointFire)) {
+    // A FIXPOINT_FIRE carries no `scc_group` field (DR.cpp derives its round
+    // from `fire_table`'s SCC); recover the group the same way.
+    const auto fire_scc = RecursiveSCC(recursive_sccs, op->fire_table);
+    if (op->fire_sign != (is_del ? -1 : +1) ||
+        !fire_scc.has_value() || *fire_scc != round.scc_group) {
+      continue;
+    }
+    const JoinEmission emission(*op->fire_join, nullptr /* pivot */, 0u);
+    EmitJoinFire(impl, context, recursive_sccs, emission, is_del, round_seq);
+  }
+
+  // CHAIN_FOLD: re-fire the same-SCC internal projection seeds DELTA over the
+  // source table's Δ (≡ the old in-fixpoint EmitSeedLoop). Driven by the group's
+  // kChainFold ops of this sign (in flow.branches order == discovery `branches`
+  // order). `chain_branch` indexes `dr_flow.branches`; convert to a BranchChain.
+  for (const DROp *op : dr_flow.OpsOfKind(DROpKind::kChainFold)) {
+    if (op->chain_sign != (is_del ? -1 : +1) ||
+        op->scc_group != round.scc_group) {
+      continue;
+    }
+    const BranchChain chain =
+        BranchChainOf(dr_flow.branches[op->chain_branch], 0u);
+    EmitSeedLoop(impl, context, chain, !is_del /* is_add */,
+                 DerivClass::kRecursive,
+                 TableDeltaVector(impl, context, op->chain_source, frontier_kind),
+                 nullptr, true /* in_fixpoint */, round_seq);
+  }
+
+  // RETIRE: clear each Δ's same-round bit at the round-body tail (kRetire ops,
+  // one per SCC table this sign). Table order == scc_tables (== retire-op
+  // construction order).
+  for (TABLE *table : scc_tables) {
+    VECTOR *const round_frontier =
+        TableDeltaVector(impl, context, table, frontier_kind);
+    EmitRetireFrontier(impl, table, is_del, round_frontier, round_seq);
+  }
+  return loop;
+}
+
+// Lower every FixpointRound region shell whose SCC group is drained at this
+// `stratum` (absorbed from the deleted SCC driver band). Reproduces the old
+// two-phase structure: OVERDELETE round → REDERIVE (its output) → INSERT round
+// → BOTH deferred frontier filters (its output), E-17. The DRRound shells
+// enumerate the groups/tables; `LowerRoundBody` drives the surviving Emit*.
+static void LowerDRRounds(ProgramImpl *impl, Context &context,
+                          const RecursiveSccMap &recursive_sccs,
+                          const DRFlowGraph &dr_flow,
+                          const std::unordered_map<TABLE *, unsigned>
+                              &drain_stratum,
+                          unsigned stratum, SERIES *stratum_seq) {
+  // The round shells come in (group ascending, OVERDELETE then INSERT) pairs
+  // (DR.cpp:1442-1467). Walk the OVERDELETE rounds; for each whose group drains
+  // at this stratum, emit the OD loop + REDERIVE, then find its INSERT sibling
+  // and emit the add loop + deferred filters. (A group has exactly one OD + one
+  // INSERT round; both share the SCC table set, so both drain at one stratum.)
+  const auto find_round = [&](unsigned g, RoundPhase p) -> const DRRound * {
+    for (const DRRound &r : dr_flow.rounds) {
+      if (r.scc_group == g && r.phase == p) {
+        return &r;
+      }
+    }
+    return nullptr;
+  };
+
+  for (const DRRound &del_round : dr_flow.rounds) {
+    if (del_round.phase != RoundPhase::kOverdelete) {
+      continue;
+    }
+    const std::vector<TABLE *> scc_tables = RoundTables(dr_flow, del_round);
+
+    // Skip a round whose SCC group is NOT drained at this stratum (the SCC's
+    // members share one drain stratum — the scheduling fixpoint pins them).
+    bool here = false;
+    for (TABLE *table : scc_tables) {
+      if (auto it = drain_stratum.find(table);
+          it != drain_stratum.end() && it->second == stratum) {
+        here = true;
+        break;
+      }
+    }
+    if (!here) {
+      continue;
+    }
+
+    // OVERDELETE (§5.2): the del-side claim-round fixpoint, then — in its output
+    // region, after quiescence — REDERIVE (every overdeleted row still
+    // recursively supported re-enters via the add queue). The del net-removal
+    // frontier is deliberately NOT built here (spec §5.0: both signed frontiers
+    // are consolidated in the INSERT output, after `kAdd` is final, so a row
+    // overdeleted then re-added leaks into neither).
+    INDUCTION *const del_loop = LowerRoundBody(
+        impl, context, recursive_sccs, dr_flow, del_round, scc_tables,
+        stratum_seq);
+    SERIES *const del_output = impl->series_regions.Create(del_loop);
+    del_loop->output_region.Emplace(del_loop, del_output);
+    for (TABLE *table : scc_tables) {  // REDERIVE band (kRederive output ops).
+      EmitRederive(impl, context, table, del_output);
+    }
+
+    // INSERT (§5.3): the add-side claim-round fixpoint (mirror), draining the
+    // add queue — the batch's `+` seeds AND REDERIVE's output.
+    const DRRound *const add_round =
+        find_round(del_round.scc_group, RoundPhase::kInsert);
+    assert(add_round != nullptr);
+    INDUCTION *const add_loop = LowerRoundBody(
+        impl, context, recursive_sccs, dr_flow, *add_round, scc_tables,
+        stratum_seq);
+    SERIES *const add_output = impl->series_regions.Create(add_loop);
+    add_loop->output_region.Emplace(add_loop, add_output);
+
+    // BUILDFRONTIERS (§5.0 / E-17): BOTH consolidated signed net frontiers are
+    // built HERE, after INSERT has quiesced, so `kAdd` (INSERT) and `kDel`
+    // (OVERDELETE) are both final. These are the deferred FRONTIER_FILTERs
+    // hosted in the INSERT round's output (V-DEFER); del filter band then add
+    // filter band (the deferred kFrontierFilter output ops).
+    for (TABLE *table : scc_tables) {
+      EmitFrontierFilter(impl, context, table, true /* is_del */, add_output);
+    }
+    for (TABLE *table : scc_tables) {
+      EmitFrontierFilter(impl, context, table, false /* is_del */, add_output);
+    }
+  }
+}
+
 }  // namespace
 
 // Build the per-stratum differential phases into the entry procedure: for
@@ -1583,23 +1800,20 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   // recursive tables and the same-SCC read exemption in the readiness assert.
   RecursiveSccMap recursive_sccs = ComputeRecursiveSCCs(impl, context);
 
-  // Whether a table is in a stratum-phase-owned recursive SCC — the shape whose
-  // folds class `kRecursive` and whose claim-round OVERDELETE/REDERIVE/INSERT
-  // loop is emitted. Both LINEAR (exactly one same-SCC join side) and NONLINEAR
-  // (`tc(F,T):tc(F,X),tc(X,T)`, ≥2 same-SCC join sides) recursions answer true:
-  // the claim-round fire's k-position JOIN emission (`EmitJoinFire`) handles
-  // both, folding the round-relative predicate matrix
+  // (Both LINEAR (exactly one same-SCC join side) and NONLINEAR
+  // (`tc(F,T):tc(F,X),tc(X,T)`, ≥2 same-SCC join sides) recursions are handled
+  // by the claim-round fire's k-position JOIN emission (`EmitJoinFire`), which
+  // folds the round-relative predicate matrix
   // (`SurvivesSoFar`/`AliveAtClaim`/`InNewWithFrontier`/`InNewSansFrontier`)
-  // over each other same-SCC side keyed on static join position. Nonlinear SCCs
+  // over each other same-SCC side keyed on static join position; nonlinear SCCs
   // no longer fall back to the pre-A2 single-pass path.
-  const auto is_recursive = [&](TABLE *table) -> bool {
-    return RecursiveSCC(recursive_sccs, table).has_value();
-  };
-
-  // (The `all_sides_same_scc` seed-suppression test that used to live here now
-  // lives inside `LowerDRFlow` — the acyclic-band seed/join emission it gated
-  // moved there with the R2 family-#1 cutover. The SCC round shells below do
-  // not need it.)
+  //
+  // The `is_recursive` / `all_sides_same_scc` / SCC-partition tests that used to
+  // live here now live inside the lowering: `LowerDRFlow` (family #1, acyclic
+  // band) and `LowerDRRounds` (family #2, recursive band) drive the emission
+  // from the DR-IR flow graph + FixpointRound shells. `BuildStratumPhases`
+  // retains only the discovery + scheduling fixpoint that SEED the DR strata and
+  // back V-OLD-EQUIV — family #3 deletes those too.)
 
   // Discover the branch chains out of every chain source, in the tables'
   // creation order (deterministic). A source is a table with a frontier:
@@ -2137,187 +2351,17 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     LowerDRFlow(impl, context, recursive_sccs, dr_flow, stratum, seed_vector,
                 join_pivots, stratum_seq);
 
-    // Partition this stratum's phase tables into single-pass (genuinely
-    // acyclic) tables and recursive-SCC tables (whose OVERDELETE/INSERT is a
-    // claim-round fixpoint per §5.2/§5.3 — see below). A single-pass table's
-    // every fold is `kNonRecursive`, so its recursive counter is identically
-    // zero and one drain settles it; the scheduling fixpoint lifted its
-    // emissions above every table it reads. Both linear and nonlinear recursive
-    // SCCs are `scc_tables` — the k-position JOIN fire handles either shape.
-    std::vector<TABLE *> acyclic_tables;
-    std::vector<TABLE *> scc_tables;
-    for (TABLE *table : phase_table_order) {
-      if (drain_stratum[table] != stratum) {
-        continue;
-      }
-      if (is_recursive(table)) {
-        scc_tables.push_back(table);
-      } else {
-        acyclic_tables.push_back(table);
-      }
-    }
-
-    // (Acyclic claim drains + immediate frontier filters are emitted by
-    // `LowerDRFlow` above — the single-pass CLAIM_DRAIN / immediate
-    // FRONTIER_FILTER DROps. `acyclic_tables` is retained only for symmetry
-    // with `scc_tables`, which the SCC round shells below still consume.)
-    (void) acyclic_tables;
-
-    if (scc_tables.empty()) {
-      continue;
-    }
-
-    // The set of SCC group ids drained at this stratum (the SCC tables share
-    // one drain stratum, so this is normally a single group).
-    std::unordered_set<unsigned> scc_groups_here;
-    for (TABLE *table : scc_tables) {
-      scc_groups_here.insert(*RecursiveSCC(recursive_sccs, table));
-    }
-
-    // The join emissions whose persisted table is in an SCC drained at this
-    // stratum — their fixpoint fire runs each round HERE, regardless of where
-    // the seed join itself is scheduled (the seed join runs once at its own,
-    // possibly lower, stratum; the fire is part of the SCC's claim-round loop).
-    std::vector<const JoinEmission *> scc_joins;
-    for (const JoinEmission &emission : joins) {
-      DataModel *const jm =
-          impl->view_to_model[emission.join_view]->FindAs<DataModel>();
-      if (auto g = RecursiveSCC(recursive_sccs, jm->table);
-          g.has_value() && scc_groups_here.count(*g)) {
-        scc_joins.push_back(&emission);
-      }
-    }
-
-    // Build one signed claim-round fixpoint for the SCC (§5.2 OVERDELETE for
-    // `is_del`, §5.3 INSERT for the add side). The base- and recursive-rule
-    // seed folds have already parked their zero-crossings in the SCC tables'
-    // queues (the seed/join loops above). Each round drains the queues, claims
-    // the crossing rows into the per-round claimed frontier `Δ` (the
-    // kClaimedDeleteFrontier/kClaimedAddFrontier vector) AND the accumulated
-    // set (`D_s`/`A_s`, the kOverdeleteSet/kAdditionSet vector), fires the
-    // recursive rules DELTA over `Δ` (JOINs through their directional scan
-    // reading each lower atom at its batch-final `kInNew` state; projection
-    // edges by re-projecting the predecessor's `Δ`), and retires `Δ`. The loop
-    // breaks when a round claims nothing (a `Δ`-emptiness break — NOT queue-
-    // emptiness, which a diamond re-enqueue could live-lock; MD §5.2/§5.3, B3).
-    //
-    // The loop is an INDUCTION vehicle whose only maintained vectors are the
-    // per-round `Δ` frontiers, so codegen's `for (changed; changed;
-    // changed = !all_Δ_empty()) { round }` is exactly the break-on-claim-
-    // progress discipline.
-    const auto build_claim_round_loop = [&](bool is_del, SERIES *out_seq)
-        -> INDUCTION * {
-      const VectorKind frontier_kind = is_del
-                                           ? VectorKind::kClaimedDeleteFrontier
-                                           : VectorKind::kClaimedAddFrontier;
-
-      INDUCTION *const loop = impl->induction_regions.Create(impl, out_seq);
-      loop->parent = out_seq;
-      out_seq->AddRegion(loop);
-
-      PARALLEL *const round_par = impl->parallel_regions.Create(loop);
-      loop->cyclic_region.Emplace(loop, round_par);
-      SERIES *const round_seq = impl->series_regions.Create(round_par);
-      round_par->AddRegion(round_seq);
-
-      // Per round: clear each SCC table's `Δ`, drain + claim (into `Δ` and the
-      // accumulated set), fire the recursive rules delta over `Δ`, retire `Δ`.
-      for (TABLE *table : scc_tables) {
-        VECTOR *const round_frontier =
-            TableDeltaVector(impl, context, table, frontier_kind);
-        loop->vectors.AddUse(round_frontier);
-
-        VECTORCLEAR *const clear =
-            impl->operation_regions.CreateDerived<VECTORCLEAR>(
-                round_seq, ProgramOperation::kClearInductionVector);
-        clear->vector.Emplace(clear, round_frontier);
-        round_seq->AddRegion(clear);
-      }
-      for (TABLE *table : scc_tables) {
-        VECTOR *const round_frontier =
-            TableDeltaVector(impl, context, table, frontier_kind);
-        EmitClaimDrain(impl, context, table, is_del, round_seq,
-                       round_frontier);
-      }
-
-      // Re-fire the recursive rules DELTA over the per-round claimed frontier
-      // `Δ` — NOT the accumulated net frontier (which never clears within the
-      // loop, so re-firing over it would double-count a row claimed in an
-      // earlier round). Each claimed row is in `Δ` for exactly the one round it
-      // is claimed, so each recursive derivation is folded once. The seed/join
-      // loops above already fired round 0 from the batch's lower-stratum
-      // frontiers; this re-fire propagates the SCC-internal cascade.
-      for (const JoinEmission *emission : scc_joins) {
-        EmitJoinFire(impl, context, recursive_sccs, *emission, is_del,
-                     round_seq);
-      }
-      for (const BranchChain &branch : branches) {
-        if (branch.ends_at_join) {
-          continue;
-        }
-        auto tgt_scc = RecursiveSCC(recursive_sccs, branch.target);
-        if (tgt_scc.has_value() && scc_groups_here.count(*tgt_scc) &&
-            same_scc(branch.target, branch.source) &&
-            TableIsDifferential(branch.source) &&
-            !TableIsInductionOwned(context, branch.source)) {
-          EmitSeedLoop(impl, context, branch, !is_del /* is_add */,
-                       DerivClass::kRecursive,
-                       TableDeltaVector(impl, context, branch.source,
-                                        frontier_kind),
-                       nullptr, true /* in_fixpoint */, round_seq);
-        }
-      }
-      for (TABLE *table : scc_tables) {
-        VECTOR *const round_frontier =
-            TableDeltaVector(impl, context, table, frontier_kind);
-        EmitRetireFrontier(impl, table, is_del, round_frontier, round_seq);
-      }
-      return loop;
-    };
-
-    // OVERDELETE (§5.2): the del-side claim-round fixpoint, then — in its
-    // output region, after the fixpoint quiesces — run REDERIVE (every
-    // overdeleted row still recursively supported, `C_r > 0`, re-enters via the
-    // add queue; a counter read over `D_s`). REDERIVE's output feeds the INSERT
-    // add queue below, so it must run between OVERDELETE and INSERT.
-    //
-    // Note that the del-side net-removal frontier (`outDel = D_s ∧ !kAdd`) is
-    // deliberately NOT built here (contrast the add side below). Spec §5.0 puts
-    // BUILDFRONTIERS after INSERT: a row overdeleted this batch and then
-    // re-added by INSERT (its `kAdd` set) must NOT appear in `net_removals`.
-    // Building the del frontier in this output region — before INSERT can set
-    // `kAdd` — would leak such a re-added row into `net_removals`. Both signed
-    // frontiers are therefore consolidated in the INSERT loop's output region
-    // (`add_output`), after INSERT has quiesced.
-    INDUCTION *const del_loop = build_claim_round_loop(true, stratum_seq);
-    SERIES *const del_output = impl->series_regions.Create(del_loop);
-    del_loop->output_region.Emplace(del_loop, del_output);
-    for (TABLE *table : scc_tables) {
-      EmitRederive(impl, context, table, del_output);
-    }
-
-    // INSERT (§5.3): the add-side claim-round fixpoint (mirror of OVERDELETE),
-    // draining the add queue — the batch's `+` seeds AND REDERIVE's output —
-    // through the same claim/fire/retire discipline so that recursive
-    // derivations are ADDED (their `C_r` incremented) symmetrically with the
-    // del side.
-    INDUCTION *const add_loop = build_claim_round_loop(false, stratum_seq);
-    SERIES *const add_output = impl->series_regions.Create(add_loop);
-    add_loop->output_region.Emplace(add_loop, add_output);
-
-    // BUILDFRONTIERS (§5.0): both consolidated signed net frontiers are built
-    // HERE, after INSERT has quiesced, so that `kAdd` (set by INSERT on a
-    // re-added row) and `kDel` (set by OVERDELETE) are both final. `outDel =
-    // D_s ∧ !kAdd` (net removals) and `outAdd = A_s ∧ !kDel` (net additions);
-    // a row both overdeleted and re-added this batch passes neither filter.
-    // These are the consolidated frontiers higher strata's seed joins range
-    // over.
-    for (TABLE *table : scc_tables) {
-      EmitFrontierFilter(impl, context, table, true /* is_del */, add_output);
-    }
-    for (TABLE *table : scc_tables) {
-      EmitFrontierFilter(impl, context, table, false /* is_del */, add_output);
-    }
+    // R2 FAMILY #2 (F-2): the SCC/RECURSIVE BAND — the per-SCC×phase claim-round
+    // fixpoints (OVERDELETE + REDERIVE, INSERT + deferred frontier filters) — is
+    // now LOWERED from the DR-IR FixpointRound shells (`dr_flow.rounds`),
+    // replacing the hand-coded `build_claim_round_loop` closure + the two-call
+    // del/add driver band that used to live here. `LowerDRRounds` reproduces the
+    // old band structure verbatim (§5.2/§5.3), driving the surviving Emit*
+    // primitives 1:1 from the round's DR ops. This is the LAST emission cutover
+    // of the recursive family; the old discovery + scheduling fixpoint SURVIVE
+    // (they seed the DR strata + V-OLD-EQUIV; family #3 deletes them).
+    LowerDRRounds(impl, context, recursive_sccs, dr_flow, drain_stratum, stratum,
+                  stratum_seq);
   }
 }
 

@@ -844,3 +844,35 @@ the (table,kind)→VECTOR* bridge; old discovery vectors + scheduling
 fixpoint become deletable only after family #2; add the SCC anchors to
 the B-14 check (they exercise the round shells this cut left on the old
 web).
+
+### R2 family #2 — SCC/recursive-band cutover (2026-07-16)
+
+THE HIGHEST-RISK DIFF, LANDED CLEAN. Stratum.cpp +240/−196: LowerDRRounds
++ LowerRoundBody lower the per-SCC×phase FIXPOINT_ROUND shells into the
+exact old region tree (OVERDELETE induction: round-vec clears, in-round
+claim drains, fires, chain folds, retires; output REDERIVE; INSERT
+mirror; BOTH deferred filters in add-loop output — E-17), band structure
+as the lowering default per the family-#1 lesson, all vecs via the
+memoized TableDeltaVector bridge (zero re-minting). DELETED:
+build_claim_round_loop, the del/add SCC driver band, the acyclic/scc
+partition, scc_joins derivation, the is_recursive lambda. All Emit*
+primitives retain callers as lowering templates. Bug found+fixed
+in-stage: kFixpointFire ops carry no scc_group (derived from
+fire_table's SCC); the first draft filtered on the always-~0u field and
+emitted ZERO fires — tc collapsed to round-0 and the anchors caught it.
+GATES: builds green; ctest 3/3; 7 anchors ×4 modes OK — fixpoint_stress_1
+(exactly-once sentinel) and deep_chain_retract (constant-stack sentinel)
+both PASS; B-14 vs a83ce1c on the three SCC anchors: RAW-BYTE-IDENTICAL
+(bijection = identity, exceeded); FULL SUITE PASS (157) zero churn
+(permcheck not exercised); flagship generated code BYTE-IDENTICAL vs the
+frozen PRE-R2 binary (0d8d00e) on all four workloads — perf-neutrality
+witness transitively through both families; Q5 spot @128 release 132ms /
+debug 937ms.
+FAMILY #3 QUEUE: commit sweeps (kCommitSweep) + entry/ingest
+(kIngestFold, reserved cut) still on the old web; old discovery +
+scheduling fixpoint still load-bearing (DR strata seeding, V-OLD-EQUIV,
+LowerDRRounds reads drain_stratum) — family #3 stamps the drain stratum
+onto DRRound, provides DR-native stratum gating, then deletes the
+fixpoint + discovery vectors and retires the V-OLD-EQUIV legs whose
+comparands die; consider adding scc_group to kFixpointFire (currently
+derived via RecursiveSCC).
