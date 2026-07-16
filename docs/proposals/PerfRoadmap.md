@@ -1219,6 +1219,9 @@ residuals).
 
 ### 12.0 Why an epoch here (candidate themes; owner decides)
 
+OWNER DECISION (2026-07-16, at close): theme (a) — the ADL/functor-
+surface epoch. Theme (b) subgraphs re-seeds after it.
+
 The DR-IR now owns the stratum machinery and has ONE new operator
 family (aggregates) proving the rewrite substrate works. Two coherent
 next themes, plus the residue as early work either way:
