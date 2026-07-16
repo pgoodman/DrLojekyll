@@ -980,3 +980,59 @@ later property checks). Policy: over(...) aggregates DEFAULT to
 undeclared (the ratified mutable(a) clause enforced from day one);
 pairwise_average_weight.dr's merge functor gets annotated (corpus
 edit; its goldens are new-authoring territory in R3d anyway).
+
+## 11. The big review (owner-requested, Fable, 2026-07-16) — record
+
+Full text: DeltaRelationalIR.artifacts/big-review-2026-07-16.md.
+VERDICT: sound as shipped — no live miscompile; every cutover
+byte-identical; DeriveDRStrata a faithful port; RQ5b conservative;
+the walked lowering paths preserve all differential invariants. BUT
+the go-forward story is oversold: (F1) the DR predicate payload is
+DECORATIVE — predicate authority stayed in the Emit* templates,
+duplicated with no cross-check, so the F17/F18 kill is not yet real;
+(F2) claim_gate's Pred encoding is wrong-by-construction if ever
+consumed; (F3) emit_hazard silently flips backward hazards (erases
+evidence), V-LOOP cannot fail as written, RAW/WAR classification is
+construction-order-keyed; (F4) the census is no longer independent
+post-family-#3 — the behavioral net (goldens+oracle) is the real
+guard, with named blind spots; (F7) StateCell Touched() returns an
+unsound mutable ref; (F9) R3c staging contradiction — F14 retirement
+flips aggregate_1/kvindex_1-4 to compiling before R3d's goldens
+exist, so R3c-ii+R3d must land as ONE suite-gated unit, with
+V-ALGEBRA explicitly in R3c-ii and the GROUP_UPDATE strata-lift rule
+named the highest-risk piece.
+DISPOSITIONS: review-fixes diff (F2/F3/F6/F7 + comment rot) and the
+F1 minimal cross-check (V-PRED-XCHECK threading DR ops into the
+Emit* predicate choices) land BEFORE R3c-ii; R3c-ii+R3d merged into
+one gated unit; the missing R3a/R3b §8 records are below;
+ratification paperwork: B-2's merge-set gate amendment and B-14's
+tree-shape-modulo-bijection gate are hereby RECORDED AS RATIFIED
+(owner visibility at the time + this review's independent judgment
+that tree-shape+stdout+oracle is sufficient; every family in fact
+landed raw-byte-identical). FINDINGS.md: no entry (the three
+in-stage catches were pre-commit, anchor-caught; recorded here).
+
+### §8 addendum — R3a record (retroactive per review F8a)
+
+R3a (504c9e4): include/drlojekyll/Runtime/StateCell.h (514 lines) +
+tests/Runtime/StateCellTest.cpp (519 lines, runtime_test 22→36).
+DEVIATIONS from v3-spec-statecell §1 (binding spec; recorded late —
+the review's F8a): (1) Fold is read-copy-Set (Vec exposes const
+operator[] + Set only — compaction must never hand out mutable refs);
+(2) Recompute::Working is a POD pointer-handle into store-owned typed
+pools (Vec<T> requires trivially-copyable elements; store-owned pools
+freed by known type; handle stability depends on the store being
+non-movable — to be made explicit); (3) non-aliasing enforced by
+construction + test rather than a runtime cross-set assert (deferred
+to R3c where a DiffTable pairs with a store). Gates were: seam
+byte-identical, suite PASS 157, ctest 3/3.
+
+### §8 addendum — R3b record (retroactive per review F8a)
+
+R3b (1059971): Stratify.cpp +47 — in-SCC aggregation rejected for
+AGG/KVINDEX (sibling diagnostic of unstratified negation, anchored at
+the functor, one per aggregate); agg_in_scc_1/kv_in_scc_1
+expected-diagnostic cases wired into runall.sh (suite 157→159);
+corpus aggregate diagnostics byte-unchanged. PARSER AUDIT (gates
+R3c): no algebra pragmas existed (→ §7.1 owner decision, landed as
+R3c-i 50f936b, suite 162).
