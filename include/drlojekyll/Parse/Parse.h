@@ -691,6 +691,25 @@ class ParsedFunctor : public Node<ParsedFunctor, ParsedFunctorImpl> {
   // given the same inputs, that it will produce the same outputs?
   bool IsPure(void) const noexcept;
 
+  // Algebra pragmas (R3c-i). These report the declared algebraic laws of an
+  // aggregating / merge functor's fold. They are the single-source manifest
+  // that the delta-relational lowering (R3c-ii onward) and the debug/oracle
+  // property checks consume. As of R3c-i they are semantically inert. See
+  // `docs/proposals/AggregatingFunctors.md` §3.
+  //
+  // `@invertible` marks an abelian fold with an O(1) unfold (COUNT/SUM/AVG);
+  // `@recompute` is the opaque fallback (re-run the fold on touch). The two
+  // are mutually exclusive.
+  bool IsInvertible(void) const noexcept;
+  bool IsRecompute(void) const noexcept;
+
+  // `@commutative` / `@associative` declare a merge exists (tree/parallel
+  // reduction); `@idempotent` declares an order- and multiplicity-insensitive
+  // fold.
+  bool IsCommutative(void) const noexcept;
+  bool IsAssociative(void) const noexcept;
+  bool IsIdempotent(void) const noexcept;
+
   // Is this a filter-like functor? This is `true` if the functor is `pure`
   // and if the number of free parameters is zero and if the range is
   // `FunctorRange::kZeroOrOne`.

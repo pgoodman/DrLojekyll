@@ -385,6 +385,17 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   Token first_attribute;
   Token last_tok;
 
+  // Algebra pragmas (R3c-i). Each token is valid iff the corresponding pragma
+  // was specified on the functor declaration. Semantically inert until the
+  // delta-relational lowering (R3c-ii); they lex, parse, store, and round-trip.
+  // `@invertible` and `@recompute` are mutually exclusive. See
+  // `docs/proposals/AggregatingFunctors.md` §3.
+  Token invertible_attribute;
+  Token recompute_attribute;
+  Token commutative_attribute;
+  Token associative_attribute;
+  Token idempotent_attribute;
+
   // Is this decl a functor, and if so, does it have `aggregate`- and
   // `summary`-attributed parameters.
   bool is_aggregate{false};

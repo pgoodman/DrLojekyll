@@ -1,0 +1,13 @@
+; Expected-diagnostic case (R3c-i): mutually-exclusive algebra pragmas on a
+; functor. `@invertible` (the fold/unfold class) and `@recompute` (the opaque
+; fallback) cannot both apply; the parser rejects the second with a clean
+; "Conflicting ... a functor cannot be both invertible and recompute"
+; diagnostic plus a note at the first, in all 4 optimization modes (the reject
+; is in the parser, before any optimization runs). See DeltaRelationalIR.md
+; §7.1 and runall.sh's all-modes-diagnostic list.
+#functor cnt(aggregate i32 V, summary i32 C) @invertible @recompute.
+#message m(i32 X).
+#local t(i32 X).
+#query out_t(free i32 N).
+t(X) : m(X).
+out_t(N) : cnt(X, N) over (i32 X) { t(X) }.

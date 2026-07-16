@@ -311,6 +311,101 @@ void ParserImpl::ParseFunctor(ParsedModuleImpl *module) {
           }
           continue;
 
+        } else if (Lexeme::kPragmaAlgebraInvertible == lexeme) {
+          if (functor->invertible_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected '@invertible' pragma here; functor " << name
+                << " was already marked as invertible";
+            err.Note(scope_range,
+                     functor->invertible_attribute.SpellingRange())
+                << "Previous '@invertible' pragma was here";
+            RemoveDecl(functor);
+            return;
+
+          } else if (functor->recompute_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Conflicting '@invertible' pragma here; functor " << name
+                << " was already marked as '@recompute', and a functor cannot "
+                << "be both invertible and recompute";
+            err.Note(scope_range, functor->recompute_attribute.SpellingRange())
+                << "Previous '@recompute' pragma was here";
+            RemoveDecl(functor);
+            return;
+          }
+          functor->invertible_attribute = tok;
+          state = 6;
+          continue;
+
+        } else if (Lexeme::kPragmaAlgebraRecompute == lexeme) {
+          if (functor->recompute_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected '@recompute' pragma here; functor " << name
+                << " was already marked as recompute";
+            err.Note(scope_range, functor->recompute_attribute.SpellingRange())
+                << "Previous '@recompute' pragma was here";
+            RemoveDecl(functor);
+            return;
+
+          } else if (functor->invertible_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Conflicting '@recompute' pragma here; functor " << name
+                << " was already marked as '@invertible', and a functor cannot "
+                << "be both invertible and recompute";
+            err.Note(scope_range,
+                     functor->invertible_attribute.SpellingRange())
+                << "Previous '@invertible' pragma was here";
+            RemoveDecl(functor);
+            return;
+          }
+          functor->recompute_attribute = tok;
+          state = 6;
+          continue;
+
+        } else if (Lexeme::kPragmaAlgebraCommutative == lexeme) {
+          if (functor->commutative_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected '@commutative' pragma here; functor " << name
+                << " was already marked as commutative";
+            err.Note(scope_range,
+                     functor->commutative_attribute.SpellingRange())
+                << "Previous '@commutative' pragma was here";
+            RemoveDecl(functor);
+            return;
+          }
+          functor->commutative_attribute = tok;
+          state = 6;
+          continue;
+
+        } else if (Lexeme::kPragmaAlgebraAssociative == lexeme) {
+          if (functor->associative_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected '@associative' pragma here; functor " << name
+                << " was already marked as associative";
+            err.Note(scope_range,
+                     functor->associative_attribute.SpellingRange())
+                << "Previous '@associative' pragma was here";
+            RemoveDecl(functor);
+            return;
+          }
+          functor->associative_attribute = tok;
+          state = 6;
+          continue;
+
+        } else if (Lexeme::kPragmaAlgebraIdempotent == lexeme) {
+          if (functor->idempotent_attribute.IsValid()) {
+            auto err = context->error_log.Append(scope_range, tok_range);
+            err << "Unexpected '@idempotent' pragma here; functor " << name
+                << " was already marked as idempotent";
+            err.Note(scope_range,
+                     functor->idempotent_attribute.SpellingRange())
+                << "Previous '@idempotent' pragma was here";
+            RemoveDecl(functor);
+            return;
+          }
+          functor->idempotent_attribute = tok;
+          state = 6;
+          continue;
+
         } else if (Lexeme::kPuncPeriod == lexeme) {
           functor->last_tok = tok;
           state = 10;

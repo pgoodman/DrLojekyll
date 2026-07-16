@@ -1,0 +1,31 @@
+; Positive witness for the R3c-i @-algebra pragma surface: a clone of map_1
+; whose `add_i32` functor carries `@invertible`. The pragma lexes, parses,
+; stores, round-trips (debug re-asserts), and is SEMANTICALLY INERT until the
+; delta-relational lowering (R3c-ii). This case's stdout must therefore be
+; byte-identical to its un-annotated clone map_1 (goldens/map_1.stdout);
+; algebra_invertible_1.stdout is a copy of it, authored via --bless.
+
+#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.) @invertible.
+
+#message m(i32 X).
+#message n(i32 X).
+
+#local t(i32 X).
+#local u(i32 X).
+#local v(i32 X).
+
+#query out_t(free i32 Y).
+#query out_u(free i32 Y).
+#query out_v(free i32 Y).
+
+t(X) : m(X).
+
+u(X) : m(X).
+u(X) : m(X).
+
+v(X) : m(X).
+v(X) : n(X).
+
+out_t(Y) : t(X), add_i32(X, 1, Y).
+out_u(Y) : u(X), add_i32(X, 10, Y).
+out_v(Y) : v(X), add_i32(X, 100, Y).

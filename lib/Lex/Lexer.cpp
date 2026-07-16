@@ -501,6 +501,31 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         basic.Store<Lexeme>(Lexeme::kPragmaPerfNullable);
         basic.Store<lex::SpellingWidth>(impl->data.size());
 
+      } else if (impl->data == "@invertible") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaAlgebraInvertible);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
+      } else if (impl->data == "@recompute") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaAlgebraRecompute);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
+      } else if (impl->data == "@commutative") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaAlgebraCommutative);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
+      } else if (impl->data == "@associative") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaAlgebraAssociative);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
+      } else if (impl->data == "@idempotent") {
+        auto &basic = ret.As<lex::BasicToken>();
+        basic.Store<Lexeme>(Lexeme::kPragmaAlgebraIdempotent);
+        basic.Store<lex::SpellingWidth>(impl->data.size());
+
       } else {
         auto &error = ret.As<lex::ErrorToken>();
         error.Store<Lexeme>(Lexeme::kInvalidPragma);

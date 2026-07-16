@@ -405,6 +405,31 @@ enum class Lexeme : uint8_t {
   // code generator doesn't need to use `std::optional<llvm::Instruction *>` to
   // represent the absence of an instruction.
   kPragmaPerfNullable,
+
+  // Algebra pragmas on aggregating / merge functors, declaring the algebraic
+  // laws of the fold. They are the single-source manifest that the delta-
+  // relational lowering (R3c-ii onward) and the debug/oracle property checks
+  // consume. As of R3c-i they lex, parse, store, and round-trip, but are
+  // semantically inert. See `docs/proposals/AggregatingFunctors.md` §3 and
+  // `docs/proposals/DeltaRelationalIR.md` §7.1.
+  //
+  //    #functor sum_i32(aggregate i32 Val, summary i32 Total) @invertible.
+  //
+  // `@invertible` marks an abelian fold with an O(1) unfold (fold+unfold, e.g.
+  // COUNT/SUM/AVG). `@recompute` is the opaque fallback: re-run the fold over
+  // the group's membership on touch. The two are mutually exclusive — one is
+  // the fold/unfold class, the other the opaque fallback.
+  kPragmaAlgebraInvertible,
+  kPragmaAlgebraRecompute,
+
+  // `@commutative` / `@associative` declare that a merge exists, permitting
+  // tree/parallel reduction. `@idempotent` declares an order- and
+  // multiplicity-insensitive fold (also a correctness lever: immune by algebra
+  // to duplicate-emission artifact classes). These parse-and-store; later
+  // property checks consume them.
+  kPragmaAlgebraCommutative,
+  kPragmaAlgebraAssociative,
+  kPragmaAlgebraIdempotent,
 };
 
 enum class TypeKind : uint32_t;

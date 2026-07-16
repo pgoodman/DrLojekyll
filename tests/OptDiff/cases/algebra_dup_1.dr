@@ -1,0 +1,11 @@
+; Expected-diagnostic case (R3c-i): a duplicate algebra pragma on a functor.
+; `@invertible` is specified twice; the parser rejects the second with a clean
+; diagnostic ("...was already marked as invertible") plus a note pointing at
+; the first, in all 4 optimization modes (the reject is in the parser, before
+; any optimization runs). See runall.sh's all-modes-diagnostic list.
+#functor add_i32(bound i32 L, bound i32 R, free i32 Sum) @range(.) @invertible @invertible.
+#message m(i32 X).
+#local t(i32 X).
+#query out_t(free i32 Y).
+t(X) : m(X).
+out_t(Y) : t(X), add_i32(X, 1, Y).

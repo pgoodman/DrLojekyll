@@ -1206,6 +1206,28 @@ bool ParsedFunctor::IsPure(void) const noexcept {
   return impl->is_pure;
 }
 
+// Algebra pragmas (R3c-i). Semantically inert until the delta-relational
+// lowering (R3c-ii); they report the declared algebraic laws of the fold.
+bool ParsedFunctor::IsInvertible(void) const noexcept {
+  return impl->invertible_attribute.IsValid();
+}
+
+bool ParsedFunctor::IsRecompute(void) const noexcept {
+  return impl->recompute_attribute.IsValid();
+}
+
+bool ParsedFunctor::IsCommutative(void) const noexcept {
+  return impl->commutative_attribute.IsValid();
+}
+
+bool ParsedFunctor::IsAssociative(void) const noexcept {
+  return impl->associative_attribute.IsValid();
+}
+
+bool ParsedFunctor::IsIdempotent(void) const noexcept {
+  return impl->idempotent_attribute.IsValid();
+}
+
 // Is this a filter-like functor? This is `true` if the functor is `pure`
 // and if the number of free parameters is zero and if the range is
 // `FunctorRange::kZeroOrOne`.

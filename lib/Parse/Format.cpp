@@ -129,6 +129,21 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
       }
       os << ")";
     }
+    if (functor.IsInvertible()) {
+      os << " @invertible";
+    }
+    if (functor.IsRecompute()) {
+      os << " @recompute";
+    }
+    if (functor.IsCommutative()) {
+      os << " @commutative";
+    }
+    if (functor.IsAssociative()) {
+      os << " @associative";
+    }
+    if (functor.IsIdempotent()) {
+      os << " @idempotent";
+    }
 
   } else if (decl.IsLocal() && decl.IsInline()) {
     os << " @inline";
