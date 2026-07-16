@@ -969,3 +969,14 @@ LinearizeAndValidateDRFlow is comment-stale (harmless); the eager
 INGEST_FOLD externalization (R1e or an R2 entry-proc family) is the last
 hand-coded emission web; R3 (aggregates / GROUP_UPDATE) gates only on the
 acyclic families, all now DR-lowered.
+
+## 7.1 Owner decision addendum (2026-07-16): algebra pragmas
+
+R3c adds the @-algebra pragma surface (lexer + Functor.cpp states +
+ParsedFunctorImpl): @invertible and @recompute honored in R3;
+@commutative/@associative/@idempotent parse-and-store (consumed by
+later property checks). Policy: over(...) aggregates DEFAULT to
+@recompute when undeclared; KV/mutable merge functors REJECT when
+undeclared (the ratified mutable(a) clause enforced from day one);
+pairwise_average_weight.dr's merge functor gets annotated (corpus
+edit; its goldens are new-authoring territory in R3d anyway).
