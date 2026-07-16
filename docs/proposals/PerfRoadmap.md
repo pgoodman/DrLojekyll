@@ -1261,7 +1261,368 @@ inputs (test the §C-4 enrollment path); the V-PRED-XCHECK residuals
 (per-arm gate threading into EmitChainStep; EmitFrontierFilter cross-
 check — finish the F17/F18 bug-class kill).
 
-### 12.1 Bootstrap (next session)
+### 12.2 The three surfaces this epoch replaces, as pseudocode (SINGLE-
+### PASS SEED at the delta-relational-IR close, from a structural read of
+### the emission code — re-verify per the E-1..E-17 precedent before
+### building anything; the anchors below are HEAD line numbers, and the
+### stale-cite finding at the end of §12.2(B) is exactly why)
+
+    (A) THE FUNCTOR-DELIVERY SURFACE TODAY — two incompatible calling
+    conventions for the SAME thing (a driver-supplied C++ body invoked
+    from generated code). MAP functors flow one way; aggregate/merge
+    reductions flow another; average_weight.dr witnesses BOTH in one
+    file.
+
+      MAP functor (div_i32, add_i32 — @range functors; new_weight_i32
+      is @range too and hits this surface as the KV mutable() merge):
+        parse:   ParsedFunctor (+ the R3c-i algebra pragmas
+                   IsInvertible/IsRecompute, Parse.h:694-704 —
+                   "semantically inert" today, a manifest for R3's
+                   lowering; MAP functors never carry them)
+        df:      QueryMapImpl (Query.h:771), a MAP view holding the
+                   ParsedFunctor
+        cf:      EAGER build, NOT the DR-IR. BuildEagerRegion's MAP arm
+                   (Build.cpp:1009-1017): pure -> BuildEagerGenerateRegion
+                   (Generate.cpp:84 "Build an eager region for a
+                   QueryMap") -> a GENERATE region (kCallFunctor)
+                   carrying the functor. Impure -> assert-false
+                   (Build.cpp:1016, the recorded gap).
+        c++:     EmitGenerate (Database.cpp:2724): the call site is
+      -            call = "functors." + name + "_" + BindingPattern
+                   (Database.cpp:2736) — a MEMBER call on a threaded
+                   `functors` object; the range shapes the wrapper
+                   (filter -> if; 0/1 -> optional; 1:1 -> value;
+                   0/1+..more -> range-for, :2769-2822).
+                 THE CLASS: EmitFunctorsDecl (Database.cpp:1162-1254)
+                   emits `struct DatabaseFunctors { ret name_pattern(
+                   bound...); ... }` — one member DECLARATION per
+                   non-inline functor; reduction functors (any
+                   kAggregate/kSummary param) are SKIPPED (:1183-1194).
+                 THE DRIVER: defines the member out-of-line —
+                   `int32_t DatabaseFunctors::add_i32_bbf(...)`
+                   (map_1.main.cpp:8; div_i32_bbf at
+                   average_weight.main.cpp:40).
+                 THE THREADING: `functors` rides as a by-ref parameter
+                   `Functors &functors` through EVERY proc that
+                   `uses_functors` — a per-proc effect flag set when a
+                   GENERATE region has a non-inline functor
+                   (Database.cpp:798), propagated across calls (:812),
+                   declared (:842-843), passed (:897-898), and a
+                   template parameter on the hidden-friend entry points
+                   (init :1327-1330, message :1350-1353) and detail
+                   twins (DetailTemplateHeader :264-273). The functor
+                   object is STATE the engine plumbs everywhere.
+
+      AGGREGATE / merge reduction (sum_i32/count_i32 @invertible;
+      new_weight_i32 the KV @recompute — carries kAggregate/kSummary):
+        parse:   same ParsedFunctor, but the algebra pragmas ARE
+                   consulted (IsInvertible/IsRecompute pick the ABI)
+        df:      AGG / KVINDEX view (not MAP) -> R3 GROUP_UPDATE op in
+                   the DR-IR (BuildGroupUpdateOps)
+        c++:     EmitStateCellStructs (Database.cpp:1076-1160): per
+                   StateCell store, FORWARD-DECLARES driver FREE
+                   functions in the header —
+      +            @invertible:  F_identity(); F_combine(w,v);
+      +                          F_uncombine(w,v)   (:1116-1120)
+      +            @recompute:   F_reduce(vals, counts, n)  (:1122-1123)
+                   — and a Reduce_<id> policy struct that bridges the
+                   runtime Algebra interface to them by UNQUALIFIED
+                   (ADL) call, NO `functors.` prefix, NO DatabaseFunctors
+                   membership (:1129-1156). EmitGroupUpdate
+                   (Database.cpp:1926) folds into the StateCellStore
+                   (sc.Fold(gid,sign,val)); the reduction body is
+                   reached inside the store's template via Reduce_<id>,
+                   never through a threaded object.
+                 THE DRIVER: defines FREE functions —
+                   `int32_t sum_i32_combine(int32_t w, int32_t v)`
+                   (average_weight.main.cpp:19-38).
+
+      THE INCONSISTENCY, VISUALLY, in ONE driver
+      (average_weight.main.cpp — same .dr, same TU):
+      -   int32_t DatabaseFunctors::div_i32_bbf(int32_t, int32_t) {...}
+      +   int32_t sum_i32_combine(int32_t w, int32_t v) {...}
+        div_i32 is a MEMBER of a threaded object; sum_i32 is a FREE
+        function reached by ADL from a template. Two ABIs, two mental
+        models, one concept — and new_weight_i32 gets BOTH conventions
+        in this one driver (member new_weight_i32_bbf for the mutable()
+        merge delivery at :43; free new_weight_i32_reduce for the
+        @recompute reduction at :29), the sharpest witness of the split.
+        The C-5 ABI (§11 dev.7) chose free
+        functions for reductions BECAUSE the engine must own the
+        summary layout; the MAP surface predates that decision and
+        still threads a `functors` object nothing but MAP delivery
+        needs. §12.0(a) item 1 unifies them.
+
+    (B) THE EAGER WEB — the last hand-coded emission surface, SEPARATE
+    from and running BEFORE the DR-IR-owned stratum machinery.
+
+      BuildEntryProcedure (Procedure.cpp:642-761) SEQUENCES:
+        1. constant-TUPLE init -> BuildEagerRegion (Procedure.cpp:707)
+        2. INGEST: per io, ExtendEagerProcedure (:714)    « the web »
+        3. CompleteProcedure (:750): drain the eager work list
+             (deferred joins/products/inductions)
+        4. BuildStratumPhases (:756)          « the DR-IR, §11 »
+        5. PublishDifferentialMessageVectors (:759)
+      The comment at Procedure.cpp:752-755 states the ordering contract:
+      the stratum phases "run AFTER the ingest walk above (whose fold
+      crossings park rows in the queues the drains consume)". The web
+      never touches context.dr_flow and is never Lower*'d — a wholly
+      separate, still-hand-coded surface.
+
+      ExtendEagerProcedure (Procedure.cpp:10-128) EMITS, per message:
+        build_explicit_loop lambda (:43-79), one loop per receive per
+        polarity:
+          VECTORLOOP over the param vec (:45-48)
+          UPDATECOUNT fold, kNonRecursive, is_explicit (:54-57)  « the
+            INGEST FOLD — the "message-support bit" toggle, :36-42 »
+          VECTORAPPEND into TableDeltaVector(kAddQueue|kDeleteQueue)
+            (:68-78)                                    « frontier park »
+        deletion-capable receive: build_explicit_loop x2 (add + remove,
+          :85-90), then STOP — consumers run in the stratum phases
+        monotone receive: VECTORLOOP + non-explicit add fold on fresh
+          rows (:104-112) + per-index Add implied, then descend the
+          eager walk: BuildEagerInsertionRegions (:125-126)
+      BuildEagerInsertionRegionsImpl (Build.cpp:740-894): the fold +
+        successor fan-out — InTryInsert -> BuildUpdateCount fold
+        (Build.cpp:723-725), a PARALLEL over successors (:758-759), an
+        add-queue frontier append for a non-inductive differential view
+        (:766-771), the successor loop (:832-866) with the CUT test
+        (:857-861: a CanReceiveDeletions / IsAggregate / IsKVIndex
+        successor is fed by its OWN table's stratum phases / GROUP_UPDATE
+        — do NOT descend), and a net-additions append for a monotone
+        table whose consumer needs a frontier (:886-893).
+      BuildEagerRegion (Build.cpp:973-1056): the type-switch dispatcher
+        — JOIN (:978), MERGE (:987), AGG/KVINDEX (:997-1007, chain-
+        BREAKER, returns), MAP (:1009, §12.2(A)), COMPARE (:1019),
+        SELECT (:1022), TUPLE (:1039), INSERT (:1043), NEGATE (:1048-
+        1051, the eager negate gate). Recursion goes through
+        BuildEagerInsertionRegions per successor.
+      NetBatch: emitted in BuildIOProcedure, NOT the entry proc — a
+        NETBATCH op (Procedure.cpp:438) guarded on a differential
+        message, netting explicit adds against removes before the CALL
+        to the flow proc.
+      Shared mutable state: Context &context (work list,
+        monotone_negated_tables, delta-vector registry), the OP *parent
+        cursor mutated as folds nest, TABLE *last_table / already_added
+        (the "already-folded this model" guard), impl->work_list drained
+        by CompleteProcedure.
+
+      kIngestFold IS RESERVED WITH NO SEAM (DR.h:126-127): "§2.1
+      INGEST_FOLD: entry-proc message->table seed (R1d cut — see the
+      eager-walk inventory note; NOT populated in R1d)". The R1d cut
+      rationale (DR.cpp:1640-1649, echoed in DeltaRelationalIR.md R1d
+      §782-791 + the kIngestFold DECISION §950-955): the message->table
+      fold sites "live inside the recursive BuildEagerRegion walk with
+      no externalized discovery struct to mirror faithfully the way the
+      stratum bands externalize {branches,joins,crossovers,products}."
+      Unlike the DISCOVERY half of the stratum web (which R1 could
+      shadow), the eager web has no discovery object at all — the folds
+      are emitted inline as the walk descends. Building that discovery
+      object IS §12.0(a) item 2 (the R1e seam).
+
+      WHERE V-PRED-XCHECK DOES NOT REACH (§11 residuals + this read).
+      V-PRED-XCHECK (commit e355959) cross-checks EmitJoinFire (matrix
+      vs arm-plan spines), EmitClaimDrain (vs ClaimGate), and
+      EmitChainStep's negate gate (vs NegateGatePred, DR.h:158-160
+      Site 1). It does NOT reach: EmitFrontierFilter (reads
+      un-cross-checked); EmitChainStep's per-arm gate (checked against
+      the model function, not the actual per-arm gate NODE); site-2
+      correlation is table-keyed where position-keyed is wanted for
+      self-joins; and the ENTIRE eager INGEST web is outside the DR
+      model, so it is never predicate-cross-checked at all. Completing
+      the F17/F18 bug-class kill = closing these; item 2's seam is where
+      the eager web finally enters the cross-checked model.
+
+      SEED-DEFECT FINDING (report loudly, per the house precedent — this
+      is exactly the E-1..E-17 pattern): the DeltaRelationalIR.md R1d
+      note (§783-784) and DR.cpp cites (1643/1645) name "Build.cpp:1002"
+      as the sole eager-negate-gate site; the LIVE dispatch is
+      Build.cpp:1048-1051 (the MAP arm is now at :1009, AGG/KVINDEX at
+      :997). The cited line numbers are STALE relative to HEAD. Any R1e
+      seam that trusts those cites will inventory the wrong region.
+      Re-derive the eager-walk dispatch table from Build.cpp:973-1056
+      before building the seam.
+
+    (C) GROUP_IDS — the load-bearing CSE guard R4 must preserve.
+
+      RelabelGroupIDs (Optimize.cpp:408, doc :404-407): each JOIN /
+        AGGREGATE / KVINDEX view SEEDS a unique nonzero scalar group_id
+        (Query.h:465), pushed into its own sorted group_ids SET
+        (Query.h:457) (Optimize.cpp:423-429); every other view seeds 0.
+        A deepest-first fixpoint (Optimize.cpp:448-481) propagates each
+        pivot's label DOWN to all views feeding it (a user's scalar or
+        whole set is merged into its inputs, :458-471; sets sorted+
+        uniqued, :473-475). Asserts `view != user` (:459) — the
+        "no view is ever its own direct user" invariant. Refreshed
+        before CSE and after each merge (:305, :372).
+      InsertSetsOverlap (View.cpp:1468, doc :1455-1465): true iff two
+        views' sorted group_ids sets intersect (linear merge-walk,
+        :1482-1494). The doc's own witness: node_pairs(A,B):-node(A),
+        node(B) — "two selects ... structurally the same, but cannot be
+        merged because otherwise we would not get the cross product."
+      THE SELF-JOIN CUBIC WITNESS (IdeasTriage #6, :41-44 — "the
+      measured cubic tc⋈tc witness blowup"). Mechanism, confirmed:
+        tc(x,z):-tc(x,y),tc(y,z) builds ONE DISTINCT SELECT per
+        predicate occurrence, each over the SAME relation pointer:
+        BuildClause -> one view per predicate (Build.cpp:1869-1874),
+        BuildPredicate mints a fresh view via query->selects.Create
+        (Build.cpp:246); the two distinct SELECTs feed ONE JOIN as
+        distinct pivots (FindJoinCandidates, Build.cpp:2079).
+        They are STRUCTURALLY EQUAL but CSE cannot merge them: both
+        carry the JOIN's group_id in their propagated sets, so
+        InsertSetsOverlap is true and every Equals returns false on it
+        (the veto call in Select.cpp:237, Join.cpp:470, Tuple.cpp:278,
+        Merge.cpp:1673, Compare.cpp:399, Map.cpp:366, Aggregate.cpp:293,
+        KVIndex.cpp:76). If they WERE merged, Join.cpp:449-453 collapses
+        the single-input join to a pass-through TUPLE
+        (ConvertTrivialJoinToTuple) — a MISCOMPILE. The distinctness IS
+        the cubic materialization; making it native (an intra-JOIN
+        self-join with a witness index rather than two SELECTs +
+        group_id veto) is the R4 payoff.
+      THE INVARIANT WEB R4 MUST PRESERVE (CLAUDE.md "Core invariants
+      (dataflow)", the load-bearing clauses):
+        - no view is its own direct user (RelabelGroupIDs assert,
+          Optimize.cpp:459; DirectlyUsesColumnsOf guard :56);
+        - CSE never folds a unit SELECT into a non-unit one; a JOIN
+          pivot whose non-user side is a unit relation is never removed;
+        - a table's member-view list holds each view at most once BY
+          IDENTITY — never dedup structurally (Data.cpp:231-249;
+          DR.cpp:734-742 V-MEMBER-ID) — "distinct-but-equal views
+          sharing a model are intentional, the group_ids CSE guard";
+        - keep-last-edge (canonicalization never severs the last
+          input-column edge);
+        - group_ids are NEVER folded (the InsertSetsOverlap guard stays
+          inside Equals, Optimize.cpp:94-95).
+      An R4 that reshapes JOINs for native self-joins must show that
+      every path currently relying on the distinct-SELECT + group_id
+      veto (CSE non-merge, trivial-join non-collapse, member-view
+      identity) is preserved OR made unnecessary by the new
+      representation — before any code.
+
+### 12.3 The path forward as DIFFS against §12.2 (SINGLE-PASS SEED —
+### re-rank and re-verify per precedent; prediction slots are
+### pre-registered, not results)
+
+    P1  MAP-FUNCTOR MIGRATION onto the unified free-function surface
+        (§12.2(A); §12.0(a) item 1). Behavior-neutral shape work.
+        THE GENERATED-CODE DIFF (EmitGenerate call site,
+        Database.cpp:2736):
+      -   call = "functors." + name + "_" + BindingPattern
+      +   call = name + "_" + BindingPattern    « free function, ADL »
+        THE CLASS DIFF (EmitFunctorsDecl, Database.cpp:1162-1254):
+      -   struct DatabaseFunctors { ret name_pattern(bound...); ... };
+      +   ret name_pattern(bound...);   « free forward-decl per functor,
+      +                                    mirroring EmitStateCellStructs
+      +                                    :1113-1124 »
+        THE THREADING DIFF (open design point — re-verify): with MAP
+        calls no longer needing a threaded object, the uses_functors
+        machinery (Database.cpp:798, :812, :842-843, :264-273) that
+        exists SOLELY for MAP delivery becomes dead; but the hidden-
+        friend entry points still take `Functors &functors` for driver
+        ABI stability (drivers construct a DatabaseFunctors and pass it).
+        DECIDE: keep the vestigial entry-point param (minimal churn) or
+        drop it (a wider driver diff). Recommend keeping it this epoch —
+        the param is the ABI seam a later object-owned-state functor
+        design (WASM functors, memory: wasm-functor-direction) may
+        reclaim.
+        THE CORPUS-DRIVER DIFF SHAPE (every functor driver):
+      -   int32_t DatabaseFunctors::add_i32_bbf(int32_t l, int32_t r)
+      +   int32_t add_i32_bbf(int32_t l, int32_t r)
+        THE GOLDEN QUESTION: case STDOUT must be byte-identical (pure
+        delivery-mechanism change), but EVERY driver .main.cpp with a
+        MAP functor member changes, AND the generated datalog.h changes
+        (member decl -> free decl; call sites lose `functors.`). GATE:
+        stdout goldens byte-identical (this is a HARD zero-churn gate —
+        a stdout diff is a bug); driver files edited in the same diff;
+        generated-header change is expected and reviewed, NOT blessed as
+        a golden (headers aren't goldens). PRE-REGISTERED PREDICTION:
+        driver-file churn = every cases/*.main.cpp that defines a
+        `DatabaseFunctors::` member (count them at epoch start — the
+        map_1..map_5 + average_weight + any negate/compare cases with
+        functors); expected STDOUT golden churn = ZERO across all 164 x
+        4 modes; expected oracle/monotone golden churn = ZERO.
+
+    P2  FAMILY #4 — EAGER-WEB EXTERNALIZATION as an R1e seam (§12.2(B);
+        §12.0(a) item 2). The R2 delete-with-cutover pattern applied to
+        the last hand-coded surface.
+        (i) DISCOVERY OBJECT the eager web needs (what R1 externalized
+            for the stratum bands, now for ingest): an INGEST-FOLD
+            INVENTORY per (message x table) carrying the effect set —
+            polarity (add/delete/both), is_explicit, the target table,
+            the queue it parks into (kAddQueue / kDeleteQueue /
+            kNetAdditions), and the per-index Adds implied on fresh
+            rows. Derive it INDEPENDENTLY from the Query (the receives +
+            their data models), never by copying ExtendEagerProcedure —
+            then cross-check against the emitted folds by an always-on
+            validator (the V-OLD-EQUIV discipline R1 used).
+        (ii) kIngestFold CONSTRUCTION: populate the reserved DROpKind
+            (DR.h:126) from the inventory; add the graph validators
+            (effect-set totality, one op per message-receive-polarity,
+            queue-role agreement with the table's VecRole).
+        (iii) LOWERING dr -> cf: LowerIngestFold emitting the VECTORLOOP
+            + UPDATECOUNT + VECTORAPPEND that build_explicit_loop
+            (Procedure.cpp:43-79) emits today, generically.
+        (iv) DELETE-WITH-CUTOVER (the R2 pattern): delete
+            ExtendEagerProcedure / build_explicit_loop in the SAME diff
+            that lands the lowering, oracle + permcheck.py as bless
+            referees. Note the eager NEGATE gate (Build.cpp:1048-1051)
+            and the recursive BuildEagerRegion successor walk are
+            ADJACENT but distinct — scope the seam to the INGEST folds
+            first (the message->table seeds), leaving the successor walk
+            for a follow-on, exactly as R2 took acyclic families first.
+        V-PRED-XCHECK COMPLETION RIDES THIS: once the eager web is in the
+        DR model, EmitFrontierFilter and the per-arm-gate-node cross-
+        checks (§12.2(B) residuals) can be added on the same model —
+        finishing the F17/F18 bug-class kill (§12.0 residue).
+        PRE-REGISTERED PREDICTION: goldens are the semantic net, NOT
+        byte-identity of generated text (emission shape MAY move — the
+        §7 permutation-only bless policy applies, oracle + monotone
+        referees); expected SUITE churn = ZERO (164 PASS); expected
+        FINDINGS.md entries only if the independent derivation exposes a
+        real ingest miscompile (the house bet: it will find at least one
+        residual, per E-1..E-17).
+
+    P3  R4 — GROUP_IDS RESHAPE for native self-joins (§12.2(C);
+        §12.0(a) item 3). GATED IN-SCOPE per §7; ONLY with a reviewed
+        invariant-preservation argument.
+        DIFF SKETCH (not committed — the shape is the epoch's design
+        question): represent a self-join as ONE JOIN view with a
+        witness/self-pivot annotation instead of two distinct SELECTs +
+        the group_id veto, so the cubic tc⋈tc materialization is a JOIN
+        the runtime can key with a self-index rather than a value-keyed
+        cross of two SELECT scans. The df->dr table-access operator
+        (§10.2, R1's unified bound-prefix read) is the natural home for
+        the self-pivot access path.
+        THE MANDATORY INVARIANT-PRESERVATION ARGUMENT (scope — the
+        reviewed argument MUST show, for the §12.2(C) web): (a) CSE
+        still cannot wrongly merge the two logical sides (whatever
+        replaces the group_id veto is at least as strong); (b) the
+        trivial-join collapse (Join.cpp:449-453) never fires on a
+        genuine self-join under the new shape; (c) the member-view
+        identity invariant (Data.cpp:231-249) still holds — a table's
+        member-view list is never structurally deduped; (d) no view
+        becomes its own direct user (RelabelGroupIDs assert survives or
+        is discharged by construction); (e) unit-relation CSE rules and
+        keep-last-edge are untouched. If ANY of (a)-(e) cannot be shown,
+        R4 stays gated — it is the ONE item here that can silently
+        miscompile. PRE-REGISTERED PREDICTION: R4 lands ONLY if the
+        argument passes review; otherwise it re-seeds to a later epoch
+        (as it has for two epochs).
+
+    P4  RESIDUE ITEMS as early work (§12.0, either theme; one line each):
+        - StateCell dead-group compaction (D5-style, moved() callback);
+        - shared-input drain FUSION (effect-graph CSE — the DR-IR's
+          FIRST genuine rewrite, the optimizability thesis's first
+          payoff);
+        - algebra class (II) mergeable-sketch lowering (ships (I)+(III)
+          today);
+        - sorted-multiset MIN/MAX (the seekable-iterators §9-D5 residue);
+        - KVINDEX dataflow-node deletion (an upstream simplification);
+        - aggregates over MONOTONE inputs (exercise the §C-4 enrollment
+          path — corpus is all differential-input today);
+        - the V-PRED-XCHECK residuals (ride P2's seam).
+
+### 12.4 Bootstrap (next session)
 
 Branch: off main once delta-relational-ir merges. Read IN ORDER:
 docs/proposals/DeltaRelationalIR.md END TO END (§1-§12 — the epoch's
@@ -1279,9 +1640,11 @@ DRFlow), the Lower* family in Stratum.cpp (LowerDRFlow / LowerDRRounds
 lib/CodeGen/CPlusPlus/Database.cpp EmitGroupUpdate, and — for the
 eager-web theme — Build.cpp's ExtendEagerProcedure / build_explicit_loop
 / BuildEagerRegion (the un-externalized ingest surface).
-Method: the checkpoint method — re-verify §12.0 against HEAD before
-building (single-pass seed; the E-1..E-17 precedent says it WILL find a
-defect); design critique; hand-write the target IR for ONE real case
+Method: the checkpoint method — re-verify §12.0 AND §12.2/§12.3 against
+HEAD before building (§12.2/§12.3 are the SINGLE-PASS SEED, never
+fleet-reviewed; the E-1..E-17 precedent says it WILL find a defect — the
+stale Build.cpp:1002 cite flagged in §12.2(B) is the first one already);
+design critique; hand-write the target IR for ONE real case
 before generalizing; for any emission-shape change, decide the golden
 policy with the owner FIRST (permutation-only bless with the
 derivation-counter oracle + monotone projection as referees, per §7 —
