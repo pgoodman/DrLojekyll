@@ -661,3 +661,301 @@ Also carried: the §6 monotone/descent stage remains OUT (hole contract +
 the interior-fold net-additions witness are its prerequisites); the LOW
 finding stands (the §6 witness's .dr shape may CSE-collapse — IR-verify
 before §6 proceeds).
+
+---
+
+
+## §12. CUTOVER EMISSION TARGET + THE STRUCTURAL GATE (the §11 binding amendment, resolved)
+
+This section discharges the §11 re-judge HIGH: it specifies the CUTOVER
+emission target / splice mechanism and replaces the next_id-diff-only
+byte-identity check with a region-tree STRUCTURAL COMPARISON. All facts
+below are re-derived from HEAD (Procedure.cpp / Stratum.cpp / Optimize.cpp /
+Build.cpp this session); nothing is run.
+
+### §12.0. THE TREE AS BUILT (the target the cutover must reproduce)
+
+The entry-proc tree at the moment BuildStratumPhases runs (Procedure.cpp
+`BuildEntryProcedure`, verbatim construction order):
+
+  - `proc_par = parallel_regions.Create(proc)` is minted at :659, BEFORE the
+    per-io loop, but is NOT yet `proc->body`.
+  - Per-io loop (:711-720), once per `query.IOs()` in IOs() order:
+      * `par = parallel_regions.Create(proc)` (:712) — a FRESH PARALLEL per io.
+      * `proc->body.Emplace(proc, par)` (:713) — par is transiently proc->body
+        so ExtendEagerProcedure's `parent` arg IS this `par`.
+      * `ExtendEagerProcedure(impl, io, context, proc, par)` (:714) — fills
+        `par` with one VECTORLOOP child per receive×polarity (the deletion-
+        capable folds AddRegion directly onto `parent==par`, :47; the monotone
+        fold likewise, :94).
+      * `curr_body = proc->body.get()` (== this `par`), re-parented as a CHILD
+        of `proc_par` (:716-719).
+  - `proc->body.Emplace(proc, proc_par)` (:748) → `proc->body == proc_par`,
+    whose children are `[test_and_set, io0_par, io1_par, ...]`.
+  - BuildStratumPhases :2035-2039 wraps that into a SERIES:
+    `seq = SERIES[ proc_par, stratum_seq_0, stratum_seq_1, ... ]`,
+    `proc->body = seq`.
+
+So for nls: `io_block_par` (the `block/1` io's PARALLEL) is a CHILD of
+`proc_par`, and its two VECTORLOOP children (add fold, delete fold) are the
+exact siblings the cutover must reproduce IN THAT PARALLEL. The §11 problem
+is real: at the :2035 body-nest point BuildStratumPhases holds `proc` and
+`seq`, but has NO handle on any per-io `par` — those pointers died with the
+:711 loop iteration. And once Procedure.cpp:85-90 is deleted, `io_block_par`
+is EMPTY at construction for nls (block/1 has only a deletion-capable
+receive; ExtendEagerProcedure `continue`s past it emitting nothing).
+
+CRITICAL SECOND FACT (Build.cpp:1259-1269): in OPTIMIZING modes
+`impl->Optimize()` runs AFTER BuildEntryProcedure and BEFORE
+ExtractPrimaryProcedure, and AGAIN after. In `-disable-controlflow-opt`
+modes (`nodf`/`none` w.r.t. CF) `optimize` is false and the RAW tree
+survives unflattened all the way to `-ir-out`. This decides both the option
+choice AND the gate: a wrong-parent splice is only observable in the
+un-flattened tree (flattening erases exactly the PARALLEL nesting a
+misparent would perturb — Optimize.cpp:64/72/88).
+
+### §12.1. THE THREE §11 OPTIONS, EVALUATED AGAINST THE CODE
+
+**(a) Track the per-io/per-receive `par` on Context.**
+FIELD: `std::unordered_map<ParsedMessage, PARALLEL *> ingest_par;` (or keyed
+by QueryIO — but ParsedMessage is already the Context key convention,
+messsage_handler/publish_vecs/commit_published_view). WRITER: the :711 loop,
+`context.ingest_par.emplace(message, par)` right after :712 (the `message`
+is already in scope in ExtendEagerProcedure; hoist it or pass io through).
+LIFETIME: written during BuildEntryProcedure's :711 loop, read at phase time
+by LowerIngestFolds (`context.ingest_par.at(op.ingest_message)`), same
+build-pass lifetime as `context.dr_flow` — no dangling (the PARALLELs are
+owned by `impl->parallel_regions`, live for the whole build).
+VERDICT: CORRECT AND MINIMAL. It reproduces the exact parent by
+construction: LowerIngestFold AddRegion's the VECTORLOOP onto the SAME
+`par` the deleted build_explicit_loop used (:47 `parent->AddRegion(loop)`
+where `parent == par`). No tree-shape risk: the parent pointer IS the
+original parent. Survives all 4 modes because it does not RELY on
+flattening. Cost: one field, one emplace, one map-read. This is the exact
+`context.dr_flow` precedent (§3): a build-time handle stashed on Context so
+a phase-time lowering can target a construction-time region.
+
+**(b) Empty-shell region in ExtendEagerProcedure that LowerIngestFold fills.**
+SHAPE: ExtendEagerProcedure, for a deletion-capable receive, would AddRegion
+an empty PARALLEL (or LET) placeholder onto `par` and stash its pointer;
+LowerIngestFold emits the two VECTORLOOPs INTO that shell. This is strictly
+option (a) with an EXTRA indirection node — and that extra node is FATAL to
+byte-identity: an empty PARALLEL is `IsNoOp()` (Parallel.cpp:131, vacuously
+true on empty `regions`), so in optimizing modes Optimize.cpp:88-101 ERASES
+it as a no-op child, and a single-child shell is ELEVATED away (:64) — but
+in the NON-optimizing modes the empty/extra shell SURVIVES as a distinct
+tree node the pre-cutover tree never had. Result: byte-identical in opt
+modes, tree-SHAPE DIVERGENT in nodf/none modes — exactly the wrong-parent
+class the gate must reject. If the shell is filled before Optimize runs it
+degenerates to option (a) with a redundant wrapper. VERDICT: REJECTED — it
+either equals (a) plus churn, or breaks the un-optimized golden.
+
+**(c) Emit all deletion-capable folds as siblings under `proc_par` (or the
+:2036 SERIES) and prove flattening yields the identical tree.**
+This drops the per-io grouping and puts every deletion-capable fold directly
+under `proc_par` (or the new `seq`). WORKED ARGUMENT on nls:
+
+  TODAY (pre-cutover), un-flattened:
+    proc.body = SERIES
+      ├─ proc_par : PARALLEL
+      │    ├─ test_and_set : TESTANDSET
+      │    ├─ io_feed_par  : PARALLEL[ VECTORLOOP(feed, IF-1 monotone fold) ]
+      │    └─ io_block_par : PARALLEL[ VECTORLOOP(+add fold),
+      │                                VECTORLOOP(-del fold) ]
+      └─ stratum_seq_0, ...
+
+  OPTION (c) EMITTED (siblings under proc_par), un-flattened:
+    proc.body = SERIES
+      ├─ proc_par : PARALLEL
+      │    ├─ test_and_set
+      │    ├─ io_feed_par : PARALLEL[ VECTORLOOP(feed monotone) ]  (still hand-coded)
+      │    ├─ VECTORLOOP(+add fold)     ← spliced sibling, NO io_block_par wrapper
+      │    └─ VECTORLOOP(-del fold)     ← spliced sibling
+      └─ stratum_seq_0, ...
+
+The `io_block_par` PARALLEL is GONE (block/1's ExtendEagerProcedure emits
+nothing now, so no empty par is even created under option (c) — unlike (b)).
+Node-by-node the two trees DIFFER: today has a PARALLEL(2 loops) child;
+option (c) has two loose VECTORLOOP children. Now FLATTEN:
+Optimize.cpp:72-82 donates a PAR-in-PAR's children to the parent — so
+today's `io_block_par` (PARALLEL child of proc_par) has its two loops LIFTED
+into proc_par, yielding EXACTLY option (c)'s post-flatten shape. So in
+OPTIMIZING modes (c) IS tree-identical to today.
+
+BUT: in nodf/none modes `optimize==false`, flattening NEVER runs, and the
+two trees above stay DISTINCT (PARALLEL-wrapped vs loose siblings). The
+golden for those modes is byte-compared against the SAME committed golden
+(CLAUDE.md: every mode's stdout vs one golden). If `-ir-out` (or any
+shape-sensitive downstream, e.g. ExtractPrimaryProcedure's per-region
+walk :488-522, which iterates `entry_par` membership) differs, the
+un-optimized golden breaks. VERDICT: REJECTED for the same reason as (b) —
+it relies on a flattening that does not run in 2 of the 4 modes, so it is
+NOT byte-identical there. The proof holds ONLY under opt; the amendment
+demands identity in all modes.
+
+### §12.2. DECISION: OPTION (a)
+
+Track the per-io PARALLEL on Context and re-target it at phase time. It is
+the only option that reproduces the ORIGINAL PARENT POINTER, hence the only
+one byte-identical in ALL FOUR MODES without leaning on region-flattening.
+It is the `context.dr_flow` precedent applied verbatim. (b) adds a shell
+node that survives un-optimized; (c) drops the io PARALLEL wrapper that
+survives un-optimized — both are wrong-parent/wrong-shape in nodf/none.
+
+### §12.3. THE ATOMIC CUTOVER DIFF (exact shape + order)
+
+Build.h (Context):
+  - ADD field: `std::unordered_map<ParsedMessage, PARALLEL *> ingest_par;`
+    documented as "the per-io ingest PARALLEL (Procedure.cpp:712), stashed so
+    LowerIngestFolds can splice the deletion-capable folds into the SAME
+    sibling group the deleted build_explicit_loop populated — the
+    construction-time handle unreachable from BuildStratumPhases, exactly the
+    `dr_flow` precedent."
+
+Procedure.cpp (ExtendEagerProcedure + the :711 loop):
+  1. In the :711 loop (or inside ExtendEagerProcedure), after `par` is
+     created and the message is known, `context.ingest_par.emplace(message,
+     par);`. (ParsedMessage is derived at ExtendEagerProcedure:19; either
+     pass `par`'s message key out, or emplace in the caller where both `io`
+     and `par` are in scope — `ParsedMessage::From(io.Declaration())`.)
+  2. DELETE the `build_explicit_loop` lambda (Procedure.cpp:43-79) and its
+     two calls (:85-90). The `if (receive.CanReceiveDeletions()) { ...
+     continue; }` block becomes just the emplace-and-skip: the deletion-
+     capable receive now contributes NOTHING to `par` at build time (the
+     folds come from LowerIngestFolds). Keep the `removal_vec` discovery
+     (:26-34) — LowerIngestFold reuses those parameter vectors via the
+     memoized TableDeltaVector, and the message handler still nets them.
+  3. The monotone path (:92-127) STAYS unchanged (IF-1/IF-4 OUT, §0).
+
+Stratum.cpp:
+  4. ADD `LowerIngestFold` + `LowerIngestFolds` near LowerGroupUpdate
+     (~:1330). LowerIngestFolds iterates `query.IOs()` × `io.Receives()` ×
+     (+1 before -1), and for each stage1 (deletion-capable) op:
+       * `PARALLEL *par = context.ingest_par.at(op.ingest_message);`
+       * emit VECTORLOOP over the add/removal parameter vector, AddRegion
+         onto `par` (reproducing Procedure.cpp:45-47);
+       * UPDATECOUNT(is_add, kNonRecursive, is_explicit=TRUE) with the table;
+       * TableDeltaVector(table, kAddQueue|kDeleteQueue) — REUSES the memoized
+         vec minted during the eager walk (Build.cpp:644), so no new id;
+       * VECTORAPPEND into that queue (reproducing :68-78).
+     Map the DR VecRole→CF VectorKind at the TableDeltaVector call only (§9).
+  5. DISPATCH: at the :2035-2039 body-nest point, AFTER `seq`/`proc_par` are
+     established, call `LowerIngestFolds(impl, context, query)` reading
+     `context.dr_flow` (the same validated object, §3). Because each op
+     targets `context.ingest_par.at(message)` — a PARALLEL that is a live
+     child of `proc_par` which is a child of `seq` — the splice lands in the
+     exact pre-cutover parent. Ordering within a par: LowerIngestFolds' own
+     +before- / IOs()×Receives() construction order (§4), NOT pinned_order.
+
+DIFF ORDER within the atomic commit (so no intermediate build is broken):
+  (i) Build.h field; (ii) Procedure.cpp emplace; (iii) Stratum.cpp
+  LowerIngestFold/LowerIngestFolds definitions + the :2035 dispatch;
+  (iv) LAST, delete Procedure.cpp:43-90's build_explicit_loop + calls. Steps
+  (i)-(iii) are additive (emit the folds twice would be wrong, so (iv) must
+  land in the SAME commit — this is why it is ATOMIC). The R1e ops already
+  sit in flow.ops and are censused; only the LOWER + DELETE flip here.
+
+### §12.4. THE STRUCTURAL GATE (replaces the next_id-diff-only check)
+
+The gate is a REGION-TREE STRUCTURAL COMPARISON of the entry procedure's
+`-ir-out` text, pre-cutover vs post-cutover, on named witnesses, run IN A
+MODE WHERE THE TREE IS NOT FLATTENED so a wrong-parent splice is visible.
+
+MECHANISM (no new tooling; `-ir-out` exists, Main.cpp:267, and the artifact
+already quotes its verbatim proc dumps):
+  1. Checkout the R1e parent (pre-cutover) commit; for each witness `W`:
+     `DR=<pre>  drlojekyll W.dr -ir-out pre/W.ir`
+     AND with CF-opt DISABLED: `drlojekyll W.dr -disable-controlflow-opt
+     -ir-out pre/W.nocf.ir`.
+  2. Same on the cutover commit → `post/W.ir`, `post/W.nocf.ir`.
+  3. Extract the entry proc region subtree (`proc ^entry:` … through its
+     `return`) from each and `diff` pre vs post.
+
+WITNESSES (real corpus, verified this session):
+  - `negate_lower_strata` (nls) — 1 differential message `block/1` (both
+    explicit loops) + 1 monotone `feed/2`. The primary: block/1's io par
+    goes EMPTY at construction under the cutover, the exact §11 hazard.
+  - `cf13_6` — 2 messages, BOTH @differential (two deletion-capable ios, four
+    explicit loops across two per-io PARALLELs). Exercises the per-message
+    `ingest_par` map key + the IOs()-order splice across MULTIPLE ios.
+  - `cf14_3` — 2 @differential + 1 monotone message (a MIXED case): proves
+    the monotone io par (IF-1, still hand-coded) and the differential io pars
+    (spliced) coexist under proc_par with the pre-cutover sibling order
+    intact. (Alternatives with more ios: `merge_5` / `cond_both_polarities`,
+    4 messages 2+2; `cf14_3` is the minimal mixed witness.)
+
+PASS CRITERIA:
+  - PRIMARY (opt modes): the extracted entry-proc subtree is BYTE-IDENTICAL
+    pre vs post for `W.ir` on all three witnesses. Under option (a) this is
+    identity by construction (same parent, same construction order, reused
+    memoized queue vec → same ids).
+  - STRUCTURAL (nocf modes): `W.nocf.ir` entry-proc subtree is
+    BYTE-IDENTICAL pre vs post. THIS is the wrong-parent detector: option (a)
+    passes (parent pointer preserved); options (b)/(c) would FAIL here (extra
+    shell / dropped io-par wrapper visible only un-flattened). A diff in the
+    nocf tree that is NOT a pure id-renumber is a REJECT (not blessable).
+  - A residual pure id-BIJECTION (every id shifted by a consistent
+    renumbering, tree shape identical) is permcheck-reviewable per the
+    delta-relational golden policy; a NODE-COUNT or PARENT-EDGE change is
+    NOT — it is a bug. State this explicitly: PASS = (structural tree shape
+    identical in ALL 4 modes) ∧ (opt-mode text byte-identical) ∧ (suite 164
+    stdout + oracle + monotone sidecars byte-identical, GATE CUTOVER §8).
+
+WHY nocf mode is load-bearing: Build.cpp:1259-1269 runs `impl->Optimize()`
+(PARALLEL flattening, Optimize.cpp:64/72/88) only when `optimize`; the
+nodf/none CF-opt-off runs preserve the raw PARALLEL nesting. A misparent
+that flattening would erase in opt mode is caught here. This is precisely
+why the next_id-count check the §11 amendment rejected is insufficient: a
+count can match while the parent edge is wrong; the structural nocf diff
+cannot.
+
+### §12.5. RESIDUAL RISKS + THEIR CHECKS
+
+  R-ID (id-allocation order): LowerIngestFold must mint NO new ids — it
+    REUSES the memoized queue vec (TableDeltaVector, already minted by the
+    eager walk at Build.cpp:644 before phase time, §4) and the VECTORLOOP /
+    VAR ids are minted in the SAME +before-, IOs()×Receives() order the
+    deleted build_explicit_loop used. CHECK: the opt-mode byte-identity of
+    §12.4 (any id shift shows as a text diff on the entry-proc dump); plus
+    the D1 next_id-across-entry-proc diff retained as a SECONDARY witness
+    (necessary-not-sufficient, now subordinate to the structural gate).
+
+  R-CLASSIFY (ClassifyVector reading the vecs): ExtractPrimaryProcedure
+    (:530-ff) classifies each vector read/written by the entry vs primary
+    proc by WALKING the entry-proc region tree (ClassifyVector,
+    Procedure.cpp:138). If the folds move parent or the queue append lands
+    under a different region, ClassifyVector could re-partition the queue vec
+    between entry/primary, changing the primary-proc argument list — a
+    SILENT ABI shift stdout might not catch. Under option (a) the append is
+    the SAME VECTORAPPEND under the SAME `par` under `proc_par`, so the
+    read/write classification is unchanged by construction. CHECK: the
+    structural nocf diff (R-CLASSIFY manifests as a changed `call
+    ^flow:...(...)` argument tuple or a moved vector-define in the entry-proc
+    dump — both are entry-proc-subtree text, covered by §12.4); ADD the
+    primary-proc `call` signature line to the extracted comparison window so
+    an arg-list shift is in-scope.
+
+  R-ORDER (par sibling order vs io.Receives() order): the deleted
+    build_explicit_loop emitted +add THEN -del per receive, receives in
+    io.Receives() order (Procedure.cpp:81-90); LowerIngestFolds MUST iterate
+    the identical order (§4: IOs()→Receives()→+before-), NOT the DR band Key
+    (which sorts -before+ by TABLE*, the OPPOSITE — §4). CHECK: the opt-mode
+    byte-identity catches any reorder as a swapped VECTORLOOP pair in the
+    dump; the §7(b) ONE-OP-PER-(message,receive,polarity) validator catches a
+    duplicate/missing op; and the nls witness pins +add(L44-47) before
+    -del(L48-51) explicitly (a swap is a visible text diff).
+
+  R-EMPTY-PAR (nls's block/1 io par empty at construction): once :85-90 is
+    deleted, block/1 contributes nothing to its `par` at build time; the par
+    is filled ONLY by LowerIngestFolds at phase time. Between those points
+    (during `CompleteProcedure` :750 and the FixupContainingProcedure at
+    Build.cpp:1259 if it ran pre-phase — it does NOT; phases run inside
+    BuildEntryProcedure at Procedure.cpp:756, before Build.cpp:1259) the par
+    is transiently empty. RISK: an intermediate Optimize pass could erase an
+    empty par before LowerIngestFolds fills it. CHECK: Optimize runs only at
+    Build.cpp:1261, AFTER BuildEntryProcedure returns (which includes
+    BuildStratumPhases:756 → LowerIngestFolds), so the par is ALREADY FILLED
+    before any Optimize sees it — no empty-par erasure window exists. Assert
+    this ordering in a one-line comment at the dispatch site and confirm via
+    the nls opt-mode structural PASS (an erased-then-refilled par would
+    renumber or reparent, failing §12.4).
