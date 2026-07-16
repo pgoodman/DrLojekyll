@@ -455,6 +455,22 @@ authority, assessed Q5 as noise; nits (two self-inflicted stale
 anchors, CLAUDE.md kIngestFold-reserved line, artifact §12.6 + this
 record) all landed pre-commit.
 
+### P2 stage iv — V-PRED-XCHECK Site 4 (EmitFrontierFilter) (2026-07-16)
+
+The §12.2(B) "EmitFrontierFilter reads un-cross-checked" residual is
+CLOSED: EmitFrontierFilter now takes the DR kFrontierFilter op
+(FindFrontierFilterOp keyed on (table, sign, deferral) — a missing op
+aborts, closing the per-key coverage gap the per-kind census leaves)
+and cross-checks its stored kFlagRead predicate against the emitted
+CHECKMEMBER predicate, at both call families (acyclic immediate band +
+the E-17 deferred INSERT-round output band). Observation-only —
+verified: all 10 byte-compare targets IDENTICAL, FULL SUITE PASS (164)
+zero churn, ctest 3/3, debug+release green. The V-PRED-XCHECK residual
+set is now: the per-arm gate NODE threading into EmitChainStep and the
+position-keyed site-2 correlation (both retired with P3/R4 as
+self-join concerns), and the eager-web emitted-tree↔flow cross-check
+(the §6 follow-on's obligation).
+
 ## 3.1 Artifact index
 
 - p1-map1-target.md — P1 identity target: the exact post-P1 datalog.h

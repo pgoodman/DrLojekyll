@@ -702,8 +702,43 @@ static void EmitRederive(ProgramImpl *impl, Context &context, TABLE *table,
 // the overdeletion set, net-added rows of the addition set) lands in the
 // consolidated frontier that higher strata's seeds range over. A row both
 // overdeleted and re-added this batch passes neither filter.
+// Find the DR kFrontierFilter op for (table, sign, deferral). Threaded into
+// EmitFrontierFilter for the Site-4 cross-check; a missing op is itself a
+// model/emitter divergence (the census guarantees per-kind counts, not
+// per-(table, sign, deferral) coverage — this lookup closes that gap).
+static const DROp *FindFrontierFilterOp(const DRFlowGraph &dr_flow,
+                                        TABLE *table, bool is_del,
+                                        Deferral deferral) {
+  for (const DROp &o : dr_flow.ops) {
+    if (o.kind == DROpKind::kFrontierFilter && o.table_op_table == table &&
+        o.table_op_sign == (is_del ? -1 : +1) && o.deferral == deferral) {
+      return &o;
+    }
+  }
+  PredXCheckFail("EmitFrontierFilter (no matching DR kFrontierFilter op)");
+}
+
 static void EmitFrontierFilter(ProgramImpl *impl, Context &context,
-                               TABLE *table, bool is_del, SERIES *seq) {
+                               TABLE *table, bool is_del, SERIES *seq,
+                               const DROp *filter_op = nullptr) {
+  const MembershipPredicate emitted_pred = is_del
+                                               ? MembershipPredicate::kNetDeleted
+                                               : MembershipPredicate::kNetAdded;
+
+  // V-PRED-XCHECK (finding 1) — Site 4 (P2 stage iv; closes the §12.2(B)
+  // "EmitFrontierFilter reads un-cross-checked" residual): the filter's
+  // membership read is IMPLICIT in `is_del`. Cross-check it against the DR
+  // kFrontierFilter op's stored kFlagRead predicate — a reintroduced
+  // sign-flipped or wrong-frontier read aborts at compile time.
+  // Observation-only.
+  if (filter_op != nullptr) {
+    for (const DREffect &e : filter_op->effects) {
+      if (e.kind == EffKind::kFlagRead) {
+        PredXCheck(e.pred, emitted_pred, "EmitFrontierFilter");
+      }
+    }
+  }
+
   VECTOR *const claimed_set = TableDeltaVector(
       impl, context, table,
       is_del ? VectorKind::kOverdeleteSet : VectorKind::kAdditionSet);
@@ -723,9 +758,7 @@ static void EmitFrontierFilter(ProgramImpl *impl, Context &context,
   }
 
   CHECKMEMBER *const check =
-      impl->operation_regions.CreateDerived<CHECKMEMBER>(
-          loop, is_del ? MembershipPredicate::kNetDeleted
-                       : MembershipPredicate::kNetAdded);
+      impl->operation_regions.CreateDerived<CHECKMEMBER>(loop, emitted_pred);
   check->table.Emplace(check, table);
   for (VAR *var : row_vars) {
     check->col_values.AddUse(var);
@@ -1597,8 +1630,12 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
                    nullptr, &op);
     EmitClaimDrain(impl, context, table, false /* is_del */, stratum_seq,
                    nullptr, add_op);
-    EmitFrontierFilter(impl, context, table, true /* is_del */, stratum_seq);
-    EmitFrontierFilter(impl, context, table, false /* is_del */, stratum_seq);
+    EmitFrontierFilter(
+        impl, context, table, true /* is_del */, stratum_seq,
+        FindFrontierFilterOp(dr_flow, table, true, Deferral::kImmediate));
+    EmitFrontierFilter(
+        impl, context, table, false /* is_del */, stratum_seq,
+        FindFrontierFilterOp(dr_flow, table, false, Deferral::kImmediate));
   }
 }
 
@@ -1818,10 +1855,14 @@ static void LowerDRRounds(ProgramImpl *impl, Context &context,
     // hosted in the INSERT round's output (V-DEFER); del filter band then add
     // filter band (the deferred kFrontierFilter output ops).
     for (TABLE *table : scc_tables) {
-      EmitFrontierFilter(impl, context, table, true /* is_del */, add_output);
+      EmitFrontierFilter(
+          impl, context, table, true /* is_del */, add_output,
+          FindFrontierFilterOp(dr_flow, table, true, Deferral::kAddLoopOutput));
     }
     for (TABLE *table : scc_tables) {
-      EmitFrontierFilter(impl, context, table, false /* is_del */, add_output);
+      EmitFrontierFilter(impl, context, table, false /* is_del */, add_output,
+                         FindFrontierFilterOp(dr_flow, table, false,
+                                              Deferral::kAddLoopOutput));
     }
   }
 }
