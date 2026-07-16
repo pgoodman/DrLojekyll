@@ -154,6 +154,27 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
       (void) TABLE::GetOrCreate(impl, context, view);
     }
   }
+
+  // R3 (v3-spec-statecell.md §1.1 / critique #4): force a DISTINCT differential
+  // table on every aggregate / KV-index view AND on its summarized input, so
+  // the GROUP_UPDATE has both (a) its OWN output DiffTable to be sole deriver of
+  // (V-AGG-SOLE) and (b) a phase-owned input table whose net-removal/net-
+  // addition frontiers the StateCell folds over (spec §2.3 E1). Without this,
+  // BuildDataModel may leave either table-less (pass-through plumbing), and the
+  // net-frontier vecs the fold drains would not exist. The two are guaranteed
+  // distinct (different keys, different id spaces — §1.1 non-aliasing).
+  const auto force_agg_tables = [&](QueryView view) {
+    (void) TABLE::GetOrCreate(impl, context, view);
+    for (auto pred : view.Predecessors()) {
+      (void) TABLE::GetOrCreate(impl, context, pred);
+    }
+  };
+  for (auto agg : query.Aggregates()) {
+    force_agg_tables(QueryView(agg));
+  }
+  for (auto kv : query.KVIndices()) {
+    force_agg_tables(QueryView(kv));
+  }
 }
 
 // Whether `view` lies on a dataflow cycle: DFS over `Successors()` with a
@@ -583,6 +604,15 @@ bool TableIsDifferential(TABLE *table) {
     if (view.CanProduceDeletions()) {
       return true;
     }
+    // R3 (v3-spec-statecell.md §C-4): an aggregate / KV-index output table is
+    // ALWAYS differential, even over monotone input — value churn (a group's
+    // summary changing from N to N+1) REQUIRES retracting the old summary row
+    // and asserting the new one (the emit_touched one-net-pair). The dataflow
+    // may classify it monotone (no upstream deletion), but the StateCell's
+    // per-group value mutation is an intrinsic source of output deletions.
+    if (view.IsAggregate() || view.IsKVIndex()) {
+      return true;
+    }
   }
   return false;
 }
@@ -952,11 +982,17 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                             last_table);
     }
 
-  } else if (view.IsAggregate()) {
-    assert(false && "TODO(pag): Aggregates");
-
-  } else if (view.IsKVIndex()) {
-    assert(false && "TODO(pag): KV Indices.");
+  } else if (view.IsAggregate() || view.IsKVIndex()) {
+    // R3 (v3-spec-statecell.md §2.2): an aggregate / KV-index view is a
+    // chain-BREAKER. Its whole delta maintenance — folding the summarized
+    // input's net frontiers into a StateCell, then emitting the one-net-pair
+    // into its OWN differential table — is owned by the GROUP_UPDATE op lowered
+    // in the stratum phases (LowerGroupUpdate), NOT by the eager walk. The
+    // eager walk that reaches here has already folded the SUMMARIZED INPUT into
+    // its table (the caller's InTryInsert), so there is nothing more to do
+    // eagerly: STOP at the boundary. (This replaces the F14 assert-false
+    // backstop, now that the lowering exists.)
+    return;
 
   } else if (view.IsMap()) {
     auto map = QueryMap::From(view);
@@ -1021,14 +1057,91 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // pre-pass dominates those asserts (they remain as internal-invariant
   // backstops) and turns the feature gaps into user-facing diagnostics.
   const auto num_errors = log.Size();
+
+  // C-2 V-ALGEBRA + feature-gap pre-pass (v3-spec-statecell.md §C-2, §5): the
+  // slot the retiring F14 agg+kv rows vacate. The Aggregates()/KVIndices() loops
+  // give the over-vs-kv provenance the policy needs; the num_errors -> nullopt
+  // gate below is already downstream (the critique's HIGH fix — a diagnostic
+  // here surfaces as a clean user error, not an internal-invariant abort). The
+  // in-SCC (unstratified) aggregation reject already fired upstream in Stratify
+  // (lib/DataFlow/Stratify.cpp), so it is not re-checked here.
+  //
+  // Reject taxonomy (spec §C-2/§C-4):
+  //   over() undeclared algebra  -> default @recompute (NO diagnostic);
+  //   kv/mutable undeclared      -> clean reject (V-ALGEBRA);
+  //   induction-owned input      -> clean feature-gap reject (C-4);
+  //   a shape the R3 lowering cannot yet emit -> clean feature-gap reject.
+  const auto has_induction_owned_input = [](QueryView view) -> bool {
+    for (QueryView pred : view.Predecessors()) {
+      if (pred.InductionGroupId().has_value()) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   for (auto agg : query.Aggregates()) {
+    // C-4: an aggregate whose summarized input is induction-owned is a clean
+    // feature gap this epoch (the input has no phase-owned differential table
+    // with net-addition/net-removal frontiers for the StateCell to fold over).
+    if (has_induction_owned_input(QueryView(agg))) {
+      log.Append(agg.Functor().SpellingRange())
+          << "Aggregates over recursively-derived (induction-owned) inputs are "
+             "not yet supported";
+      continue;
+    }
+    // Feature gap: the R3 GROUP_UPDATE lowering handles a plain group-by (group
+    // ++ config) reduction; configuration columns are not yet threaded through
+    // the state-cell key projection.
+    if (agg.NumConfigurationColumns()) {
+      log.Append(agg.Functor().SpellingRange())
+          << "Aggregates with configuration columns are not yet supported";
+      continue;
+    }
+    // over() undeclared -> default @recompute, no diagnostic (spec §C-2/§7.1).
+    //
+    // STAGE-A FENCE (v3-spec-statecell.md §5 rule "anything the lowering can't
+    // yet do -> keep a clean reject, never an assert"): the DR-IR GROUP_UPDATE
+    // construction / strata lift / linearizer arms and the differential-agg-
+    // table classification are LANDED, but the StateCell emit path (LowerGroup-
+    // Update: the Fold over input net frontiers + the emit_touched one-net-pair,
+    // and its C-5 driver-free-function codegen) is NOT yet emitted. Until that
+    // lands (the atomic R3c-ii+R3d unit's remaining half), an aggregate that
+    // passes the checks above would compile to an EMPTY agg table (structurally
+    // valid, semantically wrong). Reject cleanly rather than emit silent-wrong
+    // code. Removing this fence is the stage-B/codegen-completion flip point.
     log.Append(agg.Functor().SpellingRange())
-        << "Aggregating functors are not yet supported";
+        << "Aggregating functors are not yet fully lowered (StateCell emit "
+           "path pending)";
   }
+
   for (auto kv : query.KVIndices()) {
-    log.Append(kv.NthValueMergeFunctor(0).SpellingRange())
-        << "Relations with mutable-attributed parameters are not yet "
-           "supported";
+    const ParsedFunctor merge = kv.NthValueMergeFunctor(0);
+    // C-4: induction-owned KV input is the same feature gap as for aggregates.
+    if (has_induction_owned_input(QueryView(kv))) {
+      log.Append(merge.SpellingRange())
+          << "Mutable-attributed relations over recursively-derived "
+             "(induction-owned) inputs are not yet supported";
+      continue;
+    }
+    // V-ALGEBRA (spec §2.5/§C-2, AggregatingFunctors §4.1): a mutable() merge
+    // functor MUST declare an algebra (@invertible or @recompute); an
+    // undeclared merge is rejected (unlike over(), which defaults to
+    // @recompute). The KV index is the degenerate aggregate whose "algebra" is
+    // the merge functor, so an un-annotated merge has no defined delta
+    // semantics.
+    if (!merge.IsInvertible() && !merge.IsRecompute()) {
+      log.Append(merge.SpellingRange())
+          << "Mutable-attributed merge functor must declare an algebra "
+             "(mark it '@invertible' or '@recompute')";
+      continue;
+    }
+    // STAGE-A FENCE (same rationale as the aggregate fence above): the StateCell
+    // emit path for a desugared KV GROUP_UPDATE is not yet emitted. Reject
+    // cleanly until the codegen lands (the flip point).
+    log.Append(merge.SpellingRange())
+        << "Relations with mutable-attributed parameters are not yet fully "
+           "lowered (StateCell emit path pending)";
   }
   for (auto map : query.Maps()) {
     if (!map.Functor().IsPure()) {

@@ -125,7 +125,26 @@ enum class DROpKind : uint8_t {
   kPivotAssemble,  // §2.1 PIVOT_ASSEMBLE: per SCC join (union → shared pivot vec)
   kIngestFold,     // §2.1 INGEST_FOLD: entry-proc message→table seed (R1d cut —
                    //   see the eager-walk inventory note; NOT populated in R1d)
+  kGroupUpdate,    // R3 GROUP_UPDATE: one per QueryAggregate/desugared-KVIndex
+                   //   view (v3-spec-statecell.md §2.2). The first family whose
+                   //   delta semantics is a StateCell value-fold, not a counter
+                   //   schema. Two bands: frontier_in (fold input net frontiers
+                   //   into the cell) + emit_touched (one-net-pair into the agg
+                   //   DiffTable). SOLE producer of the agg table (V-AGG-SOLE).
+  kStateSeal,      // R3 STATE_SEAL: per statecell, commit-sweep tail — sealed :=
+                   //   Emit(working) for touched groups (spec §2.3). Mirror of
+                   //   kCommitSweep's trailing-band placement.
 };
+
+// R3 aggregate provenance (spec §2.2): whether a GROUP_UPDATE came from an
+// over(){} aggregate (defaults @recompute if undeclared) or a desugared
+// mutable()/KVINDEX (rejected if the merge functor is undeclared — V-ALGEBRA).
+enum class AggProvenance : uint8_t { kOver, kKv };
+
+// R3 algebra lowering fork (spec §1.3; C-0e: a lowering SELECTOR, not an
+// ordering fact). R3 ships (I) @invertible and (III) @recompute only; a
+// declared-(II)-without-invertible degrades to kRecompute (spec §1.3-II).
+enum class Algebra : uint8_t { kInvertible, kRecompute };
 
 // The negate-gate hint (F-5): a normal negate vs an @never negate. Distinct
 // from context — @never negates read Present (eager only), normal negates read
@@ -479,6 +498,23 @@ class DROp {
   Pred gate_pred{Pred::kInI};
   NegateHint gate_hint{NegateHint::kNormal};
 
+  // ---- GROUP_UPDATE / STATE_SEAL data (kind == kGroupUpdate | kStateSeal) ---
+  // The aggregate VIEW (a QueryAggregate or a desugared QueryKVIndex — the
+  // provenance distinguishes). `agg_view` is set for both kinds; the rest only
+  // for kGroupUpdate. `agg_table` is the aggregate's OWN differential DiffTable
+  // (V-AGG-SOLE: the GROUP_UPDATE is its sole deriver). `input_view` is the
+  // single summarized relation (no join partner). `group_cols`/`summary_cols`
+  // are the state-cell key / value column projections. `statecell_id` indexes
+  // `DRFlowGraph::statecells`.
+  std::optional<QueryView> agg_view;
+  AggProvenance provenance{AggProvenance::kOver};
+  Algebra algebra{Algebra::kRecompute};
+  TABLE *agg_table{nullptr};
+  std::optional<QueryView> input_view;
+  unsigned statecell_id{0u};
+  std::vector<QueryColumn> group_cols;    // group ++ config (the cell key)
+  std::vector<QueryColumn> summary_cols;  // the folded value column(s)
+
   // The per-arm structure (A-3). A FIXPOINT_FIRE has one arm per same-SCC delta
   // position; a SEED_FOLD/CHAIN_FOLD has exactly one. Empty for the per-table
   // families (claim/retire/rederive/filter/sweep) and the negate gate.
@@ -556,9 +592,27 @@ struct DRDep {
 // inventory, and the per-unit seeded pinned strata (B-13: R1b STORES the old
 // lift's integers; the independent deriver is R1c+).
 // ---------------------------------------------------------------------------
+// R3 STATE-CELL descriptor (spec §1). One per GROUP_UPDATE; codegen
+// instantiates a `StateCellStore<Key, Algebra>` member from it. `key_cols` are
+// the group ++ config columns (the dense-group-id key); `summary_cols` are the
+// folded value columns; `algebra_functor` is the reduction functor whose
+// declared @-algebra (or the over() @recompute default) picked `algebra`.
+class DRStateCell {
+ public:
+  QueryView agg_view;
+  AggProvenance provenance{AggProvenance::kOver};
+  Algebra algebra{Algebra::kRecompute};
+  std::vector<QueryColumn> key_cols;
+  std::vector<QueryColumn> summary_cols;
+  const ParsedFunctor *algebra_functor{nullptr};
+
+  explicit DRStateCell(QueryView agg_view_) : agg_view(agg_view_) {}
+};
+
 class DRFlowGraph {
  public:
   std::vector<DRVec> vecs;      // R1b: per-table queues/sets/frontiers + pivots
+  std::vector<DRStateCell> statecells;  // R3: one per GROUP_UPDATE
   // R2+ SUBSTRATE (dead-but-alive): populated (BuildDRInventory), never read —
   // the debug-labelled table models an R2+ lowering will resolve ops through.
   std::vector<DRTable> tables;
@@ -595,11 +649,14 @@ class DRFlowGraph {
   std::unordered_map<QueryView, unsigned> join_stratum;  // by join view
   std::unordered_map<QueryView, unsigned> crossover_stratum;  // by negate view
   std::unordered_map<QueryView, unsigned> product_stratum;    // by product view
+  std::unordered_map<QueryView, unsigned> group_update_stratum;  // R3 by agg view
   std::unordered_map<TABLE *, unsigned> drain_stratum;        // by table
 
   // Convenience accessors over `ops`.
   std::vector<const DROp *> Crossovers(void) const;
   std::vector<const DROp *> ProductArms(void) const;
+  std::vector<const DROp *> GroupUpdates(void) const;  // R3
+  std::vector<const DROp *> StateSeals(void) const;    // R3
   // R1c: every op of one kind, in construction order.
   std::vector<const DROp *> OpsOfKind(DROpKind kind) const;
 

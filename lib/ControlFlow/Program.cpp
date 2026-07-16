@@ -811,6 +811,14 @@ bool DataTable::IsDifferential(void) const noexcept {
     if (view.CanProduceDeletions()) {
       return true;
     }
+    // R3 (v3-spec-statecell.md §C-4): an aggregate / KV-index output table is
+    // ALWAYS differential — a group's summary VALUE churn retracts the old row
+    // and asserts the new one, even over monotone input. Must agree with the
+    // build-layer `TableIsDifferential` (Build.cpp), else the DR-IR emits a
+    // differential claim into a codegen-monotone table (Database.cpp abort).
+    if (view.IsAggregate() || view.IsKVIndex()) {
+      return true;
+    }
   }
   return false;
 }

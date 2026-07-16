@@ -1034,6 +1034,27 @@ void Generator::EmitFunctorsDecl(void) {
     }
     const ParsedDeclaration decl(func);
 
+    // R3 (v3-spec-statecell.md §C-5): a reduction functor (one carrying
+    // `aggregate`/`summary` parameters — an over() summary functor or a
+    // mutable() merge functor) is NOT a DatabaseFunctors member. Under the C-5
+    // ABI its reduction body is a DRIVER-SUPPLIED FREE FUNCTION over
+    // driver-owned state (agg_init/agg_fold/agg_emit/agg_unfold), reached by
+    // unqualified call from the StateCellStore template context — never through
+    // the DatabaseFunctors surface (which has no `aggregate`/`summary` binding
+    // pattern). Skip it here so the generated header stays valid C++.
+    bool is_reduction = false;
+    for (ParsedParameter param : decl.Parameters()) {
+      const auto b = param.Binding();
+      if (b == ParameterBinding::kAggregate ||
+          b == ParameterBinding::kSummary) {
+        is_reduction = true;
+        break;
+      }
+    }
+    if (is_reduction) {
+      continue;
+    }
+
     std::vector<ParsedParameter> free_params;
     for (ParsedParameter param : decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kFree) {

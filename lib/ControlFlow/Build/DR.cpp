@@ -504,6 +504,26 @@ std::vector<const DROp *> DRFlowGraph::ProductArms(void) const {
   return out;
 }
 
+std::vector<const DROp *> DRFlowGraph::GroupUpdates(void) const {
+  std::vector<const DROp *> out;
+  for (const DROp &op : ops) {
+    if (op.kind == DROpKind::kGroupUpdate) {
+      out.push_back(&op);
+    }
+  }
+  return out;
+}
+
+std::vector<const DROp *> DRFlowGraph::StateSeals(void) const {
+  std::vector<const DROp *> out;
+  for (const DROp &op : ops) {
+    if (op.kind == DROpKind::kStateSeal) {
+      out.push_back(&op);
+    }
+  }
+  return out;
+}
+
 std::vector<const DROp *> DRFlowGraph::OpsOfKind(DROpKind kind) const {
   std::vector<const DROp *> out;
   for (const DROp &op : ops) {
@@ -537,6 +557,147 @@ static void MintTableVec(DRFlowGraph &flow, TABLE *table, VecRole role,
   v.debug_kind = kind;
   flow.vecs.push_back(std::move(v));
   flow.table_vecs[table][role] = idx;
+}
+
+// R3 (spec §2.5 V-ALGEBRA / §1.3 fork): pick the lowering algebra for a
+// reduction functor. Over-provenance defaults to @recompute when undeclared;
+// kv-provenance-undeclared is already REJECTED in the Build.cpp pre-pass
+// (num_errors gate), so any kv reaching here is declared. R3 ships (I) and
+// (III) only — a declared @invertible selects kInvertible, everything else
+// (declared @recompute, or the over() undeclared default) is kRecompute.
+static Algebra SelectAlgebra(const ParsedFunctor &f) {
+  return f.IsInvertible() ? Algebra::kInvertible : Algebra::kRecompute;
+}
+
+// R3 (spec §2.2/§2.3): build a GROUP_UPDATE op for one aggregate/KV view and
+// its trailing STATE_SEAL, appending both to `flow.ops`. Mirrors the
+// PRODUCT_ARM construction idiom (single frontier-vec consumer, no join
+// partner). `group`/`summary` are the cell key / value column projections;
+// `input` is the single summarized relation; `algebra_functor` backs the
+// reduction. Registers the emit_touched counter± def-edges into the agg
+// table's add/delete queues (A-4 multi-def) so the linearizer's E3
+// seed-before-drain edge is derived.
+static void BuildGroupUpdateOps(
+    DRFlowGraph &flow, ProgramImpl *impl, Context &context,
+    const std::unordered_map<TABLE *, unsigned> &scc_map, QueryView agg_view,
+    AggProvenance prov, std::vector<QueryColumn> group,
+    std::vector<QueryColumn> summary, QueryView input,
+    const ParsedFunctor &algebra_functor) {
+  const Algebra alg = SelectAlgebra(algebra_functor);
+  TABLE *const agg_table =
+      impl->view_to_model[agg_view]->FindAs<DataModel>()->table;
+  // The summarized input may be reached through table-less plumbing (a
+  // pass-through TUPLE/SELECT chain — average_weight's summary aggregates read
+  // edge_weight through such a chain). Walk the single-predecessor plumbing
+  // until the first view that OWNS a differential table: that table's net
+  // frontiers are what the StateCell folds over (spec §2.3 E1). The walked-to
+  // view becomes the effective `input`.
+  TABLE *input_table =
+      impl->view_to_model[input]->FindAs<DataModel>()->table;
+  while (input_table == nullptr) {
+    auto preds = input.Predecessors();
+    if (preds.begin() == preds.end()) {
+      break;  // dead end — the assert below reports the unsupported shape.
+    }
+    input = *preds.begin();
+    input_table = impl->view_to_model[input]->FindAs<DataModel>()->table;
+  }
+  assert(agg_table != nullptr);
+  assert(input_table != nullptr);
+  assert(agg_table != input_table);  // V-AGG-SOLE non-aliasing (spec §1.1)
+
+  const unsigned sc = static_cast<unsigned>(flow.statecells.size());
+  DRStateCell cell(agg_view);
+  cell.provenance = prov;
+  cell.algebra = alg;
+  cell.key_cols = group;
+  cell.summary_cols = summary;
+  cell.algebra_functor = &algebra_functor;
+  flow.statecells.push_back(std::move(cell));
+
+  DROp op(DROpKind::kGroupUpdate);
+  op.ctx = Ctx::kSeed;
+  op.agg_view = agg_view;
+  op.provenance = prov;
+  op.algebra = alg;
+  op.agg_table = agg_table;
+  op.input_view = input;
+  op.statecell_id = sc;
+  op.group_cols = std::move(group);
+  op.summary_cols = std::move(summary);
+
+  // ---- BAND (a) frontier_in : two per-sign arms over the input net frontiers.
+  // Structurally a THIRD frontier-vec consumer, sibling of CROSSOVER/
+  // PRODUCT_ARM, but with NO position-keyed partner read (single input). Per
+  // sign: vector:drain(input frontier) + statecell:fold (NOT a counter — C-0c).
+  for (int sign : {-1, +1}) {
+    DREffect drain;
+    drain.kind = EffKind::kVecDrain;
+    drain.value_table = input_table;
+    drain.vec_role = (sign < 0) ? VecRole::kNetRemoval : VecRole::kNetAddition;
+    op.effects.push_back(drain);
+
+    DREffect fold;
+    fold.kind = EffKind::kStateFold;
+    fold.value_table = agg_table;  // the cell is a peer of this table
+    fold.sign = sign;
+    op.effects.push_back(fold);
+  }
+
+  // ---- BAND (b) emit_touched : the ONE-NET-PAIR band.
+  // Reads statecell:emit (working) + statecell:old (sealed, frozen); then two
+  // ordinary counter± into the agg's OWN DiffTable (reserved-already vocab).
+  DREffect emit;
+  emit.kind = EffKind::kStateEmit;
+  emit.read_table = agg_table;
+  op.effects.push_back(emit);
+  DREffect old;
+  old.kind = EffKind::kStateOld;
+  old.read_table = agg_table;
+  op.effects.push_back(old);
+
+  const DerivClass klass = RuleClass(scc_map, agg_table, {input_table});
+  assert(klass == DerivClass::kNonRecursive);  // acyclic fence (Stratify)
+
+  for (int sign : {-1, +1}) {
+    DREffect counter;
+    counter.kind = EffKind::kCounter;
+    counter.counter_table = agg_table;
+    counter.sign = sign;
+    counter.klass = klass;
+    op.effects.push_back(counter);
+    DREffect crossing;
+    crossing.kind = EffKind::kInIReadFrozen;
+    crossing.read_table = agg_table;
+    crossing.pred = Pred::kInI;
+    crossing.ctx = Ctx::kSeed;
+    op.effects.push_back(crossing);
+    DREffect append;
+    append.kind = EffKind::kVecAppend;
+    append.value_table = agg_table;
+    append.vec_role = (sign < 0) ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+    op.effects.push_back(append);
+  }
+
+  const unsigned op_idx = static_cast<unsigned>(flow.ops.size());
+  flow.ops.push_back(std::move(op));
+  // The emit_touched counter± def-edges (E3 seed-before-drain, A-4 multi-def).
+  flow.vecs[flow.TableVec(agg_table, VecRole::kDeleteQueue)].defs.push_back(
+      op_idx);
+  flow.vecs[flow.TableVec(agg_table, VecRole::kAddQueue)].defs.push_back(op_idx);
+
+  // ---- STATE_SEAL : commit-band tail (mirror kCommitSweep; spec §2.3).
+  DROp seal(DROpKind::kStateSeal);
+  seal.ctx = Ctx::kSeed;
+  seal.agg_view = agg_view;
+  seal.statecell_id = sc;
+  seal.agg_table = agg_table;
+  DREffect seal_fx;
+  seal_fx.kind = EffKind::kStateFold;  // global:rmw sealed := working (§B-8)
+  seal_fx.value_table = agg_table;
+  seal_fx.sign = 0;
+  seal.effects.push_back(seal_fx);
+  flow.ops.push_back(std::move(seal));
 }
 
 DRFlowGraph BuildDRInventory(
@@ -743,6 +904,49 @@ DRFlowGraph BuildDRInventory(
         flow.vecs[flow.TableVec(product_table, queue)].defs.push_back(op_idx);
       }
     }
+  }
+
+  // ------------------------------------------------------------ group updates
+  // R3 (spec §2.2/§3, C-0d): one GROUP_UPDATE per QueryAggregate AND per
+  // QueryKVIndex view (the KV index desugars to the degenerate aggregate — no
+  // separate KVINDEX lowering). Built AFTER products, BEFORE branches: the
+  // aggregate is a chain-BREAKER, so no branch chain may traverse it (a branch
+  // reaching the agg view terminates at the agg table boundary in `SuffixesOf`
+  // — the agg view owns its own differential table). Provenance is carried for
+  // V-ALGEBRA + the oracle; both provenances lower identically.
+  for (QueryAggregate agg : query.Aggregates()) {
+    std::vector<QueryColumn> group;
+    for (auto col : agg.GroupColumns()) {
+      group.push_back(col);
+    }
+    for (auto col : agg.ConfigurationColumns()) {
+      group.push_back(col);
+    }
+    std::vector<QueryColumn> summary;
+    for (auto col : agg.SummaryColumns()) {
+      summary.push_back(col);
+    }
+    // The summarized input is the aggregate's predecessor carrying the
+    // aggregated columns (Link.cpp binds it as a predecessor). A plain over()
+    // aggregate has a single incoming summarized relation.
+    QueryView input = QueryView(agg).Predecessors()[0];
+    BuildGroupUpdateOps(flow, impl, context, scc_map, QueryView(agg),
+                        AggProvenance::kOver, std::move(group),
+                        std::move(summary), input, agg.Functor());
+  }
+  for (QueryKVIndex kv : query.KVIndices()) {
+    std::vector<QueryColumn> group;  // config = () for a KV index
+    for (auto col : kv.KeyColumns()) {
+      group.push_back(col);
+    }
+    std::vector<QueryColumn> summary;
+    for (auto col : kv.ValueColumns()) {
+      summary.push_back(col);
+    }
+    QueryView input = QueryView(kv).Predecessors()[0];
+    BuildGroupUpdateOps(flow, impl, context, scc_map, QueryView(kv),
+                        AggProvenance::kKv, std::move(group), std::move(summary),
+                        input, kv.NthValueMergeFunctor(0));
   }
 
   // ------------------------------------------------------------- branches/joins
@@ -1708,6 +1912,7 @@ void DeriveDRStrata(DRFlowGraph &flow, ProgramImpl *impl, Context &context,
   }
   flow.crossover_stratum.clear();
   flow.product_stratum.clear();
+  flow.group_update_stratum.clear();
   for (const DROp &op : flow.ops) {
     if (op.kind == DROpKind::kCrossover) {
       const QueryView nv(*op.negate);
@@ -1715,6 +1920,12 @@ void DeriveDRStrata(DRFlowGraph &flow, ProgramImpl *impl, Context &context,
     } else if (op.kind == DROpKind::kProductArm) {
       flow.product_stratum.emplace(*op.product_view,
                                    op.product_view->Stratum().value_or(0u));
+    } else if (op.kind == DROpKind::kGroupUpdate) {
+      // R3: the GROUP_UPDATE sits at its agg VIEW's stratum. Stratify placed the
+      // aggregate STRICTLY ABOVE its input (spec §5, mirror of the negate
+      // reject), so view.Stratum() already exceeds the input's.
+      flow.group_update_stratum.emplace(*op.agg_view,
+                                        op.agg_view->Stratum().value_or(0u));
     }
   }
 
@@ -1827,6 +2038,30 @@ void DeriveDRStrata(DRFlowGraph &flow, ProgramImpl *impl, Context &context,
       }
       lift(flow.product_stratum[pv], stratum, changed);
       lift(flow.drain_stratum[op.product_table], flow.product_stratum[pv],
+           changed);
+    }
+
+    // R3 GROUP_UPDATE lift (spec §2.4 E1): the op's frontier_in DRAINS the
+    // input's net-removal/net-addition frontiers, written by the input
+    // stratum's FRONTIER_FILTERs — so the op cannot run until the input
+    // stratum's filters are final. STRICT `ready_after` (like PRODUCT, not
+    // crossover's SCC exemption): an aggregate over its own SCC is a Stratify
+    // reject, so no self-read exemption is ever needed. Then the agg table's
+    // OWN drain lifts to the update's stratum (E4: the agg-table acyclic band
+    // is downstream of emit_touched). The double-nesting (KV stratum-0 ->
+    // sum/count stratum-1 -> join stratum-2 in average_weight) falls out of the
+    // SAME monotone fixpoint via `ready_after(agg_table)` on the join lift.
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kGroupUpdate) {
+        continue;
+      }
+      const QueryView av(*op.agg_view);
+      TABLE *const input_table =
+          impl->view_to_model[*op.input_view]->FindAs<DataModel>()->table;
+      unsigned stratum = flow.group_update_stratum[av];
+      stratum = std::max(stratum, ready_after(input_table));
+      lift(flow.group_update_stratum[av], stratum, changed);
+      lift(flow.drain_stratum[op.agg_table], flow.group_update_stratum[av],
            changed);
     }
 
@@ -2437,6 +2672,20 @@ void LinearizeAndValidateDRFlow(
           break;
         case EffKind::kInIReadFrozen:
           break;  // frozen: no hazard (§2/§4).
+        case EffKind::kStateFold:
+          // R3 (spec §2.3): a value-fold WRITES the state cell's working word
+          // (a peer of the agg table). Model it as a write hazard keyed on the
+          // agg table so E2 fold-before-emit is a derived RAW. A STATE_SEAL's
+          // sealed:=working fold (sign 0) is also a write; it trails in the
+          // commit band, so the derived edge is emission-order-safe.
+          flag_accesses.push_back(FlagAccess{oi, e.value_table, true});
+          break;
+        case EffKind::kStateEmit:
+          // A VALUED read of the working word (E2 RAW after every fold).
+          flag_accesses.push_back(FlagAccess{oi, e.read_table, false});
+          break;
+        case EffKind::kStateOld:
+          break;  // frozen sealed read: no within-band hazard (C-0b).
         default:
           break;
       }
@@ -2522,6 +2771,20 @@ void LinearizeAndValidateDRFlow(
           }
         }
         return 0u;
+      case DROpKind::kGroupUpdate:
+        // R3: the GROUP_UPDATE keys on its agg view's lifted stratum (E1: above
+        // the input's frontier filters). The critique's false-negative-space
+        // fix — a silent default-0 would let a mis-stratified frontier drain
+        // pass V-READY (the equal-strata WRONG-A shape).
+        if (op.agg_view.has_value()) {
+          if (auto it = flow.group_update_stratum.find(*op.agg_view);
+              it != flow.group_update_stratum.end()) {
+            return it->second;
+          }
+        }
+        return 0u;
+      case DROpKind::kStateSeal:
+        return 0u;  // trailing commit band (V-READY skip, below)
       default:
         return 0u;  // negate gates (eager, pre-phase), commit sweeps (trailing)
     }
@@ -2539,6 +2802,12 @@ void LinearizeAndValidateDRFlow(
       case DROpKind::kCrossover:
       case DROpKind::kProductArm:
       case DROpKind::kPivotAssemble:
+      case DROpKind::kGroupUpdate:
+        // R3: GROUP_UPDATE emits in band 0 (with seeds/products) at its lifted
+        // stratum — BEFORE the agg table's own single-pass claim drain (band 1)
+        // and immediate frontier filter (band 2) at the SAME stratum. So the
+        // emit_touched counter± seeds the agg queues before the agg drain reads
+        // them (E3 seed-before-drain), riding the existing V-SEED-DRAIN edge.
         return 0u;
       case DROpKind::kClaimDrain:
         return (op.claim_form == ClaimForm::kSinglePass) ? 1u : 3u;
@@ -2563,6 +2832,7 @@ void LinearizeAndValidateDRFlow(
   const auto op_table_id = [&](const DROp &op) -> uintptr_t {
     TABLE *t = op.table_op_table ? op.table_op_table
                : op.product_table ? op.product_table
+               : op.agg_table     ? op.agg_table
                : op.negate_table  ? op.negate_table
                                    : op.fire_table;
     return reinterpret_cast<uintptr_t>(t);
@@ -2610,6 +2880,12 @@ void LinearizeAndValidateDRFlow(
     }
     if (op.kind == DROpKind::kCommitSweep) {
       return Key{2u, max_stratum + 1u, 9u, op_table_id(op), 0, oi};
+    }
+    if (op.kind == DROpKind::kStateSeal) {
+      // R3: STATE_SEAL trails all strata alongside commit sweeps (spec §2.4
+      // E5 / V-COMMIT-TRAILS) — after every emit_touched read of working, band
+      // 9+1 so it sorts strictly after commit sweeps for determinism.
+      return Key{2u, max_stratum + 1u, 10u, op_table_id(op), 0, oi};
     }
     return Key{1u, op_stratum(op), op_band(op), op_table_id(op), op_sign(op),
                oi};
@@ -3101,10 +3377,10 @@ void LinearizeAndValidateDRFlow(
     const DROp &ro = flow.ops[d.to];
     const bool wo_offlattice =
         (wo.kind == DROpKind::kNegateGate && wo.ctx == Ctx::kEager) ||
-        wo.kind == DROpKind::kCommitSweep;
+        wo.kind == DROpKind::kCommitSweep || wo.kind == DROpKind::kStateSeal;
     const bool ro_offlattice =
         (ro.kind == DROpKind::kNegateGate && ro.ctx == Ctx::kEager) ||
-        ro.kind == DROpKind::kCommitSweep;
+        ro.kind == DROpKind::kCommitSweep || ro.kind == DROpKind::kStateSeal;
     if (wo_offlattice || ro_offlattice) {
       continue;
     }
