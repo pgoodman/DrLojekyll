@@ -294,6 +294,53 @@ void QueryImpl::Stratify(const ErrorLog &log) {
     }
   }
 
+  // Reject unstratified aggregation (the delta-relational-IR R3 sibling of the
+  // negation reject above; v3-spec-statecell.md §5). An aggregate reads the
+  // WHOLE of its summarized relation to fold a per-group summary value, so
+  // that relation must be final before the aggregate's StateCell emits — an
+  // aggregate whose summarized input shares its SCC (an aggregate over its own
+  // recursive result) has no order-independent value and is rejected. The
+  // summarized input is exactly the aggregate's predecessor(s) (Link.cpp binds
+  // the group_by/config incoming view and the aggregated incoming view as
+  // predecessors); an in-SCC aggregation is one whose predecessor sits in the
+  // aggregate's own stratum. A KV index is the degenerate aggregate (group =
+  // key, summary = merged value) and is stratified identically. No monotone-
+  // over-monotone relaxation: aggregates are placed strictly-lower like
+  // negation (spec §5 RELAXATION QUESTION).
+  auto reject_in_scc_agg = [&](VIEW *agg, DisplayRange functor_range,
+                               const char *kind) {
+    for (VIEW *input_view : agg->predecessors) {
+      if (agg->stratum != input_view->stratum) {
+        continue;  // A strictly-lower summarized input: the supported shape.
+      }
+
+      Error err = log.Append(functor_range);
+      err << "Aggregate is recursively derived from its own result "
+             "(unstratified aggregation)";
+      err.Note(functor_range)
+          << "The " << kind << " relation must be fully computable before "
+             "the aggregate runs; break the recursion through the aggregate";
+      break;  // One diagnostic per aggregate, not one per input edge.
+    }
+  };
+
+  for (AGG *agg : aggregates) {
+    if (agg->is_dead) {
+      continue;
+    }
+    reject_in_scc_agg(agg, agg->functor.SpellingRange(), "summarized");
+  }
+
+  for (KVINDEX *kv : kv_indices) {
+    if (kv->is_dead) {
+      continue;
+    }
+    const DisplayRange functor_range =
+        kv->merge_functors.empty() ? DisplayRange()
+                                   : kv->merge_functors.front().SpellingRange();
+    reject_in_scc_agg(kv, functor_range, "keyed");
+  }
+
 #ifndef NDEBUG
 
   // Cross-check the SCC condensation against `IdentifyInductions` (see the

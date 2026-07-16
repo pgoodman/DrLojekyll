@@ -15,12 +15,17 @@
 #   TIMEOUT  per-stage timeout in seconds            (default: 120)
 #
 # Case expectations:
-#   aggregate_1, kvindex_2/3/4, evm_func_parse, nonascii_1, truncated_decl_1
+#   aggregate_1, kvindex_2/3/4, agg_in_scc_1, kv_in_scc_1, evm_func_parse,
+#   nonascii_1, truncated_decl_1
 #     — the compiler must exit 1 with a rendered diagnostic (no assert/crash)
 #     in all 4 modes (evm_func_parse: unstratified negation, rejected by the
-#     dataflow Stratify pass; nonascii_1: invalid byte in the display stream,
-#     F21; truncated_decl_1: file ends mid-declaration, F21). These two have
-#     no .main.cpp: unlike the feature-gap cases they can never compile.
+#     dataflow Stratify pass; agg_in_scc_1/kv_in_scc_1: unstratified
+#     aggregation — an aggregate/KV index over its own recursive result,
+#     rejected by the same Stratify pass as the delta-relational-IR R3 sibling
+#     of the negation reject, BEFORE the F14 control-flow pre-pass; nonascii_1:
+#     invalid byte in the display stream, F21; truncated_decl_1: file ends
+#     mid-declaration, F21). These two have no .main.cpp: unlike the
+#     feature-gap cases they can never compile.
 #   kvindex_1 — runs under opt/nocf, each matching goldens/kvindex_1.stdout;
 #     exits 1 with a rendered diagnostic under nodf/none (KVINDEX->TUPLE
 #     elimination is a dataflow optimization).
@@ -206,7 +211,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    aggregate_1|kvindex_2|kvindex_3|kvindex_4|evm_func_parse|nonascii_1|truncated_decl_1)
+    aggregate_1|kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|evm_func_parse|nonascii_1|truncated_decl_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

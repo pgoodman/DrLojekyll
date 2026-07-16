@@ -1,0 +1,15 @@
+; Unstratified aggregation (delta-relational-IR R3 stratification reject,
+; v3-spec-statecell.md §5): `count_i32` summarizes `item`, but its output
+; `total` is fed back into `item`, so `item` shares the aggregate's SCC and
+; is not final before the aggregate runs. The Stratify pass rejects this as
+; the sibling of the unstratified-negation error, in all 4 optimization
+; modes, BEFORE the F14 control-flow "not yet supported" pre-pass.
+#functor count_i32(aggregate i32 Val, summary i32 Count).
+#message seed(i32 X).
+#local item(i32 X).
+#local total(i32 N).
+
+item(X) : seed(X).
+item(N) : total(N).
+
+total(N) : count_i32(X, N) over (i32 X) { item(X) }.

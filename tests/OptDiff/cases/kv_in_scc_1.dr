@@ -1,0 +1,19 @@
+; Unstratified aggregation, KV-index variant (delta-relational-IR R3
+; stratification reject, v3-spec-statecell.md §5; a KV index is the
+; degenerate aggregate). `balance` merges values keyed by account via
+; `add_u32`, but a rule re-derives `balance` from itself (through `carry`),
+; so the keyed relation shares the KV index's SCC and is not final before
+; the merge runs. The Stratify pass rejects this identically to the
+; aggregate case, in all 4 optimization modes, BEFORE the F14 control-flow
+; "not yet supported" pre-pass.
+#functor add_u32(bound u32 LHS, bound u32 RHS, free u32 Res).
+#message credit(u64 Account, u32 Amount).
+#local balance(u64 Account, mutable(add_u32) Amount).
+#local carry(u64 Account, u32 Amount).
+#query get_balance(bound u64 Account, free u32 Amount).
+
+balance(A, N) : credit(A, N).
+balance(A, N) : carry(A, N).
+carry(A, N) : balance(A, N).
+
+get_balance(A, N) : balance(A, N).
