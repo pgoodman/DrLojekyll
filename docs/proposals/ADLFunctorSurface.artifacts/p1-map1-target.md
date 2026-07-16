@@ -164,6 +164,18 @@ inside the struct to a free `ret name_pattern(bound…);` at file scope.
  }
 ```
 
+IMPLEMENTATION CORRECTION (gate-caught, 2026-07-16): the diff above
+emitted the two banner comments UNCONDITIONALLY, which broke the §5.4
+functor-free byte-identity this artifact itself predicted — the
+pre-P1 header carried the old two-line comment, so every functor-free
+program's header diffed on comment text alone (all 8 byte-compare
+targets DIFFERS on first run). The landed form gates both banners on
+`any_map_decl` (a pre-scan with the same inline/reduction skip tests):
+a program emitting ZERO free MAP decls — functor-free OR reduction-only
+— emits the ORIGINAL comment + empty struct, byte-identical to pre-P1;
+only decl-bearing headers get the new banners. The byte-compare gate
+exists precisely to catch this class of miss; it did.
+
 Notes on the EmitInlines hooks: the four hooks
 (`…:prologue`, `…:definition:prologue`, `…:definition:epilogue`,
 `…:epilogue`) all emit nothing for the corpus (no `#pragma` inline blocks

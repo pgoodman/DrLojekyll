@@ -1161,11 +1161,44 @@ void Generator::EmitStateCellStructs(void) {
 
 void Generator::EmitFunctorsDecl(void) {
   EmitInlines(hh, "c++:database:functors:prologue");
-  hh << "// User-provided functors. Define the declared member functions in\n"
-     << "// your own translation unit; the generated code calls them.\n"
-     << "struct DatabaseFunctors {\n";
-  hh.PushIndent();
-  EmitInlines(hh, "c++:database:functors:definition:prologue");
+
+  // P1 (ADL/functor-surface epoch): MAP functors are delivered as FREE
+  // functions (declared here, defined out-of-line by the driver), the same
+  // C-5 idiom EmitStateCellStructs uses for reduction bodies. Emitted
+  // BEFORE `struct DatabaseFunctors` so the decls precede every detail
+  // template body (two-phase lookup, E-19). The struct survives EMPTY so
+  // the entry-point `Functors` template param still deduces
+  // `DatabaseFunctors` and drivers still `DatabaseFunctors functors;`.
+  //
+  // The banners below are gated on a decl actually being emitted so that a
+  // program with no MAP functor emits byte-identical text to the pre-P1
+  // shape (the P1 functor-free byte-compare gate).
+  auto emits_map_decl = [](ParsedFunctor func) -> bool {
+    if (func.IsInline(Language::kCxx)) {
+      return false;
+    }
+    for (ParsedParameter param : ParsedDeclaration(func).Parameters()) {
+      const auto b = param.Binding();
+      if (b == ParameterBinding::kAggregate ||
+          b == ParameterBinding::kSummary) {
+        return false;
+      }
+    }
+    return true;
+  };
+  bool any_map_decl = false;
+  for (ParsedFunctor func : Functors(module)) {
+    if (emits_map_decl(func)) {
+      any_map_decl = true;
+      break;
+    }
+  }
+
+  if (any_map_decl) {
+    hh << "// User-provided MAP functors. Define these free functions in your\n"
+       << "// own translation unit; the generated code calls them by\n"
+       << "// unqualified name.\n";
+  }
   for (ParsedFunctor func : Functors(module)) {
     if (func.IsInline(Language::kCxx)) {
       continue;
@@ -1235,8 +1268,7 @@ void Generator::EmitFunctorsDecl(void) {
         break;
     }
 
-    hh << hh.Indent() << ret << " " << func.Name() << "_"
-       << decl.BindingPattern() << "(";
+    hh << ret << " " << func.Name() << "_" << decl.BindingPattern() << "(";
     auto sep = "";
     for (ParsedParameter param : decl.Parameters()) {
       if (param.Binding() == ParameterBinding::kBound) {
@@ -1247,6 +1279,18 @@ void Generator::EmitFunctorsDecl(void) {
     }
     hh << ");\n";
   }
+  // The (now vestigial) functor struct: empty, kept for `Functors`
+  // deduction and driver construction (see above).
+  if (any_map_decl) {
+    hh << "// User-provided functors object (vestigial ABI seam; empty since\n"
+       << "// the P1 MAP-functor free-function migration).\n";
+  } else {
+    hh << "// User-provided functors. Define the declared member functions in\n"
+       << "// your own translation unit; the generated code calls them.\n";
+  }
+  hh << "struct DatabaseFunctors {\n";
+  hh.PushIndent();
+  EmitInlines(hh, "c++:database:functors:definition:prologue");
   EmitInlines(hh, "c++:database:functors:definition:epilogue");
   hh.PopIndent();
   hh << "};\n\n";
@@ -2733,7 +2777,13 @@ void Generator::EmitGenerate(ProgramGenerateRegion region) {
   if (auto inline_name = functor.InlineName(Language::kCxx); inline_name) {
     call = *inline_name;
   } else {
-    call = "functors." + Sanitize(ToString(functor.Name())) + "_" +
+    // P1 (ADL/functor-surface epoch): the MAP-delivery call is a FREE
+    // function (unqualified lookup, bound at template-definition point —
+    // builtin args have no associated namespace so this is ordinary
+    // lookup, not ADL; E-19), matching the C-5 reduction free-fn ABI.
+    // The free forward-decl is emitted at the EmitFunctorsDecl slot,
+    // before every detail template body (two-phase lookup).
+    call = Sanitize(ToString(functor.Name())) + "_" +
            std::string(ParsedDeclaration(functor).BindingPattern());
   }
   call += "(" + JoinExprs(VarExprs(region.InputVariables()), ", ") + ")";

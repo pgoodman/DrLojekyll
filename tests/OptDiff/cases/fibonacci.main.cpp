@@ -5,7 +5,7 @@
 
 #include "datalog.h"
 
-int32_t DatabaseFunctors::add_i32_bbf(int32_t L, int32_t R) {
+int32_t add_i32_bbf(int32_t L, int32_t R) {
   return static_cast<int32_t>(static_cast<uint32_t>(L) +
                               static_cast<uint32_t>(R));
 }

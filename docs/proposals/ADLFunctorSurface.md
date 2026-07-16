@@ -292,7 +292,74 @@ case); suite stays 164 through stages 1-2 (both witnesses in-corpus);
 FINDINGS entry (F23+) iff a census/cross-check fires on a real
 divergence (the house bet); Q5 neutral.
 
-## 3. Artifact index
+## 2.1 Owner decisions (2026-07-16, ratified at the design checkpoint)
+
+1. P1 GOLDEN POLICY: adopted as proposed — hard zero-stdout-churn gate
+   (any stdout diff is a bug, never blessed; no --bless permitted),
+   oracle/monotone zero churn, permcheck.py as belt only, cpp-out
+   byte-compare on functor-free programs (deterministic suite cases
+   incl. booleans.dr + the four bench flagship .dr sources), emitted
+   headers reviewed against p1-map1-target.md (headers are not
+   goldens), drivers in the same diff.
+2. P2 STAGING: R1e lands NOW under the hard byte-identical gate; the
+   cutover is its own reviewed diff, authorized only once the splice
+   mechanism (per-io par handle) is specified and the region-tree
+   structural comparison gate is in place. Two diffs, not one.
+3. P3/R4: DEFER + RETIRE the group_ids-reshape charter. R4 re-chartered
+   as a materialization/access-path item gated on a concrete
+   WCOJ/3+-way self-join witness; group_ids/InsertSetsOverlap
+   re-labeled a correctness guard, never an optimization target; the
+   redundant pivot re-compare filed as measure-first P4 residue.
+
+## 3. Implementation record (one diff at a time; gates per §2.1)
+
+### P1 — MAP-functor migration LANDED (2026-07-16)
+
+lib/CodeGen/CPlusPlus/Database.cpp: EmitGenerate's callee drops the
+`"functors."` prefix (the sole emitted member-call shape); EmitFunctorsDecl
+hoists the per-functor member declarations to free forward-decls emitted
+before a now-EMPTY `struct DatabaseFunctors {}` (the deduction anchor), the
+signature synthesis untouched. GATE-CAUGHT CORRECTION during
+implementation: the identity artifact's diff emitted the two new banner
+comments unconditionally, which broke its own §5.4 functor-free
+byte-identity prediction (all 8 byte-compare targets DIFFERS on comment
+text alone); the landed form gates both banners on `any_map_decl` (a
+pre-scan with exactly the emission loop's inline+reduction skip tests), so
+functor-free AND reduction-only headers stay byte-identical to pre-P1.
+13 corpus drivers drop `DatabaseFunctors::` in the same diff (plus two
+accurate comment updates); CLAUDE.md's generated-API paragraph and
+RuntimeAndCodegen.md's functor bullet rewritten to the free-function ABI.
+
+GATES (all green on the exact committed code): FULL SUITE PASS (164),
+ZERO golden churn (0 files, no --bless); functor-free cpp-out
+byte-compare IDENTICAL on 8 pre-registered deterministic targets
+(booleans, cond_diff_flipflop, transitive_closure_diff, product_diff +
+the four bench flagships) — determinism of every target verified
+same-binary-twice first; map_1 + average_weight header diffs match
+p1-map1-target.md exactly (4 + 2 call-site rewrites, free-decl hoist,
+empty struct, dead new_weight_i32_bbf migrated per E-18/E-21); ctest 3/3
+(runtime 43); Q5 spot @128 release ~0.11s / debug ~0.94s (baseline
+0.11-0.12/0.87-0.93 — within noise; the Q5 chain is functor-free, its
+codegen byte-identical). Predictions §2: ALL HIT (zero stdout churn,
+zero oracle/monotone churn, 13 driver files, suite 164, Q5 neutral).
+
+FABLE REVIEW (pre-commit, owner-mandated): APPROVE-WITH-NITS. Verified
+line-level: the any_map_decl pre-scan is byte-equivalent to the emission
+loop's skip predicate; the no-decl path re-emits pre-P1 text exactly;
+driver edits are pure qualifier drops; tree-wide greps found zero
+surviving member-ABI consumers; two-phase lookup, C-5 name disjointness
+(the _bbf/_reduce suffix families), and the three vestigial Functors
+param families confirmed in generated headers. The review CLOSED A GATE
+GAP: reduction-only headers (aggregate_1) were absent from the
+byte-compare list; independently generated and shown byte-identical by
+construction (no-decl path; the EmitGenerate hunk unreachable). Nits
+fixed in the same diff: continuation-line re-flow in 3 drivers +
+CLAUDE.md/RuntimeAndCodegen.md ABI text (the two recompilable drivers
+re-suite-verified PASS after the whitespace fix). Recorded for P4: the
+pre-existing `func.Name()`-vs-`Sanitize` decl/call asymmetry (unchanged
+by P1); add a reduction-only target to future byte-compare lists.
+
+## 3.1 Artifact index
 
 - p1-map1-target.md — P1 identity target: the exact post-P1 datalog.h
   unified diff for map_1 + average_weight hunks + driver diffs + the

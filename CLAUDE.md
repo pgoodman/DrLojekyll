@@ -125,8 +125,13 @@ anything else (entry points and queries assert it). Messages are
 with a forcing function also take `(log, functors)` after `db`. Log and
 functor types flow by deduction — a driver observes published deltas by
 providing ITS OWN type with the message-hook signatures (no inheritance,
-no virtual, no `override`); `DatabaseFunctors` members are declared in
-the header and defined by the driver out-of-line. CURSOR CONTRACTS
+no virtual, no `override`); since the P1 MAP-functor migration
+(ADL/functor-surface epoch) EVERY functor body is a driver-supplied FREE
+FUNCTION — MAP functors are forward-declared in the header as
+`<ret> <name>_<pattern>(bound...)` and defined out-of-line (unqualified
+call from the generated template context; `struct DatabaseFunctors {}`
+survives EMPTY as the deduction anchor drivers still construct and
+pass). CURSOR CONTRACTS
 (normative since the data-structures epoch — dead-row compaction
 renumbers row ids): any entry-point call invalidates open cursors
 (drain fully before the next message), and keyed-cursor enumeration
@@ -139,9 +144,9 @@ in the header, defined out-of-line, named after the functor) — an
 `@invertible` functor `f` needs `f_identity()`, `f_combine(w, v)`,
 `f_uncombine(w, v)`; an `@recompute` functor needs
 `f_reduce(const S *values, const int32_t *counts, size_t n)` (a rescan
-over the live multiset). The functor's own MAP members
-(e.g. `DatabaseFunctors::div_i32_bbf`) are declared in the header and
-defined out-of-line as usual. See `tests/OptDiff/cases/average_weight.main.cpp`
+over the live multiset). The functor's own MAP deliveries (e.g.
+`div_i32_bbf`) are free functions too, declared in the header and
+defined out-of-line. See `tests/OptDiff/cases/average_weight.main.cpp`
 for the exact landed shape. Always read the generated `datalog.h` for
 exact signatures before writing a driver.
 
