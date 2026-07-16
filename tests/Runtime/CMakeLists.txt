@@ -1,7 +1,8 @@
 # Copyright 2026, Trail of Bits, Inc. All rights reserved.
 
 add_executable(runtime_test
-  RuntimeTest.cpp)
+  RuntimeTest.cpp
+  StateCellTest.cpp)
 
 target_link_libraries(runtime_test
   PRIVATE
