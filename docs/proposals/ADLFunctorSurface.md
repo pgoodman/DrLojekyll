@@ -161,3 +161,78 @@ load-bearing extracts are §2/§3 inputs and are restated where used.
   average_weight: two functors.div_i32_bbf sites (:762/:773),
   new_weight_i32_bbf decl-only. The migration is mechanical over
   EmitGenerate, never a site list.
+
+## 2. The diff plan as amended (checkpoint 2+3: designs + hand-written
+## artifacts, each adversarially judged; 2026-07-16)
+
+Workflow: 3 opus designers (P1/P2/P3), each delivering the diff plan +
+the hand-written target artifact + predictions + gate proposal; 3 opus
+judges; P2 additionally went through a full revision round against its
+judge's findings. Verdicts: P1 REVISE→amended (3 factual fixes, no
+CRITICAL), P2 REVISE→revision round (record below when re-judged),
+P3 GO — with a DEFER recommendation that RETIRES the R4 charter.
+
+### P1 — MAP-functor migration (artifact:
+### ADLFunctorSurface.artifacts/p1-map1-target.md, the identity target)
+
+The compiler diff is TWO emission surfaces and nothing else:
+- EmitGenerate callee (Database.cpp:2736): drop the `"functors."`
+  literal — the sole emitted member-call shape (grep-confirmed single
+  hit). Inline branch, wrapper shapes, empty_body scaffolding untouched.
+- EmitFunctorsDecl (Database.cpp:1162-1254): hoist the per-functor
+  member declarations to FREE forward-decls emitted BEFORE the struct
+  (mirroring EmitStateCellStructs :1113-1124); `struct DatabaseFunctors
+  {};` SURVIVES EMPTY (driver/entry-point ABI stability); signature
+  synthesis byte-identical, only the emission target moves; the dead
+  new_weight_i32_bbf migrates too (E-18/E-21 — no use-gating added).
+- uses_functors threading web: LEFT DEAD, NOT DELETED (the set-site
+  keys on !InlineName, so MAP-bearing procs still thread an unread
+  `Functors &functors`; keeps the header byte-identical outside the two
+  migrated surfaces and all driver call sites unchanged). Clean
+  excision = P4 residue gated on the WASM object-owned-state decision.
+- All THREE entry-point families (init/message/forced-query, E-20)
+  keep the vestigial templated Functors param. Zero driver-call churn.
+- 13 corpus drivers drop `DatabaseFunctors::` from member definitions
+  in the SAME diff. Judge corrections applied: evm_func_parse's driver
+  is UNVERIFIABLE BY ANY GATE (expected-diagnostic; $CXX never invoked)
+  — migrated for corpus consistency only; the functor-free byte-compare
+  gate names deterministic SUITE cases (booleans.dr verified) + the four
+  bench flagship .dr sources, NOT "tc_random as a case". The two-DB-in-
+  one-TU question is MOOT (pre-existing: two namespace-free headers
+  already collide on Database/DatabaseLog/Tup_i32 before any functor).
+PRE-REGISTERED PREDICTIONS (P1): stdout golden churn ZERO (hard gate,
+no --bless; a stdout diff is a bug); oracle/monotone churn ZERO; suite
+stays 164; driver churn exactly the 13 files; functor-free programs
+byte-identical headers; Q5 neutral (codegen string change only);
+DR validators unchanged; ctest 3/3.
+
+### P3 — R4 group_ids reshape: DEFER, charter RETIRED (artifact:
+### ADLFunctorSurface.artifacts/p3-tc-selfjoin-target.md; judge GO)
+
+THE HEADLINE (measured, then independently re-derived by the judge on
+dual witnesses — recursive tc and non-recursive edge⋈edge): the seed's
+premise "the distinctness IS the cubic materialization … value-keyed
+cross of two SELECT scans" (§12.2(C):1478-1481) is FALSE at HEAD. The
+self-join lowers to ONE physical table + TWO hash-keyed indexes
+(Index::First = hash probe, Table.h:762-777) + a pivot loop — cost
+O(join output), worst-case-optimal for a binary equi-join. The two
+distinct proxy TUPLEs are a dataflow-representation artifact whose
+lowering is already the self-index access path R4 was chartered to
+introduce — which is moreover ALREADY FIRST-CLASS DR-IR vocabulary
+(Lowering::kSectionWalk + PlanNode::bound_cols/pivot_col, DR.h:324-349).
+The invariant-preservation argument (a)-(e) is discharged trivially by
+the empty diff; Candidates A (self-pivot JOIN annotation) and B
+(persistent distinguishing tag) were built and rejected — each rewrites
+the epoch's only documented silent-miscompile guard for ZERO emission
+change, and B's persistent fork newly incurs the E-23 substitution-
+propagation obligation the seed's (a)-(e) omitted. The one genuine
+residual: the provably-redundant pivot re-compare in the join inner
+loop (elidable iff the ACCESS node is kSectionWalk with valid
+pivot_col) — filed as P4-adjacent measure-first emission cleanup,
+decoupled from group_ids. RECOMMENDATION TO OWNER (decision (c)):
+DEFER and re-charter R4 as a materialization/access-path item gated on
+a concrete WCOJ/3+-way self-join witness; re-label group_ids/
+InsertSetsOverlap a correctness guard, never an optimization target.
+
+### P2 — eager-web externalization (revision round in progress;
+### record lands on re-judge)
