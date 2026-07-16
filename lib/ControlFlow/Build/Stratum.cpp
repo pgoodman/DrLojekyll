@@ -580,57 +580,6 @@ static void EmitHeadFold(ProgramImpl *impl, Context &context, QueryView view,
   fold->body.Emplace(fold, append);
 }
 
-// Emit the downstream walk of one join section: starting at the join view
-// itself, fold at the first table (a differential join is persisted, so
-// this is normally the join's own table) and otherwise continue through
-// table-less plumbing into each eligible consumer edge.
-//
-// Each walk folds at most once: it returns at the first table it reaches, and
-// chain discovery (`DiscoverBranches`) already terminates every chain at its
-// first table boundary, so no walk traverses two table boundaries or
-// reconverges on one fold site. A single-fold guarantee is required because
-// each fold appends to the table's update-count (a load-bearing multiset
-// value): a double fold would over-count and break net-zero detection. No
-// running already-folded set is needed — the structure enforces it.
-static void EmitSectionWalk(ProgramImpl *impl, Context &context,
-                            QueryView view, bool is_add, DerivClass deriv_class,
-                            OP *parent) {
-  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE *const table = model->table;
-
-  if (table != nullptr) {
-    if (!TableIsInductionOwned(context, table)) {
-      EmitHeadFold(impl, context, view, table, is_add, deriv_class, parent);
-    }
-    return;
-  }
-
-  PARALLEL *const par = impl->parallel_regions.Create(parent);
-  parent->body.Emplace(parent, par);
-  for (QueryView succ : view.Successors()) {
-    if (!FollowsDeltaEdge(context, succ)) {
-      continue;
-    }
-
-    // The scheduling fixpoint lifts a chain's emission stratum above every
-    // NEGATE'd table it reads by scanning `BranchChain::path`, but a NEGATE
-    // reached only inside a join section walk (past the kJoin terminal, not
-    // in any `path`) is outside that scan's coverage. Such a NEGATE would be
-    // emitted here without its negated table's readiness having been lifted
-    // for, so its `kInNew`/`kInI` gate could read a non-final state. This
-    // shape is out of scope: no corpus join section walks table-less plumbing
-    // at all, so none contains a NEGATE. Guard the boundary rather than
-    // silently under-lift.
-    assert(!succ.IsNegate());
-
-    LET *const let = impl->operation_regions.CreateDerived<LET>(par);
-    par->AddRegion(let);
-    OP *const step =
-        EmitChainStep(impl, context, view, succ, is_add, false, let);
-    EmitSectionWalk(impl, context, succ, is_add, deriv_class, step);
-  }
-}
-
 // Emit one seed: a loop over the source table's frontier vector `vec`
 // binding the branch's member view's columns, followed by the chain's
 // plumbing, ending at a head fold or at a pivot append into the join's
@@ -694,158 +643,6 @@ static void EmitSeedLoop(ProgramImpl *impl, Context &context,
   DataModel *const model = impl->view_to_model[head]->FindAs<DataModel>();
   assert(model->table != nullptr);
   EmitHeadFold(impl, context, head, model->table, is_add, deriv_class, parent);
-}
-
-// Emit one arm of a negation crossover (D1', §5.4). `is_add` picks the sign:
-// the `+` arm folds a `+recursive`/`+nonrecursive` count when the negated key
-// is LOST (over the negated table's net-removals frontier), the `-` arm folds
-// the dual when the negated key is GAINED (over net-additions). Shape:
-//
-//   vector-unique  <negated frontier>
-//   vector-loop {negated cols} over <negated frontier>
-//     scan pred where pred.key = negated key  ->  {rest of pred row}
-//       check-member in-new {pred row} in pred_table
-//         if-member
-//           update-count ±class {negate outputs} in negate_table
-//             if-crossed -> append into negate_table add/delete queue
-//
-// The negated frontier row binds the negated view's columns; those bind BOTH
-// the negate's key output columns (`NegatedColumns()`, index-aligned to the
-// negated view) AND the pred's key input columns (`InputColumns()`, the pred
-// contribution to the same key), which are the scan's available columns. Zero
-// key columns (a unit-relation negation) degenerates to a full pred scan.
-static void EmitCrossover(ProgramImpl *impl, Context &context,
-                          const RecursiveSccMap &sccs,
-                          const CrossoverEmission &x, bool is_add,
-                          SERIES *seq) {
-  const QueryNegate negate = x.negate;
-  const QueryView negated_view = negate.NegatedView();
-  const unsigned num_key = negate.NumInputColumns();
-
-  // Sort-unique the consumed frontier (mirrors `seed_vector`): a monotone
-  // boundary's net-additions can be appended at several same-model fold sites
-  // (R7), and each frontier row must drive the crossover once.
-  VECTOR *const frontier = TableDeltaVector(
-      impl, context, x.negated_table,
-      is_add ? VectorKind::kNetRemovals : VectorKind::kNetAdditions);
-  VECTORUNIQUE *const unique =
-      impl->operation_regions.CreateDerived<VECTORUNIQUE>(
-          seq, ProgramOperation::kSortAndUniqueInductionVector);
-  unique->vector.Emplace(unique, frontier);
-  seq->AddRegion(unique);
-
-  // Loop over the negated frontier, binding the negated view's columns.
-  VECTORLOOP *const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-      impl->next_id++, seq, ProgramOperation::kLoopOverInductionVector);
-  seq->AddRegion(loop);
-  loop->vector.Emplace(loop, frontier);
-  for (auto col : negated_view.Columns()) {
-    VAR *const var = loop->defined_vars.Create(impl->next_id++,
-                                               VariableRole::kVectorVariable);
-    var->query_column = col;
-    loop->col_id_to_var.emplace(col.Id(), var);
-  }
-
-  // Bind the negate's key output columns and the pred's key input columns from
-  // the negated view's columns (the shared key). `NegatedColumns()[i]` is the
-  // negate output at the negated view's column `i`; `NthInputColumn(i)` is the
-  // pred column contributing that same key position. This is the REVERSE of
-  // `BuildEagerNegateRegion`'s / `EmitChainStep`'s key mapping: there the
-  // negate output defines the negated view column; here the negated view
-  // column (from the frontier) defines both the negate output and the pred
-  // input.
-  std::vector<QueryColumn> avail;
-  {
-    auto i = 0u;
-    for (QueryColumn out_col : negate.NegatedColumns()) {
-      const auto j = *(out_col.Index());
-      const auto neg_col = negated_view.NthColumn(j);
-      VAR *const key_var = loop->VariableFor(impl, neg_col);
-      loop->col_id_to_var[out_col.Id()] = key_var;
-
-      // The pred column contributing this key position. A constant key column
-      // (a condition / all-constant-key negate, negate_3) does not constrain
-      // the pred scan — it is already fixed — so it is bound but NOT an
-      // available scan column; a zero-real-key negate degenerates to a full
-      // pred scan (the unit-relation case, cond_*).
-      const QueryColumn pred_key_col = negate.NthInputColumn(i++);
-      if (!pred_key_col.IsConstant()) {
-        loop->col_id_to_var[pred_key_col.Id()] = key_var;
-        avail.push_back(pred_key_col);
-      }
-    }
-    assert(i == num_key);
-    (void) num_key;
-  }
-
-  // The fold's rule class: recursive iff the negate's table shares a recursive
-  // SCC with a read table. The negated table contributes nothing today
-  // (Stratify forbids a same-SCC negated view — a negated predicate cannot be
-  // recursively derived from the negation's own result), passed belt-and-
-  // braces per R5; a same-SCC PRED (a recursive negate, the D5 shape) makes
-  // the crossover fold `kRecursive`.
-  const DerivClass deriv_class =
-      RuleClass(sccs, x.negate_table, {x.pred_table, x.negated_table});
-
-  SERIES *const body_seq = impl->series_regions.Create(loop);
-  loop->body.Emplace(loop, body_seq);
-
-  std::vector<QueryColumn> negate_cols;
-  for (auto col : negate.Columns()) {
-    negate_cols.push_back(col);
-  }
-
-  // The fold + if-crossed queue append into the negate's own table (R6),
-  // nested under `parent` (the pred-membership gate).
-  const auto emit_fold = [&](REGION *parent) -> REGION * {
-    UPDATECOUNT *const fold = BuildUpdateCount(
-        impl, x.negate_table, parent, negate_cols, is_add, deriv_class);
-
-    VECTOR *const queue = TableDeltaVector(
-        impl, context, x.negate_table,
-        is_add ? VectorKind::kAddQueue : VectorKind::kDeleteQueue);
-    VECTORAPPEND *const append =
-        impl->operation_regions.CreateDerived<VECTORAPPEND>(
-            fold, ProgramOperation::kAppendToInductionVector);
-    append->vector.Emplace(append, queue);
-    for (auto col : negate_cols) {
-      append->tuple_vars.AddUse(fold->VariableFor(impl, col));
-    }
-    fold->body.Emplace(fold, append);
-    return fold;
-  };
-
-  // Scan the pred table by the bound key (the §3.4 index request; zero bound
-  // columns — a unit relation — degenerates to a full scan), then read the
-  // scanned pred row at `kInNew` (R4: the readiness lift makes InNew
-  // batch-final for a lower pred; for a same-SCC pred the seed-time flags are
-  // untouched so InNew ≡ InI extensionally). The pred row's non-key columns
-  // bind the negate's copied output columns.
-  BuildMaybeScanPartial(
-      impl, x.pred_view, avail, x.pred_table, body_seq,
-      [&](REGION *in_scan, bool) -> REGION * {
-        std::vector<QueryColumn> pred_cols;
-        for (auto col : x.pred_view.Columns()) {
-          pred_cols.push_back(col);
-        }
-        return BuildCheckMember(
-            impl, in_scan, x.pred_table, pred_cols, MembershipPredicate::kInNew,
-            [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
-
-              // Bind the negate's copied (attached) output columns from the
-              // scanned pred row: `CopiedColumns()` are the negate outputs for
-              // the attached pred columns (`InputCopiedColumns()`), in order.
-              // The key outputs are already bound on the loop.
-              auto attached_it = negate.InputCopiedColumns().begin();
-              for (QueryColumn out_col : negate.CopiedColumns()) {
-                const QueryColumn attached = *attached_it++;
-                in_check->col_id_to_var[out_col.Id()] =
-                    in_check->VariableFor(impl_, attached);
-              }
-              return emit_fold(in_check);
-            },
-            [](ProgramImpl *, REGION *) -> REGION * { return nullptr; });
-      });
 }
 
 // Emit one claim drain: sort-unique the queue of rows whose folds crossed
@@ -1291,157 +1088,482 @@ static void EmitJoinFire(ProgramImpl *impl, Context &context,
   }
 }
 
-// Emit the signed frontier arms of one differential @product (see
-// `ProductEmission`). Modeled on `EmitJoinFire`'s per-position scan_list —
-// NOT on `EmitCrossover`'s single fixed `kInNew` read: the non-delta reads
-// must be POSITION-keyed (`j < i` → `kInNew`, `j > i` → `kInI`) and
-// sign-independent, or a same-batch both-sides change double-counts (the
-// F18-class trap; the same-batch double-flip fixture is the discriminator).
-// Shape of one arm (sign ±, delta at side i):
+// ===========================================================================
+// R2 FAMILY #1 — ACYCLIC-BAND LOWERING (dr → cf).
 //
-//   vector-unique  <side i net-additions|net-removals>     « seed_vector »
-//   vector-loop {side i cols} over that frontier
-//     scan side j₁ FULL (zero bound columns)
-//       check-member (j₁<i ? in-new : in-I) {side j₁ row}
-//         ... every other side, ascending position order ...
-//           update-count ±nonrecursive {product row} in product table
-//             if-crossed → append into product table's add/delete queue
-//
-// The product outputs are bound in ONE pass at the innermost level via
-// `ForEachUse`: with zero pivots every output has exactly one input column
-// (`kJoinNonPivot`, Query.cpp), so there is no loop-level pivot-availability
-// obligation forcing `EmitJoinFire`'s split binding, and every input — the
-// loop's delta side and each scan's side — is lexically in scope there.
-//
-// `seed_vector` is the caller's per-stratum frontier provisioning (sort-
-// unique each consumed frontier once per stratum series); a self-product's
-// two positions consume the same vectors, so the dedup matters there.
-static void EmitProductArms(
+// `LowerDRFlow` (below) replaces the hand-coded acyclic-band emission — the old
+// driver's per-stratum seeds / join section walks / crossovers / product arms /
+// single-pass claim drains + immediate frontier filters. It walks the DR-IR
+// flow graph (branch/join inventory, the CROSSOVER/PRODUCT_ARM DROps, and the
+// single-pass CLAIM_DRAIN / immediate FRONTIER_FILTER DROps), restricted to one
+// stratum's band 0 + acyclic drains/filters, and emits the SAME region trees.
+// Emission ORDER is the old driver's band walk realized as a lowering default
+// (B-9/B-14: tree-shape identity modulo an id-bijection — NOT the raw
+// pinned_order sign-major sort, which reorders product arms). The SCC round
+// shells + fixpoint fires stay on the old web (F-2: recursive family is R2 #2).
+// This cut DELETED the acyclic-exclusive EmitSectionWalk / EmitCrossover /
+// EmitProductArms, whose bodies are absorbed below; EmitSeedLoop / EmitHeadFold
+// / EmitChainStep / EmitClaimDrain / EmitFrontierFilter SURVIVE (still called by
+// the SCC path) and are reused verbatim.
+
+// Adapt a `DRBranch` (the DR-IR's independently-derived branch inventory) to
+// the `BranchChain` `EmitSeedLoop` consumes. Structurally identical (source /
+// path / ends_at_join / target); `stratum` is the DR-seeded value.
+static BranchChain BranchChainOf(const DRBranch &b, unsigned stratum) {
+  BranchChain chain;
+  chain.source = b.source;
+  chain.path = b.path;
+  chain.ends_at_join = b.ends_at_join;
+  chain.target = b.target;
+  chain.stratum = stratum;
+  return chain;
+}
+
+// Emit one join section's downstream walk (absorbed from the deleted
+// `EmitSectionWalk`): starting at the join view, fold at the first table (the
+// join's persisted table) and otherwise continue through table-less plumbing
+// into each eligible consumer edge. Each walk folds at most once (chain
+// discovery terminates every chain at its first table boundary). Reuses the
+// surviving `EmitHeadFold` / `EmitChainStep`.
+static void LowerSectionWalk(ProgramImpl *impl, Context &context, QueryView view,
+                             bool is_add, DerivClass deriv_class, OP *parent) {
+  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
+  TABLE *const table = model->table;
+
+  if (table != nullptr) {
+    if (!TableIsInductionOwned(context, table)) {
+      EmitHeadFold(impl, context, view, table, is_add, deriv_class, parent);
+    }
+    return;
+  }
+
+  PARALLEL *const par = impl->parallel_regions.Create(parent);
+  parent->body.Emplace(parent, par);
+  for (QueryView succ : view.Successors()) {
+    if (!FollowsDeltaEdge(context, succ)) {
+      continue;
+    }
+    assert(!succ.IsNegate());
+    LET *const let = impl->operation_regions.CreateDerived<LET>(par);
+    par->AddRegion(let);
+    OP *const step =
+        EmitChainStep(impl, context, view, succ, is_add, false, let);
+    LowerSectionWalk(impl, context, succ, is_add, deriv_class, step);
+  }
+}
+
+// Emit one negation-crossover arm (absorbed from the deleted `EmitCrossover`,
+// now driven by a CROSSOVER `DROp`). `is_add` picks the sign: the `+` arm folds
+// over the negated table's net-removals frontier, the `-` arm over net-
+// additions. Loops the negated frontier, scans the pred table by the shared
+// key, reads the pred at `kInNew`, folds one signed count into the negate's own
+// table. The DROp carries the identity (negate / negate_table / negated_table /
+// pred_table / pred_view); the column machinery is re-derived from the Query.
+static void LowerCrossoverArm(ProgramImpl *impl, Context &context,
+                              const RecursiveSccMap &sccs, const DROp &op,
+                              bool is_add, SERIES *seq) {
+  assert(op.kind == DROpKind::kCrossover);
+  const QueryNegate negate = *op.negate;
+  const QueryView negated_view = negate.NegatedView();
+  const unsigned num_key = negate.NumInputColumns();
+  TABLE *const negate_table = op.negate_table;
+  TABLE *const negated_table = op.negated_table;
+  TABLE *const pred_table = op.pred_table;
+  const QueryView pred_view = *op.pred_view;
+
+  // Sort-unique the consumed frontier (mirrors `seed_vector`): a monotone
+  // boundary's net-additions can be appended at several same-model fold sites,
+  // and each frontier row must drive the crossover once.
+  VECTOR *const frontier = TableDeltaVector(
+      impl, context, negated_table,
+      is_add ? VectorKind::kNetRemovals : VectorKind::kNetAdditions);
+  VECTORUNIQUE *const unique =
+      impl->operation_regions.CreateDerived<VECTORUNIQUE>(
+          seq, ProgramOperation::kSortAndUniqueInductionVector);
+  unique->vector.Emplace(unique, frontier);
+  seq->AddRegion(unique);
+
+  VECTORLOOP *const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+      impl->next_id++, seq, ProgramOperation::kLoopOverInductionVector);
+  seq->AddRegion(loop);
+  loop->vector.Emplace(loop, frontier);
+  for (auto col : negated_view.Columns()) {
+    VAR *const var = loop->defined_vars.Create(impl->next_id++,
+                                               VariableRole::kVectorVariable);
+    var->query_column = col;
+    loop->col_id_to_var.emplace(col.Id(), var);
+  }
+
+  std::vector<QueryColumn> avail;
+  {
+    auto i = 0u;
+    for (QueryColumn out_col : negate.NegatedColumns()) {
+      const auto j = *(out_col.Index());
+      const auto neg_col = negated_view.NthColumn(j);
+      VAR *const key_var = loop->VariableFor(impl, neg_col);
+      loop->col_id_to_var[out_col.Id()] = key_var;
+
+      const QueryColumn pred_key_col = negate.NthInputColumn(i++);
+      if (!pred_key_col.IsConstant()) {
+        loop->col_id_to_var[pred_key_col.Id()] = key_var;
+        avail.push_back(pred_key_col);
+      }
+    }
+    assert(i == num_key);
+    (void) num_key;
+  }
+
+  const DerivClass deriv_class =
+      RuleClass(sccs, negate_table, {pred_table, negated_table});
+
+  SERIES *const body_seq = impl->series_regions.Create(loop);
+  loop->body.Emplace(loop, body_seq);
+
+  std::vector<QueryColumn> negate_cols;
+  for (auto col : negate.Columns()) {
+    negate_cols.push_back(col);
+  }
+
+  const auto emit_fold = [&](REGION *parent) -> REGION * {
+    UPDATECOUNT *const fold = BuildUpdateCount(
+        impl, negate_table, parent, negate_cols, is_add, deriv_class);
+    VECTOR *const queue = TableDeltaVector(
+        impl, context, negate_table,
+        is_add ? VectorKind::kAddQueue : VectorKind::kDeleteQueue);
+    VECTORAPPEND *const append =
+        impl->operation_regions.CreateDerived<VECTORAPPEND>(
+            fold, ProgramOperation::kAppendToInductionVector);
+    append->vector.Emplace(append, queue);
+    for (auto col : negate_cols) {
+      append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+    }
+    fold->body.Emplace(fold, append);
+    return fold;
+  };
+
+  BuildMaybeScanPartial(
+      impl, pred_view, avail, pred_table, body_seq,
+      [&](REGION *in_scan, bool) -> REGION * {
+        std::vector<QueryColumn> pred_cols;
+        for (auto col : pred_view.Columns()) {
+          pred_cols.push_back(col);
+        }
+        return BuildCheckMember(
+            impl, in_scan, pred_table, pred_cols, MembershipPredicate::kInNew,
+            [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
+              auto attached_it = negate.InputCopiedColumns().begin();
+              for (QueryColumn out_col : negate.CopiedColumns()) {
+                const QueryColumn attached = *attached_it++;
+                in_check->col_id_to_var[out_col.Id()] =
+                    in_check->VariableFor(impl_, attached);
+              }
+              return emit_fold(in_check);
+            },
+            [](ProgramImpl *, REGION *) -> REGION * { return nullptr; });
+      });
+}
+
+// Emit one differential @product arm (absorbed from the deleted
+// `EmitProductArms`, now driven by a PRODUCT_ARM `DROp`). One arm = one
+// side×sign: loop the delta side's signed frontier, nested full scans of every
+// other side at its position-relative membership predicate (j<i → kInNew, j>i →
+// kInI, sign-independent), fold ±nonrecursive into the product's own table.
+static void LowerProductArm(
     ProgramImpl *impl, Context &context, const RecursiveSccMap &sccs,
-    const ProductEmission &p,
+    const DROp &op,
     const std::function<VECTOR *(TABLE *, VectorKind)> &seed_vector,
     SERIES *seq) {
-  const QueryJoin join = QueryJoin::From(p.product_view);
-  const size_t num_sides = p.sides.size();
+  assert(op.kind == DROpKind::kProductArm);
+  const QueryJoin join = QueryJoin::From(*op.product_view);
+  TABLE *const product_table = op.product_table;
+  const size_t num_sides = op.side_tables.size();
+  const size_t i = op.side_index;
+  const bool is_add = (op.product_sign > 0);
 
-  // The acyclic fence admitted this join, so the fold's rule class is
-  // non-recursive; `RuleClass` re-derives it against the SCC map as a
-  // tripwire (a `kRecursive` here means an on-cycle product slipped the
-  // `ViewSelfReachable` pre-pass fence).
+  std::vector<QueryView> sides;
+  for (QueryView side : join.JoinedViews()) {
+    sides.push_back(side);
+  }
+  assert(sides.size() == num_sides);
+
   const DerivClass deriv_class =
-      RuleClass(sccs, p.product_table, p.side_tables);
+      RuleClass(sccs, product_table, op.side_tables);
   assert(deriv_class == DerivClass::kNonRecursive);
 
   std::vector<QueryColumn> product_cols;
-  for (auto col : p.product_view.Columns()) {
+  for (auto col : op.product_view->Columns()) {
     product_cols.push_back(col);
   }
 
-  for (size_t i = 0u; i < num_sides; ++i) {
-    for (const bool is_add : {true, false}) {
+  VECTOR *const frontier = seed_vector(
+      op.side_tables[i],
+      is_add ? VectorKind::kNetAdditions : VectorKind::kNetRemovals);
 
-      // A monotone side never loses rows: no `-` arm.
-      if (!is_add && !p.side_differential[i]) {
-        continue;
+  VECTORLOOP *const loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+      impl->next_id++, seq, ProgramOperation::kLoopOverInductionVector);
+  seq->AddRegion(loop);
+  loop->vector.Emplace(loop, frontier);
+  for (auto col : sides[i].Columns()) {
+    VAR *const var = loop->defined_vars.Create(impl->next_id++,
+                                               VariableRole::kVectorVariable);
+    var->query_column = col;
+    loop->col_id_to_var.emplace(col.Id(), var);
+  }
+
+  const auto emit_fold = [&](SERIES *inner_seq) {
+    join.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
+                        std::optional<QueryColumn> out_col) {
+      if (out_col) {
+        assert(role == InputColumnRole::kJoinNonPivot);
+        (void) role;
+        inner_seq->col_id_to_var.emplace(
+            out_col->Id(), inner_seq->VariableFor(impl, in_col));
       }
+    });
 
-      VECTOR *const frontier = seed_vector(
-          p.side_tables[i],
-          is_add ? VectorKind::kNetAdditions : VectorKind::kNetRemovals);
+    UPDATECOUNT *const fold = BuildUpdateCount(
+        impl, product_table, inner_seq, product_cols, is_add, deriv_class);
+    inner_seq->AddRegion(fold);
 
-      // Loop the delta side's frontier, binding its member view's columns.
-      VECTORLOOP *const loop =
-          impl->operation_regions.CreateDerived<VECTORLOOP>(
-              impl->next_id++, seq, ProgramOperation::kLoopOverInductionVector);
-      seq->AddRegion(loop);
-      loop->vector.Emplace(loop, frontier);
-      for (auto col : p.sides[i].Columns()) {
-        VAR *const var = loop->defined_vars.Create(
-            impl->next_id++, VariableRole::kVectorVariable);
-        var->query_column = col;
-        loop->col_id_to_var.emplace(col.Id(), var);
-      }
+    VECTOR *const queue = TableDeltaVector(
+        impl, context, product_table,
+        is_add ? VectorKind::kAddQueue : VectorKind::kDeleteQueue);
+    VECTORAPPEND *const append =
+        impl->operation_regions.CreateDerived<VECTORAPPEND>(
+            fold, ProgramOperation::kAppendToInductionVector);
+    append->vector.Emplace(append, queue);
+    for (auto col : product_cols) {
+      append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+    }
+    fold->body.Emplace(fold, append);
+  };
 
-      // The innermost fold: bind every product output from its (single)
-      // input column, fold one signed count into the product's own table,
-      // and park the crossing in the matching queue.
-      const auto emit_fold = [&](SERIES *inner_seq) {
-        join.ForEachUse([&](QueryColumn in_col, InputColumnRole role,
-                            std::optional<QueryColumn> out_col) {
-          if (out_col) {
-            assert(role == InputColumnRole::kJoinNonPivot);
-            (void) role;
-            inner_seq->col_id_to_var.emplace(
-                out_col->Id(), inner_seq->VariableFor(impl, in_col));
-          }
-        });
+  std::vector<size_t> scan_positions;
+  for (size_t j = 0u; j < num_sides; ++j) {
+    if (j != i) {
+      scan_positions.push_back(j);
+    }
+  }
 
-        UPDATECOUNT *const fold = BuildUpdateCount(
-            impl, p.product_table, inner_seq, product_cols, is_add,
-            deriv_class);
-        inner_seq->AddRegion(fold);
-
-        VECTOR *const queue = TableDeltaVector(
-            impl, context, p.product_table,
-            is_add ? VectorKind::kAddQueue : VectorKind::kDeleteQueue);
-        VECTORAPPEND *const append =
-            impl->operation_regions.CreateDerived<VECTORAPPEND>(
-                fold, ProgramOperation::kAppendToInductionVector);
-        append->vector.Emplace(append, queue);
-        for (auto col : product_cols) {
-          append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+  std::function<void(size_t, SERIES *)> scan_next =
+      [&](size_t idx, SERIES *parent_seq) {
+        if (idx == scan_positions.size()) {
+          emit_fold(parent_seq);
+          return;
         }
-        fold->body.Emplace(fold, append);
+        const size_t j = scan_positions[idx];
+        const QueryView side = sides[j];
+        TABLE *const side_table = op.side_tables[j];
+        const MembershipPredicate pred = (j < i)
+                                             ? MembershipPredicate::kInNew
+                                             : MembershipPredicate::kInI;
+
+        std::vector<QueryColumn> avail;  // Zero bound columns: full scan.
+        BuildMaybeScanPartial(
+            impl, side, avail, side_table, parent_seq,
+            [&](REGION *in_scan, bool) -> REGION * {
+              std::vector<QueryColumn> side_cols;
+              for (auto col : side.Columns()) {
+                side_cols.push_back(col);
+              }
+              return BuildCheckMember(
+                  impl, in_scan, side_table, side_cols, pred,
+                  [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
+                    SERIES *const next_seq =
+                        impl_->series_regions.Create(in_check);
+                    scan_next(idx + 1u, next_seq);
+                    return next_seq;
+                  },
+                  [](ProgramImpl *, REGION *) -> REGION * { return nullptr; });
+            });
       };
 
-      // Nested full scans of every other side, ascending position order,
-      // each gated on its position-relative membership predicate.
-      std::vector<size_t> scan_positions;
-      for (size_t j = 0u; j < num_sides; ++j) {
-        if (j != i) {
-          scan_positions.push_back(j);
-        }
-      }
+  SERIES *const body_seq = impl->series_regions.Create(loop);
+  loop->body.Emplace(loop, body_seq);
+  scan_next(0u, body_seq);
+}
 
-      std::function<void(size_t, SERIES *)> scan_next =
-          [&](size_t idx, SERIES *parent_seq) {
-            if (idx == scan_positions.size()) {
-              emit_fold(parent_seq);
-              return;
-            }
-            const size_t j = scan_positions[idx];
-            const QueryView side = p.sides[j];
-            TABLE *const side_table = p.side_tables[j];
-            const MembershipPredicate pred = (j < i)
-                                                 ? MembershipPredicate::kInNew
-                                                 : MembershipPredicate::kInI;
+// Lower ONE stratum's ACYCLIC band from the DR-IR flow graph into `stratum_seq`:
+// seeds (SEED_FOLD branches via `EmitSeedLoop`), join section walks, crossovers
+// (CROSSOVER DROps), product arms (PRODUCT_ARM DROps), then acyclic single-pass
+// claim drains + immediate frontier filters. The band order reproduces the old
+// driver's exact sibling order (identity gate B-14). `seed_vector` is the per-
+// stratum sort-unique-once frontier provisioning the caller shares with the SCC
+// band. This is the R2 family-#1 cutover of the acyclic band; the SCC round
+// shells stay on the old web (caller continues below).
+//
+// `join_pivots` maps each join view to the ONE shared pivot VECTOR* the old
+// discovery already minted (Stratum.cpp `joins` loop) — reused verbatim so no
+// SECOND pivot vec is allocated here (VectorFor is NOT memoized: a fresh call
+// would mint a duplicate vec at the wrong id, shifting every downstream id and
+// breaking identity — d5_recursive_negate's join is the witness).
+static void LowerDRFlow(ProgramImpl *impl, Context &context,
+                        const RecursiveSccMap &recursive_sccs,
+                        const DRFlowGraph &dr_flow, unsigned stratum,
+                        const std::function<VECTOR *(TABLE *, VectorKind)>
+                            &seed_vector,
+                        const std::unordered_map<QueryView, VECTOR *>
+                            &join_pivots,
+                        SERIES *stratum_seq) {
 
-            std::vector<QueryColumn> avail;  // Zero bound columns: full scan.
-            BuildMaybeScanPartial(
-                impl, side, avail, side_table, parent_seq,
-                [&](REGION *in_scan, bool) -> REGION * {
-                  std::vector<QueryColumn> side_cols;
-                  for (auto col : side.Columns()) {
-                    side_cols.push_back(col);
-                  }
-                  return BuildCheckMember(
-                      impl, in_scan, side_table, side_cols, pred,
-                      [&](ProgramImpl *impl_, REGION *in_check) -> REGION * {
-                        SERIES *const next_seq =
-                            impl_->series_regions.Create(in_check);
-                        scan_next(idx + 1u, next_seq);
-                        return next_seq;
-                      },
-                      [](ProgramImpl *, REGION *) -> REGION * {
-                        return nullptr;
-                      });
-                });
-          };
-
-      SERIES *const body_seq = impl->series_regions.Create(loop);
-      loop->body.Emplace(loop, body_seq);
-      scan_next(0u, body_seq);
+  const auto all_sides_same_scc = [&](QueryView join_view) -> bool {
+    DataModel *const jm = impl->view_to_model[join_view]->FindAs<DataModel>();
+    const auto join_scc = RecursiveSCC(recursive_sccs, jm->table);
+    if (!join_scc.has_value()) {
+      return false;
     }
+    for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
+      TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
+      if (RecursiveSCC(recursive_sccs, st) != join_scc) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const auto same_scc = [&](TABLE *a, TABLE *b) -> bool {
+    const auto ga = RecursiveSCC(recursive_sccs, a);
+    return ga.has_value() && ga == RecursiveSCC(recursive_sccs, b);
+  };
+  const auto is_recursive = [&](TABLE *table) -> bool {
+    return RecursiveSCC(recursive_sccs, table).has_value();
+  };
+
+  // (1) SEEDS: every branch at this stratum, per available sign — reproducing
+  // the old driver's :2025-2093 loop (branch order, `-` then `+`), with the
+  // three suppressions (same-SCC internal projection, all-same-SCC join,
+  // pivot-terminal). Uses the surviving `EmitSeedLoop`.
+  for (unsigned bi = 0u; bi < dr_flow.branches.size(); ++bi) {
+    const DRBranch &branch = dr_flow.branches[bi];
+    if (dr_flow.branch_stratum[bi] != stratum) {
+      continue;
+    }
+    if (!branch.ends_at_join && is_recursive(branch.target) &&
+        same_scc(branch.target, branch.source)) {
+      continue;  // fires only inside the SCC claim round (CHAIN_FOLD)
+    }
+    if (branch.ends_at_join && all_sides_same_scc(branch.path.back())) {
+      continue;  // all-same-SCC join has no seed
+    }
+
+    const BranchChain chain = BranchChainOf(branch, stratum);
+    TABLE *const source = branch.source;
+
+    VECTOR *join_pivot_vec = nullptr;
+    DerivClass branch_class = DerivClass::kNonRecursive;
+    if (branch.ends_at_join) {
+      join_pivot_vec = join_pivots.at(branch.path.back());
+    } else {
+      branch_class = RuleClass(recursive_sccs, branch.target, {source});
+    }
+
+    if (TableIsDifferential(source) &&
+        !TableIsInductionOwned(context, source)) {
+      EmitSeedLoop(impl, context, chain, false /* is_add */, branch_class,
+                   seed_vector(source, VectorKind::kNetRemovals),
+                   join_pivot_vec, false /* in_fixpoint */, stratum_seq);
+    }
+    EmitSeedLoop(impl, context, chain, true /* is_add */, branch_class,
+                 seed_vector(source, VectorKind::kNetAdditions),
+                 join_pivot_vec, false /* in_fixpoint */, stratum_seq);
+  }
+
+  // (2) JOIN section walks: every join at this stratum (old driver :2098-2149).
+  // An all-same-SCC join's seed is suppressed (its fire runs in the SCC loop).
+  for (const DRJoin &dr_join : dr_flow.joins) {
+    const QueryView join_view = dr_join.join_view;
+    auto js = dr_flow.join_stratum.find(join_view);
+    if (js == dr_flow.join_stratum.end() || js->second != stratum) {
+      continue;
+    }
+    if (all_sides_same_scc(join_view)) {
+      continue;
+    }
+
+    VECTOR *const pivot_vec = join_pivots.at(join_view);
+
+    VECTORUNIQUE *const unique =
+        impl->operation_regions.CreateDerived<VECTORUNIQUE>(
+            stratum_seq, ProgramOperation::kSortAndUniquePivotVector);
+    unique->vector.Emplace(unique, pivot_vec);
+    stratum_seq->AddRegion(unique);
+
+    auto [join, cmp] = BuildJoin(impl, QueryJoin::From(join_view), pivot_vec,
+                                 stratum_seq, true /* for_delta */);
+    assert(cmp == nullptr);
+    (void) cmp;
+
+    DataModel *const join_model =
+        impl->view_to_model[join_view]->FindAs<DataModel>();
+    std::vector<TABLE *> side_tables;
+    for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
+      side_tables.push_back(
+          impl->view_to_model[side]->FindAs<DataModel>()->table);
+    }
+    const DerivClass join_class =
+        RuleClass(recursive_sccs, join_model->table, side_tables);
+
+    LET *const added = impl->operation_regions.CreateDerived<LET>(join);
+    join->added_body.Emplace(join, added);
+    LowerSectionWalk(impl, context, join_view, true /* is_add */, join_class,
+                     added);
+
+    LET *const removed = impl->operation_regions.CreateDerived<LET>(join);
+    join->removed_body.Emplace(join, removed);
+    LowerSectionWalk(impl, context, join_view, false /* is_add */, join_class,
+                     removed);
+  }
+
+  // (3) CROSSOVERS: the CROSSOVER DROp pairs at this stratum (old driver
+  // :2157-2178). Construction order (== old `crossovers` order); `-` arm then
+  // `+` arm (the `+` arm is a distinct DROp, minted iff negated differential).
+  for (const DROp *op : dr_flow.Crossovers()) {
+    if (!op->negate.has_value()) {
+      continue;
+    }
+    auto xs = dr_flow.crossover_stratum.find(QueryView(*op->negate));
+    if (xs == dr_flow.crossover_stratum.end() || xs->second != stratum) {
+      continue;
+    }
+    LowerCrossoverArm(impl, context, recursive_sccs, *op,
+                      op->crossover_sign > 0 /* is_add */, stratum_seq);
+  }
+
+  // (4) PRODUCT ARMS: the PRODUCT_ARM DROps at this stratum (old driver
+  // :2186-2198). Construction order (side ascending, `+` then `-` per side).
+  for (const DROp *op : dr_flow.ProductArms()) {
+    if (!op->product_view.has_value()) {
+      continue;
+    }
+    auto ps = dr_flow.product_stratum.find(*op->product_view);
+    if (ps == dr_flow.product_stratum.end() || ps->second != stratum) {
+      continue;
+    }
+    LowerProductArm(impl, context, recursive_sccs, *op, seed_vector,
+                    stratum_seq);
+  }
+
+  // (5) ACYCLIC claim drains + immediate frontier filters, per single-pass
+  // CLAIM_DRAIN table (old driver :2227-2234). The DR ops are iterated to pick
+  // the acyclic tables at this stratum, in construction order (== table order);
+  // each table gets del-drain, add-drain, del-filter, add-filter. Uses the
+  // surviving `EmitClaimDrain` / `EmitFrontierFilter`.
+  for (const DROp &op : dr_flow.ops) {
+    if (op.kind != DROpKind::kClaimDrain ||
+        op.claim_form != ClaimForm::kSinglePass || op.table_op_sign != -1) {
+      continue;  // once per table, keyed on the del single-pass drain
+    }
+    TABLE *const table = op.table_op_table;
+    if (is_recursive(table)) {
+      continue;
+    }
+    auto ds = dr_flow.drain_stratum.find(table);
+    if (ds == dr_flow.drain_stratum.end() || ds->second != stratum) {
+      continue;
+    }
+    EmitClaimDrain(impl, context, table, true /* is_del */, stratum_seq);
+    EmitClaimDrain(impl, context, table, false /* is_del */, stratum_seq);
+    EmitFrontierFilter(impl, context, table, true /* is_del */, stratum_seq);
+    EmitFrontierFilter(impl, context, table, false /* is_del */, stratum_seq);
   }
 }
 
@@ -1474,36 +1596,10 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     return RecursiveSCC(recursive_sccs, table).has_value();
   };
 
-  // Whether EVERY joined side of `join_view` is in the JOIN's own recursive
-  // SCC (e.g. `p(F,T):p(F,Y),p(Y,T)` — both sides read `p`, the join's own
-  // relation). Such a join has NO lower body atom, hence NO seed (MD §5.1: a
-  // recursive rule with no lower atom has no init-position firing). Its seed
-  // machinery is dead-by-construction: the pivot-append seed loops range over
-  // the join's OWN SCC frontier vectors, which are structurally EMPTY at seed
-  // time (they are filled only in `add_output`, after the claim-round loops);
-  // and its dual-section join-tables region folds over those same empty
-  // frontiers. The `join-tables` region and pivot appends are therefore
-  // suppressed — the round-0 firing is instead carried by the claim-round
-  // loop's own `EmitJoinFire` (fed by the SCC tables' seed queues). The
-  // JoinEmission record is KEPT in `joins` (scc_joins, the fixpoint fire, is
-  // derived from it). A MIXED join (>=1 lower + >=1 same-SCC side) keeps its
-  // dual sections: the InNew-at-seed-time == InI equivalence makes them
-  // correct for its same-SCC sides.
-  const auto all_sides_same_scc = [&](QueryView join_view) -> bool {
-    DataModel *const jm =
-        impl->view_to_model[join_view]->FindAs<DataModel>();
-    const auto join_scc = RecursiveSCC(recursive_sccs, jm->table);
-    if (!join_scc.has_value()) {
-      return false;
-    }
-    for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
-      TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
-      if (RecursiveSCC(recursive_sccs, st) != join_scc) {
-        return false;
-      }
-    }
-    return true;
-  };
+  // (The `all_sides_same_scc` seed-suppression test that used to live here now
+  // lives inside `LowerDRFlow` — the acyclic-band seed/join emission it gated
+  // moved there with the R2 family-#1 cutover. The SCC round shells below do
+  // not need it.)
 
   // Discover the branch chains out of every chain source, in the tables'
   // creation order (deterministic). A source is a table with a frontier:
@@ -1846,10 +1942,11 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   // map + per-unit strata) plus the B-3 family validators. Construction-only —
   // no emission below is touched; validators are always-on and abort on
   // divergence.
+  // R2 family #1: the ACYCLIC band below is now LOWERED from this DR-IR flow
+  // graph (`LowerDRFlow`), not the hand-coded emitters; the SCC round shells
+  // stay on the old web. The graph therefore OUTLIVES the validation block.
+  DRFlowGraph dr_flow = BuildDRInventory(impl, context, query, recursive_sccs);
   {
-    DRFlowGraph dr_flow =
-        BuildDRInventory(impl, context, query, recursive_sccs);
-
     std::vector<OldCrossoverRef> old_crossovers;
     old_crossovers.reserve(crossovers.size());
     for (const CrossoverEmission &x : crossovers) {
@@ -1997,6 +2094,14 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   seq->AddRegion(proc->body.get());
   proc->body.Emplace(proc, seq);
 
+  // The ONE shared pivot VECTOR* per join view, already minted by the discovery
+  // `joins` loop above (VectorFor is not memoized, so `LowerDRFlow` must REUSE
+  // these rather than re-minting — see LowerDRFlow's doc).
+  std::unordered_map<QueryView, VECTOR *> join_pivots;
+  for (const JoinEmission &emission : joins) {
+    join_pivots.emplace(emission.join_view, emission.pivot_vec);
+  }
+
   for (const unsigned stratum : strata) {
     SERIES *const stratum_seq = impl->series_regions.Create(seq);
     seq->AddRegion(stratum_seq);
@@ -2022,180 +2127,15 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       return vec;
     };
 
-    for (const BranchChain &branch : branches) {
-      if (branch.stratum != stratum) {
-        continue;
-      }
-
-      // A same-SCC internal projection edge (a head chain whose source and
-      // target share a recursive SCC — e.g. the join-table → head-projection →
-      // union edges of a linear or nonlinear recursion) is NOT seeded here: it fires
-      // exclusively inside the SCC's claim-round loop, delta over the
-      // predecessor's per-round `Δ_D`. Seeding it here too (over the source's
-      // accumulated net-removal frontier) would double-decrement each internal
-      // derivation once per round. The recursive-rule SEED that round 0 owns is
-      // the JOIN over the SCC's LOWER predecessor frontier (handled by the join
-      // emission below); the base rule and any non-SCC source stay here.
-      if (!branch.ends_at_join && is_recursive(branch.target) &&
-          same_scc(branch.target, branch.source)) {
-        continue;
-      }
-
-      // An all-same-SCC join has no seed (see `all_sides_same_scc`): its
-      // pivot-append seed loops range over the join's own SCC frontier vectors,
-      // empty at seed time. Suppress them; the claim-round loop's `EmitJoinFire`
-      // carries the round-0 firing.
-      if (branch.ends_at_join && all_sides_same_scc(branch.path.back())) {
-        continue;
-      }
-
-      // A phase-table source's frontier is complete strictly before this
-      // series runs (the scheduling fixpoint's guarantee), UNLESS the source
-      // is same-SCC as the fold's head — a recursive rule seeded on its own
-      // SCC's frontier reads it batch-frozen (`InI`) at the same stratum, so
-      // it is exempt (A4).
-      TABLE *const source = branch.source;
-      TABLE *const branch_head =
-          branch.ends_at_join
-              ? impl->view_to_model[branch.path.back()]->FindAs<DataModel>()
-                    ->table
-              : branch.target;
-      assert(!drain_stratum.count(source) ||
-             drain_stratum.find(source)->second < stratum ||
-             same_scc(branch_head, source));
-
-      VECTOR *join_pivot_vec = nullptr;
-      DerivClass branch_class = DerivClass::kNonRecursive;
-      if (branch.ends_at_join) {
-        join_pivot_vec = joins[join_index[branch.path.back()]].pivot_vec;
-
-        // A join-terminal seed only appends pivots; the fold's class is
-        // decided by the join emission itself (below). Leave `branch_class`
-        // at its unused default.
-      } else {
-
-        // A head-chain seed folds into `branch.target`. Its rule reads only
-        // the source frontier (base rule ⇒ NR when the source is a lower,
-        // non-SCC table; recursive when the source shares the target's SCC,
-        // e.g. the join-table → union edge of a linear recursion).
-        branch_class = RuleClass(recursive_sccs, branch.target, {source});
-      }
-
-      if (TableIsDifferential(source) &&
-          !TableIsInductionOwned(context, source)) {
-        EmitSeedLoop(impl, context, branch, false /* is_add */, branch_class,
-                     seed_vector(source, VectorKind::kNetRemovals),
-                     join_pivot_vec, false /* in_fixpoint */, stratum_seq);
-      }
-      EmitSeedLoop(impl, context, branch, true /* is_add */, branch_class,
-                   seed_vector(source, VectorKind::kNetAdditions),
-                   join_pivot_vec, false /* in_fixpoint */, stratum_seq);
-    }
-
-    // Dual-section joins: the sort-uniqued pivot vector makes the join
-    // enumerate each combination once per batch, so each section fires
-    // exactly once per started/stopped rule instance.
-    for (const JoinEmission &emission : joins) {
-      if (emission.stratum != stratum) {
-        continue;
-      }
-
-      // An all-same-SCC join has no seed: its dual-section walk folds over the
-      // join's own SCC frontier vectors, empty at seed time (see
-      // `all_sides_same_scc`). Suppress the seed join-tables region entirely;
-      // the JoinEmission is still recorded, so its fixpoint fire runs each
-      // round inside the claim-round loop (`EmitJoinFire`).
-      if (all_sides_same_scc(emission.join_view)) {
-        continue;
-      }
-
-      VECTORUNIQUE *const unique =
-          impl->operation_regions.CreateDerived<VECTORUNIQUE>(
-              stratum_seq, ProgramOperation::kSortAndUniquePivotVector);
-      unique->vector.Emplace(unique, emission.pivot_vec);
-      stratum_seq->AddRegion(unique);
-
-      auto [join, cmp] =
-          BuildJoin(impl, QueryJoin::From(emission.join_view),
-                    emission.pivot_vec, stratum_seq, true /* for_delta */);
-      assert(cmp == nullptr);
-      (void) cmp;
-
-      // The join emission's fold class is the recursive rule's fixed class:
-      // recursive iff the join's own (persisted) table shares a recursive SCC
-      // with any joined side (e.g. the linear-recursion rule `t:t,edge` reads
-      // `t` at the same recursive stratum it folds into). The section walk
-      // folds into the join's table, so classify against it.
-      DataModel *const join_model =
-          impl->view_to_model[emission.join_view]->FindAs<DataModel>();
-      std::vector<TABLE *> side_tables;
-      for (QueryView side :
-           QueryJoin::From(emission.join_view).JoinedViews()) {
-        side_tables.push_back(
-            impl->view_to_model[side]->FindAs<DataModel>()->table);
-      }
-      const DerivClass join_class =
-          RuleClass(recursive_sccs, join_model->table, side_tables);
-
-      LET *const added = impl->operation_regions.CreateDerived<LET>(join);
-      join->added_body.Emplace(join, added);
-      EmitSectionWalk(impl, context, emission.join_view, true /* is_add */,
-                      join_class, added);
-
-      LET *const removed = impl->operation_regions.CreateDerived<LET>(join);
-      join->removed_body.Emplace(join, removed);
-      EmitSectionWalk(impl, context, emission.join_view, false /* is_add */,
-                      join_class, removed);
-    }
-
-    // Negation crossovers (D1'/§5.4): emitted in the SEED BLOCK, BEFORE the
-    // claim drains below (R3 — a crossover fold after claim-add would let a
-    // phantom `+` be claimed and, on a non-terminal negate, leak a NetAdded
-    // frontier entry downstream). The `-` arm (negated key gained) fires
-    // always over the negated table's net-additions frontier; the `+` arm
-    // (negated key lost) only when the negated table is differential.
-    for (const CrossoverEmission &x : crossovers) {
-      if (x.stratum != stratum) {
-        continue;
-      }
-
-      // The fold target (the negate's own table) drains at or after this
-      // stratum — the scheduling fixpoint lifted it to `x.stratum` (mirrors
-      // the seed source-drain assert).
-      assert(drain_stratum.count(x.negate_table) &&
-             drain_stratum.find(x.negate_table)->second >= stratum);
-
-      // ONE arm-pair, matching the forward pass's single fold into the
-      // negate table (single data pred + identity-deduped member lists —
-      // asserted at discovery), so a retraction reaches its zero crossing in
-      // exactly one fold.
-      EmitCrossover(impl, context, recursive_sccs, x, false /* is_add */,
-                    stratum_seq);
-      if (x.negated_differential) {
-        EmitCrossover(impl, context, recursive_sccs, x, true /* is_add */,
-                      stratum_seq);
-      }
-    }
-
-    // Differential @product arms (Stage 5): emitted in the SEED BLOCK, after
-    // the crossovers and strictly BEFORE the claim drains below — every arm
-    // fold must land ahead of the product table's own drains for the claim
-    // gates' phantom drop to be sound (see `ProductEmission`). The sides'
-    // frontiers are complete: the scheduling fixpoint lifted this emission
-    // above every side table's drain stratum.
-    for (const ProductEmission &p : products) {
-      if (p.stratum != stratum) {
-        continue;
-      }
-
-      // The fold target drains at or after this stratum (mirrors the
-      // crossover's seed-before-drain assert).
-      assert(drain_stratum.count(p.product_table) &&
-             drain_stratum.find(p.product_table)->second >= stratum);
-
-      EmitProductArms(impl, context, recursive_sccs, p, seed_vector,
-                      stratum_seq);
-    }
+    // R2 FAMILY #1 (F-2): the ACYCLIC BAND — seeds, join section walks,
+    // crossovers, product arms, and single-pass claim drains + immediate
+    // frontier filters — is now LOWERED from the DR-IR flow graph, replacing
+    // the hand-coded EmitSeedLoop/EmitSectionWalk/EmitCrossover/EmitProductArms
+    // + acyclic EmitClaimDrain/EmitFrontierFilter emission that used to live
+    // here. `LowerDRFlow` reproduces the old band's exact sibling order (B-14
+    // tree-shape identity). The SCC round shells continue below on the old web.
+    LowerDRFlow(impl, context, recursive_sccs, dr_flow, stratum, seed_vector,
+                join_pivots, stratum_seq);
 
     // Partition this stratum's phase tables into single-pass (genuinely
     // acyclic) tables and recursive-SCC tables (whose OVERDELETE/INSERT is a
@@ -2217,21 +2157,11 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       }
     }
 
-    // Acyclic claim drains, overdeletions first, then their net-frontier
-    // filters. The per-table interleaving (each table's del/add drain then
-    // del/add filter, rather than a global del-then-add pass over all tables)
-    // is unobservable: each such table's reads are strictly lower (the
-    // reads-are-lower assert above rules this in), so there is no same-stratum
-    // cross-table dependency to mis-order, and the spec's within-table
-    // del-before-add order is honored.
-    for (TABLE *table : acyclic_tables) {
-      EmitClaimDrain(impl, context, table, true /* is_del */, stratum_seq);
-      EmitClaimDrain(impl, context, table, false /* is_del */, stratum_seq);
-      EmitFrontierFilter(impl, context, table, true /* is_del */,
-                         stratum_seq);
-      EmitFrontierFilter(impl, context, table, false /* is_del */,
-                         stratum_seq);
-    }
+    // (Acyclic claim drains + immediate frontier filters are emitted by
+    // `LowerDRFlow` above — the single-pass CLAIM_DRAIN / immediate
+    // FRONTIER_FILTER DROps. `acyclic_tables` is retained only for symmetry
+    // with `scc_tables`, which the SCC round shells below still consume.)
+    (void) acyclic_tables;
 
     if (scc_tables.empty()) {
       continue;

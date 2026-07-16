@@ -807,3 +807,40 @@ EmitClaimDrain/EmitFrontierFilter calls in the same diff; the round
 shells + fires stay on the old web until the recursive family cutover.
 permcheck.py (F-8) is the bless referee; the 4 product_* drivers are the
 only published-delta surface.
+
+### R2 family #1 — acyclic-band cutover (2026-07-15)
+
+THE FIRST EMISSION CUTOVER: seeds, crossovers, product arms, and the
+acyclic claim-drain/frontier-filter bands now lower from the DR-IR
+(LowerDRFlow + LowerSectionWalk/LowerCrossoverArm/LowerProductArm);
+EmitSectionWalk, EmitCrossover, EmitProductArms and the old driver's
+acyclic bands are DELETED in the same diff (555 lines deleted / 485
+added, net −70; deleted names survive only in comments). Emit* kept for
+the SCC path with caller evidence (EmitSeedLoop/EmitChainStep/
+EmitHeadFold/EmitClaimDrain/EmitFrontierFilter/EmitJoinFire/
+EmitRetireFrontier/EmitRederive). V-OLD-EQUIV legs all retained
+(discovery untouched) and green corpus-wide.
+HAZARD FOUND+FIXED: ProgramProcedureImpl::VectorFor is NOT memoized —
+re-calling it minted a duplicate join-pivot vec, cascading every
+downstream id (caught by the d5 golden diverge); LowerDRFlow reuses the
+discovery-minted VECTOR* via a join_pivots map. Related lowering fact
+recorded in code: the DR pinned_order's band key is sign-major and is
+NOT the emission sibling order — the old driver's per-stratum band walk
+is the lowering default.
+GATES: builds green; ctest 3/3; 8 anchors ×4 modes OK; B-14 check came
+back STRONGER than required — program.ir RAW-BYTE-IDENTICAL on both
+anchors (id bijection = identity); FULL SUITE PASS (157) byte-identical,
+zero churn (permcheck not exercised — nothing to bless); Q5 spot @128
+release 136ms / debug 958ms (no regression). FLAGSHIP BENCH: the
+interleaved A/B is vacuous by construction — generated datalog.h/.cpp
+byte-compared IDENTICAL pre/post cutover on all four flagship workloads
+(tc_random, pure_cycle, deep_chain, flip_storm; frozen 0d8d00e compiler
+vs cutover compiler, same environment) — bit-identical case binaries;
+recorded as the perf-neutrality witness in lieu of a tautological run.
+FAMILY #2 QUEUE: SCC/recursive band (round shells via DRRound,
+claim/fire/chain-fold/retire bands, deferred filters), driving the
+surviving Emit* primitives; VectorFor-reuse discipline generalized via
+the (table,kind)→VECTOR* bridge; old discovery vectors + scheduling
+fixpoint become deletable only after family #2; add the SCC anchors to
+the B-14 check (they exercise the round shells this cut left on the old
+web).

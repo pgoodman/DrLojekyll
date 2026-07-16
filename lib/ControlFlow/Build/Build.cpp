@@ -159,7 +159,7 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
 // Whether `view` lies on a dataflow cycle: DFS over `Successors()` with a
 // visited set, true iff the walk re-reaches `view`. Used as the Stage-5
 // differential-@product fence: an ACYCLIC 0-pivot differential join is
-// lowered by the stratum phases' product arms (`EmitProductArms`), while an
+// lowered by the stratum phases' product arms (`LowerProductArm`), while an
 // on-cycle one is rejected — `EmitJoinFire` is not generalized to 0 pivots,
 // and the scheduling fixpoint's product clause (a strict `ready_after` lift
 // on every side) would ratchet forever against the SCC drain-stratum pin if
@@ -1041,7 +1041,7 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
         ViewSelfReachable(QueryView(join))) {
 
       // The ACYCLIC differential @product is lowered by the stratum phases
-      // (`EmitProductArms`, Stratum.cpp); only the on-cycle shape remains a
+      // (`LowerProductArm`, Stratum.cpp); only the on-cycle shape remains a
       // gap (see `ViewSelfReachable` above).
       log.Append()
           << "Cross-products over differential (deletable) data inside "
