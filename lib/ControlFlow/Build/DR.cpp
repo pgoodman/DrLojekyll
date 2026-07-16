@@ -1470,34 +1470,20 @@ DRFlowGraph BuildDRInventory(
   return flow;
 }
 
-void ValidateDRInventory(
-    const DRFlowGraph &flow,
-    const std::vector<OldCrossoverRef> &old_crossovers,
-    const std::vector<OldProductRef> &old_products,
-    const std::vector<OldBranchRef> &old_branches,
-    const std::vector<OldJoinRef> &old_joins,
-    const std::unordered_map<TABLE *, unsigned> &old_scc_map,
-    const std::unordered_map<TABLE *, unsigned> &old_drain_stratum) {
+void ValidateDRInventory(const DRFlowGraph &flow) {
 
-  // ----------------------------------------------------------- V-OLD-EQUIV(SCC)
-  // Same table-SCC map (both directions: every entry present, same group).
-  if (flow.scc_map.size() != old_scc_map.size()) {
-    ValidatorFail("SCC map size differs from old discovery");
-  }
-  for (const auto &[table, group] : old_scc_map) {
-    auto it = flow.scc_map.find(table);
-    if (it == flow.scc_map.end() || it->second != group) {
-      ValidatorFail("SCC map entry differs from old discovery");
-    }
-  }
+  // R2 FAMILY #3: the V-OLD-EQUIV legs (SCC-map / crossover-SET / product-SET /
+  // branch-MULTISET / join-SET / per-unit-strata comparisons against the old
+  // discovery) are RETIRED with their comparands — the discovery is deleted.
+  // What remains here are the INTRINSIC B-3 family validators, evaluated over
+  // `flow` alone: V-XOVER-ONE, V-PROD-MONO, V-PROD-CLASS, V-JOIN-ONE.
 
-  // ---------------------------------------------- V-OLD-EQUIV(crossovers) + B-3
+  // ------------------------------------------------------------ V-XOVER-ONE
   // The DR-IR emits a PAIR of DROps per crossover (the `-` arm always, `+` iff
-  // negated_differential); the old discovery has ONE record per crossover. Fold
-  // the DR ops back to per-negate crossover records keyed by negate identity,
-  // then compare set-for-set. Along the way run V-XOVER-ONE (B-3.1): exactly
-  // one `-` arm per non-@never negate, no negate_table folded by two distinct
-  // negates, no @never negate present.
+  // negated_differential). Fold the DR ops back to per-negate crossover records
+  // keyed by negate identity. V-XOVER-ONE (B-3.1): exactly one `-` arm per
+  // non-@never negate, no negate_table folded by two distinct negates, no
+  // @never negate present.
   struct XoverAgg {
     std::optional<QueryNegate> negate;
     TABLE *negate_table{nullptr};
@@ -1564,27 +1550,7 @@ void ValidateDRInventory(
     }
   }
 
-  // V-OLD-EQUIV: same crossover SET as the old discovery (same negate views,
-  // same 3 tables + pred view + negated_differential).
-  if (agg.size() != old_crossovers.size()) {
-    ValidatorFail("crossover count differs from old discovery");
-  }
-  for (const OldCrossoverRef &old : old_crossovers) {
-    auto it = agg.find(QueryView(old.negate));
-    if (it == agg.end()) {
-      ValidatorFail("old crossover has no DR-IR counterpart");
-    }
-    const XoverAgg &a = it->second;
-    if (a.negate_table != old.negate_table ||
-        a.negated_table != old.negated_table ||
-        a.pred_table != old.pred_table ||
-        !(a.pred_view.has_value() && *a.pred_view == old.pred_view) ||
-        a.negated_differential != old.negated_differential) {
-      ValidatorFail("crossover data differs from old discovery");
-    }
-  }
-
-  // ------------------------------------------------ V-OLD-EQUIV(products) + B-3
+  // -------------------------------------------------- V-PROD-MONO / V-PROD-CLASS
   // Fold the product arms back to per-product records keyed by product view
   // identity. V-PROD-MONO (B-3.2): no `-` arm for a monotone side; a
   // differential side has both signs. V-PROD-CLASS (B-3.2): every product fold
@@ -1652,177 +1618,263 @@ void ValidateDRInventory(
     }
   }
 
-  // V-OLD-EQUIV: same product SET (same product views/tables + side vectors +
-  // side_differential).
-  if (prod.size() != old_products.size()) {
-    ValidatorFail("product count differs from old discovery");
-  }
-  for (const OldProductRef &old : old_products) {
-    auto it = prod.find(old.product_view);
-    if (it == prod.end()) {
-      ValidatorFail("old product has no DR-IR counterpart");
-    }
-    const ProdAgg &p = it->second;
-    if (p.product_table != old.product_table ||
-        p.side_tables != old.side_tables ||
-        p.side_differential != old.side_differential) {
-      ValidatorFail("product data differs from old discovery");
-    }
-  }
-
-  // -------------------------------------------- V-OLD-EQUIV(branches) — MULTISET
-  // The §1.4 memoized worklist must reproduce the old path-copying DFS's branch
-  // set as a MULTISET of (source, path, ends_at_join, target): the old code
-  // records one chain PER DISTINCT PATH (no visited set), so reconvergent
-  // plumbing produces path-multiplicity that must survive memoization. Match by
-  // equality with a consumed-flag over the DR side (an O(n²) mark, branch
-  // counts are suite-sized) — count equality plus a 1:1 pairing proves multiset
-  // identity.
-  const auto branch_eq = [](const DRBranch &d, const OldBranchRef &o) -> bool {
-    return d.source == o.source && d.ends_at_join == o.ends_at_join &&
-           d.target == o.target && d.path == o.path;
-  };
-  if (flow.branches.size() != old_branches.size()) {
-    ValidatorFail("branch count differs from old discovery");
-  }
-  std::vector<bool> dr_branch_used(flow.branches.size(), false);
-  for (const OldBranchRef &old : old_branches) {
-    bool matched = false;
-    for (size_t i = 0u; i < flow.branches.size(); ++i) {
-      if (!dr_branch_used[i] && branch_eq(flow.branches[i], old)) {
-        dr_branch_used[i] = true;
-        matched = true;
-        break;
-      }
-    }
-    if (!matched) {
-      ValidatorFail("old branch has no DR-IR counterpart (multiset mismatch)");
-    }
-  }
-
-  // ------------------------------------------------------ V-OLD-EQUIV(joins) + B
-  // Same join SET (join view + section targets), each with exactly ONE minted
-  // shared pivot vec (the join-pivots role, sort-unique-at-drain). Keyed by join
-  // view identity.
+  // ---------------------------------------------------------------- V-JOIN-ONE
+  // Each join view has exactly ONE DR join, with exactly ONE minted shared pivot
+  // vec (the join-pivots role, sort-unique-at-drain).
   std::unordered_map<QueryView, const DRJoin *> dr_join;
   for (const DRJoin &j : flow.joins) {
     if (!dr_join.emplace(j.join_view, &j).second) {
       ValidatorFail("V-JOIN-ONE: two DR joins share one join view");
     }
-    // The pivot vec exists and carries the join-pivots role + contract.
     if (j.pivot_vec >= flow.vecs.size() ||
         flow.vecs[j.pivot_vec].role != VecRole::kJoinPivots ||
         flow.vecs[j.pivot_vec].uniq != UniqueContract::kSortUniqueAtDrain) {
       ValidatorFail("V-JOIN-ONE: join pivot vec missing or mis-typed");
     }
   }
-  if (flow.joins.size() != old_joins.size()) {
-    ValidatorFail("join count differs from old discovery");
-  }
-  for (const OldJoinRef &old : old_joins) {
-    auto it = dr_join.find(old.join_view);
-    if (it == dr_join.end()) {
-      ValidatorFail("old join has no DR-IR counterpart");
-    }
-    if (it->second->targets != old.targets) {
-      ValidatorFail("join section targets differ from old discovery");
-    }
-  }
-
-  // ---------------------------------------- V-OLD-EQUIV(strata) — B-13 seeding
-  // Per-unit stratum equality: every old unit the scheduler ordered has a DR
-  // stratum (seeded by `SeedDRStrata`) equal to the old lift's final integer.
-  // R1b is bookkeeping equality (the DR side STORES the old integers; the
-  // independent deriver is R1c+) — it proves the DR graph CARRIES every unit.
-  if (flow.branch_stratum.size() != flow.branches.size()) {
-    ValidatorFail("branch_stratum not seeded parallel to branches");
-  }
-  for (const OldBranchRef &old : old_branches) {
-    bool matched = false;
-    for (size_t i = 0u; i < flow.branches.size(); ++i) {
-      if (branch_eq(flow.branches[i], old) &&
-          flow.branch_stratum[i] == old.stratum) {
-        matched = true;
-        break;
-      }
-    }
-    if (!matched) {
-      ValidatorFail("branch stratum differs from old discovery (B-13)");
-    }
-  }
-  for (const OldJoinRef &old : old_joins) {
-    auto it = flow.join_stratum.find(old.join_view);
-    if (it == flow.join_stratum.end() || it->second != old.stratum) {
-      ValidatorFail("join stratum differs from old discovery (B-13)");
-    }
-  }
-  for (const OldCrossoverRef &old : old_crossovers) {
-    auto it = flow.crossover_stratum.find(QueryView(old.negate));
-    if (it == flow.crossover_stratum.end() || it->second != old.stratum) {
-      ValidatorFail("crossover stratum differs from old discovery (B-13)");
-    }
-  }
-  for (const OldProductRef &old : old_products) {
-    auto it = flow.product_stratum.find(old.product_view);
-    if (it == flow.product_stratum.end() || it->second != old.stratum) {
-      ValidatorFail("product stratum differs from old discovery (B-13)");
-    }
-  }
-  if (flow.drain_stratum.size() != old_drain_stratum.size()) {
-    ValidatorFail("drain_stratum size differs from old discovery (B-13)");
-  }
-  for (const auto &[table, stratum] : old_drain_stratum) {
-    auto it = flow.drain_stratum.find(table);
-    if (it == flow.drain_stratum.end() || it->second != stratum) {
-      ValidatorFail("drain stratum differs from old discovery (B-13)");
-    }
-  }
 }
 
-// B-13: STORE the old lift's converged integers into `flow`. Bookkeeping — the
-// independent deriver is R1c+. Branch strata are matched to DR branches by
-// identity (source, path, ends_at_join, target); note the old DFS may hold
-// MULTIPLE branches with the SAME identity (reconvergent plumbing) that carry
-// the SAME stratum (the lift keys the drain stratum on the terminal/target, not
-// the path), so a per-identity stratum is well-defined and we assign it to
-// EVERY matching DR branch slot.
-void SeedDRStrata(
-    DRFlowGraph &flow,
-    const std::vector<OldBranchRef> &old_branches,
-    const std::vector<OldJoinRef> &old_joins,
-    const std::vector<OldCrossoverRef> &old_crossovers,
-    const std::vector<OldProductRef> &old_products,
-    const std::unordered_map<TABLE *, unsigned> &old_drain_stratum) {
+// R2 FAMILY #3 (B-13 RETIREMENT): DERIVE the pinned strata from the DR
+// inventory independently — the port of the old scheduling fixpoint
+// (Stratum.cpp:1985-2139) to run over DR branches/joins/crossover ops/product
+// ops + the SCC map, instead of copying the old lift's converged integers. This
+// is the SAME monotone integer lift, now the DR side's own authority; the old
+// discovery + its fixpoint are deleted with this cut.
+//
+// Fills: `branch_stratum` (parallel to `flow.branches`), `join_stratum`,
+// `crossover_stratum`, `product_stratum`, `drain_stratum`. The lift's inputs and
+// rules are replicated EXACTLY (each rule cites its Stratum.cpp anchor), so the
+// derived integers equal what the old lift produced — the V-OLD-EQUIV(strata)
+// legs that used to check this against the old copy retire with the comparand.
+void DeriveDRStrata(DRFlowGraph &flow, ProgramImpl *impl, Context &context,
+                    Query query,
+                    const std::unordered_map<TABLE *, unsigned> &scc_map) {
+  (void) query;
 
-  const auto branch_eq = [](const DRBranch &d, const OldBranchRef &o) -> bool {
-    return d.source == o.source && d.ends_at_join == o.ends_at_join &&
-           d.target == o.target && d.path == o.path;
+  // Replicate `TableOwnerStratum` (Stratum.cpp:310): the max spec stratum over
+  // a table's member views. The owner stratum of the head table (head chain) or
+  // the join view's own stratum (join chain) is a unit's INITIAL stratum.
+  const auto owner_stratum = [](TABLE *table) -> unsigned {
+    unsigned stratum = 0u;
+    for (const QueryView &view : table->views) {
+      assert(view.Stratum().has_value());
+      stratum = std::max(stratum, *(view.Stratum()));
+    }
+    return stratum;
   };
 
+  const auto same_scc = [&](TABLE *a, TABLE *b) -> bool {
+    const auto sa = SccOf(scc_map, a);
+    return sa.has_value() && sa == SccOf(scc_map, b);
+  };
+
+  // The phase-owned differential tables get a drain stratum, initialized to
+  // their owner stratum (Stratum.cpp:1969-1979). Non-phase tables have none.
+  flow.drain_stratum.clear();
+  for (TABLE *table : impl->tables) {
+    if (TableIsDifferential(table) && !TableIsInductionOwnedDR(context, table)) {
+      flow.drain_stratum.emplace(table, owner_stratum(table));
+    }
+  }
+
+  // Per-unit INITIAL strata (the spec stratum before the lift):
+  //   head branch  -> owner_stratum(target)   (Stratum.cpp:403 via DiscoverBranches)
+  //   join branch  -> join view stratum       (Stratum.cpp:387)
+  //   join         -> join view stratum        (the emission's `stratum`)
+  //   crossover    -> negate view stratum      (Stratum.cpp:1932)
+  //   product      -> product view stratum     (Stratum.cpp:1957)
   flow.branch_stratum.assign(flow.branches.size(), 0u);
-  std::vector<bool> seeded(flow.branches.size(), false);
-  for (const OldBranchRef &old : old_branches) {
-    // Assign this old branch's stratum to ONE not-yet-seeded matching DR slot
-    // (1:1 pairing over the identity multiset, mirroring the V-OLD-EQUIV mark).
-    for (size_t i = 0u; i < flow.branches.size(); ++i) {
-      if (!seeded[i] && branch_eq(flow.branches[i], old)) {
-        flow.branch_stratum[i] = old.stratum;
-        seeded[i] = true;
-        break;
+  for (unsigned bi = 0u; bi < flow.branches.size(); ++bi) {
+    const DRBranch &branch = flow.branches[bi];
+    if (branch.ends_at_join) {
+      flow.branch_stratum[bi] = branch.path.back().Stratum().value_or(0u);
+    } else {
+      flow.branch_stratum[bi] = owner_stratum(branch.target);
+    }
+  }
+  flow.join_stratum.clear();
+  for (const DRJoin &j : flow.joins) {
+    flow.join_stratum[j.join_view] = j.join_view.Stratum().value_or(0u);
+  }
+  flow.crossover_stratum.clear();
+  flow.product_stratum.clear();
+  for (const DROp &op : flow.ops) {
+    if (op.kind == DROpKind::kCrossover) {
+      const QueryView nv(*op.negate);
+      flow.crossover_stratum.emplace(nv, nv.Stratum().value_or(0u));
+    } else if (op.kind == DROpKind::kProductArm) {
+      flow.product_stratum.emplace(*op.product_view,
+                                   op.product_view->Stratum().value_or(0u));
+    }
+  }
+
+  // `ready_after(T)` = drain_stratum[T] + 1 (0 if T is not phase owned) — the
+  // stratum a reader must sit at to see T's consolidated frontier as final
+  // (Stratum.cpp:1999-2004). `ready_across` exempts same-SCC reads
+  // (Stratum.cpp:2017-2019: an SCC's mutual reads must not ratchet each other).
+  const auto ready_after = [&](TABLE *table) -> unsigned {
+    if (auto it = flow.drain_stratum.find(table); it != flow.drain_stratum.end()) {
+      return it->second + 1u;
+    }
+    return 0u;
+  };
+  const auto ready_across = [&](TABLE *head, TABLE *read) -> unsigned {
+    return same_scc(head, read) ? 0u : ready_after(read);
+  };
+
+  // The negated tables read on a branch chain must be phase-final when the
+  // chain runs (Stratum.cpp:2021-2034).
+  const auto negated_tables_ready = [&](const DRBranch &branch,
+                                        TABLE *head) -> unsigned {
+    unsigned stratum = 0u;
+    for (const QueryView &view : branch.path) {
+      if (view.IsNegate()) {
+        const QueryView negated_view = QueryNegate::From(view).NegatedView();
+        TABLE *const nt =
+            impl->view_to_model[negated_view]->FindAs<DataModel>()->table;
+        stratum = std::max(stratum, ready_across(head, nt));
+      }
+    }
+    return stratum;
+  };
+
+  const auto lift = [](unsigned &slot, unsigned value, bool &changed) {
+    if (slot < value) {
+      slot = value;
+      changed = true;
+    }
+  };
+
+  // The join view -> its parallel `flow.branches` join-terminal index (the old
+  // lift stored the join's stratum on the JoinEmission, keyed by view; here the
+  // authority is `join_stratum`, and join-terminal branches read it back).
+  for (auto changed = true; changed; ) {
+    changed = false;
+
+    // Branch lift (Stratum.cpp:2046-2066).
+    for (unsigned bi = 0u; bi < flow.branches.size(); ++bi) {
+      const DRBranch &branch = flow.branches[bi];
+      TABLE *const head =
+          branch.ends_at_join
+              ? impl->view_to_model[branch.path.back()]->FindAs<DataModel>()
+                    ->table
+              : branch.target;
+      unsigned stratum =
+          std::max(flow.branch_stratum[bi], ready_across(head, branch.source));
+      stratum = std::max(stratum, negated_tables_ready(branch, head));
+
+      if (branch.ends_at_join) {
+        lift(flow.join_stratum[branch.path.back()], stratum, changed);
+      } else {
+        lift(flow.branch_stratum[bi], stratum, changed);
+        lift(flow.drain_stratum[branch.target], stratum, changed);
+      }
+    }
+
+    // Join lift (Stratum.cpp:2068-2082).
+    for (const DRJoin &j : flow.joins) {
+      TABLE *const head =
+          impl->view_to_model[j.join_view]->FindAs<DataModel>()->table;
+      unsigned stratum = flow.join_stratum[j.join_view];
+      for (QueryView side : QueryJoin::From(j.join_view).JoinedViews()) {
+        TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
+        stratum = std::max(stratum, ready_across(head, st));
+      }
+      lift(flow.join_stratum[j.join_view], stratum, changed);
+      for (TABLE *target : j.targets) {
+        lift(flow.drain_stratum[target], flow.join_stratum[j.join_view],
+             changed);
+      }
+    }
+
+    // Crossover lift (Stratum.cpp:2091-2097): above both read tables'
+    // readiness, then lift the negate table's drain to it.
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kCrossover) {
+        continue;
+      }
+      const QueryView nv(*op.negate);
+      unsigned stratum = flow.crossover_stratum[nv];
+      stratum =
+          std::max(stratum, ready_across(op.negate_table, op.negated_table));
+      stratum = std::max(stratum, ready_across(op.negate_table, op.pred_table));
+      lift(flow.crossover_stratum[nv], stratum, changed);
+      lift(flow.drain_stratum[op.negate_table], flow.crossover_stratum[nv],
+           changed);
+    }
+
+    // Product lift (Stratum.cpp:2109-2116): above EVERY side's readiness
+    // (strict `ready_after`, no SCC exemption — the acyclic fence rules out
+    // same-SCC sides), then lift the product table's drain to it.
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kProductArm) {
+        continue;
+      }
+      const QueryView pv(*op.product_view);
+      unsigned stratum = flow.product_stratum[pv];
+      for (TABLE *side_table : op.side_tables) {
+        stratum = std::max(stratum, ready_after(side_table));
+      }
+      lift(flow.product_stratum[pv], stratum, changed);
+      lift(flow.drain_stratum[op.product_table], flow.product_stratum[pv],
+           changed);
+    }
+
+    // SCC pinning (Stratum.cpp:2124-2138): every table of a recursive SCC
+    // drains at one shared stratum (the max over its members).
+    if (!scc_map.empty()) {
+      std::unordered_map<unsigned, unsigned> scc_stratum;
+      for (const auto &[table, group] : scc_map) {
+        if (auto it = flow.drain_stratum.find(table);
+            it != flow.drain_stratum.end()) {
+          unsigned &slot = scc_stratum[group];
+          slot = std::max(slot, it->second);
+        }
+      }
+      for (const auto &[table, group] : scc_map) {
+        if (auto it = flow.drain_stratum.find(table);
+            it != flow.drain_stratum.end()) {
+          lift(it->second, scc_stratum[group], changed);
+        }
       }
     }
   }
 
-  for (const OldJoinRef &old : old_joins) {
-    flow.join_stratum[old.join_view] = old.stratum;
+  // A join-terminal branch's stratum is its join's (Stratum.cpp:2142-2146).
+  for (unsigned bi = 0u; bi < flow.branches.size(); ++bi) {
+    const DRBranch &branch = flow.branches[bi];
+    if (branch.ends_at_join) {
+      flow.branch_stratum[bi] = flow.join_stratum[branch.path.back()];
+    }
   }
-  for (const OldCrossoverRef &old : old_crossovers) {
-    flow.crossover_stratum[QueryView(old.negate)] = old.stratum;
+
+  // Stamp the SCC drain stratum onto each FIXPOINT_ROUND shell (family #3
+  // DRAIN-STRATUM NATIVIZATION): the round's group drains at the shared stratum
+  // of its SCC tables. `LowerDRRounds` reads this field instead of the old
+  // discovery's `drain_stratum` map.
+  for (DRRound &round : flow.rounds) {
+    unsigned stratum = 0u;
+    for (const auto &[table, group] : scc_map) {
+      if (group != round.scc_group) {
+        continue;
+      }
+      if (auto it = flow.drain_stratum.find(table);
+          it != flow.drain_stratum.end()) {
+        stratum = std::max(stratum, it->second);
+      }
+    }
+    round.drain_stratum = stratum;
   }
-  for (const OldProductRef &old : old_products) {
-    flow.product_stratum[old.product_view] = old.stratum;
+
+  // Stamp `scc_group` onto each FIXPOINT_FIRE op (family #3: retire the
+  // family-#2 RecursiveSCC re-derivation in `LowerRoundBody`).
+  for (DROp &op : flow.ops) {
+    if (op.kind == DROpKind::kFixpointFire && op.fire_table) {
+      if (auto g = SccOf(scc_map, op.fire_table); g.has_value()) {
+        op.scc_group = *g;
+      }
+    }
   }
-  flow.drain_stratum = old_drain_stratum;
 }
 
 // ---------------------------------------------------------------------------
@@ -2923,67 +2975,17 @@ void LinearizeAndValidateDRFlow(
   }
 
   // ===========================================================================
-  // V-OLD-EQUIV(strata): the DERIVED per-unit strata EQUAL the old integer
-  // lift's seeded copy (replaces B-13's stored-copy check — SeedDRStrata still
-  // fills the maps, but we now COMPARE the derived op_stratum against them and
-  // abort on mismatch). ALSO: the derived linearization is consistent with the
-  // emission driver's actual order for the ops both know (band-key order == the
-  // emission band walk order).
+  // V-ORDER-CONSISTENT: the derived pinned order matches the emission driver's
+  // band-key walk. (R2 family #3 retired the old part-(a) V-OLD-EQUIV(strata)
+  // check — a per-op `op_stratum(op) == seeded-map[op]` comparison. With B-13's
+  // separate seeded copy gone and `DeriveDRStrata` the sole writer of the
+  // `*_stratum` maps that `op_stratum` reads, that comparison compared a value
+  // against itself — a tautology. The strata authority is now `DeriveDRStrata`
+  // itself, cross-checked against the emitter only through the byte-identical
+  // golden gate; the load-bearing DR-graph checks that CAN fail on a
+  // perturbation are V-READY, V-RETIRE-AFTER, V-LOOP, and the order check below.)
   // ===========================================================================
-  // (a) Every seeded branch/join/crossover/product stratum EQUALS the stratum
-  //     op_stratum derives for that unit's op(s). This proves the derivation
-  //     agrees with the old lift unit-by-unit (the B-13 replacement).
-  for (const DROp &op : flow.ops) {
-    unsigned derived = op_stratum(op);
-    unsigned seeded = derived;  // default: matches (off-lattice ops)
-    bool has_seed = false;
-    switch (op.kind) {
-      case DROpKind::kSeedFold:
-        if (op.seed_branch < flow.branch_stratum.size()) {
-          seeded = flow.branch_stratum[op.seed_branch];
-          has_seed = true;
-        }
-        break;
-      case DROpKind::kFixpointFire:
-        if (op.fire_join.has_value()) {
-          if (auto it = flow.join_stratum.find(*op.fire_join);
-              it != flow.join_stratum.end()) {
-            seeded = it->second;
-            has_seed = true;
-          }
-        }
-        break;
-      case DROpKind::kCrossover:
-        if (op.negate.has_value()) {
-          if (auto it = flow.crossover_stratum.find(QueryView(*op.negate));
-              it != flow.crossover_stratum.end()) {
-            seeded = it->second;
-            has_seed = true;
-          }
-        }
-        break;
-      case DROpKind::kProductArm:
-        if (op.product_view.has_value()) {
-          if (auto it = flow.product_stratum.find(*op.product_view);
-              it != flow.product_stratum.end()) {
-            seeded = it->second;
-            has_seed = true;
-          }
-        }
-        break;
-      default:
-        break;
-    }
-    if (has_seed && derived != seeded) {
-      std::fprintf(stderr,
-                   "error: DR-IR V-OLD-EQUIV(strata): derived op stratum %u != "
-                   "seeded lift stratum %u\n",
-                   derived, seeded);
-      std::abort();
-    }
-  }
-
-  // (b) Emission-order consistency: the derived pinned order must be NON-
+  // Emission-order consistency: the derived pinned order must be NON-
   //     DECREASING in the composite band key — the band key IS the emission
   //     driver's walk order (lead: eager gates first / phase / commit last;
   //     then stratum ascending; then the B-9 band template; then table-id;

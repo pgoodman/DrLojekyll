@@ -876,3 +876,96 @@ onto DRRound, provides DR-native stratum gating, then deletes the
 fixpoint + discovery vectors and retires the V-OLD-EQUIV legs whose
 comparands die; consider adding scc_group to kFixpointFire (currently
 derived via RecursiveSCC).
+
+### R2 family #3 — commit sweeps + the OLD-DISCOVERY DELETION (2026-07-16)
+
+THE EPOCH'S HEADLINE DELETION: the DR-IR is now the SOLE authority for the
+stratum machinery. −974/+415 across five files (the deletion total; net
+−559). Cumulative in lib/ControlFlow/Build/ since a83ce1c (R2 family #1):
+−1070/+590. What died: the hand-coded scheduling fixpoint (the
+`while(changed)` integer lift over branches/joins/crossovers/products +
+SCC pinning); `DiscoverBranches` (the un-memoized path-DFS §1.4 hazard),
+`CollectSectionTargets`, `TableOwnerStratum`, the `CrossoverEmission` /
+`ProductEmission` structs; `SeedDRStrata` + the flat Old*Ref payloads +
+the entire `#ifndef NDEBUG` readiness-assert block; the hand-coded
+commit-sweep `impl->tables` loop in `PublishDifferentialMessageVectors`;
+and the V-OLD-EQUIV legs (SCC-map / crossover-SET / product-SET /
+branch-MULTISET / join-SET / per-unit-strata comparisons against the old
+discovery). `BuildStratumPhases` shrank from ~530 body lines to ~160.
+
+WHAT BECAME DR-AUTHORITATIVE:
+- STRATA DERIVATION PORTED (B-13 RETIRED). `DeriveDRStrata` (DR.cpp,
+  replaces `SeedDRStrata`) is the same monotone integer lift, now run over
+  DR branches / joins / crossover ops / product ops + the scc_map: initial
+  strata from the spec (owner_stratum of the head table / join view
+  stratum / negate|product view stratum — each rule citing its Stratum.cpp
+  anchor), then ready_after/ready_across/negated_tables_ready/SCC-pinning
+  to fixpoint. It fills branch_stratum / join_stratum / crossover_stratum /
+  product_stratum / drain_stratum — the exact maps LowerDRFlow/LowerDRRounds
+  already read. The DR side now COMPUTES strata, not copies them.
+- DRAIN-STRATUM NATIVIZATION. `DeriveDRStrata` STAMPS the SCC drain stratum
+  onto each `DRRound` (new field `DRRound::drain_stratum`) and `scc_group`
+  onto each `kFixpointFire` op. `LowerDRRounds` reads `round.drain_stratum`
+  (dropping its `drain_stratum` map param) and `LowerRoundBody` reads
+  `op->scc_group` (retiring the family-#2 RecursiveSCC re-derivation
+  workaround).
+- COMMIT SWEEPS LOWERED. `LowerCommitSweeps` (Stratum.cpp) emits one
+  COMMITSWEEP per `kCommitSweep` op (differential: flavor + publish-target
+  message-attach; monotone: Seal), in `impl->tables` order (== the old
+  loop's order). Placement UNCHANGED — the AUDIT established that the sweep
+  band must stay siblings of the monotone `iter_par` inside
+  `PublishDifferentialMessageVectors`' outer series (moving it into
+  BuildStratumPhases' stratum series would change region-tree nesting and
+  break byte-identity), so the graph is stashed on `context.dr_flow`
+  (a `std::shared_ptr<DRFlowGraph>`, forward-declared in Build.h) and the
+  sweep call fires from Procedure.cpp at the exact old point.
+- VALIDATORS RETAINED: `ValidateDRInventory` keeps the INTRINSIC B-3 legs
+  (V-XOVER-ONE, V-PROD-MONO, V-PROD-CLASS, V-JOIN-ONE) over `flow` alone;
+  `ValidateDROps` (the census — V-ONE-FOLD/V-SEED-SUP/V-NEG-CTX/
+  V-CLAIM-GATE/V-DEFER/V-RETIRE-AFTER-structural + the per-kind op count
+  recompute) and `LinearizeAndValidateDRFlow` (V-LINEAR/V-LOOP/
+  V-RETIRE-AFTER-arm-granular/V-READY — the promotion of the deleted NDEBUG
+  readiness asserts) stand unchanged; both recompute expectations from the
+  query, never the deleted discovery. The old part-(a) V-OLD-EQUIV(strata)
+  per-op check is DELETED, not kept: with B-13's separate seeded copy gone and
+  DeriveDRStrata the sole writer of the maps op_stratum reads, it compared a
+  value against itself (tautology). The order-consistency leg
+  (V-ORDER-CONSISTENT: pinned order non-decreasing in the band key) survives.
+
+REVIEW FIXES (2 low-severity findings, both fixed before the final suite run):
+- GUARD/SWEEP: the early-return "no phase work" guard now runs AFTER stashing
+  `context.dr_flow`, because the old code emitted commit sweeps for every
+  differential table (INCLUDING induction-owned) even when BuildStratumPhases
+  short-circuited; an early return before the stash would drop those sweeps.
+  Strata derivation + validators allocate no ids, so the stash-then-guard
+  reorder is byte-neutral.
+- STRATA-SET keys on PHASE OWNERSHIP, not the raw `flow.drain_stratum` key set:
+  the crossover/product lifts `operator[]`-insert non-phase (monotone/
+  induction) fold targets, so iterating ALL drain_stratum keys could (on an
+  exotic induction-owned-negate-in-SCC shape, unexercised by the corpus) add a
+  stratum series the old code omitted. The set now filters `TableIsDifferential
+  && !TableIsInductionOwned` == the old `phase_table_order`, closing the latent
+  divergence.
+
+kIngestFold DECISION: CUT (unchanged from R1d). The eager INGEST_FOLD sites
+live inside the recursive `BuildEagerRegion` walk with no externalized
+discovery seam to mirror; family #3 lowered the commit-sweep band (the
+ingest-ADJACENT target) but did NOT touch the entry emission
+(`ExtendEagerProcedure` / `build_explicit_loop` stay hand-coded).
+kIngestFold stays a reserved DROpKind for an R1e/R2-entry-family seam.
+
+GATES: (a) debug build green, zero new warnings (dead discovery helpers
+removed). (b) 8 anchors ×4 modes OK (transitive_closure_diff,
+d5_recursive_negate, fixpoint_stress_1, reconverge_1, deep_chain_retract,
+tc_nonlinear_diff, product_diff, cond_diff_flipflop). (c) B-14 vs 6c4ca4f
+on transitive_closure_diff / fixpoint_stress_1 / product_diff:
+RAW-BYTE-IDENTICAL (bijection = identity, exceeded — the DR-derived strata
+equal the old lift's byte-for-byte). (d) FULL SUITE PASS (157) ZERO CHURN
+(permcheck not exercised — nothing to bless; the 4 product_* publish-order
+drivers unchanged). (e) ctest 3/3. (f) no rebuild mid-suite.
+
+FAMILY #4 / R3 QUEUE: the tautological V-OLD-EQUIV(strata) self-check in
+LinearizeAndValidateDRFlow is comment-stale (harmless); the eager
+INGEST_FOLD externalization (R1e or an R2 entry-proc family) is the last
+hand-coded emission web; R3 (aggregates / GROUP_UPDATE) gates only on the
+acyclic families, all now DR-lowered.

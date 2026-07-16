@@ -481,6 +481,12 @@ class DRRound {
   unsigned scc_group{~0u};
   RoundPhase phase{RoundPhase::kOverdelete};
 
+  // R2 FAMILY #3 (DRAIN-STRATUM NATIVIZATION): the stratum whose phase series
+  // emits this round (the shared drain stratum of the group's SCC tables).
+  // Stamped by `DeriveDRStrata`; read by `LowerDRRounds` instead of the old
+  // discovery's `drain_stratum` map.
+  unsigned drain_stratum{0u};
+
   // The claimed-* frontier vec of each SCC table this round clears/re-exports
   // (the fixpoint-test vec set — Δ-emptiness break reads these). Index into
   // `DRFlowGraph::vecs`. Cleared at round start, refilled by the in-round
@@ -579,71 +585,17 @@ class DRFlowGraph {
 // crossover + product-arm families, the R1b materialized vecs, and the §1.4
 // memoized branch/join inventory). `scc_map` is the discovery's already-
 // computed `ComputeRecursiveSCCs` output, passed in so the RuleClass derivation
-// matches bit-for-bit. Strata are NOT derived here (B-13: seeded from the old
-// lift by `SeedDRStrata`, called after the scheduling fixpoint converges).
+// matches bit-for-bit. Strata are DERIVED by `DeriveDRStrata` (R2 family #3;
+// B-13's old-lift seeding is retired).
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map);
 
-// V-OLD-EQUIV (§7.3) + the B-3 family validators, ALWAYS-ON (survive NDEBUG).
-// Called from `BuildStratumPhases` where the old discovery vectors are in
-// scope; the caller passes the discovery's crossover/product/branch/join
-// records (opaque here to avoid leaking the anonymous-namespace structs — the
-// caller supplies the comparison payload). On ANY mismatch: `fprintf(stderr,
-// ...)` + `abort()`.
-//
-// The old-discovery payloads are passed as parallel flat vectors so this
-// header does not depend on the `.cpp`'s anonymous-namespace types.
-struct OldCrossoverRef {
-  QueryNegate negate;
-  TABLE *negate_table;
-  TABLE *negated_table;
-  TABLE *pred_table;
-  QueryView pred_view;
-  bool negated_differential;
-  unsigned stratum;  // B-13 seeded pinned stratum (by negate view identity)
-};
-struct OldProductRef {
-  QueryView product_view;
-  TABLE *product_table;
-  std::vector<TABLE *> side_tables;
-  std::vector<bool> side_differential;
-  unsigned stratum;  // B-13 seeded pinned stratum (by product view identity)
-};
-struct OldBranchRef {
-  TABLE *source;
-  std::vector<QueryView> path;
-  bool ends_at_join;
-  TABLE *target;
-  unsigned stratum;  // B-13 seeded pinned stratum (by branch identity)
-};
-struct OldJoinRef {
-  QueryView join_view;
-  std::vector<TABLE *> targets;
-  unsigned stratum;  // B-13 seeded pinned stratum (by join view identity)
-};
-
-// B-13: STORE the old scheduling fixpoint's converged integers into `flow` as
-// the seeded pinned strata (the independent deriver is R1c+). Matches each DR
-// branch to its old counterpart by identity to fill `branch_stratum`; fills the
-// keyed join/crossover/product/drain maps directly. Bookkeeping only — no
-// derivation.
-void SeedDRStrata(
-    DRFlowGraph &flow,
-    const std::vector<OldBranchRef> &old_branches,
-    const std::vector<OldJoinRef> &old_joins,
-    const std::vector<OldCrossoverRef> &old_crossovers,
-    const std::vector<OldProductRef> &old_products,
-    const std::unordered_map<TABLE *, unsigned> &old_drain_stratum);
-
-void ValidateDRInventory(
-    const DRFlowGraph &flow,
-    const std::vector<OldCrossoverRef> &old_crossovers,
-    const std::vector<OldProductRef> &old_products,
-    const std::vector<OldBranchRef> &old_branches,
-    const std::vector<OldJoinRef> &old_joins,
-    const std::unordered_map<TABLE *, unsigned> &old_scc_map,
-    const std::unordered_map<TABLE *, unsigned> &old_drain_stratum);
+// The INTRINSIC B-3 family validators (V-XOVER-ONE, V-PROD-MONO, V-PROD-CLASS,
+// V-JOIN-ONE), ALWAYS-ON (survive NDEBUG). The V-OLD-EQUIV legs that used to
+// compare against the old discovery are RETIRED (R2 family #3: the discovery is
+// deleted). On ANY mismatch: `fprintf(stderr, ...)` + `abort()`.
+void ValidateDRInventory(const DRFlowGraph &flow);
 
 // R1c: validate the DERIVED op families (seed folds, fixpoint fires, chain
 // folds, claim drains, retires, rederives, frontier filters, commit sweeps,
@@ -695,5 +647,21 @@ void ValidateDROps(
 void LinearizeAndValidateDRFlow(
     DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map);
+
+// R2 FAMILY #3: DERIVE the pinned strata from the DR inventory independently
+// (the port of the old scheduling fixpoint; replaces `SeedDRStrata`). Fills
+// `branch_stratum`/`join_stratum`/`crossover_stratum`/`product_stratum`/
+// `drain_stratum`, stamps each round's `drain_stratum` and each FIXPOINT_FIRE's
+// `scc_group`. The DR side is now the strata AUTHORITY (B-13 retired).
+void DeriveDRStrata(DRFlowGraph &flow, ProgramImpl *impl, Context &context,
+                    Query query,
+                    const std::unordered_map<TABLE *, unsigned> &scc_map);
+
+// R2 FAMILY #3: LOWER the end-of-batch commit-sweep band from the DR-IR's
+// kCommitSweep ops into `seq` (replaces the hand-coded Procedure.cpp band).
+// Called from `PublishDifferentialMessageVectors` with the flow graph stashed
+// on `context.dr_flow`.
+void LowerCommitSweeps(ProgramImpl *impl, Context &context,
+                       const DRFlowGraph &dr_flow, SERIES *seq);
 
 }  // namespace hyde

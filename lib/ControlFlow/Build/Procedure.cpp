@@ -1,6 +1,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include "Build.h"
+#include "DR.h"
 
 namespace hyde {
 namespace {
@@ -304,44 +305,16 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
     clear->vector.Emplace(clear, vec);
   }
 
-  // The end-of-batch commit sweeps: one per differential table, sealing the
-  // batch-start snapshot and clearing the batch-scratch flags. A table that
-  // backs a `@differential` transmit publishes its net presence changes
-  // through its sweep.
-  std::unordered_map<TABLE *, ParsedMessage> table_to_message;
-  for (const auto &[message, transmit] : context.commit_published_view) {
-    const auto pred = transmit.Predecessors()[0];
-    DataModel *const pred_model =
-        impl->view_to_model[pred]->FindAs<DataModel>();
-    assert(pred_model->table != nullptr);
-    table_to_message.emplace(pred_model->table, message);
-  }
-
-  for (TABLE *table : impl->tables) {
-
-    // A monotone table on the boundary of the differential subgraph (its
-    // net-additions frontier feeds some stratum's seeds) gets a sweep that
-    // advances its sealed row-id watermark; other monotone tables carry no
-    // batch state.
-    if (!TableIsDifferential(table)) {
-      if (auto it = context.table_delta_vecs.find(table);
-          it != context.table_delta_vecs.end()) {
-        COMMITSWEEP *const sweep =
-            impl->operation_regions.CreateDerived<COMMITSWEEP>(seq);
-        sweep->table.Emplace(sweep, table);
-        seq->AddRegion(sweep);
-      }
-      continue;
-    }
-
-    COMMITSWEEP *const sweep =
-        impl->operation_regions.CreateDerived<COMMITSWEEP>(seq);
-    sweep->table.Emplace(sweep, table);
-    if (auto it = table_to_message.find(table);
-        it != table_to_message.end()) {
-      sweep->message.emplace(it->second);
-    }
-    seq->AddRegion(sweep);
+  // The end-of-batch commit sweeps: one per differential table (sealing the
+  // batch-start snapshot, clearing the batch-scratch flags, publishing net
+  // presence changes for a `@differential`-transmit-backing table), one Seal per
+  // monotone boundary table. R2 FAMILY #3: LOWERED from the DR-IR flow graph's
+  // kCommitSweep ops (stashed on `context.dr_flow` by `BuildStratumPhases`),
+  // replacing the hand-coded `impl->tables` loop that used to live here. When no
+  // stratum phases ran (no differential tables), the graph is null and there are
+  // no sweeps to emit.
+  if (context.dr_flow) {
+    LowerCommitSweeps(impl, context, *context.dr_flow, seq);
   }
 
   // Finally, return from the data flow procedure.

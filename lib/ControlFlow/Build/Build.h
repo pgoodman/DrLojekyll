@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <map>
+#include <memory>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -29,6 +30,7 @@ class InductionSet : public DisjointSet {
 };
 
 class Context;
+class DRFlowGraph;  // lib/ControlFlow/Build/DR.h (build-internal DR-IR).
 
 // Generic action for lifting to the control flow representation. Work item
 // actions enable us to defer some liting to the control flow representation
@@ -174,6 +176,14 @@ class Context {
   // before the eager insertion walk runs; a @never negated table is excluded
   // (it never retracts, so it has no crossover and keeps its kPresent gate).
   std::unordered_set<TABLE *> monotone_negated_tables;
+
+  // R2 FAMILY #3: the DR-IR flow graph built by `BuildStratumPhases`, kept
+  // alive so `PublishDifferentialMessageVectors` (Procedure.cpp) can LOWER the
+  // commit-sweep band from the graph's kCommitSweep ops rather than re-deriving
+  // it by hand. A `shared_ptr` of an incomplete type is header-legal (the
+  // deleter is type-erased at the reset site in Stratum.cpp, where DR.h is in
+  // scope). Null when no stratum phases ran (no differential tables).
+  std::shared_ptr<DRFlowGraph> dr_flow;
 };
 
 // Populate `context.monotone_negated_tables` from `query.Negations()`: the

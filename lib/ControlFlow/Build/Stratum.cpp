@@ -52,88 +52,6 @@ struct JoinEmission {
         stratum(stratum_) {}
 };
 
-// One negation-crossover emission (the §5.4 crossover, D1'): the dual of the
-// forward pass. The forward pass folds a pred-row delta into the negate's
-// table gated on the negated key's absence; the crossover folds the SAME
-// negate row when the NEGATED key crosses, sign-DUALIZED — a negated-view
-// GAIN retracts the negate output (the `-` arm, over the negated table's
-// net-additions frontier — always present), a negated-view LOSS re-derives it
-// (the `+` arm, over net-removals — only when the negated table is
-// differential). Each arm loops the negated frontier, scans the pred table by
-// the shared key, reads the pred at `kInNew` (R4), and folds one signed count
-// into the negate's OWN table (R6), whose queue crossing rides the existing
-// claim drain / frontier filters already emitted for that table.
-//
-// Discovered one per non-@never `QueryNegate` (a @never negate never
-// retracts, so it has no crossover — R1). Registered with the scheduling
-// fixpoint like a branch (R3): its emission stratum is lifted above both the
-// negated table's and the pred table's readiness, and the negate table's
-// drain stratum is lifted to it, so the crossover is emitted in the seed
-// block BEFORE the negate table's claim drains.
-struct CrossoverEmission {
-  QueryNegate negate;
-  TABLE *negate_table;    // The negate view's own (differential) table.
-  TABLE *negated_table;   // The negated view's model table (the crossover src).
-  TABLE *pred_table;      // The data predecessor's table (scanned).
-  QueryView pred_view;    // `QueryView(negate).Predecessors()[0]`.
-  bool negated_differential;  // Whether the `+` arm exists.
-
-  // Starts at the negate view's stratum and is lifted by the scheduling
-  // fixpoint above both read tables' readiness.
-  unsigned stratum;
-
-  CrossoverEmission(QueryNegate negate_, TABLE *negate_table_,
-                    TABLE *negated_table_, TABLE *pred_table_,
-                    QueryView pred_view_, bool negated_differential_,
-                    unsigned stratum_)
-      : negate(negate_),
-        negate_table(negate_table_),
-        negated_table(negated_table_),
-        pred_table(pred_table_),
-        pred_view(pred_view_),
-        negated_differential(negated_differential_),
-        stratum(stratum_) {}
-};
-
-// One differential-@product emission (Stage 5): the four (2k, minus the
-// missing `-` arms of monotone sides) signed frontier arms of an ACYCLIC
-// 0-pivot join over deletable data. Each arm is one seed-schema firing of
-// the product rule with the delta at side position `i` (MD §5.1 with an
-// empty pivot): loop side i's net frontier, nested FULL scans of every
-// other side j — read POSITION-KEYED and SIGN-INDEPENDENT (`j < i` at
-// `kInNew`, `j > i` at `kInI`) — and ONE signed fold into the product
-// view's own table, whose crossing parks in that table's add/delete queue.
-// The product table then drains through the STANDARD claim drains and
-// frontier filters; `TryClaimAdd`'s `Total > 0` re-test is what drops the
-// mixed-sign phantom `+` (an instance in neither the old nor the new
-// materialization), which is sound only because every arm fold is emitted
-// in the seed block strictly before the product table's drains (the
-// scheduling fixpoint lifts the drain stratum to the emission's).
-//
-// Discovered one per differential 0-pivot join. The Build.cpp pre-pass
-// fence (`ViewSelfReachable`) guarantees the join is on NO dataflow cycle,
-// so every side is strictly lower (the seed schema applies, never the
-// fixpoint schema), the fold class is `kNonRecursive`, and the scheduling
-// lift terminates. Sides need NOT be distinct tables: a self-product's two
-// positions loop one table's frontier vectors and scan that same table.
-struct ProductEmission {
-  QueryView product_view;
-  TABLE *product_table;
-  std::vector<QueryView> sides;          // `JoinedViews()` order = positions.
-  std::vector<TABLE *> side_tables;      // All non-null (FillDataModel).
-  std::vector<bool> side_differential;   // Whether side i has a `-` arm.
-
-  // Starts at the join view's stratum and is lifted by the scheduling
-  // fixpoint above every side table's readiness.
-  unsigned stratum;
-
-  ProductEmission(QueryView product_view_, TABLE *product_table_,
-                  unsigned stratum_)
-      : product_view(product_view_),
-        product_table(product_table_),
-        stratum(stratum_) {}
-};
-
 // A table's differential phases are owned by an induction when a
 // `ProgramInductionRegion` was actually built for one of its member views
 // (i.e. the view is keyed in `context.view_to_induction`, populated by
@@ -303,19 +221,6 @@ static DerivClass RuleClass(const RecursiveSccMap &sccs, TABLE *target,
   return DerivClass::kNonRecursive;
 }
 
-// The stratum that owns a table's differential phases: the maximum stratum
-// over the table's member views. Folds into the table can come from any
-// member's deriving rules, so only at the owner stratum have all of the
-// batch's folds landed and can the claim drain run.
-static unsigned TableOwnerStratum(TABLE *table) {
-  unsigned stratum = 0u;
-  for (const QueryView &view : table->views) {
-    assert(view.Stratum().has_value());
-    stratum = std::max(stratum, *(view.Stratum()));
-  }
-  return stratum;
-}
-
 // Whether the delta walk follows the consumer edge `view -> succ`. Edges
 // owned by other machinery are skipped: induction-owned arrivals belong to
 // the induction's fixpoint vectors, monotone consumers to the eager insertion
@@ -339,98 +244,6 @@ static bool FollowsDeltaEdge(Context &context, QueryView succ) {
     return false;
   }
   return true;
-}
-
-// Depth-first discovery of the branch chains rooted at a source table's
-// member view. `path` holds the views walked so far (starting with the
-// member); a chain is recorded at each terminal (first JOIN, or first view
-// whose table differs from the source's), and the walk continues through
-// table-less plumbing. A non-insert view sharing the source's model is a
-// chain root itself, so the walk stops at it without recording — its own
-// rooted walk covers its consumer edges exactly once; a same-model INSERT
-// is passed through (its readers are same-model SELECTs, themselves
-// roots). Non-inductive views are acyclic, so the walk terminates.
-static void DiscoverBranches(ProgramImpl *impl, Context &context, TABLE *source,
-                             std::vector<QueryView> &path, QueryView view,
-                             std::vector<BranchChain> &branches) {
-  for (QueryView succ : view.Successors()) {
-    if (!FollowsDeltaEdge(context, succ)) {
-      continue;
-    }
-
-    DataModel *const model = impl->view_to_model[succ]->FindAs<DataModel>();
-    TABLE *const table = model->table;
-
-    if (table == source && !succ.IsInsert()) {
-      assert(succ.Columns().size() == source->columns.Size());
-      continue;
-    }
-
-    path.push_back(succ);
-
-    if (succ.IsJoin()) {
-
-      // A differential 0-pivot join (an acyclic @product — the on-cycle
-      // shape is rejected with a diagnostic before the control-flow build
-      // starts) is NOT a pivot chain terminal: all propagation into its
-      // table is owned by its `ProductEmission` arms, which loop the sides'
-      // net frontiers directly. Recording a chain here would fabricate a
-      // `JoinEmission` with an empty pivot vector. The product table's own
-      // downstream propagation is ordinary branch discovery FROM it.
-      if (0u < QueryJoin::From(succ).NumPivotColumns()) {
-        assert(succ.Stratum().has_value());
-
-        BranchChain branch;
-        branch.source = source;
-        branch.path = path;
-        branch.ends_at_join = true;
-        branch.stratum = *(succ.Stratum());
-        branches.push_back(std::move(branch));
-      }
-
-    } else if (table != nullptr && table != source) {
-
-      // A fold target inside an induction's model is fed by the fixpoint
-      // machinery, not by stratum phases; the chain into it is dropped. A
-      // recursive table for which no induction region was built is owned by
-      // the stratum phases and IS recorded.
-      if (!TableIsInductionOwned(context, table)) {
-        BranchChain branch;
-        branch.source = source;
-        branch.path = path;
-        branch.ends_at_join = false;
-        branch.target = table;
-        branch.stratum = TableOwnerStratum(table);
-        branches.push_back(std::move(branch));
-      }
-
-    } else {
-      DiscoverBranches(impl, context, source, path, succ, branches);
-    }
-
-    path.pop_back();
-  }
-}
-
-// Collects the fold targets that a join's section walk reaches (a
-// differential join is persisted, so this is normally just the join's own
-// table), mirroring `EmitSectionWalk`'s recursion.
-static void CollectSectionTargets(ProgramImpl *impl, Context &context,
-                                  QueryView view,
-                                  std::vector<TABLE *> &targets) {
-  DataModel *const model = impl->view_to_model[view]->FindAs<DataModel>();
-  TABLE *const table = model->table;
-  if (table != nullptr) {
-    if (!TableIsInductionOwned(context, table)) {
-      targets.push_back(table);
-    }
-    return;
-  }
-  for (QueryView succ : view.Successors()) {
-    if (FollowsDeltaEdge(context, succ)) {
-      CollectSectionTargets(impl, context, succ, targets);
-    }
-  }
 }
 
 // Emit the per-view plumbing of one delta-chain step arriving at `view`
@@ -1660,11 +1473,11 @@ static INDUCTION *LowerRoundBody(
   // EmitJoinFire reads only `emission.join_view`, so a lightweight JoinEmission
   // suffices.
   for (const DROp *op : dr_flow.OpsOfKind(DROpKind::kFixpointFire)) {
-    // A FIXPOINT_FIRE carries no `scc_group` field (DR.cpp derives its round
-    // from `fire_table`'s SCC); recover the group the same way.
-    const auto fire_scc = RecursiveSCC(recursive_sccs, op->fire_table);
+    // Family #3 stamps `scc_group` onto each FIXPOINT_FIRE (DeriveDRStrata), so
+    // the round selects its own group's fires directly (the family-#2
+    // RecursiveSCC re-derivation is retired).
     if (op->fire_sign != (is_del ? -1 : +1) ||
-        !fire_scc.has_value() || *fire_scc != round.scc_group) {
+        op->scc_group != round.scc_group) {
       continue;
     }
     const JoinEmission emission(*op->fire_join, nullptr /* pivot */, 0u);
@@ -1706,10 +1519,8 @@ static INDUCTION *LowerRoundBody(
 // enumerate the groups/tables; `LowerRoundBody` drives the surviving Emit*.
 static void LowerDRRounds(ProgramImpl *impl, Context &context,
                           const RecursiveSccMap &recursive_sccs,
-                          const DRFlowGraph &dr_flow,
-                          const std::unordered_map<TABLE *, unsigned>
-                              &drain_stratum,
-                          unsigned stratum, SERIES *stratum_seq) {
+                          const DRFlowGraph &dr_flow, unsigned stratum,
+                          SERIES *stratum_seq) {
   // The round shells come in (group ascending, OVERDELETE then INSERT) pairs
   // (DR.cpp:1442-1467). Walk the OVERDELETE rounds; for each whose group drains
   // at this stratum, emit the OD loop + REDERIVE, then find its INSERT sibling
@@ -1728,21 +1539,14 @@ static void LowerDRRounds(ProgramImpl *impl, Context &context,
     if (del_round.phase != RoundPhase::kOverdelete) {
       continue;
     }
-    const std::vector<TABLE *> scc_tables = RoundTables(dr_flow, del_round);
 
-    // Skip a round whose SCC group is NOT drained at this stratum (the SCC's
-    // members share one drain stratum — the scheduling fixpoint pins them).
-    bool here = false;
-    for (TABLE *table : scc_tables) {
-      if (auto it = drain_stratum.find(table);
-          it != drain_stratum.end() && it->second == stratum) {
-        here = true;
-        break;
-      }
-    }
-    if (!here) {
+    // Skip a round whose SCC group is NOT drained at this stratum. Family #3
+    // reads the drain stratum stamped on the round shell (`DeriveDRStrata`),
+    // not the discovery `drain_stratum` map.
+    if (del_round.drain_stratum != stratum) {
       continue;
     }
+    const std::vector<TABLE *> scc_tables = RoundTables(dr_flow, del_round);
 
     // OVERDELETE (§5.2): the del-side claim-round fixpoint, then — in its output
     // region, after quiescence — REDERIVE (every overdeleted row still
@@ -1786,6 +1590,48 @@ static void LowerDRRounds(ProgramImpl *impl, Context &context,
 
 }  // namespace
 
+// R2 FAMILY #3 — COMMIT-SWEEP BAND LOWERING (dr → cf).
+//
+// Replaces the hand-coded end-of-batch sweep band (the deleted
+// Procedure.cpp:307-345 loop): one COMMITSWEEP per differential table (with its
+// @differential-transmit message attached iff publish_target), one Seal
+// COMMITSWEEP per monotone boundary table with a delta-vec entry. The DR-IR
+// `kCommitSweep` ops (DR.cpp:1288-1334) are minted in `impl->tables` order — the
+// exact order the old loop walked — so the sibling order is the lowering default
+// (B-9/B-14 tree-shape identity). Emitted into the SAME `seq` the old band used
+// (PublishDifferentialMessageVectors' outer series, AFTER the monotone
+// iter_par), so the region-tree nesting is unchanged.
+void LowerCommitSweeps(ProgramImpl *impl, Context &context,
+                       const DRFlowGraph &dr_flow, SERIES *seq) {
+  // Recover each swept table's @differential transmit message (the sweep op
+  // carries only `publish_target`; the message identity lives on
+  // `commit_published_view`). Mirror Procedure.cpp:311-318.
+  std::unordered_map<TABLE *, ParsedMessage> table_to_message;
+  for (const auto &[message, transmit] : context.commit_published_view) {
+    const auto pred = transmit.Predecessors()[0];
+    DataModel *const pm = impl->view_to_model[pred]->FindAs<DataModel>();
+    assert(pm->table != nullptr);
+    table_to_message.emplace(pm->table, message);
+  }
+
+  for (const DROp &op : dr_flow.ops) {
+    if (op.kind != DROpKind::kCommitSweep) {
+      continue;
+    }
+    TABLE *const table = op.table_op_table;
+    COMMITSWEEP *const sweep =
+        impl->operation_regions.CreateDerived<COMMITSWEEP>(seq);
+    sweep->table.Emplace(sweep, table);
+    if (op.sweep_flavor == SweepFlavor::kDifferential && op.publish_target) {
+      if (auto it = table_to_message.find(table);
+          it != table_to_message.end()) {
+        sweep->message.emplace(it->second);
+      }
+    }
+    seq->AddRegion(sweep);
+  }
+}
+
 // Build the per-stratum differential phases into the entry procedure: for
 // each stratum in ascending order, the seed enumeration over lower strata's
 // consolidated frontiers (frontier-vector loops walking delta chains, and
@@ -1815,511 +1661,113 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   // retains only the discovery + scheduling fixpoint that SEED the DR strata and
   // back V-OLD-EQUIV — family #3 deletes those too.)
 
-  // Discover the branch chains out of every chain source, in the tables'
-  // creation order (deterministic). A source is a table with a frontier:
-  //   - a differential table outside inductions has both signs, built by
-  //     its own stratum's frontier filters;
-  //   - a differential table inside an induction has additions only,
-  //     filled by the induction's output loop;
-  //   - a monotone boundary table (its eager folds accumulate a
-  //     net-additions frontier for cut consumers) has additions only.
-  std::vector<BranchChain> branches;
-  for (TABLE *table : impl->tables) {
-    auto is_source = TableIsDifferential(table);
-    if (!is_source) {
-      if (auto it = context.table_delta_vecs.find(table);
-          it != context.table_delta_vecs.end()) {
-        is_source = it->second.count(
-            static_cast<unsigned>(VectorKind::kNetAdditions)) != 0u;
-      }
-    }
-    if (!is_source) {
-      continue;
-    }
+  // R2 FAMILY #3 (THE DELETION): the hand-coded discovery (DiscoverBranches
+  // path-DFS, the JoinEmission/CrossoverEmission/ProductEmission vectors) and
+  // the scheduling fixpoint that used to live here are GONE. The DR-IR flow
+  // graph is now the SOLE authority: `BuildDRInventory` derives the branch/join/
+  // crossover/product inventory (the memoized worklist, independent of the old
+  // DFS), and `DeriveDRStrata` (the ported integer lift) computes the pinned
+  // strata over the DR objects. V-OLD-EQUIV is retired with its comparands; the
+  // intrinsic B-3 validators (V-XOVER-ONE, V-PROD-*), the census (V-ONE-FOLD,
+  // V-SEED-SUP, ...), and the linearization checks (V-LINEAR/V-LOOP/
+  // V-RETIRE-AFTER/V-READY) stand.
+  DRFlowGraph dr_flow = BuildDRInventory(impl, context, query, recursive_sccs);
 
-    const auto num_cols = table->columns.Size();
-    for (const QueryView &member : table->views) {
-      if (member.IsInsert() || member.Columns().size() != num_cols) {
-        continue;
-      }
-      std::vector<QueryView> path{member};
-      DiscoverBranches(impl, context, table, path, member, branches);
-    }
-  }
+  // The pinned strata: DERIVE them from the DR inventory (B-13 retired). Fills
+  // `dr_flow.{branch,join,crossover,product,drain}_stratum`, stamps each round's
+  // drain stratum + each fire's scc_group. This is the ported scheduling
+  // fixpoint, now the DR side's own authority. (No id-affecting work — DR
+  // construction and derivation allocate no region/vector ids.)
+  DeriveDRStrata(dr_flow, impl, context, query, recursive_sccs);
 
-  // The dual-section joins, one emission per join view, each with one
-  // delta pivot vector shared by every feeding chain and sign.
-  std::vector<JoinEmission> joins;
-  std::unordered_map<QueryView, size_t> join_index;
-  for (const BranchChain &branch : branches) {
-    if (!branch.ends_at_join) {
-      continue;
-    }
-    const QueryView join_view = branch.path.back();
-    if (join_index.emplace(join_view, joins.size()).second) {
-      joins.emplace_back(
-          join_view,
-          context.entry_proc->VectorFor(
-              impl, VectorKind::kJoinPivots,
-              QueryJoin::From(join_view).PivotColumns()),
-          branch.stratum);
-      CollectSectionTargets(impl, context, join_view, joins.back().targets);
-    }
-  }
+  // Always-on op-family + linearization validators (V-OLD-EQUIV legs retired):
+  // the census (V-ONE-FOLD/V-SEED-SUP/V-NEG-CTX/V-CLAIM-GATE/... per-kind counts
+  // recomputed independently) and the dependence-graph checks (V-LINEAR/V-LOOP/
+  // V-RETIRE-AFTER/V-READY). Both recompute their expectations from the query,
+  // not the deleted discovery.
+  ValidateDRInventory(dr_flow);
+  ValidateDROps(dr_flow, impl, context, query, recursive_sccs);
+  LinearizeAndValidateDRFlow(dr_flow, impl, context, query, recursive_sccs);
 
-  // The negation crossovers (D1'/§5.4), one per non-@never negate. Discovered
-  // here from `query.Negations()` (the audit confirmed `Predecessors()[0]` is
-  // the DATA pred, and `FillDataModel` materializes the pred and negated
-  // tables for every negate). A @never negate never retracts, so it has no
-  // crossover (R1). Each crossover's emission stratum is registered with the
-  // scheduling fixpoint below.
-  //
-  // Exactly ONE arm-pair per negate, because the forward pass folds into the
-  // negate's table exactly once per pred-row event: a negate has exactly one
-  // data predecessor (QueryNegateImpl links a single incoming view,
-  // lib/DataFlow/Link.cpp), a differential pred is always table-backed
-  // (FillDataModel persists every negate feeder), so a stratum branch chain
-  // into the negate can only root at that one materialized pred view — and
-  // identity-deduped member lists (Data.cpp GetOrCreate) guarantee each root
-  // is discovered once. Asserted below. (Before that dedup, duplicated
-  // member lists doubled the chains and the crossover carried a compensating
-  // fold multiplicity; FINDINGS F19 / merge_5.)
-  std::vector<CrossoverEmission> crossovers;
-  for (QueryNegate negate : query.Negations()) {
-    if (negate.HasNeverHint()) {
-      continue;
-    }
-    const QueryView negate_view(negate);
-    const QueryView negated_view = negate.NegatedView();
-    const QueryView pred_view = negate_view.Predecessors()[0];
+  // ALWAYS stash the flow graph (before any early return) so
+  // `PublishDifferentialMessageVectors` can lower the commit-sweep band from its
+  // kCommitSweep ops even when there is no per-stratum phase work — the old code
+  // emitted commit sweeps for every differential table (incl. induction-owned)
+  // regardless of whether `BuildStratumPhases` short-circuited. The
+  // `drain_stratum` map + rounds referenced by `LowerDRRounds` read through it.
+  context.dr_flow = std::make_shared<DRFlowGraph>(std::move(dr_flow));
+  const DRFlowGraph &flow = *context.dr_flow;
 
-    TABLE *const negate_table =
-        impl->view_to_model[negate_view]->FindAs<DataModel>()->table;
-    TABLE *const negated_table =
-        impl->view_to_model[negated_view]->FindAs<DataModel>()->table;
-    TABLE *const pred_table =
-        impl->view_to_model[pred_view]->FindAs<DataModel>()->table;
-    assert(negate_table != nullptr);
-    assert(negated_table != nullptr);
-    assert(pred_table != nullptr);
-
-#ifndef NDEBUG
-    // The forward fold count into the negate's table: the stratum branch
-    // chains that terminate at this negate (differential-negated), or — when
-    // there are none — the eager walk's arrivals through the negate's data
-    // predecessors (monotone-negated). Structurally 1 either way (see the
-    // discovery comment above); a 2 here means a duplicated member list
-    // slipped past GetOrCreate's identity guard.
-    unsigned forward_folds = 0u;
-    for (const BranchChain &branch : branches) {
-      if (!branch.ends_at_join && branch.target == negate_table &&
-          !branch.path.empty() && branch.path.back() == negate_view) {
-        ++forward_folds;
-      }
-    }
-    if (forward_folds == 0u) {
-      for (QueryView p : negate_view.Predecessors()) {
-        if (p != negated_view) {
-          ++forward_folds;
-        }
-      }
-    }
-    assert(forward_folds == 1u);
-#endif
-
-    crossovers.emplace_back(negate, negate_table, negated_table, pred_table,
-                            pred_view, TableIsDifferential(negated_table),
-                            negate_view.Stratum().value_or(0u));
-  }
-
-  // The differential @product emissions (Stage 5), one per ACYCLIC 0-pivot
-  // join over deletable data — the exact set the narrowed Build.cpp pre-pass
-  // admits (its `ViewSelfReachable` fence rejects every on-cycle one, so
-  // both tripwires below are structural). Every side table is non-null: the
-  // join persists all its joined views (FillDataModel), and the product view
-  // itself is persisted by the every-predecessor rule (its successor chain
-  // is deletion-receiving).
-  std::vector<ProductEmission> products;
-  for (QueryJoin join : query.Joins()) {
-    const QueryView join_view(join);
-    if (join.NumPivotColumns() || !join_view.CanReceiveDeletions()) {
-      continue;
-    }
-    assert(!join_view.InductionGroupId().has_value());
-
-    DataModel *const join_model =
-        impl->view_to_model[join_view]->FindAs<DataModel>();
-    TABLE *const product_table = join_model->table;
-    assert(product_table != nullptr);
-    assert(!RecursiveSCC(recursive_sccs, product_table).has_value());
-
-    ProductEmission p(join_view, product_table,
-                      join_view.Stratum().value_or(0u));
-    for (QueryView side : join.JoinedViews()) {
-      TABLE *const side_table =
-          impl->view_to_model[side]->FindAs<DataModel>()->table;
-      assert(side_table != nullptr);
-      p.sides.push_back(side);
-      p.side_tables.push_back(side_table);
-      p.side_differential.push_back(TableIsDifferential(side_table));
-    }
-    products.push_back(std::move(p));
-  }
-
-  // The tables whose claim drains and frontier filters the phases own. A
-  // table's drain stratum starts at its owner stratum and is lifted below
-  // to the stratum of the latest fold into it.
-  std::vector<TABLE *> phase_table_order;
-  std::unordered_map<TABLE *, unsigned> drain_stratum;
+  // No per-stratum phase work? (No branch/join/crossover/product op, no phase-
+  // owned differential table.) Then the entry-body nesting + phase-series
+  // emission below are skipped — but the stash above still feeds the sweeps.
+  bool any_phase_table = false;
   for (TABLE *table : impl->tables) {
     if (TableIsDifferential(table) && !TableIsInductionOwned(context, table)) {
-      phase_table_order.push_back(table);
-      drain_stratum.emplace(table, TableOwnerStratum(table));
+      any_phase_table = true;
+      break;
     }
   }
-  if (branches.empty() && joins.empty() && phase_table_order.empty() &&
-      crossovers.empty() && products.empty()) {
+  if (flow.branches.empty() && flow.joins.empty() && !any_phase_table &&
+      flow.Crossovers().empty() && flow.ProductArms().empty()) {
     return;
   }
 
-  // The scheduling fixpoint. A data model's member views can straddle
-  // strata, so the spec strata alone do not guarantee that a read runs
-  // after the state it reads is final. Each emission unit is lifted until:
-  //
-  //   - a seed runs after its source's consolidated frontier is built
-  //     (the source's drain stratum; an inductive source's output loop and
-  //     a monotone boundary's eager folds fill theirs before any phase);
-  //   - a negation gate and a join section run after the batch-final state
-  //     of every table they read is settled (the table's insert drain);
-  //   - a table's claim drain runs at or after every fold into it.
-  //
-  // Non-inductive dataflow is acyclic, so the lift reaches a fixpoint. When
-  // no model straddles strata, every constraint is already satisfied and
-  // the schedule is exactly the spec strata.
-  const auto ready_after = [&](TABLE *table) -> unsigned {
-    if (auto it = drain_stratum.find(table); it != drain_stratum.end()) {
-      return it->second + 1u;
-    }
-    return 0u;
-  };
-
-  // Two tables in the same recursive SCC drain together at one stratum, so a
-  // read of a same-SCC table is not a strictly-lower readiness dependency and
-  // must not lift the reader (that lift would never converge — the SCC's
-  // mutual reads would ratchet each other's stratum up without bound). A
-  // same-SCC read is `InI`-batch-frozen or a lower-table `InNew`; it closes
-  // no scheduling cycle. `ready_across` returns the source's readiness unless
-  // it shares `head`'s recursive SCC, in which case it contributes nothing.
-  const auto same_scc = [&](TABLE *a, TABLE *b) {
-    const auto sa = RecursiveSCC(recursive_sccs, a);
-    return sa.has_value() && sa == RecursiveSCC(recursive_sccs, b);
-  };
-  const auto ready_across = [&](TABLE *head, TABLE *read) -> unsigned {
-    return same_scc(head, read) ? 0u : ready_after(read);
-  };
-
-  const auto negated_tables_ready = [&](const BranchChain &branch,
-                                        TABLE *head) {
-    unsigned stratum = 0u;
-    for (const QueryView &view : branch.path) {
-      if (view.IsNegate()) {
-        const QueryView negated_view =
-            QueryNegate::From(view).NegatedView();
-        DataModel *const negated_model =
-            impl->view_to_model[negated_view]->FindAs<DataModel>();
-        stratum = std::max(stratum, ready_across(head, negated_model->table));
-      }
-    }
-    return stratum;
-  };
-
-  const auto lift = [](unsigned &slot, unsigned value, bool &changed) {
-    if (slot < value) {
-      slot = value;
-      changed = true;
-    }
-  };
-
-  for (auto changed = true; changed; ) {
-    changed = false;
-
-    for (BranchChain &branch : branches) {
-
-      // The head table this branch folds into: its own target for a head
-      // chain, the join's persisted table for a join chain. Same-SCC reads
-      // (including the source frontier of a recursive rule) are exempt.
-      TABLE *const head =
-          branch.ends_at_join
-              ? impl->view_to_model[branch.path.back()]->FindAs<DataModel>()
-                    ->table
-              : branch.target;
-      unsigned stratum =
-          std::max(branch.stratum, ready_across(head, branch.source));
-      stratum = std::max(stratum, negated_tables_ready(branch, head));
-
-      if (branch.ends_at_join) {
-        lift(joins[join_index[branch.path.back()]].stratum, stratum, changed);
-      } else {
-        lift(branch.stratum, stratum, changed);
-        lift(drain_stratum[branch.target], stratum, changed);
-      }
-    }
-
-    for (JoinEmission &emission : joins) {
-      TABLE *const head =
-          impl->view_to_model[emission.join_view]->FindAs<DataModel>()->table;
-      unsigned stratum = emission.stratum;
-      for (QueryView side :
-           QueryJoin::From(emission.join_view).JoinedViews()) {
-        DataModel *const side_model =
-            impl->view_to_model[side]->FindAs<DataModel>();
-        stratum = std::max(stratum, ready_across(head, side_model->table));
-      }
-      lift(emission.stratum, stratum, changed);
-      for (TABLE *target : emission.targets) {
-        lift(drain_stratum[target], emission.stratum, changed);
-      }
-    }
-
-    // The negation crossovers (R3): lift each above both read tables'
-    // readiness (the negated frontier it loops and the pred table it scans at
-    // `kInNew`), then lift the negate table's drain stratum to it, so the
-    // crossover's fold into the negate table lands in the seed block strictly
-    // before that table's claim drains. Same-SCC reads are exempt
-    // (`ready_across`): a recursive negate's same-SCC pred read is a lower
-    // `kInNew` the claim-round loop keeps final, closing no scheduling cycle.
-    for (CrossoverEmission &x : crossovers) {
-      unsigned stratum = x.stratum;
-      stratum = std::max(stratum, ready_across(x.negate_table, x.negated_table));
-      stratum = std::max(stratum, ready_across(x.negate_table, x.pred_table));
-      lift(x.stratum, stratum, changed);
-      lift(drain_stratum[x.negate_table], x.stratum, changed);
-    }
-
-    // The product arms: lift each above EVERY side table's readiness (the
-    // strict `ready_after`, deliberately not the SCC-exempt `ready_across` —
-    // the acyclic fence guarantees no same-SCC side, so a would-be ratchet
-    // here means a fence miss and should diverge loudly in development, not
-    // mis-schedule silently), then lift the product table's drain stratum to
-    // the emission's, so every arm fold lands in the seed block strictly
-    // before that table's claim drains (the phantom-`+` drop via
-    // `TryClaimAdd`'s `Total > 0` re-test depends on this order). The lift
-    // terminates: dataflow is acyclic through the product, so nothing
-    // downstream of the product table can re-lift a side's drain.
-    for (ProductEmission &p : products) {
-      unsigned stratum = p.stratum;
-      for (TABLE *side_table : p.side_tables) {
-        stratum = std::max(stratum, ready_after(side_table));
-      }
-      lift(p.stratum, stratum, changed);
-      lift(drain_stratum[p.product_table], p.stratum, changed);
-    }
-
-    // Pin every table of a recursive SCC to a single shared drain stratum:
-    // the max over its members. The SCC drains as one fixpoint, so its seed,
-    // join, claim-round loop, REDERIVE and frontier build all run in the one
-    // stratum series. (Without this, the members' owner strata could differ —
-    // t's union, its recursive join, and the head projection each carry their
-    // own — and the claim-round loop would be split across strata.)
-    if (!recursive_sccs.empty()) {
-      std::unordered_map<unsigned, unsigned> scc_stratum;
-      for (auto &[table, group] : recursive_sccs) {
-        auto it = drain_stratum.find(table);
-        if (it != drain_stratum.end()) {
-          unsigned &slot = scc_stratum[group];
-          slot = std::max(slot, it->second);
-        }
-      }
-      for (auto &[table, group] : recursive_sccs) {
-        if (auto it = drain_stratum.find(table); it != drain_stratum.end()) {
-          lift(it->second, scc_stratum[group], changed);
-        }
-      }
-    }
+  // The ONE shared pivot VECTOR* per join view. Minted HERE (iterating
+  // `flow.joins`, whose order == the old discovery `joins` order — both derive
+  // branches identically and dedup by view), at the exact program point the old
+  // discovery `joins` loop minted them, so no `next_id` shifts (DR construction
+  // allocates no ids; the pivot VectorFor is the only id-affecting call between
+  // inventory and emission — the family-#1 VectorFor-non-memoization hazard:
+  // `LowerDRFlow` must REUSE these, never re-mint).
+  std::unordered_map<QueryView, VECTOR *> join_pivots;
+  for (const DRJoin &dr_join : flow.joins) {
+    const QueryView join_view = dr_join.join_view;
+    join_pivots.emplace(
+        join_view,
+        context.entry_proc->VectorFor(
+            impl, VectorKind::kJoinPivots,
+            QueryJoin::From(join_view).PivotColumns()));
   }
 
-  // A join chain is emitted with its join's series.
-  for (BranchChain &branch : branches) {
-    if (branch.ends_at_join) {
-      branch.stratum = joins[join_index[branch.path.back()]].stratum;
-    }
-  }
-
-  // R1a/R1b DR-IR inventory hook (spec §7.2/§7.3). The discovery vectors are
-  // now FINAL (the scheduling fixpoint has converged; nothing below mutates the
-  // branch/join/crossover/product SET or its strata, only its emission). Derive
-  // the DR-IR inventory INDEPENDENTLY from the query (R1b: crossover/product
-  // ops, the materialized per-table/per-join DRVecs, and the §1.4 MEMOIZED
-  // branch/join inventory), SEED its pinned strata from this fixpoint's
-  // converged integers (B-13), and cross-check it against this discovery's
-  // shared state (V-OLD-EQUIV: same crossover/product/branch/join sets + SCC
-  // map + per-unit strata) plus the B-3 family validators. Construction-only —
-  // no emission below is touched; validators are always-on and abort on
-  // divergence.
-  // R2 family #1: the ACYCLIC band below is now LOWERED from this DR-IR flow
-  // graph (`LowerDRFlow`), not the hand-coded emitters; the SCC round shells
-  // stay on the old web. The graph therefore OUTLIVES the validation block.
-  DRFlowGraph dr_flow = BuildDRInventory(impl, context, query, recursive_sccs);
-  {
-    std::vector<OldCrossoverRef> old_crossovers;
-    old_crossovers.reserve(crossovers.size());
-    for (const CrossoverEmission &x : crossovers) {
-      old_crossovers.push_back(OldCrossoverRef{
-          x.negate, x.negate_table, x.negated_table, x.pred_table,
-          x.pred_view, x.negated_differential, x.stratum});
-    }
-
-    std::vector<OldProductRef> old_products;
-    old_products.reserve(products.size());
-    for (const ProductEmission &p : products) {
-      old_products.push_back(OldProductRef{
-          p.product_view, p.product_table, p.side_tables, p.side_differential,
-          p.stratum});
-    }
-
-    std::vector<OldBranchRef> old_branches;
-    old_branches.reserve(branches.size());
-    for (const BranchChain &b : branches) {
-      old_branches.push_back(OldBranchRef{
-          b.source, b.path, b.ends_at_join, b.target, b.stratum});
-    }
-
-    std::vector<OldJoinRef> old_joins;
-    old_joins.reserve(joins.size());
-    for (const JoinEmission &j : joins) {
-      old_joins.push_back(OldJoinRef{j.join_view, j.targets, j.stratum});
-    }
-
-    SeedDRStrata(dr_flow, old_branches, old_joins, old_crossovers, old_products,
-                 drain_stratum);
-    ValidateDRInventory(dr_flow, old_crossovers, old_products, old_branches,
-                        old_joins, recursive_sccs, drain_stratum);
-
-    // R1c: validate the derived op families (seed/fixpoint/chain folds, claim
-    // drains, retires, rederives, filters, sweeps, negate gates) + the op-
-    // inventory census against this emission driver's counting rules.
-    ValidateDROps(dr_flow, impl, context, query, recursive_sccs);
-
-    // R1d (LAST construction stage): materialize vec use-edges uniformly,
-    // derive the §4 RAW/WAR/WAW dependence graph + loop-carried edges (A-1/
-    // B-10), independently linearize (pinned order = band-template topo sort),
-    // populate the FIXPOINT_ROUND shells, and run V-LINEAR / V-LOOP /
-    // V-RETIRE-AFTER (arm-granular) / V-READY / V-OLD-EQUIV(strata + emission
-    // order). Still construct-alongside: no emission below is touched.
-    LinearizeAndValidateDRFlow(dr_flow, impl, context, query, recursive_sccs);
-  }
-
-  // Cash the readiness precondition, SPLIT by emission-site kind (A4).
-  //
-  // For a NON-RECURSIVE emission — a base-rule seed, or any fold whose head
-  // table is not in a recursive SCC — every table it reads must be phase-final
-  // strictly before it runs: its drain stratum is strictly lower than the
-  // emission's. This is the original soundness precondition the REDERIVE
-  // omission and the `kNonRecursive` head-fold class rest on (see Phase 8c /
-  // `EmitHeadFold`): the emission reads no table at its own stratum, so no fold
-  // it performs closes a same-stratum recursion cycle, and its non-recursive
-  // counter class is sound. It survives verbatim for base-rule seeds.
-  //
-  // For a RECURSIVE emission — a fold whose head shares a recursive SCC with a
-  // read — the same-SCC reads are EXEMPT: they are `InI` batch-frozen (the
-  // seed-schema same-stratum read) or a lower-table `InNew`, never a
-  // drain-order dependency, so they close no scheduling cycle. Only its
-  // strictly-lower (non-SCC) reads must be phase-final before it runs. And a
-  // recursive emission must have at least one same-SCC read — that same-SCC
-  // read IS the recursion; without it the fold would not be recursive and the
-  // `kRecursive` class would be wrong.
-  //
-  // `ready_after(T)` is `drain_stratum[T] + 1` (0 if T is not phase owned), so
-  // `ready_across(head, read) <= emission stratum` is "read is strictly lower
-  // OR same-SCC (exempt)."
-#ifndef NDEBUG
-  for (const BranchChain &branch : branches) {
-    TABLE *const head =
-        branch.ends_at_join
-            ? impl->view_to_model[branch.path.back()]->FindAs<DataModel>()
-                  ->table
-            : branch.target;
-    assert(ready_across(head, branch.source) <= branch.stratum);
-    for (const QueryView &view : branch.path) {
-      if (view.IsNegate()) {
-        const QueryView negated_view = QueryNegate::From(view).NegatedView();
-        DataModel *const negated_model =
-            impl->view_to_model[negated_view]->FindAs<DataModel>();
-        assert(ready_across(head, negated_model->table) <= branch.stratum);
-      }
-    }
-  }
-  for (const JoinEmission &emission : joins) {
-    TABLE *const head =
-        impl->view_to_model[emission.join_view]->FindAs<DataModel>()->table;
-    bool has_same_scc_read = false;
-    for (QueryView side :
-         QueryJoin::From(emission.join_view).JoinedViews()) {
-      DataModel *const side_model =
-          impl->view_to_model[side]->FindAs<DataModel>();
-      assert(ready_across(head, side_model->table) <= emission.stratum);
-      has_same_scc_read |= same_scc(head, side_model->table);
-    }
-
-    // A join emitting into a recursive SCC is a recursive rule (the JOIN's
-    // persisted table is on the cycle); it must read a same-SCC side. A join
-    // outside any recursive SCC has no same-SCC read (trivially).
-    assert(!RecursiveSCC(recursive_sccs, head).has_value() ||
-           has_same_scc_read);
-  }
-  for (const CrossoverEmission &x : crossovers) {
-    assert(ready_across(x.negate_table, x.negated_table) <= x.stratum);
-    assert(ready_across(x.negate_table, x.pred_table) <= x.stratum);
-  }
-  for (const ProductEmission &p : products) {
-    for (TABLE *side_table : p.side_tables) {
-
-      // Strictly-lower readiness for EVERY side (no SCC exemption — the
-      // acyclic fence rules same-SCC sides out entirely).
-      assert(ready_after(side_table) <= p.stratum);
-    }
-  }
-#endif  // NDEBUG
-
-  // The strata that need a phase series, ascending.
+  // The strata that need a phase series, ascending. Sources mirror the old
+  // driver's set EXACTLY: branch / join / crossover / product strata, plus the
+  // drain strata of the PHASE-OWNED tables ONLY (differential, not induction-
+  // owned == the old `phase_table_order`). `flow.drain_stratum` may carry extra
+  // default-inserted keys for monotone/induction fold targets the lift touched
+  // via `operator[]`; those are NOT phase tables and must not add a stratum
+  // series (they converge to a branch/join stratum already inserted, but we key
+  // on phase ownership directly to keep the set identical to the old code).
   std::set<unsigned> strata;
-  for (const BranchChain &branch : branches) {
-    strata.insert(branch.stratum);
+  for (unsigned s : flow.branch_stratum) {
+    strata.insert(s);
   }
-  for (const JoinEmission &emission : joins) {
-    strata.insert(emission.stratum);
+  for (const auto &[view, s] : flow.join_stratum) {
+    strata.insert(s);
   }
-  for (TABLE *table : phase_table_order) {
-    strata.insert(drain_stratum[table]);
+  for (const auto &[view, s] : flow.crossover_stratum) {
+    strata.insert(s);
   }
-  for (const CrossoverEmission &x : crossovers) {
-    strata.insert(x.stratum);
+  for (const auto &[view, s] : flow.product_stratum) {
+    strata.insert(s);
   }
-  for (const ProductEmission &p : products) {
-    strata.insert(p.stratum);
+  for (const auto &[table, s] : flow.drain_stratum) {
+    if (TableIsDifferential(table) && !TableIsInductionOwned(context, table)) {
+      strata.insert(s);
+    }
   }
 
   // Nest the entry procedure's body (the ingest walk, which parks every
-  // fold crossing in the queues the phases drain) ahead of the phase
-  // series.
+  // fold crossing in the queues the phases drain) ahead of the phase series.
   PROC *const proc = context.entry_proc;
   SERIES *const seq = impl->series_regions.Create(proc);
   proc->body->parent = seq;
   seq->AddRegion(proc->body.get());
   proc->body.Emplace(proc, seq);
 
-  // The ONE shared pivot VECTOR* per join view, already minted by the discovery
-  // `joins` loop above (VectorFor is not memoized, so `LowerDRFlow` must REUSE
-  // these rather than re-minting — see LowerDRFlow's doc).
-  std::unordered_map<QueryView, VECTOR *> join_pivots;
-  for (const JoinEmission &emission : joins) {
-    join_pivots.emplace(emission.join_view, emission.pivot_vec);
-  }
-
   for (const unsigned stratum : strata) {
     SERIES *const stratum_seq = impl->series_regions.Create(seq);
     seq->AddRegion(stratum_seq);
-
     // Seeds: every chain emitted at this stratum, per available sign. The
     // `-` sign ranges over the source's net removals (differential
     // non-inductive sources only); the `+` sign over its net additions.
@@ -2348,7 +1796,7 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     // + acyclic EmitClaimDrain/EmitFrontierFilter emission that used to live
     // here. `LowerDRFlow` reproduces the old band's exact sibling order (B-14
     // tree-shape identity). The SCC round shells continue below on the old web.
-    LowerDRFlow(impl, context, recursive_sccs, dr_flow, stratum, seed_vector,
+    LowerDRFlow(impl, context, recursive_sccs, flow, stratum, seed_vector,
                 join_pivots, stratum_seq);
 
     // R2 FAMILY #2 (F-2): the SCC/RECURSIVE BAND — the per-SCC×phase claim-round
@@ -2357,11 +1805,10 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     // replacing the hand-coded `build_claim_round_loop` closure + the two-call
     // del/add driver band that used to live here. `LowerDRRounds` reproduces the
     // old band structure verbatim (§5.2/§5.3), driving the surviving Emit*
-    // primitives 1:1 from the round's DR ops. This is the LAST emission cutover
-    // of the recursive family; the old discovery + scheduling fixpoint SURVIVE
-    // (they seed the DR strata + V-OLD-EQUIV; family #3 deletes them).
-    LowerDRRounds(impl, context, recursive_sccs, dr_flow, drain_stratum, stratum,
-                  stratum_seq);
+    // primitives 1:1 from the round's DR ops. Family #3 nativized the drain
+    // stratum onto the DRRound shell (`round.drain_stratum`), so `LowerDRRounds`
+    // reads the round's own field, not the discovery `drain_stratum` map.
+    LowerDRRounds(impl, context, recursive_sccs, flow, stratum, stratum_seq);
   }
 }
 
