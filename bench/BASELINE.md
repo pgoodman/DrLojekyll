@@ -251,3 +251,26 @@ docs/proposals/DeltaRelationalIR.md §1.1/§8.
   dbg opt 7833→970 (−87.6%); the 32→128 tail is ~linear. The Q5
   superlinearity (bench run 1's headline) is resolved by the two
   dataflow diffs; the DR-IR proper is gated on not regressing this.
+
+## Accepted run 8 (delta-relational-IR epoch CLOSE, 2026-07-16, d6e31b79+docs)
+
+Q5 progsize curve, final (medians of 3, quiesced; both builds × 4 modes;
+full table in the session ledger — headline cells):
+
+    release/opt @ 2/8/32/128:  29.2 / 26.2 / 33.5 / 149.4 ms
+    debug/opt   @ 2/8/32/128:  45.0 / 53.7 / 120.6 / 925.1 ms
+
+vs the R0 epoch-start baselines @128: release/opt −86.1% (1077→149.4),
+debug/opt −88.2% (7832.5→925.1); every build×mode −86..94%. The 32→128
+tail is ~linear (4.5x time per 4x rules at release/opt). RUNTIME
+NEUTRALITY (no timed flagship rerun; the witnesses): generated code for
+all four flagship workloads byte-compared IDENTICAL from the pre-R2
+compiler (0d8d00e) through every R2 family — bit-identical case
+binaries; R3 changes generated code ONLY for aggregate/KV programs
+(none in the flagship set); the one measured point, tc epoch wall via
+interleaved A/B at the R3 flip, moved +0.3%. Suite at close: 164 cases
+(155 at epoch start + fixpoint_stress_1, reconverge_1, agg_in_scc_1,
+kv_in_scc_1, algebra_{invertible,dup,conflict}_1, average_weight,
+pairwise_average_weight — the last two were feature-gap files since
+the project began), 4 modes, oracle + monotone sidecars; ctest 3/3
+with runtime_test 22→43.
