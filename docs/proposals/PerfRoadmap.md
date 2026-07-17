@@ -2491,6 +2491,12 @@ epoch (release/opt 0.11-0.13s, debug/opt 0.93-0.95s @128 vs the run-9
 
 ### Deviations for ratification (SEED TO NEXT EPOCH)
 
+RATIFIED 2026-07-16 (owner, at close — all four as recorded below):
+the P2c residual config-@recompute fence, the config_agg_2 follow-on
+carry, the landed Site-5 coverage/payload scope (tree shape via the
+structural golden gate), and the FINDINGS.md no-entry disposition.
+Nothing re-opens; the §16 seed carries them as settled.
+
 1. P2c RESIDUAL FENCE: config-column aggregates whose functor is not
    @invertible (incl. the over() undeclared default → @recompute) are
    rejected with a clean diagnostic — lifting the fence unconditionally
