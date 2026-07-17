@@ -346,6 +346,16 @@ recount input; the recognizer dependency stated) before any emission.
    §5 hand-written graph) + the D1 amendment + re-judge run first; a
    go/no-go checkpoint follows. If either fails, D4 re-seeds to the
    follow-on epoch.
+   [2026-07-17 later: GO given (single-adornment slice first); the
+   S1+S2 foundation landed 0f396116; the S3 graph-surgery core
+   stopped per R4/P3 and re-chartered as a design sub-task.]
+5. D4-S3 RATIFIED (2026-07-17, after the three-round judge): A1 —
+   FabricateDemandLocal (the second fabricated decl, display-buffer
+   naming, F5 obligation); A2 — the pass mints the demand relation's
+   MERGE/reader plumbing itself (resolution (ii)). S3+S4 implement
+   TOGETHER under the re-staged plan (S3a-S3d dump-diff gates → S4
+   answer gate → S5 witness → S6 COST), Fable review before the
+   emission commit.
 
 ## 2.2 Implementation record (one diff at a time)
 
