@@ -1005,3 +1005,502 @@ walk + minted-QueryIO plumbing are the two new pieces), and the SIP rule
 is the risk. RECOMMEND the hand-demanded-`.dr` checkpoint-3 spike (cheap,
 de-risking) as the immediate next step, with D4 proper gated on that
 spike matching §5.a/§5.b.
+
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+## AMENDMENTS (2026-07-17, post-judge)
+
+Judge verdict on the body above: **REVISE** — one CRITICAL (F1: §1's
+message-object level answered wrong) + one HIGH (F2: the fabricated
+message leaks a PUBLIC entry point). Eight other attack surfaces SOUND
+(the DataFlow-graph half: demand relation + guarded copy + CSE discharge
+§3.x + inertness §2.3 + stratification §3(a) + mode-gate + rewrite-not-
+evaluator + off-ABI). This section RE-SPECIFIES §1's mechanism and the F2
+suppression, and re-walks the (a)-(f) argument only where the change
+touches it. **Everything the judge marked SOUND stands unamended; where a
+sound section merely REFERENCED the now-superseded "Option D, no
+ParsedMessage" phrasing, read it as `Option D′` below — the graph objects
+it argues about are unchanged.**
+
+Every anchor re-verified against branch tip 76b38c7d THIS session; the
+judge's J1-J13 table was re-checked file:line-by-file:line and holds.
+Amendment-specific anchors are numbered B-series.
+
+### A0. AMENDMENT ANCHOR TABLE (read this session, tip 76b38c7d)
+
+| # | Anchor | Fact |
+|---|--------|------|
+| B1 | Procedure.cpp :390-399 | `BuildIOProcedure`: :390 `assert(io.Declaration().IsMessage())`; :391 `ParsedMessage::From(io.Declaration())`; :393-394 creates the `kMessageHandler` proc; :399 `messsage_handler.emplace(message, io_proc)` — the demand IO's handler is minted HERE, keyed by the message decl (J3 re-confirmed). |
+| B2 | Build.h :106 | `unordered_map<ParsedMessage, PROC*> messsage_handler` (J4 re-confirmed). |
+| B3 | Parse.cpp :158-166 | `ParsedDeclarationImpl(ParsedModuleImpl *module_, DeclarationKind kind_)`: builds `context = make_shared<DeclarationContext>(kind_)`, `parameters(this)`, and self-registers as a redeclaration use. The MINIMAL object: a module ptr + a kind. |
+| B4 | Parse.cpp :828-830 | `ParsedDeclaration::IsMessage() = Kind()==DeclarationKind::kMessage`. |
+| B5 | Parse.cpp :1314-1317 | `ParsedMessage::From(decl)`: `assert(decl.IsMessage()); reinterpret_cast<const ParsedMessage&>(decl)`. So a `kMessage`-kind `ParsedDeclarationImpl` IS a `ParsedMessage` — no separate object. |
+| B6 | Parse.cpp :1326-1331 | **`ParsedMessage::IsPublished() = !impl->context->clauses.Empty()`; `IsReceived() = clauses.Empty()`.** Published/received is CLAUSE-KEYED, not a stored flag. A demand message has NO defining clause (its rows arrive only via the injector), so it is RECEIVED and NOT PUBLISHED by construction. |
+| B7 | Message.cpp :133-158 | the REAL message finalize: `AddDecl<ParsedMessageImpl>(module, kMessage, name, params.size())`; `module->messages.AddUse(message)`; per-param `message->parameters.Create(message)` with `opt_type`/`parsed_opt_type`/`name`/`index`; then `rparen`/`name`/`directive_pos`. The construction template the fabrication reproduces. |
+| B8 | Aggregate.cpp :111-132 | **IN-REPO PRECEDENT** for programmatic decl construction: mints a synthetic `ParsedLocalImpl` via `module->declarations.CreateDerived<ParsedLocalImpl>(module, DeclarationKind::kLocal)` + `module->locals.AddUse(anon_decl)`, names it with `Token::Synthetic(Lexeme::kIdentifierUnnamedAtom, tok_range)` and a synthetic pragma `Token::Synthetic(kPragmaPerfInline, DisplayRange())`. A ParsedDeclaration IS constructed from code today; the demand-message fabrication is the `ParsedMessageImpl` analogue. |
+| B9 | Parse.h :448-451 | `class ParsedMessageImpl : public ParsedDeclarationImpl { using ParsedDeclarationImpl::ParsedDeclarationImpl; };` — no extra state; the base (module_, kind_) ctor is structurally sufficient. |
+| B10 | Parser.h :218-272 | `AddDecl<T>`: `module->declarations.CreateDerived<T>(module, kind)` + registers in the parser-local `context->declarations[id]` name-arity map. The id-map is consulted ONLY by the parser for redeclaration merge; a post-parse fabrication with a fresh synthetic name needs the DefList + `messages` list, NOT the id-map. |
+| B11 | Query.h :191-207 | `QueryIOImpl(ParsedDeclaration declaration_)` — `const ParsedDeclaration declaration` set at construction (J7 re-confirmed). `ios.Create(decl)` / `decl_to_input[decl]` (DataFlow Build.cpp :227-229) both consume it. The fabricated `ParsedMessage` is EXACTLY this argument. |
+| B12 | Database.cpp :1350-1361 | DatabaseLog hook loop: `for (ParsedMessage message : Messages(module)) { if (!message.IsPublished()) continue; ...emit hook... }`. IsPublished-gated → a demand message (B6, not published) is SKIPPED. No log-hook leak, no bit needed for the log side. |
+| B13 | Database.cpp :1426-1457 | Message ENTRY-POINT loop: `for (ProgramProcedure proc : program.Procedures()) { if (proc.Kind() != kMessageHandler) continue; ...emit public friend... }`. Gated ONLY on the proc kind, NOT IsPublished / not the message. THIS is the F2 leak: a demand message's kMessageHandler proc emits `friend auto d_p_alpha_N(Database&, Log&, Functors&, Vec<...>)`. |
+| B14 | Database.cpp :3018 | a second kMessageHandler-keyed emission (`using ...Message()->Name()...`) — a type alias, also keyed off the handler proc. The suppression must be sited so this stays consistent (see F2-fix scope). |
+
+### A1. §1 RE-SPECIFIED — the mechanism is `Option D′`: fabricate a real ParsedMessage at DataFlow-build time (mode-gated), suppress its public entry point
+
+The judge's F1 is CORRECT and I accept it in full. The body §1.2's Option
+D ("mint the QueryIO/receive as pure DataFlow objects WITHOUT a
+ParsedMessage, reusing BuildIOProcedure/BuildPredicate unchanged") is
+FALSE against the code: `messsage_handler` is `ParsedMessage`-keyed (B2),
+`BuildIOProcedure` asserts `IsMessage()` and does `ParsedMessage::From`
+(B1), `QueryIOImpl` carries a `const ParsedDeclaration` (B11), and
+`BuildPredicate`'s receive branch requires `decl.IsMessage()` (J8). There
+is NO path to the E-45 handler wiring that does not pass through a real
+`ParsedMessage`. Option D as written is retracted.
+
+**THE MECHANISM (Option D′).** The demand pass, still slotted at DataFlow
+`Query::Build.cpp:2566` (AFTER `ConnectInsertsToSelects`, BEFORE
+`Optimize`/`Stratify`), and still mode-gated, does — per demanded live
+adornment `p^α` (|bound(α)| ≥ 1) — the following. **The entire body runs
+only when the mode flag is on; the module-registration in step 1 is
+INSIDE the gate (the judge's ATTACK-6 caveat: a registration outside the
+gate would perturb `Messages(module)` iteration and the round-trip).**
+
+  1. **FABRICATE a real `ParsedMessage` declaration `d_p^α`**, registered
+     in the `ParsedModuleImpl`, following the B8 in-repo precedent (the
+     `Token::Synthetic` idiom) and the B7 finalize template. Concretely,
+     the MINIMAL well-formed `ParsedMessageImpl` needs (grounded in B3/B7/
+     B9):
+       - a module ptr and `DeclarationKind::kMessage` (the B3 base ctor:
+         `module->declarations.CreateDerived<ParsedMessageImpl>(module,
+         DeclarationKind::kMessage)` — the exact B8 call with the message
+         subtype). This gives it a fresh `DeclarationContext(kMessage)`,
+         self-registered as its sole redeclaration.
+       - enrollment in the module's message list: `module->messages.AddUse(
+         d_msg)` (B7) — so `Messages(module)` (B12) and any
+         `ParsedMessage::From` see it.
+       - a synthetic name token: `Token::Synthetic(kIdentifierAtom,
+         DisplayRange())` (or `kIdentifierUnnamedAtom` per B8), a
+         collision-free generated spelling like `d_<p>_<α>` — the demand
+         relation and its message share this name.
+       - one param per BOUND column of α, each a
+         `d_msg->parameters.Create(d_msg)` with `opt_type` = the source
+         column's type token (carried from `p`'s parameter, NOT re-lexed —
+         B7's `param->opt_type = p_type`), `parsed_opt_type`, `name` (a
+         synthetic variable token), and `index` (B7 :151). Arity =
+         |bound(α)|.
+       - `d_msg->rparen`/`d_msg->name`/`d_msg->directive_pos` set to
+         synthetic/`DisplayRange()` values (B7 :154-158) — used only by
+         diagnostics, which never fire on the synthetic path (no user
+         redeclaration to conflict with; the name is collision-free).
+     **This is exactly Option P's fabrication, moved to DataFlow-build
+     time** — which the judge verified is TIMING-FEASIBLE: it escapes the
+     debug round-trip (J11: the round-trip re-parses the ORIGINAL source
+     text before `Query::Build`, so a `Query::Build`-time fabrication is
+     never re-lexed and needs no display tokens / spelling to survive a
+     re-lex — the body §1.2's "Option P round-trip killer" does NOT apply
+     to a DataFlow-time fabrication) and escapes the three E-37 gates
+     (gate 1 :1025 / gate 2 :1146 fire only when `ParsedClause/Query::
+     ForcingMessage` are CALLED, which the demand pass never does; gate 3
+     DataFlow :1911 fires inside `BuildClause`, before the :2566 slot —
+     ATTACK 2 SOUND). The body §1.2's rejection of Option P was on the
+     PARSE-POST-PROCESSING timing (round-trip + id-stream); at DataFlow
+     time those objections evaporate. So Option D′ is "Option P's object,
+     Option D's timing + gate-bypass." Option D's central selling point
+     ("no parse objects") is RETRACTED, per the judge.
+  2. **FABRICATE a `ParsedPredicate` over `d_p^α`** and drive
+     `BuildPredicate` (J8) with it — minting the `QueryIO` (`ios.Create(
+     decl)` / `decl_to_input[decl]`, B11) with a non-empty `Receives()`
+     and the receive SELECT view, EXACTLY as the user forcing path does
+     for a real `#message`. Because `decl.IsMessage()` is now TRUE (the
+     fabricated decl is `kMessage`-kind, B4/B5), the message branch fires
+     unchanged. This is the demand relation `d_p^α`'s producing SOURCE
+     (obligation (f) source 1).
+  3. mint the guarded copy `p'^α = p ⋈ d_p^α` (the ⊥c-pivot JOIN, §1.1 —
+     UNCHANGED, judge-SOUND) and the recursive-subgoal projection source
+     (f-source 2, §3.x — UNCHANGED, judge-SOUND).
+  4. **At ControlFlow, the E-45 wiring now fires for free BY THE SAME
+     PATH the body claimed** — but now truthfully: `BuildIOProcedure` (B1)
+     sees the demand `QueryIO` (its `Receives()` non-empty), passes the
+     `:390` `IsMessage()` assert (the decl IS a message now),
+     `ParsedMessage::From` succeeds (B5), mints the `kMessageHandler`
+     proc, and populates `messsage_handler[d_p^α]` (B1 :399). The
+     generalized injector's CALL target (A4) exists. The body's E-45
+     claim was RIGHT about the path and WRONG about "no ParsedMessage";
+     Option D′ makes the path true.
+  5. the injector (`BuildQueryForceProcedureImpl`, A1) generalized to
+     CALL `messsage_handler[d_p^α]` — UNCHANGED in shape (VECTORAPPEND →
+     CALL → RETURN), per body §1.3 step 5.
+
+**Why fabricating a real ParsedMessage does not re-open the E-37 gates or
+the round-trip** (the judge verified this; re-stated as the amendment's
+commitment): the fabricated message is NEVER attached as any query's
+FORCING message (`ParsedQuery::ForcingMessage` is not called for it — the
+demand pass supplies its OWN injector, body §1.3 / judge ATTACK 2), so
+gates 1-2 are unreached; it is minted at :2566, past gate 3's BuildClause
+site; and it is minted in `Query::Build`, downstream of the Main.cpp:128
+round-trip. The one NEW obligation the judge names is discharged in F2
+below.
+
+### A2. F2 SUPPRESSION — the fabricated message must NOT get a public entry point (B13) nor a log hook (B12, already free)
+
+The judge's F2 (HIGH): the entry-point loop (B13, Database.cpp:1426-1457)
+is gated only on `proc.Kind()==kMessageHandler`, so the demand message's
+handler proc leaks `friend auto d_p_alpha_N(Database&, Log&, Functors&,
+Vec<...>)` into the public `datalog.h` — a driver-callable ABI entry the
+user never wrote and MUST NOT call (a raw call injects unguarded demand
+rows, corrupting the demand frontier). The body §5.c models only the
+QUERY signature change and MISSES this. Accepted.
+
+**The log side is ALREADY safe (B12), no work needed.** New finding
+beyond the judge: `IsPublished()` is CLAUSE-keyed (B6) — a demand message
+has no defining clause, so `IsReceived()` is true and `IsPublished()` is
+false. The DatabaseLog hook loop (B12) is `IsPublished`-gated, so it
+skips the demand message with zero changes. So F2 is PURELY the
+entry-point loop (B13); the log hook needs no suppression and no
+is_published bit.
+
+**Two suppression options, priced on blast radius against the invariant
+that `force.dr`'s REAL message entry (`trigger_generate_next_id`) stays
+public and byte-identical:**
+
+  - **Option F2-A: an `is_synthetic` bit on `ParsedDeclarationImpl`,
+    consulted by the B13 codegen loop.** Add a `bool is_synthetic{false}`
+    to `ParsedDeclarationImpl` (Parse.h), set true only by the demand
+    fabrication (step 1). At B13 add `if
+    (proc.Message()->impl->is_synthetic) continue;` (a
+    `ParsedMessage`-level accessor). Blast radius: one field + one
+    predicate + the one guard line. It does NOT touch `force.dr`'s path —
+    `trigger_generate_next_id` is a real parsed message, `is_synthetic`
+    false, entry stays emitted byte-identically. The B14 second emission
+    (Database.cpp:3018, the type alias) must ALSO consult the bit if it
+    would otherwise name the synthetic handler — one more guard line, same
+    predicate. CLEAN but ADDS PARSE STATE (a field on the parse IR that
+    exists solely for codegen) — a mild layering smell (the parse IR
+    learning about a codegen concern).
+  - **Option F2-B: key off `IsPublished()` / a demand-message registry on
+    the Program.** Two sub-variants:
+      (i) Gate B13 on the message like B12 does: `if
+      (!proc.Message()->IsPublished()) continue;`. **REJECTED — it changes
+      existing behavior:** a user `#message` that is purely RECEIVED (a
+      real inbound message with no defining clause, e.g. `edge_2` in the
+      witness, or any `#message` a program only receives) is ALSO
+      `IsReceived()`/not-`IsPublished()` (B6). Gating B13 on IsPublished
+      would DELETE the public entry point for EVERY received user message —
+      that is the PRIMARY message-ingestion ABI (`edge_2(db, log, functors,
+      Vec<...>)`), and force.dr's own `trigger_generate_next_id` is a
+      received message → its entry would vanish, breaking the injector
+      wiring AND every received-message driver. Byte-identity FAILS on 165.
+      This confirms IsPublished is the WRONG discriminator: published ≠
+      "the entry-point should exist" (it is nearly the opposite —
+      RECEIVED messages are exactly the ones that need a public entry).
+      (ii) A `demand_messages` registry (a `std::unordered_set<ParsedMessage>`
+      or a flag threaded onto `ProgramImpl`/the `kMessageHandler`
+      `ProcedureImpl`) populated by the demand lowering, consulted at B13:
+      `if (program.IsDemandMessage(proc.Message())) continue;`. Blast
+      radius: a set on the Program + population at demand-lowering + the
+      one guard line. Does not touch the parse IR. Keeps `force.dr` public
+      (its real message is never registered). This is F2-A's semantics
+      moved off the parse IR onto the Program — cleaner layering, slightly
+      more plumbing (thread the registry Program→codegen).
+
+**DECISION: Option F2-B(ii) — a demand-message registry on the Program,
+consulted at B13.** Rationale: (1) it keeps the discriminator OFF the
+parse IR (no codegen concern leaking into `ParsedDeclarationImpl`), which
+matches the house layering discipline; (2) it CANNOT accidentally
+suppress a user message — only messages the demand pass itself registered
+are hidden, so `force.dr`'s `trigger_generate_next_id` and every received
+user message keep their public entry byte-identically (the F2-B(i)
+regression is structurally impossible); (3) the registry is the natural
+carrier for any future demand-message-specific codegen (e.g. the B14
+alias, the injector siting) — a single authority the codegen consults,
+rather than a scattered bit. The residual cost over F2-A is threading the
+registry Program→Generator (one member + one populate site + the two
+guard lines at B13 and B14). `is_synthetic` (F2-A) is the fallback if
+threading the registry proves heavier than expected in D4; both suppress
+identically at B13 and both keep force.dr byte-identical. **F2-B(i) is
+recorded as REJECTED (byte-identity failure) so D4 does not re-derive it.**
+
+### A3. §7 ITEM 2 UPDATED — the D4 scope for the minted message plumbing
+
+Body §7 item 2 read: "minting a `QueryIO` with a non-empty `Receives()`
+and a receive-view WITHOUT a `ParsedMessage` (Option D's genuinely new
+surface) ... reuse A5's `BuildIOProcedure` and A11's `BuildPredicate`
+unchanged." **REPLACE with:**
+
+> 2. **THE FABRICATED DEMAND MESSAGE + minted QueryIO/receive plumbing
+>    (Option D′, §A1):** at the :2566 demand pass, per live adornment —
+>    (a) fabricate a real `ParsedMessageImpl` (B3/B7/B8/B9 idiom:
+>    `module->declarations.CreateDerived<ParsedMessageImpl>(module,
+>    kMessage)` + `module->messages.AddUse` + synthetic name/param tokens
+>    carrying `p`'s bound-column types), registered in the
+>    `ParsedModuleImpl`, **inside the mode gate**; (b) fabricate a
+>    `ParsedPredicate` over it and drive `BuildPredicate` (J8) to mint the
+>    `QueryIO`/receive/SELECT UNCHANGED. Reuses `BuildIOProcedure` (B1)
+>    and `BuildPredicate` (J8) with NO changes — the new code is the
+>    ParsedMessage/ParsedPredicate FABRICATION (the B8 precedent
+>    generalized) plus the QueryIO synthesis, not new lowering.
+> 2a. **F2 SUPPRESSION (§A2): a demand-message registry on the Program,
+>    consulted at the message-entry-point codegen loop (Database.cpp:1426,
+>    B13) — `if (program.IsDemandMessage(proc.Message())) continue;` — and
+>    at the B14 alias site.** The log-hook loop (B12) needs NO change (a
+>    demand message is unpublished by B6, already skipped). Do NOT gate
+>    B13 on `IsPublished` (F2-B(i), REJECTED: it deletes the public entry
+>    for every RECEIVED user message, breaking 165-byte-identity and the
+>    force.dr injector wiring).
+
+### A4. (a)-(f) RE-WALK — only where Option D′ touches it
+
+The judge marked (a) stratification, (b) structural distinctness, (c)
+keep-last-edge, (d) rewrite-not-evaluator, (e) all-free skip, and §3.x
+CSE all SOUND. Option D′ changes ONLY the message-object level (object 3's
+source), so the touch is confined to (d) and (f):
+
+  - **(d) rewrite-not-evaluator — STILL SOUND, and MORE faithful.** The
+    judge's own ATTACK 8 note: fabricating a `ParsedMessage` is MORE
+    faithful to rewrite-not-evaluator than the rejected Option C's
+    hand-built runtime handler. Option D′ adds NO DR op, no runtime store,
+    no goal stack — the fabricated message lowers through the EXISTING A5
+    IO-proc path; the injector is the same push-only batch. The one new
+    object is a `ParsedMessageImpl`, a compile-time parse object, not a
+    runtime dispatcher. SURVIVES.
+  - **(f) every `d_p^α` has a real producing source — now stands on the
+    FABRICATED RECEIVE.** The body §3(f) argued (f) against "the minted
+    receive." Under Option D′ that receive is minted by `BuildPredicate`
+    (J8) FROM the fabricated `ParsedMessage`, so it is a REAL DataFlow
+    source node (a `QueryIO` with non-empty `Receives()` + its SELECT),
+    structurally present at both DataFlow (dead-flow keys on structural
+    source presence, not row count) AND ControlFlow (`BuildIOProcedure`
+    mints its receive proc, B1). The judge's ATTACK 3 caveat — "(f)
+    survives IFF F1 is resolved by fabrication; it does NOT survive under
+    the literal no-ParsedMessage Option D" — is EXACTLY discharged by
+    Option D′: the fabrication is now the mechanism, so (f)'s real-source
+    claim STANDS on the fabricated receive. The epoch-0-empty argument
+    (empty table, structurally-present source, empty-until-injected like
+    force.datalog.h's `get_next_id_4`) is unchanged and SOUND. The (f)
+    tripwire (post-transform assert every `d_p^α` has ≥1 producing view)
+    is unchanged.
+
+  All other lettered obligations are UNTOUCHED by the message-level
+  change (they argue about the demand RELATION and guarded COPY, which
+  Option D′ leaves identical to the body). Read every "Option D" in §3
+  and §5 as "Option D′".
+
+### A5. §5.b IR ANNOTATION CORRECTED (judge ATTACK 5)
+
+Body §5.b annotates `proc ^receive:d_path_bf/1` as "minted by
+BuildIOProcedure (A5)". The judge's ATTACK 5: BuildIOProcedure mints that
+proc ONLY from a message-kind QueryIO — so the annotation silently
+assumed the fabricated `ParsedMessage` the body §1.3 said did NOT exist.
+Under Option D′ the annotation is now TRUE as written (the QueryIO's decl
+IS a message). The §5.b IR is self-consistent under Option D′. Also
+flagged by the judge (UNVERIFIED, not a hole): the synthetic receive must
+enroll in the kIngestFold census (`MakeStageOneIngestFolds` /
+`MakeMonotoneIngestFold`, DR.cpp) and pass V-INGEST-XCHECK Site 5. Option
+D′ makes the receive a REAL message receive, so it flows through the same
+enrollment as any user message — but this is a D4 verification item, and
+the spike (§SPIKE below) exercises exactly this path on a hand-written
+equivalent.
+
+### A6. THE CHECKPOINT-3 SPIKE (owner decision 4) — RAN, GREEN
+
+Per ledger §2.1 decision 4, I hand-authored the EXACT `.dr` Option D′ would
+synthesize for the §5 witness (bf shape) and compiled it with the frozen
+ca569dd8 snapshot binary in all 4 modes, then diffed the emission against
+§5.a/§5.b/§5.c. The witness `demanded_tc_spike.dr`: base `edge_2` +
+a real `#message d_path_bf(u64 From)` (the fabricated demand message,
+hand-written) + demand relation `d_path` fed by it + demand-guarded copies
+of `path`'s two rule bodies joined against `d_path` on the bound `From`
+column + the `#query reachable_from(bound From, free To) @first : @first
+d_path_bf(From), path(From, To)` (force.dr `@first` spelling).
+
+**COMPILE VERDICT: PASS in ALL 4 MODES (opt / nocf / nodf / none), rc=0,
+zero diagnostics.** The spike is expressible in today's surface — the
+forcing syntax did NOT fight the one-forcer gates (the query carries
+exactly ONE forcing predicate on ONE adornment, so E-37 gates 1-3 are all
+satisfied; the multi-adornment tension the body §2.1 flags is a
+transform-time concern, not a surface-expressibility one for the single-bf
+witness). Table map (IR column comments × the `.dr`): `%table:23[u64]` =
+`d_path` ingested (demand-message receive target); `%table:8[u64]` (col
+comment "From, F") = the FUSED `d_path` (CSE of the two demand sources);
+`%table:11[u64,u64]` = `path` (the guarded copy); `reachable_from_4` = the
+query answer table.
+
+**MATERIAL DIFF FINDINGS (each tagged, .ir/.h line evidence):**
+
+  - **SPIKE-CONFIRMED (§5.b injector):** the injector proc appears and CALLs
+    the demand handler. `spike.opt.ir:94-99` `^inject:105` →
+    VECTORAPPEND{@From} → CALL `^receive:d_path_bf/1:94` → RETURN true —
+    exactly the §5.b shape. `datalog.h:282-287` `inject_105`:
+    `Vec.Add({v106})` → `d_path_bf_1_detail(...)` → return true. Present in
+    nocf too (`spike.nocf.ir:102-106`).
+  - **SPIKE-CONFIRMED (§5.c query API + wiring):** `reachable_from_bf` gains
+    `(db, Log&, Functors&, uint64_t From)`, calls `inject_105(...,From)`
+    THEN reads the answer (`datalog.h:209-213`) — exactly E-44 / §5.c (Log
+    threaded unused). **SUB-FINDING de-risking F2:** the injector calls
+    `d_path_bf_1_DETAIL` (the internal twin), NOT the public friend
+    `d_path_bf_1` — so suppressing the public friend (§A2) does NOT break
+    the injector.
+  - **SPIKE-CONFIRMED (F2, the judge's HIGH — the leak is REAL):**
+    `datalog.h:178-183` emits `// Message d_path_bf/1.` +
+    `friend auto d_path_bf_1(Database&, Log&, Functors&, Vec<Tup_u64>)`.
+    Present in ALL 4 modes (grep count 1 each). This is precisely the B13
+    leak §A2's registry suppresses — the spike EMISSION-CONFIRMS F2 is not
+    hypothetical.
+  - **SPIKE-CONFIRMED (B6/B12 log side already safe):** `struct
+    DatabaseLog {}` is EMPTY — `d_path_bf` (unpublished, received-only)
+    gets NO log hook, empirically confirming §A2's "log side free."
+  - **SPIKE-CONFIRMED (§5.b ingest fold):** the demand relation gets a real
+    receive + ingest fold. `^receive:d_path_bf/1:94` (IR:82) → `^entry:26`
+    → `update-count +nonrecursive {@From} in %table:23` (IR:62, the
+    empty-hole UPDATECOUNT the eager descent fills) — the LowerIngestFold
+    shape, flowing through the SAME machinery as `edge_2`'s receive
+    (`^receive:edge_2/2:98`). The judge's ATTACK-5 "UNVERIFIED enrollment"
+    item is now EXERCISED: the demand receive ingests exactly like a user
+    message.
+  - **SPIKE-CONFIRMED (§3(b) guard JOIN survives Optimize + §3.x CSE
+    fusion):** the guarded copy did NOT collapse. In opt mode the answer
+    `%table:4` is filled by JOINing `d_path` (`%table:23`, `%index:25` on
+    From) against `path` (`%table:11`, `%index:50` on From) on the From
+    pivot (IR:200-206, and IR:181-188 for the recursive contribution). The
+    demand pivot is a live column edge through Optimize (keep-last-edge).
+    Table count identical across opt/nodf/none (6 each) — opt-stable. The
+    §3.x shared-demand-frontier fusion is EMISSION-VISIBLE: `%table:23`
+    (ingested) and `%table:8` (fused `d_path`, col comment "From, F" = both
+    source labels) wired by the if-crossed at IR:62-66.
+  - **SPIKE-DIVERGENT (minor, a §5.a ASCII clarification, NOT a hole):**
+    the query reads the ANSWER relation `reachable_from_4`, NOT the guarded
+    `path` table directly (§5.a's ASCII said "reads the guarded path"). In
+    reality `reachable_from` is a separate `#query` relation that projects
+    from `path` via its own clause (`reachable_from(F,T):path(F,T)`), so it
+    reads `reachable_from_4`, which is filled by the guard JOIN re-applied
+    at the projection (IR:202-206). This is how EVERY `#query` relation
+    projects from a `#local` (identical to tc.dr's `reachable_from` vs
+    `tc`). The guard JOIN survives; it lands at the query's projection
+    relation, not "directly off path." §5.a's ASCII is schematically
+    correct; the concrete emission routes through the projection.
+  - **SPIKE-NOTE (out of scope for bf, honestly recorded):** the spike
+    encodes ONLY guarded `path` rules (as the transform emits IN PLACE OF
+    the unguarded ones), so there is NO coexisting unguarded `path` to
+    dead-flow-eliminate — §5.a's "unguarded path is DEAD → eliminated"
+    claim is NOT EXERCISED by the single-bf witness. Dead-flow elimination
+    of a coexisting full copy matters only under the tc.dr inertness case
+    (§2.3, all-free sibling), out of scope here.
+  - **FINDING (surface, not a failure):** the lexer rejects non-ASCII in
+    COMMENTS (the first spike author hit an em-dash → "Invalid character in
+    stream" at line 1). This is the `nonascii_1` diagnostic extended to
+    comments. Irrelevant to Option D′ (which NEVER generates source text —
+    it fabricates parse OBJECTS, not `.dr` bytes), but recorded so D4 does
+    not accidentally take a source-generator path that would need ASCII
+    hygiene.
+
+**SPIKE VERDICT: checkpoint-3 GREEN.** Every material §5.a/§5.b/§5.c
+prediction is EMISSION-CONFIRMED (injector, handler wiring, ingest fold,
+guard-JOIN survival across all modes, CSE fusion, query-API churn, the F2
+leak, log-side safety). One minor ASCII clarification (query reads via its
+projection relation) and one out-of-scope un-exercised claim (dead-flow
+elim, bf has no full copy). NO divergence invalidates Option D′; the F2
+leak the spike confirms is exactly what §A2 suppresses. The go/no-go
+checkpoint (decision 4) has its GO evidence: the hand-authored transform
+output compiles and behaves as designed.
+
+Spike artifacts: `.../scratchpad/d1-spike/demanded_tc_spike.dr`,
+`spike.{opt,nocf,nodf,none}.ir`, `gen-{opt,nocf,nodf,none}/datalog.h`.
+Working log: `.../scratchpad/d1-amend-log.md`.
+
+### A7 — round-2 findings folded (2026-07-17, per judge-d1-round2)
+
+Round-2 re-judge (`judge-d1-round2.md`, branch tip 76b38c7d) DISCHARGED F1
+(CRITICAL) and F2 (HIGH) against the A1/A2 fabrication above and returned
+**VERDICT: APPROVE-WITH-NITS, D4 GO conditioned on folding G1 into this
+artifact.** Four new findings (G1-G4), folded below. The round-2 judge also
+independently re-confirmed the pruning-location claim implicit in A6's
+spike: tracing every write to `%table:11` (`path`) in `spike.opt.ir`/
+`spike.nodf.ir`, the recursive-extension scratch `%table:19` is itself
+`d_path(F) ⋈ path(F,M)` (`%table:8` join), so **the guard prunes `path`'s
+OWN materialization upstream of the fixpoint, not merely the
+`reachable_from` answer projection** — "PRUNING HAPPENS AT path's
+MATERIALIZATION, the demand benefit is real on this witness, and the
+measure-first claim survives" (judge-d1-round2.md §3.2). A6's
+SPIKE-DIVERGENT note is accurate about the query READ (`reachable_from_4`,
+not `path` directly) but under-states that the guard also lands, load-
+bearingly, inside the fixpoint via `%table:19`.
+
+- **G1 (HIGH, against A1 step 1 and A3) — REPLACES the naming recipe.**
+  A1 step 1's `Token::Synthetic(kIdentifierAtom, DisplayRange())` recipe is
+  WRONG as written and MUST NOT be used. Two compounding facts (judge
+  anchors: `Token.cpp:414-419`, the `default:` case of `Token::Synthetic`,
+  stores only `Lexeme` + `SpellingWidth` — no `lex::Id`, so no path
+  produces a NAMED `kIdentifierAtom`; `Format.cpp:12`,
+  `default: os << tok.SpellingRange();` → `Database.cpp:200-202`,
+  `Sanitize(ToString(proc.Message()->Name())) + "_" + Arity()`) mean an
+  empty-`DisplayRange` synthetic identifier prints NOTHING: the message
+  name is empty and the proc is named `_1`, colliding across every
+  same-arity demand message. Synthetic identifier atoms are structurally
+  TEXT-LESS — codegen resolves the message name (and, identically, each
+  param's name/type spelling, `Database.cpp:1315`/`:1529`) via
+  `SpellingRange`, which only prints real interned display data.
+  **CORRECTED RECIPE (the Aggregate.cpp precedent's route,
+  `lib/Parse/Aggregate.cpp:120-121`):** the fabrication must intern a
+  synthesized name string (e.g. `d_<p>_<α>`) as a real buffer in the
+  `DisplayManager` (the `TryReadData`-backed route Aggregate.cpp uses,
+  reusing a REAL lexed/opened range rather than an empty one — concretely,
+  open a synthetic `Display` for the generated spelling and mint the name
+  token's `DisplayRange` over it), and construct the name token from THAT
+  range — not `DisplayRange()` — so `Token::Synthetic`'s `SpellingRange()`
+  resolves to the intended text and `ToString`/`Sanitize` print it
+  correctly; the same interning applies to each fabricated parameter's
+  name token. A3 item 2(a)'s "synthetic name/param tokens carrying `p`'s
+  bound-column types" is unchanged for TYPES (those reuse `p`'s real,
+  already-interned type token per B7) but for the NAME tokens must read
+  "interned synthetic display data," not a bare `Token::Synthetic(...,
+  DisplayRange())`. D4-blocking: the fabrication step must not be written
+  against the old recipe.
+
+- **G2 (LOW) — module-reuse invariant, recorded as a D4 obligation.** The
+  fabrication (A1 step 1) mutates the shared `ParsedModuleImpl` (registers
+  a decl in `module->messages`) inside the mode gate. This assumes
+  `Query::Build` runs AT MOST ONCE per parsed-module instance — true today
+  (`Main.cpp`: one `CompileModule` call per module; the debug round-trip
+  re-parses into a FRESH module, so it never observes the fabrication).
+  D4 must either preserve this call-once invariant at the API boundary, or
+  make the fabrication step idempotent / detect-and-reject stale fabricated
+  decls on re-entry (e.g. a re-run must not re-fabricate onto a module that
+  already carries demand decls from a prior `Query::Build`). No current
+  trigger; record as a D4 implementation obligation, not a design change.
+
+- **G3 (LOW) — mechanize the collision-free name.** A1 step 1's "a
+  collision-free generated spelling like `d_<p>_<α>`" is asserted, not
+  mechanized: `CreateDerived` bypasses `AddDecl`'s redeclaration id-map, so
+  a fabricated name colliding with a user-written `#message` of the same
+  spelling/arity would NOT merge (unlike normal redeclaration) and would
+  instead produce two decls sharing a printed name — two `kMessageHandler`
+  procs, ambiguous/duplicate friend emission (`ParsedMessage` keys the
+  `messsage_handler` map by identity, but codegen names by spelling, so the
+  collision surfaces at emission, not at the map). D4 must mechanize
+  collision-freedom via a RESERVED PREFIX: `__demand_` + query name +
+  adornment string, checked at fabrication time by a uniquing scan against
+  `module->declarations` (the DefList any real decl is enrolled in). A user
+  message whose spelling collides with the reserved prefix is a
+  (vanishingly unlikely) clean-diagnostic reject — the parser rejects
+  user-authored `__demand_`-prefixed message names — rather than a silent
+  merge or a silently ambiguous emission.
+
+- **G4 (INFO) — multi-adornment fabrication remains paper-only, honestly
+  flagged.** The A6 spike exercises exactly ONE fabricated message on ONE
+  adornment (the bf witness); the four-adornment tc path — which under
+  Option D′ mints FOUR fabricated messages and never calls
+  `ParsedQuery::ForcingMessage` (the demand pass supplies its own
+  injector) — is argued on paper only, so E-37 gates 1-2 are bypassed BY
+  CONSTRUCTION (never calling `ForcingMessage`), not exercised. This is
+  correctly scoped in A6 already and is not a new hole; recorded here so
+  D4 treats multi-message fabrication + multi-injector wiring as un-spiked
+  terrain.
+
+**Round-2 VERDICT: APPROVE-WITH-NITS; D4 GO conditioned on this A7
+(the G1 naming-recipe fix folded before the fabrication is written).**
+Pruning-location confirmation (judge's trace): `%table:19` (the recursive
+scratch) = `d_path(F) ⋈ path(F,M)`, so every write to `%table:11` (`path`)
+is upstream-gated by `d_path` — the guard prunes `path`'s own
+materialization inside the fixpoint, not merely the `reachable_from_4`
+projection; the measure-first claim stands.
+

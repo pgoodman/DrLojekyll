@@ -1094,3 +1094,566 @@ census WILL fire on first run. §6 P6 registers WHERE.
   Both closures are SUBSTRATE-FIRST and surface-INDEPENDENT: the store,
   census, and validators land under SURFACE-2 (D1-independent, this epoch)
   and carry to SURFACE-1 (D1-dependent, follow-on) unchanged.
+
+
+======================================================================
+## AMENDMENTS (2026-07-17, post-judge)
+======================================================================
+Judge-d3 returned VERDICT REVISE with F1-F9 (two CRITICAL at the rebuild
+boundary). The body above (§1-§7) is LEFT INTACT as the record of the
+first design; this section is the substantial redesign that supersedes
+§1.4's "one monotone table, two predicates" model where the two conflict.
+Every anchor here was re-read THIS session on branch demand-seeds (Table.h,
+StateCell.h END TO END; the judge report; lane-substrate.md; p2b §1.5/§3/
+§7.3). Each amendment is TAGGED with the judge finding(s) it discharges.
+
+THE CORE DEFECT THE JUDGE PROVED (F1/F2, both CRITICAL). §1.4's choice to
+make the nested set a MONOTONE Table closes HOLE-B structurally (SW-1: a
+monotone table has no independent per-row retraction, Table.h:269-274) BUT
+CONTRADICTS the §3.2.1 Rederive rebuild. A monotone Table cannot delete or
+clear (Table.h:235 `TryAdd` is the SOLE mutator), so a rebuild REPLACES the
+table; a fresh table has `sealed=0`, so `old()=InI(r)=id<sealed=id<0` is
+FALSE for every row (F1) — batch-start is unreadable exactly when band (b)
+publish_touched needs it. And the §2.3 one-net-pair partition — "old_r and
+new_r read from the SAME table at the SAME instant" — is VOID once band
+(a)'s reset intervenes before band (b) (F2): old_r is on the pre-reset
+table, new_r on the fresh one, different tables/instants, so the partition
+that gave "at most one net pair per row" no longer holds. §1.4's "one
+table, two predicates" simplification is precisely what the reset breaks.
+
+----------------------------------------------------------------------
+## A0. THE THREE RESOLUTIONS WORKED, AND THE PICK
+----------------------------------------------------------------------
+Three candidate substrates were worked end-to-end against the code.
+
+  R-C (ORDERING FIX — keep one monotone table, move the reset AFTER
+    publish reads old): REJECTED, unsound. The reset is not an ordering
+    problem, it is a CLASS problem. A monotone Table's `InNew` is
+    always-true for every stored row (Table.h:255-260); under Rederive the
+    new set may DROP a row the old set had, and a monotone table cannot
+    make that row LEAVE (no delete/clear, Table.h:235). Append-without-
+    clear makes `current` = old ∪ new and `InNew` reports the dropped row
+    as present FOREVER — emit(iid) is wrong, and moving the reset later
+    does not fix it (the stale row still must leave before the NEXT
+    epoch's emit). Against the commit-tail order (fact 15; average_weight
+    .datalog.h:877-944) the DR band structure could ORDER a
+    reset-after-publish, but no ordering rescues a class that cannot drop
+    a row. R-C COLLAPSES into R-A (keep a frozen copy) or R-B (make
+    `current` differential). REJECT.
+
+  R-B (DIFFERENTIAL nested DiffTable, per-row kInI — the E-35-consistent
+    arm): SOUND but re-opens the seam it must re-close. Nested set = a
+    DiffTable; old(iid)={r:InI(r)} via the flag form (Table.h:357-360,
+    kInI rides the row under CompactDead, Table.h:584-585 — E-35's crux
+    cashed in). Rederive rebuild = fold(-1) over stale rows + fold(+1)
+    over the new derivation (NO table replacement, NO reset) — so F1/F2
+    VANISH (old() is always readable; kInI is a persistent flag not a
+    fresh-table watermark, and InI(r)/InNew(r) are two reads of ONE row's
+    flag byte at ONE instant). BUT SW-1 is GONE: a nested DiffTable CAN
+    independently retract a row (`NetDeleted`, Table.h:405-409), so the
+    p2b §7.3 seam's arm (b) is STRUCTURALLY BACK. HOLE-B must then be
+    re-closed by SW-2 (sole outer writer) PLUS a claim-gate-order argument
+    on the NESTED table's own counters — the p2b §7.3 question re-asked.
+    That re-close IS available (seed-before-drain / TryClaimDel-Add
+    phantom-drop on the nested table's Commit, Table.h:437-497/517-551),
+    but it puts BOTH the nested Commit AND the outer publish Commit in the
+    commit tail with an ordering obligation (nested Commit before the
+    publish reads old/new) — a heavier substrate, and it reintroduces the
+    exact double-writer geometry the epoch wanted to foreclose. R-B is the
+    RESERVED future incremental-maintenance lowering (see A6), not the
+    stage-(b) ship.
+
+  R-A (FROZEN-PAIR — two MONOTONE tables per instance, SWAP not copy):
+    SOUND, CHOSEN. Details in A1. It keeps SW-1 (both tables monotone, no
+    independent retraction) so HOLE-B stays closed, and it makes old()
+    coherent across a rebuild without a watermark by holding the
+    batch-start set as a WHOLE frozen table, swapped (not copied) at seal.
+
+DECISION: **R-A**. It is the minimum change that keeps the §2 SW-1/SW-2
+seam closure intact (both tables monotone) while making old() a coherent
+whole-table read that no rebuild can invalidate — paying two POD handles
+per instance and an O(1) pointer swap, never a row copy.
+
+----------------------------------------------------------------------
+## A1. R-A SPECIFIED — the frozen-pair store [discharges F1, F2, F7, F8]
+----------------------------------------------------------------------
+PER INSTANCE, TWO store-owned MONOTONE Table<PubRow> handles:
+  `current` — the working published-row set this epoch (Fold materializes
+    into it during the Rederive rebuild; emit(iid) reads it).
+  `frozen`  — the batch-START published-row set (old(iid) reads it;
+    written ONLY at INSTANCE_SEAL by the swap; never mutated mid-batch).
+
+The `Working` handle becomes TWO raw pointers (still trivially-copyable,
+K7, so Vec<Working> is fine):
+    struct Working { Table<PubRow> *current{nullptr};
+                     Table<PubRow> *frozen{nullptr}; };
+    static_assert(std::is_trivially_copyable_v<Working>);   // C1/K7
+The store's pool becomes `Vec<Table<PubRow> *> table_pool` holding BOTH
+tables per instance (and any recycled spare). NO `sealed` field, NO
+per-table watermark drives old() — E-35 satisfied without needing Seal at
+all (the watermark question is DISSOLVED, not answered: old() is a whole
+table, not an id<sealed compare).
+
+READS (both membership tests over WHOLE coherent tables):
+    old(iid) = enumerate frozen's rows   (all of them; RowStore full scan)
+    new(iid) = enumerate current's rows
+  per candidate row r:
+    old_r := (frozen->Find(r)  != kNoRow)   (r stored in frozen;
+                                              RowStore::Find, Table.h:79)
+    new_r := (current->Find(r) != kNoRow)   (r stored in current)
+  These are two reads of two coherent tables at ONE instant (post-rebuild,
+  pre-swap) — the §2.3 partition RESTORED and now SOUND (A2).
+
+WHY F1/F2 DISCHARGE:
+  - old() is ALWAYS coherent (F1): `frozen` is written only at the swap
+    (Seal), never reset mid-batch; the §3.2.1 rebuild materializes into
+    `current`, leaving `frozen` intact. old() is readable before or after
+    the rebuild — no reset-vs-read ordering hazard exists. This is the
+    "frozen kInI-like constant, RAW-only against Seal" discipline
+    (StateCell.h:30-31) lifted to the SET level: two whole tables, not one
+    table + a watermark.
+  - the one-net-pair partition holds (F2): old_r from `frozen`, new_r from
+    `current`, both coherent, at one instant; the four cells partition r
+    exactly (A2). No reset intervenes — the swap is at Seal, strictly
+    AFTER band (b). §2.3's premise is TRUE under R-A.
+  - Old() return signature (F7): Emit(iid) returns *current, Old(iid)
+    returns *frozen — TWO DISTINCT pointers, both always coherent. The
+    F7 API defect (Old==Emit, unreadable post-reset) is gone.
+
+THE SEAL/SWAP (INSTANCE_SEAL, per touched instance) [E5 amended]:
+  after band (b) has read both frozen and current, the swap is:
+    tmp            = w.frozen;      // last epoch's start set, now stale
+    w.frozen       = w.current;     // this epoch's published set becomes
+                                    //   next epoch's batch-start set
+    w.current      = Recycle(tmp);  // emptied table for next rebuild
+    sealed_occupied[iid] = (w.frozen->NumRows() > 0) ? 1u : 0u;
+  Swap is an O(1) pointer exchange of POD handles — ROWS ARE NEVER COPIED
+  (contrast the p2b Option-B copy §1.2, which is why the two-table set is
+  affordable here). `Recycle(tmp)` empties the stale table for reuse (A3).
+  Ordered LAST in the trailing commit band, mirroring table_36.Seal
+  (D1:942) — the swap plays STATE_SEAL's role.
+
+DebugValidate under R-A [discharges F8]:
+  - FROZEN≠CURRENT: for every occupied instance the two handles are
+    distinct tables (the swap gave them distinct storage). Replaces the
+    §3.3 "nested watermark <= NumRows" check, which was MEANINGLESS under
+    R-A (no per-table watermark) and passed trivially on a fresh table
+    (the F8 defect — it could not detect the reset drift it was
+    advertised against).
+  - SEALED-OCCUPANCY COHERENCE: sealed_occupied[iid] == (frozen->NumRows()
+    > 0) at the batch boundary — `frozen` holds the batch-start set so its
+    non-emptiness IS sealed occupancy.
+  - SEAL COHERENCE: after the swap, touched empty, no touched_flag
+    survives (StateCell.h:603-605 mirror).
+  - NON-ALIASING (three-way, §3.3): instance ids disjoint from the outer
+    pub table's row ids and from current's/frozen's own row ids.
+
+MEMORY, PRICED HONESTLY: two monotone tables per live instance (a fixed
+working set, not a per-epoch leak — the old `current` BECOMES `frozen`,
+the old `frozen` is RECYCLED as the fresh `current`). Steady state is
+2 tables/instance; the swap adds one recycled spare that is reused each
+epoch. Rows are never duplicated (the p2b Option-B redundancy returns only
+as the SWAP, O(1), not the copy §1.2 rejected).
+
+----------------------------------------------------------------------
+## A2. THE ONE-NET-PAIR PARTITION, RE-DERIVED UNDER R-A [discharges F2]
+----------------------------------------------------------------------
+The §2.3 argument as written is VOID (its premise — one table, one instant
+— fails across the §3.2.1 reset, F2). Re-derived under R-A:
+  Per touched instance iid, per candidate row r, band (b) reads:
+    old_r := (frozen->Find(r)  != kNoRow)     [frozen, batch-start; A1]
+    new_r := (current->Find(r) != kNoRow)     [current, this epoch; A1]
+  BOTH from coherent whole tables at ONE instant (post-rebuild of current,
+  pre-swap). The occupancy-generalized guard:
+    (F,T) -> emit +new (Start ++ r) into the OUTER pub DiffTable  [born row]
+    (T,F) -> emit -old (Start ++ r) into the OUTER pub DiffTable  [dropped]
+    (T,T) -> emit NOTHING                       [unchanged — OQ3, no churn]
+    (F,F) -> emit NOTHING                       [never present]
+  r falls in EXACTLY ONE cell (the two booleans partition the 2x2 space) =>
+  AT MOST ONE net pair per (iid, r). This is EXACT because old_r and new_r
+  are two independent stored-membership reads of two tables that CANNOT
+  disagree with themselves (unlike the §1.4 one-table-across-reset case).
+  The (T,T) cell is the clean OQ3 win: an UNCHANGED row across a rebuild
+  emits NOTHING at all — R-A never emits the -old/+new pair and relies on
+  outer annihilation (contrast §3.2.1, which emitted both and leaned on the
+  outer table's claim gates to annihilate). Fewer outer folds, and the
+  partition is the discharge — not an assertion.
+
+SW-1 SURVIVES (HOLE-B stays closed): `current` and `frozen` are BOTH
+monotone (no NetDeleted; K1). Neither folds into the outer pub table's
+counters — they are read-only membership oracles the guard consults. The
+seam's arm (b) ("row independently retracted inside the nested relation")
+is STRUCTURALLY ABSENT. SW-2 unchanged: the outer pub DiffTable's SOLE
+writer is publish_touched (§2.2 / V-INSTANCE-SOLE). The §2 HOLE-B closure
+holds verbatim under R-A — R-A changes only HOW old() is read (whole
+frozen table vs a watermark), not the sole-writer geometry.
+
+----------------------------------------------------------------------
+## A3. THE §3.2.1 REBUILD MECHANIC, REDONE [discharges F1]
+----------------------------------------------------------------------
+§3.2.1 (reset the single monotone table) is SUPERSEDED. Under R-A the
+Rederive rebuild on a demand-key change for iid is:
+  band (a) minus arm (demand retracted): NO reset needed. `current` is
+    already the recycled-empty table from last epoch's swap (or is emptied
+    now if this is a same-epoch re-demand). The instance's death is
+    signaled by leaving `current` EMPTY; publish then sees (T,F) for every
+    frozen row -> -old only. `frozen` is untouched and holds the set to
+    retract.
+  band (a) plus arm (demand added/changed): materialize the Rederive
+    result (rerun edge(Start,_), the IR:71 select on %table:11) via
+    TryAdd into `current` (monotone dedup, Table.h:235). `frozen` holds
+    last epoch's set (empty on birth). publish compares current vs frozen.
+  Recycle(tmp) at swap empties the stale table: EITHER teardown+MakeVec a
+    fresh Table through table_pool (the StateCell.h:560-566 pool idiom, no
+    new primitive) OR — if the F4 COST witness shows churn dominates — an
+    in-place monotone Table::Reset() (truncate rows/hashes to 0, zero
+    sealed, clear hash slots; a bounded op, no per-row work). Reset() is
+    MEASURE-FIRST residue (A4).
+  THE OLD FROZEN TABLE IS READ FOR old() THROUGHOUT the batch (it is only
+  swapped at Seal), so there is NO "read-old-before-reset" intra-op
+  ordering to get wrong — the F1 hazard is dissolved, not merely reordered.
+
+----------------------------------------------------------------------
+## A4. REBUILD CHURN, PRICED WITH A MEASURE-FIRST BAR [discharges F4]
+----------------------------------------------------------------------
+R-A pays ONE monotone-table Recycle (teardown+reconstruct OR Reset) per
+instance PER EPOCH IT REBUILDS — bounded by |touched instances|, NOT per
+demand-key and NOT unbounded (the F4 "N stale tables accumulate" worry does
+not arise: the two-table working set is fixed; the stale table is recycled,
+not leaked). This is DISTINCT from the dead-INSTANCE sweep residue (§3.1 /
+StateCell.h:21-24) — two separate residues, two separate COST triggers.
+  WHAT THE COST WITNESS MEASURES (bench harness, PerfRoadmap §2; the COST
+    instrument, never a correctness gate): under -DDRLOJEKYLL_BENCH_COUNTERS
+    a per-instance Recycle counter (table teardown/Reset events) + allocator
+    bytes churned by the table_pool recycle, over a DEMAND-FLAP workload
+    (one instance repeatedly demanded/retracted), compared to the eager
+    reference's join re-run cost on the same stream.
+  WHEN DEAD-TABLE RECYCLING / Reset() BECOMES MANDATORY: if the witness
+    shows teardown+reconstruct (drop-to-pool + MakeVec) DOMINATES — rebuild
+    churn > the join re-run it replaces on a demand-flap workload — the
+    in-place Reset() primitive lands to replace the teardown. Until the
+    witness shows it, stage (b) ships teardown-reconstruct via the existing
+    pool idiom (zero new primitive) and Reset() stays D5-style residue.
+    MEASURE-FIRST, same discipline as the dead-INSTANCE sweep.
+
+----------------------------------------------------------------------
+## A5. F3 — DIFFERENTIAL/GROWABLE INPUT: FENCED [discharges F3]
+----------------------------------------------------------------------
+The judge proved band (a) drains ONLY demand frontiers (K9: IR:69 the
+demand pivot loop); there is NO arm over the INPUT (edge) net frontier, so
+an edge change while demand persists triggers NO rebuild -> a STALE set,
+diverging from the eager reference (which re-runs the join on
+^receive:add_edge, IR:42->49). The §1.4 pt2 / §1.3 (C-ii) "a differential
+input collapses to (C-i)" claim is FALSE and is RETRACTED: it does not
+collapse — a differential input needs an input-frontier rebuild arm stage
+(b) does not build.
+  DECISION: FENCE, not wire (the R2-acyclic-first discipline, the p2b §1.5
+    fence's sibling; wiring an input-frontier arm is the incremental-
+    maintenance obligation A6 defers, and it wants its own reviewed
+    argument).
+  THE PREDICATE THAT FENCES IT: at BuildSubgraphOps time, assert every
+    SUMMARIZED INPUT view of the subgraph (the non-demand JOIN sides — for
+    the witness, `edge`) is MONOTONE (its data model is a monotone Table,
+    not a DiffTable — reusing the DR-IR's existing monotone-vs-differential
+    model classification). Any deletion-capable summarized input (a
+    retract-capable #message, or a view reachable from a differential
+    producer) is REJECTED.
+  THE DIAGNOSTIC (clean, 4-mode, agg_in_scc_1 mold): "subgraph instance
+    over a deletion-capable input relation `<edge>` is not yet supported
+    (only add-only summarized inputs; a differential input requires the
+    incremental-maintenance lowering)". Emitted at the Build.cpp
+    num_errors->nullopt pre-pass gate (Build.cpp:1071/1178), all 4 modes —
+    the same gate the ViewSelfReachable acyclic fence uses.
+  F3-WITNESS CONSEQUENCE: hand_demand.dr's `edge` is fed by the #message
+    add_edge (add-capable). For the fence to PASS, the landing witness's
+    summarized input must be ADD-ONLY (a monotone #local / an add-only
+    input). The witness .dr is AMENDED so `edge` is add-only, keeping the
+    landing case inside the fence. This is the honest scope: stage (b)
+    demonstrates demand-keyed instances over MONOTONE inputs; a deletable
+    input is the cleanly-diagnosed unhandled case (A6's reserved lowering).
+
+----------------------------------------------------------------------
+## A6. THE RESERVED INCREMENTAL-MAINTENANCE LOWERING (R-B) [context for F3/F4]
+----------------------------------------------------------------------
+The future lowering that HANDLES a differential input (and avoids the
+whole-instance rebuild churn A4 prices) is R-B: the nested set is a
+DiffTable, an input delta folds into the standing instance (fold(-1)/
+fold(+1)) instead of a whole rebuild, old()={r:InI(r)} on the nested
+DiffTable's own kInI (compaction-safe, rides the row, Table.h:584-585).
+That lowering RE-OPENS the p2b §7.3 seam (a nested DiffTable CAN
+independently retract) and MUST re-establish SW-2 by folding the nested
+DiffTable's NetAdded/NetDeleted frontiers (Table.h:405-433) THROUGH the
+publish_touched guard (never directly into the outer counters), plus a
+claim-gate-order (seed-before-drain) argument on the NESTED table's Commit.
+Pre-registered here (as §2.5's residual was) so it is not re-litigated: R-B
+is the incremental arm, gated behind the differential-input fence A5
+lifts. Stage (b) SHIPS R-A (monotone frozen-pair, add-only inputs).
+
+----------------------------------------------------------------------
+## A7. CENSUS RECOUNT INPUT UNDER SURFACE-2 [discharges F5]
+----------------------------------------------------------------------
+§5.1's `exp_subgraph = |query.Subgraphs()|` is UNBUILDABLE: query.Subgraphs()
+does not exist (QueryImpl has Joins/Selects/Tuples/KVIndices/Aggregates/
+Maps, no QuerySubgraph — judge grep of Query.h). The recount must be a
+GENUINE INDEPENDENT re-derivation from a DIFFERENT object than the mint
+loop (E-27; never flow.instancestores.size(), DR.cpp:2820-2823).
+  THE REAL RECOUNT SOURCE (SURFACE-2): the recognizer that identifies
+    guarded-copy views MUST expose its identified set as an explicit list
+    on the surface's own query object — it registers each recognized
+    subgraph as a QuerySubgraph-analog node (a `subgraph_views` list) on
+    QueryImpl AT RECOGNITION TIME, distinct from the flow mint. The census
+    recounts `|query.RecognizedSubgraphs()|` (the accessor the SURFACE-2
+    recognizer MUST provide) vs the flow's minted SUBGRAPH_INSTANTIATE
+    count. Recognition (populates the query list) and BuildSubgraphOps
+    (consumes it, mints ops) are TWO passes over TWO objects — a genuine
+    cross-check, not a tautology.
+  STATED PLAINLY: a recognizer-ONLY census whose recount IS the
+    recognizer's mint output (no independent query-side accessor) WOULD be
+    an E-27 tautology, and is THEREFORE NOT CHARTERED. The full census is
+    chartered ONLY once the recognizer provides the query-side
+    RecognizedSubgraphs() accessor. If that accessor is not built this
+    stage, the census DOWNGRADES to the V-INSTANCE-PAIR bijection-only
+    check (SUBGRAPH_INSTANTIATE <-> INSTANCE_SEAL, a flow-internal
+    structural bijection needing no query accessor) — the honest fallback
+    (judge A4).
+
+----------------------------------------------------------------------
+## A8. THE RECOGNIZER DEPENDENCY, STATED PLAINLY [discharges F6, and F9]
+----------------------------------------------------------------------
+hand_demand.ir is byte-structurally identical to a plain 2-relation join
+(K10: == plain_join.ir modulo message name). A SURFACE-2 corpus case
+compiled TODAY exercises the plain JOIN + %table:4 (DiffTable) path, NOT
+the InstanceStore; the oracle/monotone goldens would PASS on the plain-JOIN
+emission with the store as DEAD CODE.
+  WHAT THIS EPOCH's WITNESS DE-RISKS: the STORE (InstanceStore layout, the
+    R-A frozen-pair), the CENSUS (recount A7 + bijection), the VALIDATORS
+    (V-INSTANCE-EFFECT/SOLE/PAIR + the V-PRED-XCHECK site), and the
+    SEAL/swap machinery — ALL under a HAND-BUILT op mint (BuildSubgraphOps
+    invoked directly on a hand-recognized view / a minimal shape-match), so
+    the substrate is unit-exercisable.
+  WHAT IT DOES NOT DE-RISK: the JOIN-EXCISION RECOGNIZER (the pattern match
+    that REPLACES the plain JOIN + DiffTable with a SUBGRAPH_INSTANTIATE, so
+    the store is reached from source). Until that recognizer exists and
+    excises the JOIN, hand_demand.dr compiles as a plain JOIN and the store
+    is not reached from the .dr.
+  STATE PLAINLY (judge A5): the SURFACE-2 landing witness does NOT exercise
+    the store until the recognizer excises the plain JOIN; the store and
+    census are NOT de-risked against a live oracle by hand_demand.dr as it
+    compiles today. They are de-risked AS SUBSTRATE (hand-built op mint),
+    NOT end-to-end. F9's "strictly above demand input" stratum claim is
+    inherited from the excised JOIN's stratum (sound for the JOIN, not an
+    independent SUBGRAPH_INSTANTIATE property) — cosmetic given this
+    recognizer gate; op_stratum keys the subgraph_instance_stratum map to
+    the excised JOIN's stratum, NO-DEFAULT-0 (§5.2) unchanged.
+
+----------------------------------------------------------------------
+## A9. WHAT CHANGES IN §3/§4 UNDER R-A (delta index, no body rewrite)
+----------------------------------------------------------------------
+The following body claims are SUPERSEDED by R-A (read them through this
+index):
+  - §1.4 "one monotone table, two predicates ... TIGHTER than the p2b
+    two-word sketch": SUPERSEDED. R-A is TWO monotone tables (current +
+    frozen) read as two whole-table memberships; the "one table" claim is
+    withdrawn (F1). The type symmetry is preserved differently: emit reads
+    current, old reads frozen, both whole coherent tables.
+  - §3.1 Working { Table<PubRow>* rows; }: SUPERSEDED by
+    Working { Table<PubRow>* current; Table<PubRow>* frozen; } (A1).
+  - §3.1 Emit/Old both `return *working[iid].rows`: SUPERSEDED — Emit
+    returns *current, Old returns *frozen (A1; F7).
+  - §3.1 Seal "calls nested.Seal()": SUPERSEDED by the SWAP (A1) — no Seal
+    on either monotone table is needed for old() (the watermark question
+    is dissolved); the swap plays STATE_SEAL's role.
+  - §3.2.1 rebuild-reset mechanic: SUPERSEDED by A3 (materialize into
+    current, frozen intact, recycle at swap).
+  - §3.3 "nested watermark <= NumRows" DebugValidate: SUPERSEDED by the
+    A1 FROZEN≠CURRENT + SEALED-OCCUPANCY checks (F8).
+  - §4.3 band (a) "[D3-d] instance:rebuild ... read old() then reset
+    table": SUPERSEDED — materialize into current; old() reads frozen; no
+    reset (A3). band (b) reads old_r from frozen, new_r from current (A2).
+  - §4.3 INSTANCE_SEAL kInstanceSeal "delegates to working[iid].rows->
+    Seal()": SUPERSEDED by the SWAP (A1). Effect kind kInstanceSeal now
+    names the swap (global:rmw), not a monotone Seal.
+  - §4.5 "differential input collapses to (C-i)": RETRACTED; fenced (A5).
+UNCHANGED and still load-bearing: §2.2 SW-1/SW-2 (both tables monotone so
+SW-1 holds; A2), §2.5 V-INSTANCE-SOLE, §4.2 the E-32 real equi-join demand
+edge, §5.2 validator shapes + op_stratum NO-DEFAULT-0, §4.5 the
+ViewSelfReachable acyclic-demand fence (distinct from the A5 input fence),
+the SURFACE-1/SURFACE-2 split and carry (A8).
+
+----------------------------------------------------------------------
+## A10. FINDINGS DISCHARGE SUMMARY
+----------------------------------------------------------------------
+  F1 (CRITICAL): old() reads the whole `frozen` table, never reset
+    mid-batch -> always coherent across a rebuild (A1/A3).
+  F2 (CRITICAL): the one-net-pair partition re-derived on two coherent
+    tables at one instant, pre-swap -> premise TRUE, exact (A2).
+  F3 (HIGH): differential/growable input FENCED with a monotone-input
+    predicate + clean 4-mode diagnostic; the "collapses" claim retracted;
+    witness input amended add-only (A5).
+  F4 (HIGH): rebuild churn priced — one Recycle per rebuilt instance,
+    bounded; MEASURE-FIRST bar for the Reset() primitive (A4).
+  F5 (MEDIUM): recount from a recognizer-populated query-side
+    RecognizedSubgraphs() accessor (independent of the flow mint); a
+    recognizer-only census is an E-27 tautology and is NOT chartered;
+    bijection-only downgrade otherwise (A7).
+  F6 (MEDIUM): stated plainly — the store is de-risked as SUBSTRATE (hand
+    mint), NOT end-to-end until the JOIN-excision recognizer exists (A8).
+  F7 (LOW): Old returns *frozen, Emit returns *current — distinct, both
+    coherent; API defect gone (A1).
+  F8 (LOW): DebugValidate replaced with FROZEN≠CURRENT + sealed-occupancy
+    checks that constrain real R-A state (A1).
+  F9 (NIT): strict-above stratum re-scoped as inherited from the excised
+    JOIN's stratum, recognizer-gated (A8).
+
+----------------------------------------------------------------------
+### A11 — round-2 punch-list (2026-07-17, per judge-d3-round2)
+----------------------------------------------------------------------
+Round-2 (scratchpad/design/judge-d3-round2.md) re-judged the A0-A10
+redesign: VERDICT APPROVE-WITH-NITS, both CRITICALs (F1/F2) confirmed
+discharged by an independent by-hand 3-batch trace. Five residuals
+(NF1/NF2/NF3 + N1/N2), discharged here in place against the sections
+that named them.
+
+  NF1 (MEDIUM, against A7) — the census-scope overclaim, corrected.
+    A7's "a genuine cross-check, not a tautology" (:1409) OVERSTATES what
+    the census guards. Round-2 traced it exactly: `RecognizedSubgraphs()`
+    (the recount) and `BuildSubgraphOps`'s mint loop (the count-under-test)
+    are TWO PASSES but share ONE COMMON CAUSE — the recognizer's own
+    `subgraph_views` list. If the recognizer mis-identifies the guarded-copy
+    set (misses or over-collects a view), BOTH the recount and the mint
+    read the SAME wrong list, so recount==mint==wrong-N and the |list|==
+    |minted| check AGREES on the wrong answer. This is the P0 E-27
+    tautology relocated one level up, for recognizer bugs specifically —
+    it does NOT survive for mint-LOOP bugs (a loop that skips or
+    double-mints a view the recognizer DID correctly identify is still
+    caught, because that divergence is not shared with the recognizer
+    pass). CORRECTED CLAIM (replaces "a genuine cross-check, not a
+    tautology," A7 :1408-1409): the census is a genuine cross-check of the
+    MINT LOOP against the recognizer's own list — it catches BuildSubgraphOps
+    skipping, duplicating, or otherwise diverging from what the recognizer
+    identified. It does NOT cross-check the RECOGNIZER against anything
+    independent; recognizer correctness (did it identify the right guarded-
+    copy views at all) rests on the oracle-refereed witness (`bin/Oracle`,
+    the definitional per-group/per-instance recompute) plus the `-ir-out`
+    structural gate (K10: byte-identical to the plain-join IR modulo message
+    name — any recognizer drift from the intended shape shows up as an IR
+    diff a reviewer reads), NOT on this census. The bijection-only downgrade
+    (A7 :1414-1418) is unaffected by this correction — it was already
+    labeled the weaker fallback and inherits the same scope note.
+
+  NF2 (LOW, against A1) — new always-on validator: V-INST-FRESH.
+    The A2 partition's exactness depends on `current` being EMPTY at the
+    start of every rebuild (so new()=current reflects ONLY this epoch's
+    Rederive output, never a stale carry-over). R-A gets this from
+    Recycle(tmp) handing back an empty table (A1 :1228, A3 :1306-1311); a
+    Recycle bug that returns a non-empty table would silently corrupt the
+    (T,T) suppression (a stale row reads as new, wrongly suppressing a
+    genuine +new or fabricating a false unchanged). A1's DebugValidate list
+    (FROZEN≠CURRENT, SEALED-OCCUPANCY COHERENCE, SEAL COHERENCE, NON-
+    ALIASING — A1 :1236-1249) does not check this. Add a fourth always-on
+    check to that list, named **V-INST-FRESH**: at rebuild entry, for every
+    instance about to be touched this epoch, assert `current->NumRows()==0`
+    before the Rederive materialize begins (equivalently: assert the
+    freshly-swapped `current` handed out by last epoch's Recycle has
+    NumRows()==0, checked once per touched instance at band (a) entry).
+    Same convention as the other four checks: fprintf+abort, survives
+    NDEBUG, placed alongside FROZEN≠CURRENT/SEALED-OCCUPANCY/SEAL-COHERENCE/
+    NON-ALIASING in the DebugValidate pass. This closes the one gap in the
+    F8 discharge: F8 replaced the meaningless watermark check with checks
+    that constrain real R-A state, but none of them detected a Recycle that
+    handed back a dirty table; V-INST-FRESH does.
+
+  NF3 (LOW, against A3) — the intra-batch demand flap, walked through
+    the F2 partition explicitly.
+    A3's band (a) minus-arm text (:1298-1300) hedges with "or is emptied
+    now if this is a same-epoch re-demand" without naming the mechanic.
+    Scenario: within ONE batch, iid's demand is retracted THEN re-demanded
+    (a same-epoch flap on one key). Walked through A2's partition:
+      1. Batch-start: `current` already recycled-empty from last epoch's
+         swap (A3's ordinary case); `frozen` holds the batch-start set,
+         untouched all batch.
+      2. RETRACT ARM fires first (net frontier orders retract before
+         re-add within a batch — the demand pivot's own delta ordering,
+         not a new mechanic): `current` stays/becomes EMPTY. If band (a)'s
+         plus arm had already materialized rows into `current` earlier in
+         THIS same batch (a flap where the plus arm ran before the minus
+         arm was seen), the retract arm's teardown empties `current` via
+         the SAME Recycle-shaped op A1's swap uses (destroy the dirty
+         `current`, hand out a fresh empty one from table_pool) — it is
+         NOT a new primitive, it is Recycle invoked mid-band instead of
+         at Seal. `frozen` is NEVER touched by this — only `current` is
+         ever recycled/rebuilt, `frozen` is write-once-per-epoch at the
+         swap (A1 :1184).
+      3. RE-DEMAND ARM fires next: sees a FRESH EMPTY `current` (from
+         step 2's teardown) and materializes the Rederive result into it
+         exactly as an ordinary birth (A3's plus-arm case) — no different
+         from a from-scratch materialize, because `current` is already
+         empty going in.
+      4. Band (b) publish reads old_r=frozen->Find(r), new_r=
+         current->Find(r) — SAME partition as any other epoch (A2): rows
+         present in both old batch-start membership and the flap's final
+         re-derived set net (T,T)=unchanged; rows dropped by the flap net
+         (T,F)=-old; rows newly present net (F,T)=+new. The flap is
+         invisible to band (b) except through its NET effect on `current`
+         — exactly the "net per batch" behavior the rest of the DR-IR
+         already assumes for message batches (OQ3, the outer CLAUDE.md
+         "explicit message batches net with SET semantics" invariant).
+    So: the retract arm is the one that empties `current` (via Recycle,
+    same op as the Seal-time swap's third leg, just invoked mid-band); the
+    re-demand arm always sees a fresh empty `current`; `frozen` is
+    untouched until Seal. The rebuild the re-demand arm performs is a
+    plain birth-shaped rebuild into an empty table — no new partition
+    case, no new mechanic beyond "Recycle can also fire mid-band on the
+    retract arm, not only at Seal." Replace A3 :1298-1300's "or is emptied
+    now if this is a same-epoch re-demand" with this walk (or a pointer to
+    it).
+
+  N1 (NIT, wording — against A1, A3, A4) — "Recycle" does not mean pool
+    reuse; there is no free-list.
+    Round-2 (R4, StateCell.h:595-624) confirmed the StateCell pool idiom
+    (MakeVec/FreeMembership) only GROWS the pool (MakeVec: allocate +
+    placement-new + pool.Add) and frees ONLY at store teardown
+    (FreeMembership) — there is no dequeue-a-free-slot / hand-back-a-spare
+    operation today. Every "Recycle" / "drop back to table_pool [for
+    reuse]" phrase in A1 (:1228, :1232, :1254), A3 (:1306-1307, "the
+    StateCell.h:560-566 pool idiom"), and A4 (:1319, :1327, :1328, :1332,
+    :1335-1336) is READ AS: destroy the stale Table (`~Table`, freeing its
+    slots array back to the allocator) and construct a fresh empty one via
+    `MakeTable(table_pool)` (allocate + placement-new + pool.Add) — i.e.
+    teardown-and-reconstruct, NOT reuse-from-a-free-list. This needs no new
+    Runtime primitive (today's Allocator + the existing MakeVec-shaped
+    pattern suffice) but the word "Recycle" oversells it as pooled reuse.
+    No section is renumbered or rewritten; going forward, read every
+    "Recycle(tmp)" / "drop back to table_pool" occurrence in A1/A3/A4 as
+    shorthand for teardown+reconstruct-via-MakeTable, stage (b)'s actual
+    mechanism. The deferred in-place `Table::Reset()` (A3 :1309-1311, A4
+    :1331-1336) is UNAFFECTED by this correction and remains what it always
+    was: a genuinely new Runtime primitive, held behind the A4 MEASURE-
+    FIRST bar with its own counter seam (a per-instance Recycle counter
+    under `-DDRLOJEKYLL_BENCH_COUNTERS`, A4 :1327). Only stage (b)'s
+    DEFAULT path (teardown+reconstruct) was mis-named; the priced,
+    deferred alternative was already correctly described as a new
+    primitive.
+
+  N2 (NIT, against A5 / §4.1) — the witness's add-only input is add-only
+    by construction; say so and exhibit it.
+    A5 (:1367-1373) asserts the landing witness's `edge` input is amended
+    to be add-only but does not show why — and §4.1's `.dr` text is
+    unchanged from before A5 was written. Round-2 confirmed (its §2, "DOES
+    THE AMENDED WITNESS .dr REALLY HAVE ADD-ONLY INPUT?") that NO .dr edit
+    was actually needed: a plain `#message` (one with no `@differential`
+    pragma) is ALREADY monotone — a `#message` receive is add-only unless
+    the message is explicitly marked `@differential` (deletion-capable);
+    "a message carries adds" is not the same claim as "the message's table
+    is differential." §4.1's witness already reads exactly this way:
+        #message add_edge(i32 From, i32 To).
+        edge(From, To) : add_edge(From, To).
+    `add_edge` carries no `@differential` pragma, so its receiving table's
+    `TableIsDifferential` (DR.cpp:132/148, A5's fence predicate) is FALSE
+    — `edge` is monotone as written, and A5's fence (:1354-1360) PASSES on
+    §4.1 unmodified. State this plainly in place of A5's "the witness .dr
+    is AMENDED so edge is add-only" (:1370): §4.1's `#message add_edge`
+    is a plain, non-`@differential` message, hence already add-only/
+    monotone by the DR-IR's own classification (TableIsDifferential==
+    false) — the fence passes on the witness AS WRITTEN, with no .dr edit
+    required.

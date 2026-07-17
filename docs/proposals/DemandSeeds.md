@@ -282,6 +282,49 @@ SURFACE-1/SURFACE-2 carry. Amendments A1-A5 (old()-across-rebuild;
 differential input wired or cleanly rejected; churn priced; a real
 recount input; the recognizer dependency stated) before any emission.
 
+### Amendment round 2 (2026-07-17): both REVISE verdicts lifted
+
+- D1 AMENDED (artifact A0-A7) + RE-JUDGED: APPROVE-WITH-NITS — D4 GO
+  conditioned on A7. Option D′ = fabricate a real ParsedMessageImpl at
+  DataFlow-build time (mode-gated, module-registered; the Aggregate.cpp
+  synthetic-ParsedLocalImpl precedent), F2 suppression via a
+  demand-message registry at the Database.cpp:1426 loop (IsPublished-
+  gating rejected — it would delete every received user message's
+  entry; the log side is already clause-keyed-safe). THE CHECKPOINT-3
+  SPIKE IS GREEN: the hand-authored demanded_tc_spike.dr (exactly the
+  transform's output for the bf witness) compiles in ALL 4 MODES on
+  the frozen ca569dd8 binary; injector wiring, guard-JOIN survival,
+  demand-frontier CSE fusion all emission-confirmed; the F2 leak
+  empirically real (the suppression target exact). Round-2 judge
+  additionally CONFIRMED the sharpest claim: the guard prunes path's
+  OWN materialization upstream of the fixpoint (%table:19 =
+  d_path ⋈ path gates the recursive extension) — the measure-first
+  benefit is real, not answer-filtering. Residual: G1 naming recipe
+  corrected in A7 (synthetic tokens are text-less; intern a real
+  display buffer), G2 build-once invariant, G3 reserved-prefix
+  uniquing, G4 multi-adornment fabrication paper-only. Judge reports:
+  scratchpad design/judge-d1.md + judge-d1-round2.md.
+- D3 AMENDED (artifact A0-A11) + RE-JUDGED: APPROVE-WITH-NITS. R-A
+  FROZEN-PAIR chosen: two MONOTONE nested tables per instance
+  (current working / frozen batch-start), swap-not-copy at seal —
+  old() reads frozen (coherent across rebuilds, F1 discharged), the
+  one-net-pair partition re-derived on the two coherent tables at one
+  instant (F2 discharged, judge's 3-batch hand-trace), differential
+  input FENCED (TableIsDifferential/CanReceiveDeletions at the
+  num_errors gate, clean 4-mode diagnostic), churn priced (one
+  teardown/reconstruct per rebuilt instance per epoch via MakeTable —
+  no pool exists; in-place Reset() a MEASURE-FIRST Runtime residue).
+  Round-2 punch-list folded (A11): the census honestly re-scoped (the
+  recognizer is a common cause; the census guards the MINT LOOP;
+  recognizer correctness rests on the oracle witness + structural
+  gate), V-INST-FRESH always-on validator added (current empty at
+  rebuild entry), the intra-batch flap specified, Recycle wording
+  fixed, the witness's add-only input exhibited. R-B (differential
+  nested DiffTable) pre-registered as the reserved incremental-
+  maintenance lowering. Judge reports: scratchpad design/judge-d3.md
+  + judge-d3-round2.md. D3 remains PAPER-ONLY this epoch (§2.1
+  decision 1).
+
 ## 2.1 Owner decisions (2026-07-17, ratified at the design checkpoint)
 
 1. EPOCH CUT RE-RANKED: D2 (config_agg_2, as amended per its judge) is
