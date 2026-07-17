@@ -347,6 +347,65 @@ recount input; the recognizer dependency stated) before any emission.
    go/no-go checkpoint follows. If either fails, D4 re-seeds to the
    follow-on epoch.
 
+## 2.2 Implementation record (one diff at a time)
+
+### D2 — config_agg_2 (@recompute config aggregates) LANDED (2026-07-17)
+
+The P2c residual fence is CLOSED: BOTH algebra arms of a config-column
+aggregate now lower. Fork (i) as ratified (§2.1 decision 3): 4 files
++183/-42 + 6 new corpus/golden files:
+- StateCell.h: Recompute::kHasConfig (mirrors Invertible); the guarded
+  group-birth (kInvertible → SealFrom(w) byte-identical; config-
+  @recompute → inert Sealed{} placeholder, sealed_occupied stays 0);
+  SealOne(gid, cfg...) — IS the bulk Seal()'s per-gid body factored
+  (sealed/sealed_occupied/touched_flag), per-gid commit_visits counter;
+  ClearTouched. Bulk Seal() untouched.
+- Database.cpp: EmitGroupUpdate passes KeyAt(gid)'s config tail to the
+  single Emit site ONLY (Old(gid) is non-variadic and config-free —
+  the round-1 judge's correction to E-39's three-sites-alike framing);
+  EmitCommitSweep forks STATE_SEAL: config-@recompute cells emit the
+  per-touched-group KeyAt+SealOne loop + ClearTouched (config slice
+  off KeyTypes().size() per A-F3), all other cells keep the opaque
+  Seal() — byte-identical text; DebugValidate emitted for both arms
+  (the @recompute round-trip auto-skips at the kInvertible gate).
+- Build.cpp: the fence deleted; P2c-CLOSED comment; the C-4
+  induction-owned reject and Functor.cpp algebra rejects untouched.
+- Oracle: AggKind::kMaxAbove — definitional config-gated max with
+  TOTAL group suppression (gate_seen registry; a group with no
+  gate-passing member emits no row), kSumAbove behavior preserved.
+- Corpus: config_agg_2 (.dr + driver + .batches + stdout/oracle/
+  monotone goldens BLESSED FROM ORACLE TRUTH after hand-verification;
+  the DESCENDING-MAX retraction is the load-bearing assertion — batch
+  2 retracts the max and the @recompute rescan lowers it 100→60; the
+  F6 occupancy-vs-gate invariant comment in .dr and driver) — SUITE
+  GROWS 165 → 166.
+
+FABLE REVIEW (pre-commit, owner-mandated): APPROVE — verified the
+birth-guard branch order (config-@invertible stays on SealFrom(w)),
+SealOne↔Seal body identity + counter discipline, the Old-config-free
+correction, the commit-sweep fork's byte-identical else arm + the
+by-value StateCells() dangling fix, fence-deletion scope, oracle
+suppression totality, driver contract (C-5 leading-config free
+function, keyed-drain sort, two-Vec differential entry), goldens vs
+the .dr hand computation.
+
+GATES (all green on the exact committed tree): byte-identity
+(average_weight + config_agg_1, datalog.h + full -ir-out, opt AND
+nocf); FULL SUITE PASS (166) — the existing 165 zero churn; ctest 3/3;
+COUNTER-SEAM NO-OP re-verified (Runtime header edit; OFF byte-
+identical, ON resolves commit_visits); Q5 interleaved same-session
+ABABAB pre/post: release ≤2.5%, debug ≤0.7% (the §0 disposition's
+A/B form). PRE-REGISTERED PREDICTIONS: 8 HIT, 1 PARTIAL — #4: no new
+StateCellTest unit (outside the declared surface; path covered by
+corpus + oracle cross-check + the seam probe) — DEVIATION recorded
+for close-time ratification. Implementation surprises (all resolved
+in-diff): the by-value StateCells() lifetime hazard (the artifact's
+map-cache snippet didn't flag it); .dr comments must be ASCII (the
+nonascii_1 lexer gate); a @differential message emits the two-Vec
+entry, not an _input alias (driver fixed). Stale-comment sweeps
+(CLAUDE.md / PerfRoadmap / p2c artifact) deferred to the epoch-close
+sweep per the implementer's declared surface.
+
 ## 3. Artifact index
 
 - d1-demand-seed-mechanism.md — the demand-seed mechanism design:

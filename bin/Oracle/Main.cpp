@@ -610,7 +610,11 @@ class Oracle {
   // POSITION in the input view, or a constant.
   // kSumAbove (P2c): a CONFIG-DEPENDENT sum — sum of Val over members whose
   // Val >= the per-group Threshold (a configuration column read from the key).
-  enum class AggKind : uint8_t { kSum, kCount, kMerge, kSumAbove };
+  // kMaxAbove (P2c @recompute): a CONFIG-DEPENDENT max — max of Val over members
+  // whose Val >= the per-group Threshold. Unlike a sum, a max over an EMPTY
+  // gate-passing set has NO row (group suppression); the engine's @recompute
+  // rescan matches this definitionally (see ReduceAggregate).
+  enum class AggKind : uint8_t { kSum, kCount, kMerge, kSumAbove, kMaxAbove };
   struct AggInfo {
     ViewModel *head{nullptr};   // the aggregate/KV output view
     ViewModel *input{nullptr};  // the single summarized input view
@@ -1322,9 +1326,16 @@ class Oracle {
         if (ai.num_config_slots != 1u) {
           Fail("oracle sum_above expects exactly one config column (threshold)");
         }
+      } else if (fname == "max_above") {
+        // Config-dependent max: max of Val over members with Threshold <= Val.
+        // A group with no gate-passing member has NO max (row suppressed).
+        ai.kind = AggKind::kMaxAbove;
+        if (ai.num_config_slots != 1u) {
+          Fail("oracle max_above expects exactly one config column (threshold)");
+        }
       } else {
-        Fail("oracle implements only sum_i32/count_i32/sum_above aggregate "
-             "functors by name (got '" +
+        Fail("oracle implements only sum_i32/count_i32/sum_above/max_above "
+             "aggregate functors by name (got '" +
              fname + "')");
       }
       ai.arity = static_cast<unsigned>(ai.key_slots.size()) + 1u;
@@ -1380,9 +1391,16 @@ class Oracle {
     auto slot_val = [](const Slot &s, const Row &row) -> Value {
       return s.is_const ? s.cval : row[s.col];
     };
-    // group key -> accumulator (sum/count/last-value).
+    // group key -> accumulator (sum/count/last-value/max).
     std::unordered_map<Row, int64_t, RowHash> acc;
     std::vector<Row> key_order;
+    // P2c kMaxAbove group suppression (A-F4): a group's acc is seeded ONLY by
+    // its first ABOVE-gate member; a group whose gate_seen stays false has no
+    // max and emits NO row. `key_order` still registers such a group (so the
+    // suppression is total, never a spurious partial), but `acc` is left
+    // unseeded and skipped at emit. Mirrors the engine's non-emission of an
+    // all-below-gate @recompute group.
+    std::unordered_map<Row, bool, RowHash> gate_seen;
     for (const auto &row : member_rows) {
       Row key;
       key.reserve(ai.key_slots.size());
@@ -1391,22 +1409,42 @@ class Oracle {
       }
       const auto v = static_cast<int64_t>(slot_val(ai.val_slot, row));
       // P2c: a config-dependent reduction reads its config from the group key
-      // (the config columns are the trailing key slots). For sum_above the
-      // single config column is the per-group threshold gating the sum.
+      // (the config columns are the trailing key slots). For sum_above/max_above
+      // the single config column is the per-group threshold gating the reduce.
+      const bool config_gate =
+          (ai.kind == AggKind::kSumAbove || ai.kind == AggKind::kMaxAbove);
       const bool above_gate =
-          (ai.kind != AggKind::kSumAbove) ||
+          !config_gate ||
           (v >= static_cast<int64_t>(
                     key[ai.key_slots.size() - ai.num_config_slots]));
+      // kMaxAbove: group registry is `gate_seen` (acc is seeded only by an
+      // above-gate member), keyed independently of `acc.find` so a below-gate
+      // first member registers the group without a phantom acc entry.
+      if (ai.kind == AggKind::kMaxAbove) {
+        const bool seen_before = gate_seen.count(key) != 0u;
+        if (!seen_before) {
+          key_order.push_back(key);
+          gate_seen[key] = above_gate;
+          if (above_gate) { acc[key] = v; }
+        } else if (above_gate) {
+          if (gate_seen[key]) {
+            acc[key] = std::max<int64_t>(acc[key], v);
+          } else {
+            acc[key] = v;  // first gate-passing member seeds the max
+            gate_seen[key] = true;
+          }
+        }
+        continue;
+      }
       auto it = acc.find(key);
       if (it == acc.end()) {
-        int64_t init = 0;
         switch (ai.kind) {
-          case AggKind::kSum: init = v; break;
-          case AggKind::kCount: init = 1; break;
-          case AggKind::kMerge: init = v; break;  // last-writer; see below
-          case AggKind::kSumAbove: init = above_gate ? v : 0; break;
+          case AggKind::kSum: acc.emplace(key, v); break;
+          case AggKind::kCount: acc.emplace(key, 1); break;
+          case AggKind::kMerge: acc.emplace(key, v); break;  // last-writer
+          case AggKind::kSumAbove: acc.emplace(key, above_gate ? v : 0); break;
+          case AggKind::kMaxAbove: break;  // handled above
         }
-        acc.emplace(key, init);
         key_order.push_back(key);
       } else {
         switch (ai.kind) {
@@ -1414,10 +1452,15 @@ class Oracle {
           case AggKind::kCount: it->second += 1; break;
           case AggKind::kMerge: it->second = v; break;  // last member wins
           case AggKind::kSumAbove: if (above_gate) { it->second += v; } break;
+          case AggKind::kMaxAbove: break;  // handled above
         }
       }
     }
     for (const auto &key : key_order) {
+      // kMaxAbove: a group with no gate-passing member has no max -> no row.
+      if (ai.kind == AggKind::kMaxAbove && !gate_seen[key]) {
+        continue;
+      }
       Row head = key;
       head.push_back(static_cast<Value>(acc[key]));
       out(head);

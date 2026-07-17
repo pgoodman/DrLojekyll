@@ -215,6 +215,14 @@ struct Recompute {
 
   static constexpr bool kInvertible = false;
 
+  // P2c: does the emitted reduction take leading config args? Config-free
+  // @recompute policies leave this false (byte-identical to pre-P2c); a
+  // config-dependent @recompute (e.g. max_above) exposes it so the store's
+  // group-birth guard (StateCell.h FindOrAddGroup) can value-init the sealed
+  // placeholder instead of running a config-arity ReduceLive it has no config
+  // for. Mirrors `Invertible::kHasConfig` (StateCell.h ~:130).
+  static constexpr bool kHasConfig = HasConfigPolicy<Reduce>;
+
   // Wiring is done by the store (it owns the Vecs); nothing to init here.
   static void Identity(Working &) {}
 
@@ -341,7 +349,23 @@ class StateCellStore {
     // identity's Emit — the group's summary before any fold ever ran. It is a
     // placeholder; old() is only meaningful once the group is sealed-OCCUPIED,
     // which a never-touched group is not.
-    sealed.Add(Algebra::SealFrom(w));
+    //
+    // P2c config-@recompute (A-F1): a config-dependent @recompute cell's
+    // SealFrom(w) -> Emit(w) -> ReduceLive(cfg0.., values, counts) is arity-3
+    // and FindOrAddGroup has no per-group config, so SealFrom(w) (no config)
+    // would arity-mismatch at COMPILE time. The birth value is INERT
+    // (sealed_occupied=0 makes old() undefined until a real Seal overwrites it),
+    // so a value-init `Sealed{}` placeholder is sound and needs no config. The
+    // guard confines `Sealed{}` to exactly config-@recompute cells; every other
+    // class keeps `SealFrom(w)` BYTE-IDENTICAL (@invertible/config-free:
+    // Finalize(identity) == 0 == Sealed{}; config-free @recompute: unchanged).
+    if constexpr (Algebra::kInvertible) {
+      sealed.Add(Algebra::SealFrom(w));
+    } else if constexpr (Algebra::kHasConfig) {
+      sealed.Add(s);  // inert value-init placeholder (never read before a Seal)
+    } else {
+      sealed.Add(Algebra::SealFrom(w));
+    }
     sealed_occupied.Add(0u);  // Never occupied at batch start.
     (void) s;
     touched_flag.Add(0u);
@@ -425,6 +449,27 @@ class StateCellStore {
     }
     touched.Clear();
   }
+
+  // P2c config-@recompute (fork (i), DemandSeeds §2.1): one group's seal with a
+  // caller-supplied config pack. IS the per-group bookkeeping body of Seal()
+  // above (sealed/sealed_occupied/touched_flag writes), factored so a codegen
+  // per-touched-group loop can pass KeyAt(gid)'s config slots to
+  // SealFrom -> ReduceLive (a config-dependent @recompute cell needs the
+  // group's config, which the bulk Seal() cannot conjure). Config-free /
+  // @invertible cells never reach here — they keep the opaque bulk Seal().
+  // The bench counter mirrors Seal()'s discipline: one visit per gid (A-F2).
+  template <typename... Cfg>
+  void SealOne(uint32_t gid, Cfg &&...cfg) {
+    HYDE_RT_BENCH_COUNT(commit_visits);
+    sealed.Set(gid, Algebra::SealFrom(working[gid], static_cast<Cfg &&>(cfg)...));
+    sealed_occupied.Set(gid, (0 < working_count[gid]) ? 1u : 0u);
+    touched_flag.Set(gid, 0u);
+  }
+
+  // Clear the touched set after a codegen-driven per-group SealOne loop (fork
+  // (i)): the bulk Seal() clears internally, but the codegen loop needs an
+  // explicit end. Mirrors the tail of Seal().
+  void ClearTouched(void) { touched.Clear(); }
 
   // Iteration for emit_touched: the SORT-UNIQUE touched set (spec §2.5
   // V-TOUCH-SORTED / G-8). Touch appends each gid at most once, so the

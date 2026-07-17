@@ -1087,3 +1087,108 @@ To prevent an implementer re-doing landed work (the headline finding, §0):
 | fence (Build.cpp:1123) | rejects @recompute config | ➖ deleted |
 | oracle `kMaxAbove` + group suppression | ❌ (has kSumAbove) | ➕ enum + reduce arm |
 | corpus config_agg_2 | ❌ | ➕ dr/main/batches + 3 goldens |
+
+---
+
+## AMENDMENTS (2026-07-17, post-judge)
+
+The D2 judge (`design/judge-d2.md`, verdict APPROVE-WITH-NITS) falsified every
+load-bearing mechanism and it HELD. The findings below are folded into the
+implementation exactly as stated; this section AMENDS the body (does not
+rewrite it). Fork (i) via `SealOne` is ratified (DemandSeeds §2.1 decision 3).
+
+### A-F1 (folds judge F1) — the group-birth guard snippet must QUALIFY `Algebra::kHasConfig`
+
+The §1.* guarded-birth snippet (target lines ~305-313) writes
+`else if constexpr (kHasConfig)` UNQUALIFIED. `kHasConfig` is not a member of
+`StateCellStore` — only the algebra policies expose it. The snippet MUST read
+`else if constexpr (Algebra::kHasConfig)`, which in turn REQUIRES the
+`Recompute::kHasConfig` one-line addition §1.* itself prescribes
+(StateCell.h:216, `static constexpr bool kHasConfig = HasConfigPolicy<Reduce>;`).
+Implemented form:
+
+```cpp
+if constexpr (Algebra::kInvertible) {
+  sealed.Add(Algebra::SealFrom(w));           // @invertible/config-free unchanged
+} else if constexpr (Algebra::kHasConfig) {   // config-@recompute only
+  Sealed s{};
+  sealed.Add(s);                              // inert value-init placeholder
+} else {
+  sealed.Add(Algebra::SealFrom(w));           // config-free @recompute unchanged
+}
+```
+
+### A-F2 (folds judge F2) — `SealOne` carries a per-gid `HYDE_RT_BENCH_COUNT(commit_visits)`
+
+The bulk `Seal()` opens `HYDE_RT_BENCH_COUNT_N(commit_visits, touched.Size())`
+(StateCell.h:418). Prediction 5 asserts SealOne mirrors "one visit per gid".
+The §1.(i) `SealOne` snippet omitted the counter; add a per-gid
+`HYDE_RT_BENCH_COUNT(commit_visits);` as SealOne's FIRST statement so the
+counted-vs-timed invariant holds and the seam re-verify passes as predicted
+(one `HYDE_RT_BENCH_COUNT` per SealOne call == one visit per gid, exactly what
+the codegen per-touched-group loop drives).
+
+### A-F3 (folds judge F3) — STATE_SEAL config slice keys off `cell.KeyTypes().size()`, never a GroupUpdate `gpos`
+
+§3.4 said `seal_cfg` uses "the same slice as §3.3", but §3.3's slice is
+`gpos.size() - num_config + k` where `gpos = region.GroupPositions()` — a
+`ProgramGroupUpdateRegion` member NOT in scope at `EmitCommitSweep`
+(Database.cpp:2286-2377, where `emit_seal` lives). The correct base is the
+ProgramStateCell's `KeyTypes()`: `key.c<KeyTypes().size() - num_config + k>`
+(mirrors the DECL-side slice at Database.cpp:1123). Value is identical
+(`KeyTypes().size() == gpos.size()` for the same cell = group ++ config);
+this is a SOURCING correction. `EmitCommitSweep` builds an
+`id -> (is_recompute, num_config, key_types_size)` map from
+`program.StateCells()` and the `emit_seal` lambda consults it.
+
+### A-F4 (folds judge F4) — the oracle `kMaxAbove` gate_seen seeding, as compilable code
+
+§2.4's `<UNSEEDED>` pseudocode must be spelled to compile so a below-gate first
+member never leaves a stale value the later above-gate member maxes against.
+Track a parallel `std::unordered_map<Row,bool,RowHash> gate_seen`; seed/update
+`acc` ONLY on the first ABOVE-gate member; suppress emission where
+`!gate_seen[key]`:
+
+```cpp
+// init arm (no prior acc entry):
+case AggKind::kMaxAbove:
+  if (above_gate) { acc.emplace(key, v); gate_seen[key] = true; key_order.push_back(key); }
+  else            { gate_seen[key] = false; key_order.push_back(key); }
+  break;
+// update arm (acc entry may or may not be gate-seeded yet):
+case AggKind::kMaxAbove:
+  if (above_gate) {
+    if (gate_seen[key]) { it->second = std::max<int64_t>(it->second, v); }
+    else { it->second = v; gate_seen[key] = true; }
+  }
+  break;
+// emit loop: skip un-gate-seen groups (a max over an empty gate-passing set has no row):
+for (const auto &key : key_order) {
+  if (ai.kind == AggKind::kMaxAbove && !gate_seen[key]) { continue; }
+  Row head = key; head.push_back(static_cast<Value>(acc[key])); out(head);
+}
+```
+
+Note the init/update split above is NOT the current `acc.find` structure
+verbatim — `kMaxAbove` needs `key_order` pushed on the FIRST sighting
+(gate-passing or not, so suppression is total) and `acc` seeded only when
+gate-seen. The implementation folds this into the existing
+init-branch/update-branch of ReduceAggregate with `gate_seen` as the
+discriminator; a below-gate-only group appears in `key_order` with
+`gate_seen[key]==false` and is skipped at emit.
+
+### A-F6 (folds judge F6) — corpus INVARIANT COMMENT in both `.dr` and driver
+
+Add a one-line INVARIANT COMMENT to `config_agg_2.dr` and
+`config_agg_2.main.cpp`: "INVARIANT: every (sensor,threshold) group keeps ≥1
+above-threshold live member in EVERY batch state — do not edit a batch to
+violate this, or the engine (occupancy by fold count) publishes INT32_MIN while
+the oracle suppresses the row, and the cross-check FIRES (the recorded
+occupancy-vs-gate gap, §2.3 NOTE / §6 prediction 8)." This keeps a future
+editor inside the reconciled quadrant.
+
+(Judge F5 is informational — config_agg_2 is the first aggregate `.batches` to
+combine a retraction with the @recompute rescan through the oracle; the goldens
+are blessed only from a HAND-VERIFIED reviewed run, never auto-blessed, and the
+descending-max at batch 2 (100->60) is the load-bearing assertion. No code
+change.)
