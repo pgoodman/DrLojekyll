@@ -627,8 +627,24 @@ OutputStream &operator<<(OutputStream &os, ProgramGroupUpdateRegion region) {
   os.PushIndent();
   os << os.Indent() << "fold-neg " << region.NegFrontier() << " / fold-pos "
      << region.PosFrontier() << " group@{";
+  // The stored positions are group ++ config (the cell key); print the config
+  // tail separately so a config cell is distinguishable from a wider group-by
+  // in dumps. Byte-identical for config-free cells (the clause is elided).
+  const auto &positions = region.GroupPositions();
+  const auto num_group = positions.size() - region.NumConfigPositions();
   auto sep = "";
-  for (auto p : region.GroupPositions()) { os << sep << p; sep = ", "; }
+  for (auto i = 0u; i < num_group; ++i) {
+    os << sep << positions[i];
+    sep = ", ";
+  }
+  if (num_group < positions.size()) {
+    os << "} config@{";
+    sep = "";
+    for (auto i = num_group; i < positions.size(); ++i) {
+      os << sep << positions[i];
+      sep = ", ";
+    }
+  }
   os << "} summary@{";
   sep = "";
   for (auto p : region.SummaryPositions()) { os << sep << p; sep = ", "; }

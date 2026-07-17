@@ -1102,12 +1102,28 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
              "not yet supported";
       continue;
     }
-    // Feature gap: the R3 GROUP_UPDATE lowering handles a plain group-by (group
-    // ++ config) reduction; configuration columns are not yet threaded through
-    // the state-cell key projection.
-    if (agg.NumConfigurationColumns()) {
+    // P2c (subgraphs/demand epoch, E-31): configuration columns are the tail of
+    // the (group ++ config) key projection (DR.cpp BuildDRStateCell), which IS
+    // threaded end-to-end (FACT A); and when the reduction depends on them they
+    // are leading args to the C-5 reduction ABI (Database.cpp EmitGroupUpdate /
+    // EmitStateCellStructs — @invertible at the Fold arm; FACT B). The
+    // @invertible arm is LANDED (config_agg_1). The C-4 induction-owned reject
+    // above, the @invertible/@recompute mutual-exclusion + duplicate-pragma
+    // rejects in Functor.cpp, and the SelectAlgebra acyclic fence still apply —
+    // config touches neither algebra selection nor the induction fence.
+    //
+    // RESIDUAL FENCE (P2c follow-on): a CONFIG-DEPENDENT @recompute aggregate is
+    // not yet emitted. The runtime + codegen carry the @recompute config ABI
+    // (ReduceLive gains the config leading param), but the EMIT-arm plumbing —
+    // EmitGroupUpdate passing KeyAt(gid)'s config slots to Emit/Old and Seal
+    // extracting per-group config from the key — is not wired, so the emitted
+    // header would not compile. A config @recompute (including an over() with
+    // NO declared algebra, which defaults to @recompute) is a clean diagnostic
+    // until config_agg_2 lands. See p2c-config-agg-target.md §4.4.
+    if (agg.NumConfigurationColumns() && !agg.Functor().IsInvertible()) {
       log.Append(agg.Functor().SpellingRange())
-          << "Aggregates with configuration columns are not yet supported";
+          << "Configuration-column aggregates require an '@invertible' "
+             "reduction (the '@recompute' config arm is not yet supported)";
       continue;
     }
     // over() undeclared -> default @recompute, no diagnostic (spec §C-2/§7.1).

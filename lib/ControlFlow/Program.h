@@ -1104,6 +1104,13 @@ class ProgramGroupUpdateRegionImpl final : public OP {
   std::vector<unsigned> group_positions;
   std::vector<unsigned> summary_positions;
 
+  // P2c: how many of the trailing `group_positions` are CONFIGURATION columns
+  // (the tail beyond the true group-by columns; `group_positions = group ++
+  // config`). For an @invertible cell EmitGroupUpdate passes these config
+  // frontier locals as leading args to `Fold`; 0 for a config-free aggregate
+  // or a KV index.
+  unsigned num_config_positions{0u};
+
   // Index into the program's state-cell descriptor list (codegen names the
   // matching `statecell_<id>` store member and its `Reduce_*`/`Key_*` types).
   const unsigned statecell_id;
@@ -1852,6 +1859,12 @@ struct ProgramStateCell {
   std::vector<TypeLoc> key_types;      // group ++ config column types
   std::vector<TypeLoc> summary_types;  // the folded value column type(s)
   ParsedFunctor functor;               // the reduction (agg summary / kv merge)
+  // P2c: how many of the trailing `key_types` are CONFIGURATION column types
+  // (the tail beyond the group-by columns). Codegen emits these as leading
+  // params on the reduction ABI (`Combine`/`Uncombine` for @invertible,
+  // `ReduceLive` for @recompute) and as the `Reduce_<id>::ConfigTuple`. 0 for a
+  // config-free aggregate or a KV index.
+  unsigned num_config_types{0u};
 
   ProgramStateCell(unsigned id_, bool invertible_, ParsedFunctor functor_)
       : id(id_), invertible(invertible_), functor(functor_) {}

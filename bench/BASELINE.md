@@ -303,3 +303,29 @@ exists to record — the witnesses stand in its place:
 - Suite at close: 164 cases (UNCHANGED from run 8 — no new cases, no
   golden churn anywhere in the epoch); ctest 3/3 (runtime_test 43);
   oracle + monotone sidecars byte-identical throughout.
+
+## Accepted run 10 (subgraphs/demand epoch CLOSE, 2026-07-16)
+
+COMPILER-SIDE epoch with ONE runtime-header-touching diff (P2c's
+StateCell.h ABI extension), gated on byte-identity rather than timing:
+
+- P0 (GROUP_UPDATE/STATE_SEAL census + V-AGG-* validators) and P1 (§6
+  monotone ingest folds lower from the DR-IR + V-INGEST-XCHECK Site 5):
+  observation-only / emission-ownership-only — generated datalog.h AND
+  full -ir-out byte-identical in opt AND nocf on the five ratified
+  witnesses (cf16_4, negate_lower_strata, deep_chain_retract, cf14_3,
+  average_weight; 20/20 comparisons per gate run).
+- P2c (config-column @invertible aggregates): the config-free path is
+  byte-identical (average_weight / pairwise_average_weight / aggregate_1
+  headers + IR, opt+nocf). BENCH NEUTRAL BY BYTE-IDENTITY: no bench
+  flagship uses aggregates/mutable — all 5 workloads' generated headers
+  byte-identical pre/post, so no interleaved A/B was owed. COUNTER-SEAM
+  no-op re-verified after the StateCell.h edit (OFF-path unaffected;
+  seams still compile away).
+- Q5 spots @128 per diff (3-rep, idle machine): release/opt 0.11-0.13s,
+  debug/opt 0.93-0.95s — flat against run 9 (0.11-0.12 / 0.87-0.95).
+  No knee; the >10% stop-line never approached.
+- Suite at close: 165 cases (config_agg_1 ADDED, its stdout/oracle/
+  monotone goldens blessed from oracle truth; the pre-existing 164
+  UNCHANGED — zero golden churn anywhere in the epoch); ctest 3/3;
+  oracle + monotone sidecars byte-identical throughout.

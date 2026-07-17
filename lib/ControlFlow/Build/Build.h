@@ -6,11 +6,13 @@
 #include <drlojekyll/Util/DefUse.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "../Program.h"
 
@@ -184,6 +186,24 @@ class Context {
   // deleter is type-erased at the reset site in Stratum.cpp, where DR.h is in
   // scope). Null when no stratum phases ran (no differential tables).
   std::shared_ptr<DRFlowGraph> dr_flow;
+
+  // §6 V-INGEST-XCHECK Site 5 (subgraphs/demand P1): the PAYLOAD each
+  // `LowerIngestFold` emission actually produced, recorded at emission time
+  // (the eager walk runs BEFORE the flow is built at BuildStratumPhases, so
+  // the flow does not exist at walk time — the §12.6 authority shape). A
+  // closing check in BuildStratumPhases compares this multiset against the
+  // flow's kIngestFold op multiset (coverage + payload). The key is the R1e
+  // census 5-tuple + the consumed derivation class (R-KLASS):
+  // (table, sign, is_explicit, role, klass, message-id).
+  struct EmittedIngestFold {
+    const void *table;   // the emitted UPDATECOUNT's table (read off the node)
+    int sign;            // +1 / -1
+    bool is_explicit;    // the message-support-bit toggle
+    uint8_t role;        // VecRole cast to its underlying type
+    uint8_t klass;       // the emitted UPDATECOUNT's deriv_class (R-KLASS)
+    uint64_t message;    // ParsedMessage::Id()
+  };
+  std::vector<EmittedIngestFold> emitted_ingest_folds;
 };
 
 // Populate `context.monotone_negated_tables` from `query.Negations()`: the

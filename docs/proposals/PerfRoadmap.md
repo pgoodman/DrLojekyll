@@ -2373,3 +2373,273 @@ rebuild the compiler mid-suite; NEVER time bench runs concurrently with
 suite runs; generated-code TEXT is not run-stable (pointer-keyed
 container orders — key comparisons on case+mode+knobs semantics, never
 generated-text hashes).
+
+## 15. Landing record (2026-07-16) — SUBGRAPHS/DEMAND EPOCH CLOSED
+
+Branch `subgraphs-demand` off main 0a4a9225. The epoch's working ledger
+is docs/proposals/SubgraphsDemand.md (§0 baseline, §1 the seed
+re-verification errata E-27..E-34, §2 the per-diff implementation
+records, §3 the judged designs, §3.1 the owner decisions); the binding
+artifacts are SubgraphsDemand.artifacts/ (p1-cf16-hole-target.md,
+p2c-config-agg-target.md — both AMENDED post-judge; p2b-instance-
+target.md, p3-demand-argument.md — both carried as next-epoch design
+records). Commits: 88585bec (ledger §0-§1, the fleet record), 59113fa6
+(P0 LANDED), 8f0b357a (§3 + the four design artifacts, judged),
+cc4cfa2d (§3.1 owner decisions), efc8b8c0 (P1/P2c artifacts amended),
+14790a28 (P1/§6 LANDED), 9d14f57e (P2c LANDED), plus this close commit.
+
+Method executed (the checkpoint method): fleet re-verification of the
+§14.2/§14.3 seed BEFORE building (5 opus derivation lanes + 5
+adversarial verifiers, ~848k tokens, 96 claims — the precedent held a
+SEVENTH time, and the verify pass also caught one of its own lanes'
+errors); P0 landed first with the seed's OWN census sketch corrected
+(E-27/E-28) and fire-tested; four designs each written WITH a
+hand-written binding artifact and adversarially judged (ALL FOUR
+REVISE — the judges materially re-shaped the epoch cut); owner
+decisions taken BEFORE emission-changing code (§3.1: the cut, the §6
+golden policy, the P3 re-charter); artifacts AMENDED per their judges
+before implementation; a Fable review before EACH emission commit
+(P1: APPROVE-WITH-NITS ×4 landed in-commit incl. the MEDIUM R-KLASS
+payload-consumption fix; P2c: APPROVE-WITH-NITS ×3 in-commit, plus the
+two-thresholds-one-sensor semantics empirically confirmed). EVERY
+review round found something real: the P0 seed sketch was a tautology
+that could never fire; the P1 judge proved the drafted hole validator
+could never fire; the P2c judge caught a won't-compile prose
+instruction and the @recompute config-routing contradiction; the P2b
+judge holed both concrete deliverables; the P3 judge found the
+CRITICAL premise hole (no demand seed exists in the eager/push model).
+
+### Seed errata found by the pre-code re-verification (full text ledger §1)
+
+- E-27 (REAL-DEFECT): the P0 sketch's `exp_state_seal = count of
+  statecells` is a flow-derived tautology; both recounts must derive
+  from the QUERY (|Aggregates()| + |KVIndices()|, provably tight).
+- E-28 (REAL-DEFECT): statecell_id is a mint-order artifact — never a
+  census key; the sound key is (agg_table, provenance, algebra, view).
+- E-29: "the plain assert DR.cpp:629" is a blank line; the real asserts
+  are :663-665 (V-AGG-SOLE) + :718 (acyclic fence).
+- E-30: the census expect() list is NINE kinds at :2810-2818, not five.
+- E-31 (REAL-DEFECT): P2(c) under-scoped — the config KEY projection is
+  threaded end-to-end but the REDUCTION ABI never receives config; the
+  corpus case must exercise a config-DEPENDENT reduction.
+- E-32 (REAL-DEFECT): group_ids CANNOT keep demand copies distinct
+  (empty-set ⇒ mergeable); a demand transform needs a STRUCTURAL input
+  edge (the ⊥c-pivot precedent).
+- E-33: P3 obligations extended — (e) zero-pivot-@product, (f) demand
+  relations need real sources, + the Stratify induction cross-check.
+- E-34: the §6 hole diff is not a bare signature change (assert
+  relaxation + monotone routing move required).
+
+### What landed
+
+P0 — THE GROUP_UPDATE/STATE_SEAL CENSUS (E-25 charter DISCHARGED):
+query-derived recount + order-free key multiset + the promoted
+always-on V-AGG-EFFECT / V-AGG-SOLE / V-AGG-PAIR structural validators;
+fire-tested both ways; observation-only, byte-identical. The substrate
+this epoch extends is no longer un-censused, and P0 is the census
+template the future instance family copies.
+
+P1 — THE §6 MONOTONE/DESCENT STAGE: every ingest fold now lowers from
+the DR-IR (MakeMonotoneIngestFold the single monotone authority;
+LowerIngestFold returns the UPDATECOUNT cursor whose empty body the
+hand-coded descent fills — the hole contract); the INGEST-CURSOR-SHAPE
+always-on check; V-INGEST-XCHECK Site 5 (order-free 6-tuple incl. the
+R-KLASS consumed payload class) puts the eager ingest web in the
+cross-checked model — the P2-cutover deviation's obligation DISCHARGED,
+the F17/F18 bug-class kill extended to the last fold surface. The
+remaining hand-coded emission surface is the eager DESCENT itself.
+BYTE-IDENTITY 20/20 under the ratified §12.4-precedent structural gate.
+
+P2(c) — CONFIG-COLUMN AGGREGATES (@invertible arm): the CLAUDE.md gap
+closed for the natural case — config-DEPENDENT @invertible reductions
+lower end-to-end (StateCell raw-pack Fold, config-leading Combine/
+Uncombine, the kHasConfig discriminator with DebugValidate kept alive
+via identity-config probes, num_config threaded to the emitters, the
+algebra-forked fold arm, a config-aware oracle). config_agg_1 is the
+oracle-refereed witness; SUITE 164 → 165.
+
+P2(b) — PAPER-ONLY (owner decision §3.1): the keyed-instance SUBSTRATE
+design is ratified as the standing record (effect sub-domain totality,
+the C-0b-one-level-up answer = ACYCLIC-FROZEN-FIRST under the
+ViewSelfReachable fence, scheduler pricing at all seven plug-in
+points); its two concrete deliverables are next-epoch obligations (the
+InstanceStore sealed-word redesign around the nested table's OWN kInI
+watermark — a store-held row-id watermark breaks non-aliasing under
+CompactDead; the two-table double-count seam; a demand-WIRED witness).
+
+P3 — DESIGN-ONLY, RE-CHARTERED (owner decision §3.1): the judge's
+CRITICAL stands — a pure Query-IR magic-sets rewrite has NO demand-seed
+injection point in this eager/push engine (a bound #query is a
+read-time index probe over an already-materialized table; d_p is
+source-less and dead-flow collapses). The re-charter question is the
+SEED MECHANISM (generalize the forcing-message surface), plus
+per-adornment splits and the all-free-forces-full interaction; the
+amended invariant argument (E-32/E-33 + judge) is the standing gate;
+any live transform is mode-gated off (37-38/164 corpus cases carry
+bound queries).
+
+### THE NUMBERS (bench/BASELINE.md run 10)
+
+Byte-identity epoch with one suite-growing diff: P0/P1 byte-identical
+(20/20 structural-gate comparisons per run); P2c config-free path
+byte-identical, bench NEUTRAL BY BYTE-IDENTITY (no flagship uses
+aggregates), counter-seam no-op re-verified after the one Runtime
+header edit; suite 165 (the 164 zero churn all epoch; config_agg_1
+blessed from oracle truth); ctest 3/3 throughout; Q5 spots flat all
+epoch (release/opt 0.11-0.13s, debug/opt 0.93-0.95s @128 vs the run-9
+0.11-0.12/0.87-0.95 baselines).
+
+### Deviations for ratification (SEED TO NEXT EPOCH)
+
+RATIFIED 2026-07-16 (owner, at close — all four as recorded below):
+the P2c residual config-@recompute fence, the config_agg_2 follow-on
+carry, the landed Site-5 coverage/payload scope (tree shape via the
+structural golden gate), and the FINDINGS.md no-entry disposition.
+Nothing re-opens; the §16 seed carries them as settled.
+
+1. P2c RESIDUAL FENCE: config-column aggregates whose functor is not
+   @invertible (incl. the over() undeclared default → @recompute) are
+   rejected with a clean diagnostic — lifting the fence unconditionally
+   would have regressed config @recompute from clean-diagnostic to
+   uncompilable generated code. Ratify the landed fence.
+2. config_agg_2 (@recompute config) is a FOLLOW-ON: the runtime/codegen
+   ABI is present but the emit-arm wiring (Emit/Seal config forwarding;
+   the store's bulk Seal() needs a caller-supplied or key-derived
+   config) is not. Carried to §16.
+3. P1 SITE-5 SCOPE: the seed promised an "emitted-tree↔flow
+   cross-check"; the landed Site 5 is a fold-op COVERAGE + PAYLOAD
+   multiset check, with tree SHAPE delegated (by judged design) to the
+   ratified -ir-out structural golden gate. Ratify the landed scope.
+4. FINDINGS.md UNCHANGED: nothing escaped to a golden; every catch
+   (the P0 tautology, the never-fires validator, the won't-compile
+   instruction, the P3 premise hole) was design/judge-time or
+   fire-test-time, pre-commit — recorded in the ledger per convention.
+
+EPOCH CLOSED. E-numbering continues at E-35. Next epoch per §16.
+
+## 16. Epoch-start addendum (2026-07-16, at the subgraphs/demand
+## close): the NEXT EPOCH SEED — DEMAND SEEDS + KEYED INSTANCES
+## (SINGLE-PASS SEED by the closing session — to-be-re-verified per the
+## house precedent: E-1..E-34 across SEVEN epochs, EVERY pre-code
+## re-verification has found a real seed defect. Anchors are close-time
+## line numbers on branch subgraphs-demand; re-derive every one.
+## Continue the E-numbering at E-35.)
+
+### 16.0 Why an epoch here
+
+The subgraphs/demand epoch landed the SUBSTRATE half of its charter
+(P0 census, §6 ingest completion, config-column aggregates) and
+converted the SPECULATIVE half into two precisely-holed design records:
+p2b-instance-target.md (substrate ratified; store + witness holed) and
+p3-demand-argument.md (invariant argument amended; premise holed at the
+seed). The next epoch's charter is to CLOSE THOSE TWO HOLES TOGETHER —
+they are one problem: a keyed nested instance needs a demand frontier
+as input, and a demand frontier needs an injection point the eager/push
+model does not currently give a Query-IR rewrite. The judge's finding
+is the design brief: the FORCING-MESSAGE surface (lib/ControlFlow/
+Build/Build.cpp:246-290 at close — a #message-forced query that
+re-enters the eager web) is the one query-driven re-injection mechanism
+in the engine; generalizing it into a compiler-SYNTHESIZED demand
+message is the candidate seed mechanism that keeps SLDMagic a
+transformation, never an evaluator (the rewrite emits demand-relation
+INSERTs fed by a synthesized forcing path; the runtime bound argument
+becomes an ordinary message batch at query-call time).
+
+### 16.1 Carried residue (each with its home)
+
+  - config_agg_2: the @recompute config emit-arm wiring (Emit/Seal
+    config forwarding — decide caller-supplied vs key-derived; the
+    residual fence at lib/ControlFlow/Build/Build.cpp points at it).
+  - InstanceStore REDESIGN (p2b judge HIGH): the sealed side must ride
+    the nested DiffTable's OWN kInI watermark (Table.h Seal/sealed) —
+    a store-held row-id watermark breaks non-aliasing under CompactDead
+    renumbering; Emit/Old must be type-symmetric (both set-valued).
+  - The TWO-TABLE DOUBLE-COUNT seam (p2b judge MEDIUM): nested-table
+    commit sweep vs outer publish netting — specify before any emission.
+  - The DEMAND-WIRED WITNESS (p2b judge HIGH): the #subgraph surface
+    (or bound-#query lowering) must wire demand→instance with a REAL
+    column edge (E-32) or the witness is dead-flow-collapsed inertness.
+  - PER-ADORNMENT demand splits + the all-free-forces-full interaction
+    (p3 judge CRITICAL-2/HIGH): transitive_closure.dr needs THREE
+    adornments of tc; an all-free consumer makes sibling demand guards
+    prune nothing — specify both before code.
+  - E-32/E-33 amended P3 obligations (a)-(f): the standing gate; the
+    d_p source-projection CSE question (empty group_ids) needs its own
+    discharge, not just p'.
+  - P4 residue carried: shared-input drain fusion (first witness still
+    the interior-fold CSE question — see the P1 artifact's §4 record);
+    uses_functors dead-arm excision (WASM-gated); sorted-multiset
+    MIN/MAX; algebra class (II) mergeable-sketch lowering; KVINDEX
+    dataflow-node deletion; aggregates over MONOTONE inputs (§C-4);
+    func.Name()-vs-Sanitize; kSectionWalk pivot-compare elision
+    (MEASURE-FIRST); R4 re-motivation bar (WCOJ 3+-way witness);
+    StateCell/instance dead-group compaction (MEASURE-FIRST).
+
+### 16.2 The surface the next epoch extends, as pseudocode (close-time
+### anchors; re-verify)
+
+  THE FORCING-MESSAGE PATH (the demand-seed candidate): a #query with a
+  forcing #message lowers to a receive that APPENDS the bound tuple to
+  the query relation's input path and re-runs the eager web + phases
+  (lib/ControlFlow/Build/Build.cpp:246-290; the forced-query entry
+  point takes (db, log, functors) — CLAUDE.md generated-API note).
+  A bound #query WITHOUT a forcer is a pure read-time probe:
+  DataTable + GetOrCreateIndex → scanned_index (Build.cpp:394-408).
+  THE GENERALIZATION SKETCH: the demand transform synthesizes, per
+  demanded adornment p^α, (i) a demand relation d_p^α with a REAL
+  producing source (the demanding subgoals' projections + the query's
+  own synthesized forcing message as the ROOT seed), (ii) the guarded
+  copy p' = p ⋈ d_p^α (the ⊥c-pivot structural shape, E-32), and
+  (iii) a forced-query entry point that BATCHES the runtime bound
+  argument into the synthesized demand message — the seed enters as an
+  ordinary message, the engine stays push-only, and cursors invalidate
+  per the existing entry-point contract. Stratification, the (a)-(f)
+  obligations, and mode-gating per p3-demand-argument.md as amended.
+
+  THE INSTANCE FAMILY plugs into the seven §14.2(C) points exactly as
+  ratified in p2b-instance-target.md §6 (anchors re-verified by its
+  judge), with the store redesigned per §16.1 and the census copying
+  the P0 template (query-derived recount, no mint-order keys).
+
+### 16.3 The path as diffs (owner re-ranks at epoch start)
+
+  D0  Re-verify this seed (the house precedent; E-35+).
+  D1  THE SEED MECHANISM design + judge round: generalize the forcing
+      path into synthesized demand messages; per-adornment splits; the
+      all-free interaction; the (a)-(f) argument re-reviewed against
+      the CONCRETE mechanism. NO CODE until it survives its judge.
+  D2  config_agg_2 (@recompute config emit-arm) — small, independent,
+      closes the P2c fence.
+  D3  InstanceStore redesign on paper → the demand-wired witness IR
+      hand-written → SUBGRAPH_INSTANTIATE emission, acyclic-frozen
+      first (the ratified C-0b answer), census from day one.
+  D4  The demand transform behind an off-by-default mode, on the D1
+      mechanism, measure-first (the COST demand-benefit witness).
+
+### 16.4 Bootstrap (next session)
+
+Branch off main once subgraphs-demand merges. Read IN ORDER:
+docs/proposals/SubgraphsDemand.md END TO END (this epoch's ledger —
+errata E-27..E-34, the four judge records, §3.1 decisions, the three
+landing records); THIS file's §15; the four SubgraphsDemand.artifacts/
+(p1/p2c as landed-and-amended precedent, p2b/p3 as the holed design
+records THIS epoch's charter closes); AggregatingFunctors.md §4;
+v3-spec.md §2 + v3-spec-statecell.md §0-§2 (the extension pattern).
+Code anchors: lib/ControlFlow/Build/Build.cpp:246-290 (forcing path)
++ :394-408 (bound-query probe) + the config fence; StateCell.h (the
+config ABI + the Seal() config question); DR.cpp BuildGroupUpdateOps +
+the P0 census (the template); Stratum.cpp LowerIngestFold (the cursor/
+hole contract P1 landed); tests/OptDiff/cases/config_agg_1.* (the
+corpus mold). Method: the checkpoint method — fleet re-verify §16.2/
+§16.3 before building (E-35+, report loudly); hand-write the demand-
+wired witness IR before generalizing; owner decisions before
+emission-changing code; Fable review before each emission commit;
+gates per the standing policy (suite 165 growing oracle-refereed,
+byte-identity-with-structural-gate for shape-only diffs, permcheck
+fallback never to green red, counter-seam no-op after any Runtime
+header edit, bench neutral at the flagship points, ctest 3/3, landing
+record → §17). Environment gotchas carried: export
+PATH="/Users/pag/Code/.brew/bin:$PATH"; macOS bash 3.2 (no declare
+-A); zsh ${=var}; never rebuild mid-suite; never time bench
+concurrently; push to git@github.com:pgoodman/DrLojekyll.git (the
+https origin tracking ref goes stale).

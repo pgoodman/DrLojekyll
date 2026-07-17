@@ -1104,6 +1104,29 @@ void Generator::EmitStateCellStructs(void) {
       summary_type += ">";
     }
 
+    // P2c: the CONFIGURATION column type suffix (the tail of KeyTypes). A
+    // config-DEPENDENT reduction receives these as LEADING params on its C-5
+    // free functions and policy methods; a config-FREE cell (num_config == 0)
+    // emits exactly the pre-P2c signatures (byte-identical). @invertible takes
+    // config at the Fold arm (Combine/Uncombine); @recompute takes it at the
+    // reduce arm (ReduceLive) — the two algebra arms use config at disjoint
+    // sites, never both.
+    const unsigned num_config = cell.NumConfigTypes();
+    const auto &key_types = cell.KeyTypes();
+    // `cfg_decl_prefix`: the leading params for the C-5 free-function DECLS
+    // (e.g. `int32_t cfg0, `); empty when config-free. `cfg_fwd_prefix`: the
+    // matching forwarded actual args at the call site (`cfg0, `). `cfg_tuple`:
+    // the std::tuple<...> config type list for the policy's ConfigTuple.
+    std::string cfg_decl_prefix, cfg_fwd_prefix, cfg_tuple;
+    for (unsigned k = 0u; k < num_config; ++k) {
+      const std::string cty =
+          TypeName(module, key_types[key_types.size() - num_config + k]);
+      const std::string cname = "cfg" + std::to_string(k);
+      cfg_decl_prefix += cty + " " + cname + ", ";
+      cfg_fwd_prefix += cname + ", ";
+      cfg_tuple += (k ? ", " : "") + cty;
+    }
+
     // C-5 free-function forward declarations: DECLARED in the generated header,
     // DEFINED out-of-line by the driver (the DatabaseLog/DatabaseFunctors
     // declared-in-header/defined-by-driver idiom, but as free functions so the
@@ -1114,12 +1137,13 @@ void Generator::EmitStateCellStructs(void) {
        << "` (C-5 driver ABI; define these out-of-line in your driver TU).\n";
     if (cell.IsInvertible()) {
       hh << summary_type << " " << fname << "_identity();\n"
-         << summary_type << " " << fname << "_combine(" << summary_type
-         << " working, " << summary_type << " value);\n"
-         << summary_type << " " << fname << "_uncombine(" << summary_type
-         << " working, " << summary_type << " value);\n";
+         << summary_type << " " << fname << "_combine(" << cfg_decl_prefix
+         << summary_type << " working, " << summary_type << " value);\n"
+         << summary_type << " " << fname << "_uncombine(" << cfg_decl_prefix
+         << summary_type << " working, " << summary_type << " value);\n";
     } else {
-      hh << summary_type << " " << fname << "_reduce(const " << summary_type
+      hh << summary_type << " " << fname << "_reduce(" << cfg_decl_prefix
+         << "const " << summary_type
          << " *values, const int32_t *counts, ::std::size_t n);\n";
     }
 
@@ -1129,28 +1153,43 @@ void Generator::EmitStateCellStructs(void) {
     hh << "struct " << reduce_name << " {\n";
     hh.PushIndent();
     hh << hh.Indent() << "using Summary = " << summary_type << ";\n";
+    // P2c discriminator: config-bearing cells expose kHasConfig + ConfigTuple so
+    // the runtime StateCellStore::DebugValidate can synthesize identity config
+    // probes for the invertibility round-trip (option (i)). Config-free cells
+    // omit these entirely (the HasConfigPolicy concept is unsatisfied and the
+    // debug machinery compiles away byte-identically to pre-P2c).
+    if (num_config) {
+      hh << hh.Indent() << "static constexpr bool kHasConfig = true;\n"
+         << hh.Indent() << "static constexpr unsigned num_config = "
+         << num_config << "u;\n"
+         << hh.Indent() << "using ConfigTuple = ::std::tuple<" << cfg_tuple
+         << ">;\n";
+    }
     if (cell.IsInvertible()) {
       // Working == Summary (abelian running reduction). The driver supplies the
-      // step semantics; the engine owns the layout.
+      // step semantics; the engine owns the layout. Config (if any) is a leading
+      // param on Combine/Uncombine, forwarded to the driver free function.
       hh << hh.Indent() << "using Working = Summary;\n"
          << hh.Indent() << "static void Identity(Working &w) { w = " << fname
          << "_identity(); }\n"
-         << hh.Indent()
-         << "static void Combine(Working &w, const Summary &v) { w = " << fname
-         << "_combine(w, v); }\n"
-         << hh.Indent()
-         << "static void Uncombine(Working &w, const Summary &v) { w = " << fname
-         << "_uncombine(w, v); }\n"
+         << hh.Indent() << "static void Combine(Working &w, " << cfg_decl_prefix
+         << "const Summary &v) { w = " << fname << "_combine(" << cfg_fwd_prefix
+         << "w, v); }\n"
+         << hh.Indent() << "static void Uncombine(Working &w, "
+         << cfg_decl_prefix << "const Summary &v) { w = " << fname
+         << "_uncombine(" << cfg_fwd_prefix << "w, v); }\n"
          << hh.Indent()
          << "static Summary Finalize(const Working &w) { return w; }\n";
     } else {
       // @recompute: rescan the live multiset from scratch (the driver merge).
-      hh << hh.Indent()
-         << "static Summary ReduceLive(const ::hyde::rt::Vec<Summary> &values, "
+      // Config (if any) is a leading param on ReduceLive, forwarded to the
+      // driver free function; the store loads it from KeyAt(gid) at emit time.
+      hh << hh.Indent() << "static Summary ReduceLive(" << cfg_decl_prefix
+         << "const ::hyde::rt::Vec<Summary> &values, "
             "const ::hyde::rt::Vec<int32_t> &counts) {\n";
       hh.PushIndent();
-      hh << hh.Indent() << "return " << fname
-         << "_reduce(values.begin(), counts.begin(), values.Size());\n";
+      hh << hh.Indent() << "return " << fname << "_reduce(" << cfg_fwd_prefix
+         << "values.begin(), counts.begin(), values.Size());\n";
       hh.PopIndent();
       hh << hh.Indent() << "}\n";
     }
@@ -1973,6 +2012,15 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
   const auto &gpos = region.GroupPositions();
   const auto &spos = region.SummaryPositions();
   const auto key_type = "Key_" + std::to_string(region.StateCellId());
+  // P2c: the config positions are the tail of `gpos` (gpos = group ++ config).
+  // For an @invertible cell they are passed as LEADING args to Fold (the config
+  // gate is applied incrementally at fold time). A @recompute cell suppresses
+  // config at the Fold arm — its Working is a summary-only membership multiset
+  // and config routes through Emit/ReduceLive instead — so the fold stays
+  // config-free there. A config-free cell has num_config == 0 and emits the
+  // pre-P2c `Fold(gid, sign, summary)` byte-identically.
+  const unsigned num_config = region.NumConfigPositions();
+  const bool fold_takes_config = region.IsInvertible() && num_config != 0u;
 
   const DataTable agg = region.AggTable();
   const auto agg_member = table_member[agg.Id()];
@@ -2011,8 +2059,18 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
             : ("{" + JoinExprs(sum_parts, ", ") + "}");
     cc << cc.Indent() << "const auto gid = " << sc << ".FindOrAddGroup("
        << key_type << "{" << JoinExprs(key_parts, ", ") << "});\n";
-    cc << cc.Indent() << sc << ".Fold(gid, " << sign << ", " << summary_expr
-       << ");\n";
+    // P2c @invertible config prefix: the last `num_config` group positions are
+    // the config locals, passed AHEAD of the summary to Fold (the raw trailing
+    // pack `(cfg0.., v)` lands on the emitted Reduce::Combine's named params).
+    std::string cfg_prefix;
+    if (fold_takes_config) {
+      for (unsigned k = 0u; k < num_config; ++k) {
+        cfg_prefix += "f" + std::to_string(gpos[gpos.size() - num_config + k]) +
+                      ", ";
+      }
+    }
+    cc << cc.Indent() << sc << ".Fold(gid, " << sign << ", " << cfg_prefix
+       << summary_expr << ");\n";
     cc.PopIndent();
     cc << cc.Indent() << "}\n";
   };

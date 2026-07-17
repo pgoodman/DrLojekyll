@@ -60,6 +60,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <new>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -99,6 +100,20 @@ inline constexpr uint32_t kNoGroup = ~0u;
 // Working carries {sum,count} and Finalize divides. emit is O(1); the
 // touched-group emit sweep is O(touched). This is what average_weight.dr's
 // sum_i32 / count_i32 use.
+// Detect a config-dependent emitted reduction policy: the generator stamps
+// `static constexpr unsigned num_config` (and `kHasConfig`) plus a
+// `ConfigTuple` (a std::tuple of the config column types) onto config-bearing
+// `Reduce_<id>` policies (P2c). A config-FREE policy has neither, and every
+// probe below compiles away.
+template <typename Reduce>
+concept HasConfigPolicy = requires { Reduce::kHasConfig; typename Reduce::ConfigTuple; };
+
+// Fallback `ConfigTuple` provider for config-free policies (an empty tuple, so
+// the DebugValidate std::apply over it expands to zero config probes).
+struct IdentityConfigTuple {
+  using ConfigTuple = std::tuple<>;
+};
+
 template <typename Reduce>
 struct Invertible {
   using Working = typename Reduce::Working;
@@ -107,6 +122,16 @@ struct Invertible {
 
   static constexpr bool kInvertible = true;
 
+  // P2c: does the emitted reduction take leading config args? Config-free
+  // policies leave this false and the DebugValidate config-probe machinery
+  // compiles away (byte-identical to pre-P2c). `ConfigTuple` (a std::tuple of
+  // the config column types) is exposed only for config-bearing cells so the
+  // debug round-trip can synthesize value-init config probes.
+  static constexpr bool kHasConfig = HasConfigPolicy<Reduce>;
+  using ConfigTuple =
+      typename std::conditional_t<HasConfigPolicy<Reduce>, Reduce,
+                                  IdentityConfigTuple>::ConfigTuple;
+
   static void Identity(Working &w) {
     Reduce::Identity(w);
   }
@@ -114,19 +139,34 @@ struct Invertible {
   // Signed value-fold: +1 combines, -1 unfolds (the declared inverse). NO
   // presence crossing (spec C-0c): the crossing happens later, at
   // emit_touched, and only if new != old.
-  static void Fold(Working &w, int32_t sign, const Summary &v) {
+  //
+  // The trailing pack is `[config...,] summary` (P2c). Forwarded RAW to the
+  // fixed-signature `Reduce::Combine`/`Uncombine` the generator emits: config-
+  // free = `(Working&, const Summary&)` (today, byte-identical), config-
+  // dependent = `(Working&, cfg0.., const Summary&)`. A mid-signature config
+  // pack is non-deducible in C++, so config MUST ride the trailing pack and
+  // land on Combine's named params.
+  template <typename... Args>
+  static void Fold(Working &w, int32_t sign, Args &&...args) {
     if (0 < sign) {
-      Reduce::Combine(w, v);
+      Reduce::Combine(w, static_cast<Args &&>(args)...);
     } else {
-      Reduce::Uncombine(w, v);
+      Reduce::Uncombine(w, static_cast<Args &&>(args)...);
     }
   }
 
-  static Summary Emit(const Working &w) {
+  // @invertible Emit/SealFrom are config-FREE (the config gate was applied
+  // incrementally at Fold time; Finalize is identity/arithmetic on the running
+  // reduction). The variadic `Cfg...` pack is accepted-and-ignored so the store
+  // can call Emit/SealFrom uniformly across algebras; for @invertible it is
+  // always empty (EmitGroupUpdate emits config at the Fold arm, not here).
+  template <typename... Cfg>
+  static Summary Emit(const Working &w, Cfg &&...) {
     return Reduce::Finalize(w);
   }
 
-  static Sealed SealFrom(const Working &w) {
+  template <typename... Cfg>
+  static Sealed SealFrom(const Working &w, Cfg &&...) {
     return Reduce::Finalize(w);
   }
 
@@ -190,16 +230,25 @@ struct Recompute {
   }
 
   // Re-run the from-scratch reduction over the surviving (count > 0) members.
-  static Summary Emit(const Working &w) {
+  // The leading `cfg...` pack is the config columns (P2c config-dependent
+  // @recompute, e.g. max_above): config-free reductions pass no config and
+  // `ReduceLive(values, counts)` binds byte-identically to today; config-
+  // dependent reductions get `ReduceLive(cfg0.., values, counts)`. Config
+  // enters @recompute HERE (the emit/reduce path), never at Fold — the Working
+  // multiset stores summary values only.
+  template <typename... Cfg>
+  static Summary Emit(const Working &w, Cfg &&...cfg) {
     // Reduce sees the live multiset; @recompute functors are
     // order/multiplicity-defined by their own declared algebra (idempotent
     // MIN/MAX ignore multiplicity; a multiset SUM would honor it), so the
     // (values, counts) pair is faithful either way.
-    return Reduce::ReduceLive(*w.values, *w.counts);
+    return Reduce::ReduceLive(static_cast<Cfg &&>(cfg)..., *w.values,
+                              *w.counts);
   }
 
-  static Sealed SealFrom(const Working &w) {
-    return Emit(w);
+  template <typename... Cfg>
+  static Sealed SealFrom(const Working &w, Cfg &&...cfg) {
+    return Emit(w, static_cast<Cfg &&>(cfg)...);
   }
 
   static Summary OldOf(const Sealed &s) {
@@ -302,8 +351,19 @@ class StateCellStore {
 
   // VALUE-fold, NO presence crossing (spec C-0c). Records the group in
   // `touched` exactly once (mirror DiffTable::Touch, Table.h:657).
-  template <typename... Summary_>
-  void Fold(uint32_t gid, int32_t sign, Summary_ &&...s) {
+  //
+  // The trailing pack is `[config...,] summary` (P2c config-column aggregates):
+  // for a config-FREE aggregate it is a single summary scalar and binds
+  // `Algebra::Fold`'s `const Summary &v` byte-identically to the pre-P2c
+  // `Summary(v)` wrapper (which existed only to normalize a brace-init pack and
+  // was a no-op for a scalar summary). For a config-DEPENDENT @invertible
+  // aggregate the caller passes `(cfg0.., v)` and the pack is forwarded RAW to
+  // the fixed-signature `Reduce::Combine(Working&, cfg0.., const Summary&)` the
+  // generator emits — no `Summary(...)` reconstruction (which would collapse
+  // config into the summary type / arity-mismatch Combine). @recompute cells
+  // never receive config here (config routes through Emit/ReduceLive instead).
+  template <typename... Args>
+  void Fold(uint32_t gid, int32_t sign, Args &&...args) {
     HYDE_RT_BENCH_COUNT(folds_plus);  // Sign narrated by the caller's arms.
     Touch(gid);
     // Vec exposes only a const operator[] and Set (compaction must never hand
@@ -312,7 +372,7 @@ class StateCellStore {
     // the handle is unchanged (the pointed-to membership Vecs mutate in place)
     // and the write-back is a harmless POD store.
     Working w = working[gid];
-    Algebra::Fold(w, sign, Summary(static_cast<Summary_ &&>(s)...));
+    Algebra::Fold(w, sign, static_cast<Args &&>(args)...);
     working.Set(gid, w);
     // Occupancy (spec §C-1): each fold is one signed member; the net count
     // drives WorkingOccupied. A COUNT algebra's working value happens to equal
@@ -334,10 +394,14 @@ class StateCellStore {
   }
 
   // Current working value reduced to output columns. emit(g) — a VALUED read
-  // of the working word, RAW after every Fold this epoch.
-  Summary Emit(uint32_t gid) const {
+  // of the working word, RAW after every Fold this epoch. The optional leading
+  // `cfg...` pack (P2c config-dependent @recompute) is forwarded to the
+  // reduction; @invertible ignores it. Config-free call sites pass no config
+  // and this binds byte-identically to today's `Emit(gid)`.
+  template <typename... Cfg>
+  Summary Emit(uint32_t gid, Cfg &&...cfg) const {
     HYDE_RT_BENCH_COUNT(member_checks);
-    return Algebra::Emit(working[gid]);
+    return Algebra::Emit(working[gid], static_cast<Cfg &&>(cfg)...);
   }
 
   // Batch-start snapshot (frozen; the kInI-analogue, VALUED). old(g).
@@ -563,8 +627,23 @@ void StateCellStore<Key, Algebra>::DebugValidate(void) const {
       Working w = working[gid];
       const Summary before = Algebra::Emit(w);
       Summary probe{};
-      Algebra::Fold(w, +1, probe);
-      Algebra::Fold(w, -1, probe);
+      if constexpr (Algebra::kHasConfig) {
+        // P2c option (i): a config-DEPENDENT reduction's Combine/Uncombine take
+        // leading config args. Synthesize identity (value-initialized) config
+        // probes — the invertibility law Uncombine(cfg, Combine(cfg,w,v), v)==w
+        // holds for ANY FIXED cfg (fold and unfold apply the same cfg-gate), so
+        // a value-init cfg is a sound representative and keeps the round-trip
+        // check alive for config cells. `ConfigTuple` value-inits all cfg
+        // scalars; std::apply prepends them ahead of the summary probe.
+        typename Algebra::ConfigTuple cfg{};
+        std::apply(
+            [&](auto &...c) { Algebra::Fold(w, +1, c..., probe); }, cfg);
+        std::apply(
+            [&](auto &...c) { Algebra::Fold(w, -1, c..., probe); }, cfg);
+      } else {
+        Algebra::Fold(w, +1, probe);
+        Algebra::Fold(w, -1, probe);
+      }
       const Summary after = Algebra::Emit(w);
       assert(before == after);  // unfold ∘ fold == id on the summary.
     }

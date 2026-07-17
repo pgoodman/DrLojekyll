@@ -48,8 +48,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 164 corner-case programs as of the
-delta-relational-IR epoch) has one committed expected output in
+(`<name>.dr` + `<name>.main.cpp`, 165 corner-case programs as of the
+subgraphs/demand epoch) has one committed expected output in
 `tests/OptDiff/goldens/<name>.stdout`, and the 4 optimization modes are
 just execution variants — EVERY mode's stdout is byte-compared against the
 same golden (cross-mode agreement is implied). A case with a
@@ -192,13 +192,20 @@ exact signatures before writing a driver.
   `LowerDRFlow` (acyclic seeds/crossovers/product arms/claim drains/
   frontier filters), `LowerDRRounds` (per-SCC×phase fixpoint round shells),
   `LowerCommitSweeps` (commit + Seal), `LowerGroupUpdate` (R3 aggregates),
-  all in `Stratum.cpp`. Since the P2 cutover (ADL/functor-surface epoch),
-  a deletion-capable receive's two explicit ingest folds lower from the
-  DR-IR's stage-1 `kIngestFold` pair (`MakeStageOneIngestFolds` the single
-  payload authority, `LowerIngestFold` at the original walk position —
-  id-stream identity); the MONOTONE receive folds + the eager successor
-  walk (`BuildEagerRegion`, `Build.cpp`) remain the last hand-coded
-  emission surface (the P2 artifact §6 hole-contract follow-on).
+  all in `Stratum.cpp`. Since the subgraphs/demand epoch, EVERY ingest
+  fold lowers from the DR-IR: a deletion-capable receive's two explicit
+  folds from the stage-1 `kIngestFold` pair (`MakeStageOneIngestFolds`,
+  ADL/functor-surface P2 cutover) and a monotone table-bearing receive's
+  fold from its monotone op (`MakeMonotoneIngestFold`, the §6 stage) —
+  each the single payload authority, `LowerIngestFold` at the original
+  walk position (id-stream identity), which RETURNS the UPDATECOUNT
+  cursor whose EMPTY body the still-hand-coded eager descent
+  (`BuildEagerInsertionRegions`, `Build.cpp`) fills (the hole contract;
+  an always-on INGEST-CURSOR-SHAPE check guards the cursor, and
+  V-INGEST-XCHECK Site 5 multiset-compares every emitted fold against
+  the flow's kIngestFold enrollment — the eager web is in the
+  cross-checked model). The descent itself (`BuildEagerRegion`ff) is
+  the remaining hand-coded emission surface.
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —
@@ -279,7 +286,10 @@ compile.
 
 CLEAN-DIAGNOSTIC gaps that remain: a `mutable()` merge functor with NO
 declared `@`-algebra (V-ALGEBRA reject — must be `@invertible`/`@recompute`);
-aggregates with configuration columns; aggregates/KV over INDUCTION-OWNED
+config-column `@recompute` aggregates (the `@invertible` config arm LANDED
+in the subgraphs/demand epoch — `config_agg_1`, config-dependent reduction,
+free functions gain a leading config parameter; `config_agg_2` pending);
+aggregates/KV over INDUCTION-OWNED
 (recursively-derived) inputs; unstratified aggregation (an aggregate over
 its OWN recursive result, rejected by the dataflow Stratify pass as the
 sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).

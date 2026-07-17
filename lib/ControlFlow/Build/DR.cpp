@@ -640,7 +640,7 @@ static void BuildGroupUpdateOps(
     const std::unordered_map<TABLE *, unsigned> &scc_map, QueryView agg_view,
     AggProvenance prov, std::vector<QueryColumn> group,
     std::vector<QueryColumn> summary, QueryView input,
-    const ParsedFunctor &algebra_functor) {
+    const ParsedFunctor &algebra_functor, unsigned num_config_cols) {
   const Algebra alg = SelectAlgebra(algebra_functor);
   TABLE *const agg_table =
       impl->view_to_model[agg_view]->FindAs<DataModel>()->table;
@@ -671,6 +671,7 @@ static void BuildGroupUpdateOps(
   cell.key_cols = group;
   cell.summary_cols = summary;
   cell.algebra_functor = &algebra_functor;
+  cell.num_config_cols = num_config_cols;
   flow.statecells.push_back(std::move(cell));
 
   DROp op(DROpKind::kGroupUpdate);
@@ -683,6 +684,7 @@ static void BuildGroupUpdateOps(
   op.statecell_id = sc;
   op.group_cols = std::move(group);
   op.summary_cols = std::move(summary);
+  op.num_config_cols = num_config_cols;
 
   // ---- BAND (a) frontier_in : two per-sign arms over the input net frontiers.
   // Structurally a THIRD frontier-vec consumer, sibling of CROSSOVER/
@@ -794,6 +796,48 @@ std::vector<DROp> MakeStageOneIngestFolds(ParsedMessage message,
     ops.push_back(std::move(op));
   }
   return ops;
+}
+
+// §6 (subgraphs/demand P1): the single authority for a MONOTONE table-bearing
+// receive's ONE stage-1=false ingest-fold op. Sibling to
+// MakeStageOneIngestFolds — the monotone op differs on four fields
+// (is_explicit=false, stage1=false, single-signed +1, role from the boundary
+// predicate not from polarity) and its counter klass is EmissionDerivClass, not
+// a hard kNonRecursive; two constructors, one census. Both the flow enrollment
+// (BuildDRInventory's INGEST_FOLD block) and the walk-position lowering
+// (ExtendEagerProcedure → LowerIngestFold) construct their op here, so the
+// censused payload and the lowered payload cannot diverge (§12.6 single-
+// authority discipline). Pure function of (impl, context, message, receive,
+// table) — no ids. `impl`/`context` are threaded because MonotoneIngestRoleDR
+// and EmissionDerivClass both need them.
+DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
+                            ParsedMessage message, QueryView receive,
+                            TABLE *table) {
+  assert(!receive.CanReceiveDeletions());
+  assert(table != nullptr);
+  DROp op(DROpKind::kIngestFold);
+  op.ctx = Ctx::kEager;
+  op.ingest_message = message;
+  op.ingest_receive = receive;
+  op.ingest_table = table;
+  op.ingest_sign = 1;
+  op.ingest_is_explicit = false;
+  op.ingest_stage1 = false;
+  op.ingest_role = MonotoneIngestRoleDR(context, table);
+  DREffect cnt;
+  cnt.kind = EffKind::kCounter;
+  cnt.counter_table = table;
+  cnt.sign = 1;
+  cnt.klass = EmissionDerivClass(impl, context, receive);
+  op.effects.push_back(cnt);
+  if (op.ingest_role != VecRole::kEmpty) {
+    DREffect app;
+    app.kind = EffKind::kVecAppend;
+    app.value_table = table;
+    app.vec_role = op.ingest_role;
+    op.effects.push_back(app);
+  }
+  return op;
 }
 
 DRFlowGraph BuildDRInventory(
@@ -1027,13 +1071,16 @@ DRFlowGraph BuildDRInventory(
     for (auto col : agg.InputAggregatedColumns()) {
       summary.push_back(col);
     }
+    // P2c: the config columns are the tail of `group` (pushed after the group-by
+    // columns above). Their count is the reduction-ABI split the codegen needs.
+    const unsigned num_config = agg.NumConfigurationColumns();
     // The summarized input is the aggregate's predecessor carrying the
     // aggregated columns (Link.cpp binds it as a predecessor). A plain over()
     // aggregate has a single incoming summarized relation.
     QueryView input = QueryView(agg).Predecessors()[0];
     BuildGroupUpdateOps(flow, impl, context, scc_map, QueryView(agg),
                         AggProvenance::kOver, std::move(group),
-                        std::move(summary), input, agg.Functor());
+                        std::move(summary), input, agg.Functor(), num_config);
   }
   for (QueryKVIndex kv : query.KVIndices()) {
     std::vector<QueryColumn> group;  // config = () for a KV index
@@ -1047,7 +1094,7 @@ DRFlowGraph BuildDRInventory(
     QueryView input = QueryView(kv).Predecessors()[0];
     BuildGroupUpdateOps(flow, impl, context, scc_map, QueryView(kv),
                         AggProvenance::kKv, std::move(group), std::move(summary),
-                        input, kv.NthValueMergeFunctor(0));
+                        input, kv.NthValueMergeFunctor(0), /*num_config=*/0u);
   }
 
   // ------------------------------------------------------------- branches/joins
@@ -1719,7 +1766,8 @@ DRFlowGraph BuildDRInventory(
   // (Build.cpp:1048-1051 for every negate view). This is one cleanly-derivable
   // half of the eager web; the other, the eager INGEST_FOLD family, is
   // populated in P2/R1e below (deletion-capable receives stage-1; the
-  // monotone/descent surface is deferred — P2 artifact §6).
+  // monotone/descent surface lowered via LowerIngestFold since §6 —
+  // subgraphs/demand P1).
   for (QueryNegate negate : query.Negations()) {
     const QueryView negate_view(negate);
     const QueryView negated_view = negate.NegatedView();
@@ -1762,11 +1810,12 @@ DRFlowGraph BuildDRInventory(
   // monotone table is itself monotone plumbing (a deletion-receiving member
   // would make the table differential) and hence eager-walked, so member-set
   // existence == the walk's provisioning (§7d cross-checks that on every
-  // compile). The fold body hosts the eager descent, so the op stays
-  // hand-coded (§0/§6 — its INSERT stream publish is a WALK effect of the
-  // descent, never an ingest-seed effect). A table-less monotone receive
-  // mints no counter fold (ExtendEagerProcedure's monotone arm) and is not an
-  // ingest fold.
+  // compile). Since §6 (subgraphs/demand P1) the fold LOWERS via
+  // LowerIngestFold from MakeMonotoneIngestFold — the same op the census
+  // enrolls — and the descent's INSERT-stream publish / net-additions append
+  // is a WALK effect emitted INTO the returned UPDATECOUNT's hole, never an
+  // ingest-seed effect. A table-less monotone receive mints no counter fold
+  // (ExtendEagerProcedure's monotone else-branch) and is not an ingest fold.
   // Construction is ID-NEUTRAL (no region/vector ids); the queue-vec ids are
   // minted at LOWER time in the same (message, receive, polarity) order (§4).
   for (QueryIO io : query.IOs()) {
@@ -1796,32 +1845,13 @@ DRFlowGraph BuildDRInventory(
         continue;  // no cut/descent for a deletion-capable receive.
       }
 
-      // Monotone with a table (STAGE-1 OUT): inventoried + censused, never
-      // lowered this stage (the hand-coded walk still emits it).
+      // Monotone with a table (STAGE-1 OUT): inventoried + censused, and since
+      // §6 (subgraphs/demand P1) LOWERED via LowerIngestFold from this SAME
+      // constructor (the hand-coded monotone arm is gone). The single-authority
+      // MakeMonotoneIngestFold is shared with the walk-position lowering.
       if (table != nullptr) {
-        DROp op(DROpKind::kIngestFold);
-        op.ctx = Ctx::kEager;
-        op.ingest_message = message;
-        op.ingest_receive = receive;
-        op.ingest_table = table;
-        op.ingest_sign = 1;
-        op.ingest_is_explicit = false;
-        op.ingest_stage1 = false;
-        op.ingest_role = MonotoneIngestRoleDR(context, table);
-        DREffect cnt;
-        cnt.kind = EffKind::kCounter;
-        cnt.counter_table = table;
-        cnt.sign = 1;
-        cnt.klass = EmissionDerivClass(impl, context, receive);
-        op.effects.push_back(cnt);
-        if (op.ingest_role != VecRole::kEmpty) {
-          DREffect app;
-          app.kind = EffKind::kVecAppend;
-          app.value_table = table;
-          app.vec_role = op.ingest_role;
-          op.effects.push_back(app);
-        }
-        flow.ops.push_back(std::move(op));
+        flow.ops.push_back(
+            MakeMonotoneIngestFold(impl, context, message, receive, table));
         // NO def-edge: the monotone kNetAddition vec is not minted by the
         // differential-only MintTableVec loop; the append parks via
         // TableDeltaVector at LOWER time (§3a).
@@ -2758,8 +2788,6 @@ void ValidateDROps(
   // delete); a monotone receive with a table counts 1 (stage-1 OUT, still
   // censused); a table-less monotone receive counts 0. The key is
   // (table, sign, is_explicit, role, message), compared order-free.
-  // TODO(P4): the R3 GROUP_UPDATE/STATE_SEAL family still has NO census
-  // coverage here (E-25) — P4 residue, not expanded in this diff.
   unsigned exp_ingest = 0u;
   using IngestKey = std::tuple<uintptr_t, int, bool, uint8_t, uint64_t>;
   std::vector<IngestKey> exp_ingest_keys;
@@ -2786,6 +2814,40 @@ void ValidateDROps(
                                      static_cast<uint8_t>(role), mid);
       }
     }
+  }
+
+  // Expected GROUP_UPDATE / STATE_SEAL count + per-op key multiset (P0, the
+  // E-25 census gap closed): an INDEPENDENT recount over query.Aggregates()
+  // and query.KVIndices() — the mint loop's own discovery inputs, never
+  // flow-derived (E-27: `flow.statecells.size()` is pushed in lockstep with
+  // the ops by BuildGroupUpdateOps and would compare flow against itself).
+  // The recount is tight: the mint loops iterate the same accessors with no
+  // skip, and the Build.cpp pre-pass rejects (induction-owned input,
+  // config-column @recompute aggregates, undeclared KV algebra) bail via
+  // the num_errors→nullopt gate BEFORE any DR construction, so no
+  // unsupported agg/kv view coexists with a running census (config
+  // @invertible aggregates lower since P2c and are censused like any other). The key is (agg table, provenance, algebra, view id),
+  // compared order-free — statecell_id is a mint-order artifact and is
+  // deliberately NOT keyed (E-28); its bijection with the seals is the
+  // V-AGG-PAIR structural check below.
+  unsigned exp_group_update = 0u;
+  using GroupUpdateKey = std::tuple<uintptr_t, uint8_t, uint8_t, uint64_t>;
+  std::vector<GroupUpdateKey> exp_gu_keys;
+  const auto add_gu_key = [&](QueryView view, AggProvenance prov,
+                              const ParsedFunctor &functor) {
+    ++exp_group_update;
+    TABLE *const agg_table =
+        impl->view_to_model[view]->FindAs<DataModel>()->table;
+    exp_gu_keys.emplace_back(reinterpret_cast<uintptr_t>(agg_table),
+                             static_cast<uint8_t>(prov),
+                             static_cast<uint8_t>(SelectAlgebra(functor)),
+                             view.UniqueId());
+  };
+  for (QueryAggregate agg : query.Aggregates()) {
+    add_gu_key(QueryView(agg), AggProvenance::kOver, agg.Functor());
+  }
+  for (QueryKVIndex kv : query.KVIndices()) {
+    add_gu_key(QueryView(kv), AggProvenance::kKv, kv.NthValueMergeFunctor(0));
   }
 
   // Compare against the DERIVED op inventory.
@@ -2816,6 +2878,8 @@ void ValidateDROps(
   expect(DROpKind::kFrontierFilter, exp_filter, "frontier filters");
   expect(DROpKind::kCommitSweep, exp_sweep, "commit sweeps");
   expect(DROpKind::kIngestFold, exp_ingest, "ingest folds");
+  expect(DROpKind::kGroupUpdate, exp_group_update, "group updates");
+  expect(DROpKind::kStateSeal, exp_group_update, "state seals");
 
   // The INGEST_FOLD per-op key multiset (order-free; artifact §7): the
   // recomputed (table, sign, is_explicit, role, message) keys must equal the
@@ -2841,6 +2905,110 @@ void ValidateDROps(
                    "derived (table, sign, is_explicit, role, message) multiset "
                    "disagrees with the independent recount\n");
       std::abort();
+    }
+  }
+
+  // The GROUP_UPDATE per-op key multiset (order-free; P0): the recomputed
+  // (agg table, provenance, algebra, view id) keys must equal the multiset
+  // read off `flow`'s ops — a wrong-view enrollment, a wrong provenance, or a
+  // wrong algebra selection mismatches here even when the count agrees.
+  {
+    std::vector<GroupUpdateKey> got_gu_keys;
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kGroupUpdate) {
+        continue;
+      }
+      got_gu_keys.emplace_back(reinterpret_cast<uintptr_t>(op.agg_table),
+                               static_cast<uint8_t>(op.provenance),
+                               static_cast<uint8_t>(op.algebra),
+                               op.agg_view->UniqueId());
+    }
+    std::sort(exp_gu_keys.begin(), exp_gu_keys.end());
+    std::sort(got_gu_keys.begin(), got_gu_keys.end());
+    if (exp_gu_keys != got_gu_keys) {
+      std::fprintf(stderr,
+                   "error: DR-IR op census mismatch (group update keys): the "
+                   "derived (table, provenance, algebra, view) multiset "
+                   "disagrees with the independent recount\n");
+      std::abort();
+    }
+  }
+
+  // V-AGG-EFFECT (P0 effect-set totality; the promoted DR.cpp mint-time
+  // asserts, E-29): every kGroupUpdate carries exactly the spec §2.3 effect
+  // set — 2 frontier drains, 2 state folds (both signs), 1 emit + 1 old, and
+  // the one-net-pair tail (2 NonRecursive counters, 2 kInI crossings, 2 queue
+  // appends). Every kStateSeal carries exactly its sign-0 global:rmw fold.
+  // V-AGG-SOLE: the cell is a PEER of the agg's own differential table — the
+  // summarized input's table is non-null and never aliases the agg table.
+  // V-AGG-PAIR: statecell ids are a bijection — each kGroupUpdate owns a
+  // distinct id in [0, |statecells|) and exactly one kStateSeal carries each
+  // of the same ids.
+  {
+    std::vector<unsigned> gu_cells, seal_cells;
+    for (const DROp &op : flow.ops) {
+      if (op.kind == DROpKind::kGroupUpdate) {
+        unsigned drains = 0u, folds = 0u, emits = 0u, olds = 0u,
+                 counters = 0u, crossings = 0u, appends = 0u;
+        int fold_signs = 0, counter_signs = 0;
+        for (const DREffect &fx : op.effects) {
+          switch (fx.kind) {
+            case EffKind::kVecDrain: ++drains; break;
+            case EffKind::kStateFold: ++folds; fold_signs += fx.sign; break;
+            case EffKind::kStateEmit: ++emits; break;
+            case EffKind::kStateOld: ++olds; break;
+            case EffKind::kCounter:
+              ++counters;
+              counter_signs += fx.sign;
+              if (fx.klass != DerivClass::kNonRecursive) {
+                ValidatorFail("V-AGG-EFFECT: a GROUP_UPDATE counter is not "
+                              "NonRecursive (the acyclic fence)");
+              }
+              break;
+            case EffKind::kInIReadFrozen: ++crossings; break;
+            case EffKind::kVecAppend: ++appends; break;
+            default:
+              ValidatorFail("V-AGG-EFFECT: a GROUP_UPDATE carries an effect "
+                            "kind outside the spec §2.3 set");
+          }
+        }
+        if (drains != 2u || folds != 2u || fold_signs != 0 || emits != 1u ||
+            olds != 1u || counters != 2u || counter_signs != 0 ||
+            crossings != 2u || appends != 2u) {
+          ValidatorFail("V-AGG-EFFECT: a GROUP_UPDATE effect set is not the "
+                        "spec §2.3 totality (2 drains, ± folds, emit+old, "
+                        "one-net-pair tail)");
+        }
+        if (op.agg_table == nullptr || !op.input_view || !op.agg_view) {
+          ValidatorFail("V-AGG-SOLE: a GROUP_UPDATE lacks its table or views");
+        }
+        TABLE *const input_table =
+            impl->view_to_model[*op.input_view]->FindAs<DataModel>()->table;
+        if (input_table == nullptr || input_table == op.agg_table) {
+          ValidatorFail("V-AGG-SOLE: a GROUP_UPDATE's summarized input table "
+                        "is missing or aliases the aggregate's own table");
+        }
+        gu_cells.push_back(op.statecell_id);
+      } else if (op.kind == DROpKind::kStateSeal) {
+        if (op.effects.size() != 1u ||
+            op.effects[0].kind != EffKind::kStateFold ||
+            op.effects[0].sign != 0) {
+          ValidatorFail("V-AGG-EFFECT: a STATE_SEAL effect set is not the "
+                        "single sign-0 sealed:=working fold");
+        }
+        seal_cells.push_back(op.statecell_id);
+      }
+    }
+    std::sort(gu_cells.begin(), gu_cells.end());
+    std::sort(seal_cells.begin(), seal_cells.end());
+    if (gu_cells != seal_cells ||
+        std::adjacent_find(gu_cells.begin(), gu_cells.end()) !=
+            gu_cells.end() ||
+        gu_cells.size() != flow.statecells.size() ||
+        (!gu_cells.empty() &&
+         gu_cells.back() != static_cast<unsigned>(gu_cells.size() - 1u))) {
+      ValidatorFail("V-AGG-PAIR: statecell ids are not a GROUP_UPDATE ↔ "
+                    "STATE_SEAL bijection onto [0, |statecells|)");
     }
   }
 

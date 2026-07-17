@@ -1,0 +1,39 @@
+; config_agg_1: a CONFIG-DEPENDENT aggregate. sum_above(bound Threshold,
+; aggregate Val, summary Sum) sums only the readings whose Val >= the
+; per-sensor Threshold. The threshold is RELATION-FED (threshold/2, set by a
+; message) and joined INSIDE the over-block so it is range-restricted there
+; and becomes a CONFIGURATION column of the aggregate. This is the smallest
+; program that forces BOTH the config-as-key projection (E-31 FACT A) AND the
+; config-dependent reduction ABI (the E-31 FACT B extension): the fold body
+; must see the threshold to decide whether each Val enters the sum.
+;
+; Group key = (Sensor, Threshold); the aggregate output is
+; total_above(Sensor, Total). Threshold is a config column: it partitions
+; the state cell AND gates the reduction.
+;
+; HAND-COMPUTED EXPECTATION (mirrors config_agg_1.batches / .main.cpp):
+;   Batch 1: thresholds sensor 1 -> 15, sensor 2 -> 50; readings
+;     sensor 1: {10 (<15 excluded), 20, 30} -> sum 50
+;     sensor 2: {40 (<50 excluded), 60, 100} -> sum 160
+;   Batch 2 (add-only): sensor 1 gains 25 (>=15) -> sum 50+25 = 75; sensor 2
+;     unchanged = 160. Exercises the emit_touched change arm (-old, +new).
+;   Expected Dump (s total, sorted, `--` between batches):
+;     1 50 / 2 160 / -- / 1 75 / 2 160 / --
+
+#functor sum_above(bound i32 Threshold, aggregate i32 Val, summary i32 Sum) @invertible.
+
+#local reading(i32 Sensor, i32 Val).
+#local threshold(i32 Sensor, i32 Threshold).
+#message add_reading(i32 Sensor, i32 Val).
+#message set_threshold(i32 Sensor, i32 Threshold).
+#query total_above(bound i32 Sensor, free i32 Total).
+
+reading(Sensor, Val) : add_reading(Sensor, Val).
+threshold(Sensor, T) : set_threshold(Sensor, T).
+
+total_above(Sensor, Total)
+  : sum_above(T, Val, Total)
+    over (i32 Sensor, i32 T, i32 Val) {
+      threshold(Sensor, T),
+      reading(Sensor, Val)
+    }.
