@@ -150,3 +150,49 @@ non-receive-VIEW fold, textually still inside the entry proc).
   same-table TUPLE fold, claimed by the DESCENT, inside ^entry).
 - average_weight emits exactly 3 StateCellStores (Invertible<Reduce_0/
   Reduce_1>, Recompute<Reduce_2>), matching the emitted-artifact lane.
+
+## 2. Implementation record (one diff at a time)
+
+### P0 — GROUP_UPDATE/STATE_SEAL census LANDED (2026-07-16)
+
+The E-25 carried gap is CLOSED, as corrected by the §1 errata. DR.cpp
+(+139/−2), ValidateDROps only — observation-only, zero emission change:
+
+- CENSUS (E-27 honored): exp_group_update = exp_state_seal =
+  |query.Aggregates()| + |query.KVIndices()| — the mint loop's own
+  discovery inputs, recounted independently, NEVER flow-derived (the
+  seed's `count of statecells` tautology rejected). Two new expect()
+  entries after kIngestFold.
+- KEY MULTISET (E-28 honored): per-op (agg_table*, provenance, algebra,
+  view UniqueId) recomputed from the Query (algebra via the same
+  SelectAlgebra the mint uses), compared order-free; statecell_id
+  deliberately NOT keyed (mint-order artifact).
+- STRUCTURAL VALIDATORS (the E-29 assert promotion, all ValidatorFail
+  = fprintf+abort, survive NDEBUG): V-AGG-EFFECT (spec §2.3 effect-set
+  totality per kGroupUpdate — 2 drains, ± folds summing 0, emit+old,
+  2 NonRecursive counters, 2 kInI crossings, 2 queue appends; kStateSeal
+  = the single sign-0 fold); V-AGG-SOLE (agg table present; summarized
+  input table present and never aliasing it — the promoted DR.cpp:665
+  assert); V-AGG-PAIR (statecell ids a GROUP_UPDATE↔STATE_SEAL bijection
+  onto [0, |statecells|)). The stale TODO(P4) at DR.cpp:2761 deleted.
+
+GATES (all green on the exact committed tree): FULL SUITE PASS (164),
+zero golden churn; generated datalog.h + -ir-out byte-identical on the
+average_weight and cf16_4 witnesses; ctest 3/3; debug + release builds
+green (validators always-on under NDEBUG — the release binary runs the
+census on average_weight); Q5 spot @128 release 0.11-0.13s / debug
+0.93s (flat). FIRE-TESTS (scaffolding deleted pre-commit, per house
+rule): a provenance-flip perturbation aborted on the key multiset; an
+exp+1 perturbation aborted with "derived 3, emitter-expected 4" on
+average_weight (2 aggs + 1 KV — the recount exact); the build-time
+compile_datalog() step aborting the ninja build was a third,
+independent confirmation. THE HOUSE BET NOT CASHED: the census found
+no live miscount (unlike R1e's day-one catch) — expected, since the
+recount and the mint iterate the same unconditional accessors; the
+census's value is against FUTURE drift (skip paths, wrong enrollment,
+wrong algebra/provenance selection), and it is the TEMPLATE the P2
+subgraph family's census copies (E-25 charter).
+
+PRE-REGISTERED PREDICTIONS (§14.3-P0): ALL HIT — zero emission change,
+suite 164 byte-identical, validators green corpus-wide; the "census may
+fire on a real miscount" house bet correctly did NOT pay (see above).
