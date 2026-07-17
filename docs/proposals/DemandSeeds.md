@@ -178,13 +178,128 @@ subset:
 - Bound-query corpus: 38/165 (23.0%); an unconditional demand
   transform rewrites ~23% of goldens — mode-gating is mandatory.
 
-## 2. The diff plan as amended
+## 2. The diff plan as designed and judged (2026-07-17)
 
-(PENDING — after D0: D1 seed-mechanism design + judge; D2 config_agg_2
-Seal-config fork; D3 InstanceStore redesign + demand-wired witness;
-D4 the mode-gated live transform, contingent on D1's judge. Owner
-decisions (a)-(d) taken before any emission-changing code.)
+Workflow: 3 opus designers (D1 mechanism / D2 config_agg_2 / D3
+InstanceStore+witness), each delivering a binding artifact
+(DemandSeeds.artifacts/), D3 consuming D1's artifact + judge report;
+3 adversarial opus judges (judge reports: session scratchpad
+design/judge-d{1,2,3}.md). ~850k tokens across the round (one
+harness-level structured-output failure on the D3 designer recovered
+from its incrementally-written artifact — the connection-drop
+discipline paid). EVERY judge round found something real (the house
+precedent, a NINTH time). Verdicts: D2 APPROVE-WITH-NITS; D1 REVISE
+(one CRITICAL); D3 REVISE (two CRITICAL).
+
+### D1 — demand-seed mechanism (d1-demand-seed-mechanism.md): REVISE,
+### the DataFlow half sound, the message-object level answered wrong
+
+The judge's CRITICAL (F1): the design's ratified "Option D — mint the
+demand QueryIO/receive as pure DataFlow objects WITHOUT a
+ParsedMessage, reusing BuildIOProcedure/BuildPredicate unchanged" is
+FALSE against the code: messsage_handler is keyed by ParsedMessage
+(Build.h:106), BuildIOProcedure asserts io.Declaration().IsMessage()
+and does ParsedMessage::From (Procedure.cpp:390-399), QueryIOImpl
+carries a const ParsedDeclaration set at construction (Query.h:
+191-207), and BuildPredicate is ParsedPredicate-driven (DataFlow
+Build.cpp:219-234). The two halves of the design's own analysis are
+mutually exclusive. RECOVERABLE PATH (judge-verified TIMING-feasible):
+fabricate a REAL ParsedMessage declaration at DataFlow-build time
+(mode-gated; registered in the ParsedModuleImpl) — this escapes the
+debug parser round-trip (Main.cpp:128-161 re-parses the ORIGINAL
+module before Query::Build) and all three E-37 gates (clause :1025 /
+query :1146 fire only when called; DataFlow :1911 fires inside
+BuildClause, before the :2566 pass slot) — PLUS F2 (HIGH): suppress
+the PUBLIC message entry point codegen emits for every kMessageHandler
+proc (Database.cpp:1426-1457, not IsPublished-gated) or the synthetic
+demand message leaks a driver-callable ABI entry. SOUND AND SURVIVING
+(all other attacks): the demand-relation/guarded-copy graph mechanics,
+the ⊥c-pivot structural edge + CSE discharge (incl. the d_p projection
+question — different adornments differ structurally before group_ids),
+stratification under the negation/aggregate sink, the mode-gate OFF
+byte-identity, the tc four-adornment model + all-free inertness rule
+(tc.dr honestly a NEGATIVE witness; demand_tc_witness.dr the positive
+one), rewrite-not-evaluator, and the off-mode ABI-stability claims.
+Designer recommendations (standing, subject to amendment): surface
+(iii) per-program -demand CLI flag, default-off, ORTHOGONAL to the 4
+golden modes (never a 5th mode; a per-query pragma is a later strict
+refinement); D4 gated on a cheap checkpoint-3 spike (hand-author the
+demanded .dr the transform would synthesize, compile, diff vs the §5
+hand-written graph).
+
+### D2 — config_agg_2 (d2-config-agg-2-target.md): APPROVE-WITH-NITS,
+### fork (i), landable after snippet amendments
+
+Headline (judge-CONFIRMED against a real proxy emission): the runtime
+and header-side ABI are ALREADY config-@recompute-shaped from
+config_agg_1 — the diff collapses to three deltas (Recompute::
+kHasConfig one-liner + the guarded group-birth SealFrom; the emit-arm
+Emit(gid, cfg...) config forwarding; the STATE_SEAL fork). A genuine
+seed-correction over E-39's three-sites-alike framing: Old(gid) is
+NON-variadic and must NOT take config (StateCell.h:408) — only Emit
+forwards config to ReduceLive. Fork (i) (codegen-emitted per-touched-
+group seal loop) recommended and judged sound: the SealOne factoring
+CALLS the store's own :420-424 body (no bookkeeping drift), all four
+algebra×config quadrants compile, the existing 165 provably
+byte-identical (no mutating path fires for non-config-@recompute
+cells), and fork (ii)'s scalar-tuple projector genuinely cannot
+generalize to D3's nested payloads. Nits to fold in: F1 qualify
+Algebra::kHasConfig in the birth guard; F3 state the seal config slice
+against KeyTypes().size() (no gpos in scope at EmitCommitSweep); F2
+SealOne bench-counter placement; F4 compile-ready oracle gate_seen
+seeding; F5/F6 corpus hygiene (the descending-max retraction is the
+load-bearing assertion; an invariant comment keeps the corpus inside
+the reconciled occupancy-vs-gate quadrant — the disclosed residue,
+recorded not fenced).
+
+### D3 — InstanceStore + witness (d3-instance-store-target.md):
+### REVISE — HOLE-A closed at the store layer, but the monotone-nested
+### choice re-opens the seam at the rebuild boundary
+
+The artifact rightly deletes the p2b store-held watermark (E-35) and
+picks a MONOTONE nested Table per instance — which genuinely HAS the
+Seal/sealed watermark (Table.h:277-282) — and closes the double-count
+seam's sole-writer half (SW-2/V-INSTANCE-SOLE). The judge's CRITICALs:
+F1 — the §3.2.1 Rederive REBUILD RESET destroys old(): after a reset
+the fresh table's sealed=0 makes old()=InI(r) false for every row, so
+batch-start is unreadable exactly when publish_touched needs it (the
+rejected Option-B frozen second table returns in some form); F2 — the
+one-net-pair partition discharge presumes old/new read the SAME table
+at the SAME instant, void once band (a)'s reset intervenes before band
+(b) — the p2b §7.3 gap relocated to the reset boundary, not closed.
+HIGHs: F3 — a differential/growable INPUT (edge changes with no demand
+change) never triggers a rebuild (band (a) drains only demand
+frontiers) — divergence from the eager reference; F4 — per-rebuild
+monotone-Table teardown churn unpriced. MEDIUMs: F5 —
+query.Subgraphs() does not exist; under SURFACE-2 the recount input is
+the recognizer's own output = the E-27 tautology; F6 — the witness's
+demand edge is byte-identical to a plain 2-relation join, so the store
+is dead code until a recognizer excises the JOIN — the store is NOT
+de-risked by this witness alone. Clean: POD/Vec layout, the E-32 real
+edge, effect sets vs the R3 precedent, census/validator SHAPES,
+ViewSelfReachable-not-InductionGroupId, and the honestly-scoped
+SURFACE-1/SURFACE-2 carry. Amendments A1-A5 (old()-across-rebuild;
+differential input wired or cleanly rejected; churn priced; a real
+recount input; the recognizer dependency stated) before any emission.
+
+## 2.1 Owner decisions
+
+(PENDING — brought to the owner with this record: (a) the cut/re-rank,
+(b) the D1 surface + mode-flag granularity, (c) the D2 fork, (d) D4
+in-scope vs re-seed.)
 
 ## 3. Artifact index
 
-(PENDING)
+- d1-demand-seed-mechanism.md — the demand-seed mechanism design:
+  three-level analysis, adornment/inertness model, (a)-(f) re-review,
+  surface framing, hand-written witness graph + effect sets,
+  predictions, D4 scope input. JUDGED REVISE (CRITICAL F1 message-
+  object level + HIGH F2 public-entry leak); amendment pending.
+- d2-config-agg-2-target.md — config_agg_2: the two Seal-config forks
+  to the emitted byte, the config_agg_2 corpus case + oracle plan,
+  fence lift, fork-(i) recommendation. JUDGED APPROVE-WITH-NITS;
+  amendments F1/F3 (+hygiene) pending, then implementable.
+- d3-instance-store-target.md — InstanceStore redesign + demand-wired
+  witness: E-35-honoring sealed side, sole-writer seam design, store
+  sketch, census, SURFACE-1/2 split. JUDGED REVISE (CRITICAL F1/F2 at
+  the rebuild boundary); amendment round pending.
