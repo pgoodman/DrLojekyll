@@ -2643,3 +2643,102 @@ PATH="/Users/pag/Code/.brew/bin:$PATH"; macOS bash 3.2 (no declare
 -A); zsh ${=var}; never rebuild mid-suite; never time bench
 concurrently; push to git@github.com:pgoodman/DrLojekyll.git (the
 https origin tracking ref goes stale).
+
+### 16.5 Close-session amendment (2026-07-17): the surfaces as
+### PSEUDOCODE, first-hand-verified anchors, and the D1-D4 path
+### expressed as diffs against them (written after the §15 close from a
+### direct read of merged main b4ddae65; still a SINGLE-PASS record —
+### the next session re-verifies per the E-1..E-34 precedent, E-35+)
+
+    (A) THE QUERY ENTRY SURFACE TODAY (lib/ControlFlow/Build/Build.cpp)
+    — the surface D1 (demand seeds) rewrites. KEY DISCOVERY sharpening
+    §16.2: the forcing-message mechanism is ALREADY a full .dr surface
+    (tests/OptDiff/cases/force.dr; ParsedClause::ForcingMessage,
+    lib/Parse/Parse.cpp:1021-1028, asserts EXACTLY ONE forcing predicate
+    per clause; ParsedQuery::ForcingMessage :1142). D1 is therefore NOT
+    "invent an injection mechanism" — it is "SYNTHESIZE what force.dr
+    makes the user write today", per demanded adornment.
+
+      BuildQueryEntryPointImpl(impl, context, decl, insert):   # :384-412
+        view  = QueryView(insert); model table asserted non-null
+        col_indices = [p.Index() for p in decl.Parameters()
+                                 if p.Binding() == kBound]
+        forcer_proc = BuildQueryForceProcedure(impl, context, query)
+                      # nullopt unless the clause names a forcing message
+        scanned_index = table.GetOrCreateIndex(col_indices) if bound
+        impl->queries += (query, table, scanned_index, forcer_proc)
+        # A BOUND query with NO forcer = a pure READ-TIME index probe
+        # over the already-eagerly-materialized table — the P3 judge's
+        # CRITICAL: no demand ever flows back into computation.
+
+      BuildQueryForceProcedureImpl(...):                        # :246-368
+        # unify clause vars via DisjointSet over =-comparisons (:262-282)
+        # match query's kBound params ↔ forcing message params (:284-311)
+        proc = Create(kQueryMessageInjector), one input var per bound param
+        add_vec = proc.vectors.Create(kParameter, message col types)
+        del_vec = Create(kEmpty) iff message.IsDifferential()    # :338-342
+        body = SERIES[ VECTORAPPEND(bound params -> add_vec),
+                       CALL context.messsage_handler[message]
+                            (add_vec [, del_vec]),
+                       RETURN true ]                             # :344-366
+        # i.e. the runtime bound argument becomes an ORDINARY message
+        # batch at query-call time; the engine stays push-only; cursor
+        # invalidation rides the existing entry-point contract.
+
+    (B) D1 AS A DIFF against (A) — the demand-seed mechanism (design +
+    judge round FIRST; no code before it survives, ledger §3.1):
+      - dataflow (the p3-demand-argument.md transform, amended E-32/E-33):
+      +   per demanded adornment p^α: synthesize d_p^α (a message-fed
+      +   relation) + the guarded copy p' = p ⋈ d_p^α with a REAL column
+      +   edge (the ⊥c-pivot structural shape — never group_ids);
+      +   adornment propagation sideways (THREE adornments of tc in
+      +   transitive_closure.dr — the multi-adornment split is mandatory);
+      +   an all-free consumer of p makes p demand-inert (full
+      +   materialization; sibling guards prune nothing — model it).
+      - controlflow (this surface):
+      +   the transform marks p^α's synthesized demand MESSAGE; the
+      +   existing forcer machinery (A) then applies UNCHANGED in shape:
+      +   the query's entry point carries a synthesized forcer_proc that
+      +   injects the bound tuple into d_p^α's message handler. The
+      +   Parse.cpp:1026 one-forcer-per-clause assert must generalize
+      +   (or the synthesized path bypasses ParsedClause entirely —
+      +   design question for D1's judge).
+      +   MODE-GATED OFF by default (37-38/165 corpus cases have bound
+      +   queries — an unconditional transform rewrites ~23% of goldens).
+
+    (C) config_agg_2 — THE EXACT REMAINING GAP (@recompute config),
+    first-hand at include/drlojekyll/Runtime/StateCell.h:
+      - Invertible::Emit/SealFrom accept-and-ignore a config pack
+        (StateCell.h:158-166 — landed P2c; the config gate applied at
+        Fold for @invertible).
+      - Recompute needs config AT REDUCE TIME: Emit(w, cfg...) must
+        pass cfg to ReduceLive; StateCellStore::Seal() calls
+        SealFrom(working[gid]) CONFIG-FREE in a bulk loop — the store
+        cannot conjure per-group config without either (i) a
+        caller-supplied per-touched-group config iteration (emit the
+        Seal loop from codegen where key.c<config> is in hand) or
+        (ii) key-derived extraction (the config IS the key tail —
+        KeyAt(gid) carries it; a Seal(cfg-projection-callable) shape).
+        THE FENCE (lib/ControlFlow/Build/Build.cpp, P2c residual,
+        ratified §15 dev.1) keeps this a clean diagnostic until D2
+        picks (i) or (ii) and wires EmitGroupUpdate's emit arm +
+        STATE_SEAL emission accordingly.
+
+    (D) THE INGEST/HOLE STATE (what D3's instance family plugs beside;
+    landed P1, CLAUDE.md updated): every ingest fold lowers from the
+    DR-IR; LowerIngestFold returns the UPDATECOUNT cursor; the descent
+    (BuildEagerInsertionRegions, Build.cpp — the ONLY remaining
+    hand-coded emission surface) fills the hole; V-INGEST-XCHECK Site 5
+    cross-checks the fold multiset. The instance family's census copies
+    the P0 template (query-derived recount, no mint-order keys —
+    E-27/E-28 are now house law).
+
+    (E) D3 AS A DIFF against the R3 store (p2b-instance-target.md as
+    judged): InstanceStore sealed side = the nested DiffTable's OWN
+    kInI watermark (Table.h Seal/sealed), NEVER a store-held row-id
+    (CompactDead renumbers — the p2b judge's HIGH); Emit/Old both
+    set-valued; the two-table double-count seam (nested sweep vs outer
+    publish) specified BEFORE emission; the witness .dr wires
+    demand→instance through a REAL edge (else dead-flow collapses it);
+    acyclic-frozen-first under the ViewSelfReachable fence (the
+    ratified C-0b answer).
