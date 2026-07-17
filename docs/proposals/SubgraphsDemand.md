@@ -196,3 +196,92 @@ subgraph family's census copies (E-25 charter).
 PRE-REGISTERED PREDICTIONS (§14.3-P0): ALL HIT — zero emission change,
 suite 164 byte-identical, validators green corpus-wide; the "census may
 fire on a real miscount" house bet correctly did NOT pay (see above).
+
+## 3. The diff plan as designed and judged (checkpoint 2+3; 2026-07-16)
+
+Workflow: 4 opus designers (P1-§6 / P2c-config / P2b-instances /
+P3-demand), each delivering a diff plan + a hand-written binding
+artifact (SubgraphsDemand.artifacts/) + pre-registered predictions;
+4 adversarial opus judges (8 agents, ~825k tokens). EVERY judge round
+found something real (the house precedent, an eighth time). Verdicts:
+ALL FOUR REVISE — P1 and P2c with local, targeted fixes (landable after
+amendment); P2b substrate-sound but its two concrete deliverables holed;
+P3 with a CRITICAL premise-level hole (the R4-precedent shape).
+
+### P1 — §6 monotone/descent stage (p1-cf16-hole-target.md): REVISE,
+### core refactor RATIFIED-QUALITY
+
+The judge independently verified the byte-identity argument on real IR: only VECTORLOOP
++ per-column VARs mint ids (UPDATECOUNT/PARALLEL id-free ctors); same
+walk position + same order ⇒ id-stream identity (the §12.6 discipline);
+the UPDATECOUNT construction is byte-equal across both paths; the
+net-additions append is confirmably the descent's sole job (Build.cpp:
+886-893) and stays put; ExtendEagerProcedure is the sole receive path —
+scope complete; zero-golden-churn prediction SAFE. Findings to amend:
+(1) MEDIUM — the hole-filled-exactly-once validator AS DRAFTED can never
+fire (Build.cpp:758-759 unconditionally emplaces the descent par;
+Emplace itself aborts on double-fill): redesign to assert
+next_parent->AsUpdateCount() non-null with the expected table (catches
+the real R-CURSOR risk pre-abort) or drop it from the gate; (2) MEDIUM —
+Site 5 is a fold-op COVERAGE check, not an emitted-tree cross-check
+(blind to the descent's net-additions append); downgrade the claim,
+delegate tree shape to the -ir-out structural gate (already in the
+design); (3) LOW — one LowerIngestFold call site, not two.
+
+### P2c — config-column aggregates (p2c-config-agg-target.md): REVISE,
+### premise VERIFIED, three edits then GO for config_agg_1
+
+Both E-31 facts re-confirmed empirically by the judge (config_agg_1.dr
+reaches exactly the ControlFlow fence; the reduction ABI is config-
+blind). Findings to amend: (1) MEDIUM — the store-Fold rewrite must SAY
+"drop the Summary(...) wrapper at StateCell.h:315, forward the raw
+pack" (as written it won't compile on the mandatory case); (2) MEDIUM —
+@recompute must SUPPRESS config at the Fold arm and route it through
+Emit/ReduceLive (the artifact's §4.3 unconditional Fold-split would
+corrupt the recompute multiset); (3) LOW — the kHasConfig compile-time
+flag on the emitted Reduce policy is a fifth threading site (DebugValidate
+calls Fold config-free), count it or drop DebugValidate for config
+cells; (4) LOW — disambiguate lib/DataFlow/Build.cpp vs
+lib/ControlFlow/Build/Build.cpp anchors.
+
+### P2b — keyed nested instances (p2b-instance-target.md): REVISE —
+### SUBSTRATE RATIFIED-QUALITY, implementation NOT authorized yet
+
+The scheduler-cost pricing, effect-domain totality, and the seven-point
+plug-in mapping all verified exact; the C-0b-one-level-up answer
+(ACYCLIC-FROZEN-FIRST: demand as frozen read under an acyclic fence =
+ViewSelfReachable, the R2-acyclic-first discipline; recursive demand =
+round-carried, priced as claimed-frontier-like) is sound. HIGH holes in
+the concrete deliverables: (1) the §5 witness has NO demand→instance
+edge — the demand relation is dead-flow-collapsible and the strict-above
+stratum claim baseless (exactly the E-32/E-33 trap); wiring demand into
+the instance body is genuinely (a)-transform territory, so (b)-with-a-
+real-witness is MORE COUPLED to (a) than the (c)→(b)→(a) ordering
+assumed; (2) the InstanceStore sealed word as a row-id watermark into a
+compactable nested DiffTable BREAKS the non-aliasing property it claims
+to transfer (CompactDead renumbers) — redesign around the nested
+table's OWN kInI watermark; (3) MEDIUM — the two-differential-tables
+double-count seam (nested table sweep vs outer publish) undischarged.
+
+### P3 — demand transform (p3-demand-argument.md): REVISE with a
+### CRITICAL premise hole — DESIGN-ONLY this epoch confirmed, for a
+### DEEPER reason than the artifact gave
+
+THE HOLE (judge, verified): the demand SEED DOES NOT EXIST in the
+eager/push model. A bound #query is built like any relation
+(lib/DataFlow/Build.cpp:239-246, no adornment in the Query IR) and its
+bound columns surface only at ControlFlow as a READ-TIME index probe
+over the already-eagerly-materialized table (lib/ControlFlow/Build/
+Build.cpp:394-408); the runtime bound argument arrives AFTER eager
+computation. A pure Query-IR rewrite (the design's own anti-evaluator
+constraint) has no injection point — d_p is source-less and dead-flow
+collapses it, the exact obligation-(f) failure. The one query-driven
+re-injection surface today is the FORCING-MESSAGE path (ControlFlow
+Build.cpp:246-290); generalizing it is the candidate seed mechanism and
+the next design task. Also: per-adornment magic splits unspecified
+(transitive_closure.dr needs THREE adornments of tc); the all-free-
+forces-full interaction makes demand inert on the multi-query-sharing
+corpus subset; E-32 discharge covers p' but not the d_p projections.
+CHURN FACT (verified twice, independently): 37-38 of 164 corpus cases
+carry bound #query columns — an unconditional transform rewrites ~23%
+of the corpus; any in-scope P3 must be mode-gated off by default.
