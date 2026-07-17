@@ -1,5 +1,8 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "Build.h"
 #include "DR.h"
 
@@ -55,37 +58,50 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
       continue;
     }
 
-    const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-        impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
-    parent->AddRegion(loop);
-    loop->vector.Emplace(loop, vec);
-    OP *next_parent = loop;
+    // A MONOTONE receive. §6 (subgraphs/demand P1): a table-BEARING monotone
+    // fold lowers from the DR-IR at the ORIGINAL walk position (id-stream
+    // identity) via LowerIngestFold — token-equivalent to the deleted
+    // hand-coded fold. The returned UPDATECOUNT is the descent cursor
+    // (E-34 (iii); the pre-§6 arm set `next_parent = insert`). A table-LESS
+    // monotone receive mints no counter fold (its head is induction-owned; the
+    // descent's InTryInsert emits the fold under an induction) — NOT an ingest
+    // fold (DR.cpp), so it keeps the hand-coded VECTORLOOP-only path.
+    DataModel *const model = impl->view_to_model[receive]->FindAs<DataModel>();
+    TABLE *const table = model->table;
 
-    DataModel *model = impl->view_to_model[receive]->FindAs<DataModel>();
-    TABLE *table = model->table;
-    UPDATECOUNT *insert = nullptr;
-
-    // If this message receive has a corresponding table, then persist the
-    // received tuple with a nonrecursive counter fold.
+    OP *next_parent;
     if (table) {
-      insert = impl->operation_regions.CreateDerived<UPDATECOUNT>(
-          loop, true /* is_add */, DerivClass::kNonRecursive,
-          false /* is_explicit */);
-      insert->table.Emplace(insert, table);
-      loop->body.Emplace(loop, insert);
+      const DROp op =
+          MakeMonotoneIngestFold(impl, context, message, receive, table);
+      next_parent = LowerIngestFold(impl, context, op, parent, vec);
 
-      next_parent = insert;
-    }
-
-    for (auto col : receive.Columns()) {
-      VAR * const var = loop->defined_vars.Create(
-          impl->next_id++, VariableRole::kVectorVariable);
-      var->query_column = col;
-      loop->col_id_to_var.emplace(col.Id(), var);
-
-      if (insert) {
-        insert->col_values.AddUse(var);
+      // §6 INGEST-CURSOR-SHAPE validator (subgraphs/demand P1, amended §3).
+      // LowerIngestFold must return the table-bearing monotone fold's
+      // UPDATECOUNT (its table == the receive's model table), NOT the
+      // VECTORLOOP and NOT a fold over a different table — the descent will
+      // Emplace the publish/net-additions subtree INTO fold->body, and a
+      // wrong-cursor hand-off (R-CURSOR) would silently mis-parent it or abort
+      // inside Emplace with no context. The idiom is Induction.cpp's
+      // downcast-and-table-compare; ALWAYS-ON (fprintf+abort, survives NDEBUG).
+      UPDATECOUNT *const fold = next_parent->AsUpdateCount();
+      if (!fold || fold->table.get() != table) {
+        std::fprintf(stderr,
+                     "error: §6 INGEST-CURSOR: LowerIngestFold returned a "
+                     "non-fold or wrong-table cursor for a monotone ingest\n");
+        std::abort();
       }
+    } else {
+      const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+          impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+      parent->AddRegion(loop);
+      loop->vector.Emplace(loop, vec);
+      for (auto col : receive.Columns()) {
+        VAR *const var = loop->defined_vars.Create(
+            impl->next_id++, VariableRole::kVectorVariable);
+        var->query_column = col;
+        loop->col_id_to_var.emplace(col.Id(), var);
+      }
+      next_parent = loop;
     }
 
     BuildEagerInsertionRegions(impl, receive, context, next_parent,

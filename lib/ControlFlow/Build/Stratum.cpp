@@ -1,9 +1,12 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <set>
+#include <tuple>
+#include <vector>
 
 #include "Build.h"
 #include "DR.h"
@@ -1869,30 +1872,67 @@ static void LowerDRRounds(ProgramImpl *impl, Context &context,
 
 }  // namespace
 
-// P2 CUTOVER (family #4, stage 1) — INGEST-FOLD LOWERING (dr → cf).
+// INGEST-FOLD LOWERING (dr → cf). P2 CUTOVER (family #4, stage 1) for the
+// DELETION-CAPABLE folds; §6 (subgraphs/demand P1) EXTENDS it to the MONOTONE
+// table-bearing fold — the two are now one lowering, driven entirely by the
+// DROp payload (sign, is_explicit, role, table — never re-derived from the
+// Query here, the F1 discipline).
 //
-// Replaces the deleted `build_explicit_loop` (Procedure.cpp): one VECTORLOOP
-// over the message parameter vector, one EXPLICIT nonrecursive UPDATECOUNT±
-// (the message-support-bit toggle; its zero crossing parks the row), one
-// VECTORAPPEND into the receive table's add/delete queue (the memoized
-// TableDeltaVector — no new vector id; VecRole→VectorKind mapped only here).
+// TWO LEGAL SHAPES (op.ingest_is_explicit == op.ingest_stage1, R1e invariant):
+//   * DELETION-CAPABLE (stage-1): explicit ±, role kAddQueue/kDeleteQueue.
+//     Emits VECTORLOOP → EXPLICIT UPDATECOUNT± (the message-support-bit toggle;
+//     its zero crossing parks the row) → VECTORAPPEND into the receive table's
+//     add/delete queue (the memoized TableDeltaVector — no new vector id;
+//     VecRole→VectorKind mapped only here). The fold body is the bare queue
+//     append; the caller discards the return.
+//   * MONOTONE (§6): non-explicit +1, role kNetAddition/kEmpty. Emits
+//     VECTORLOOP → NON-EXPLICIT UPDATECOUNT+ (`update-count +nonrecursive`)
+//     with an EMPTY body — the HOLE. NO queue/net-additions append is emitted
+//     here: the net-additions append is the DESCENT's job (Build.cpp:886-893),
+//     placed at its actual fold-nesting site. The caller threads the returned
+//     UPDATECOUNT as `next_parent` so the descent Emplaces the publish /
+//     net-additions subtree INTO fold->body.
+//
 // Called from `ExtendEagerProcedure` at the ORIGINAL walk position so the
-// VECTORLOOP/VAR ids occupy their pre-cutover slots in the shared
-// `impl->next_id` stream (byte-identity; see MakeStageOneIngestFolds' doc).
-// The shape is driven by the DROp payload — sign, is_explicit, role, table —
-// never re-derived from the Query here (the F1 discipline).
-void LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
-                     PARALLEL *parent, VECTOR *loop_vec) {
+// VECTORLOOP/VAR ids occupy their pre-cutover / pre-§6 slots in the shared
+// `impl->next_id` stream (byte-identity; see MakeStageOneIngestFolds /
+// MakeMonotoneIngestFold docs). RETURNS the UPDATECOUNT fold body cursor (the
+// exact analog of the hand-coded arm's `next_parent = insert`, E-34 (iii)).
+//
+// Records the emitted fold's (table, sign, is_explicit, role, message) 5-tuple
+// into `context.emitted_ingest_folds` for the V-INGEST-XCHECK Site 5
+// coverage/payload check (a closing pass in BuildStratumPhases — the flow does
+// not exist at walk time, the §12.6 authority shape).
+OP *LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
+                    PARALLEL *parent, VECTOR *loop_vec) {
   assert(op.kind == DROpKind::kIngestFold);
-  assert(op.ingest_stage1 && op.ingest_is_explicit);
+  // The two disjoint legal shapes (§6): deletion-capable (stage-1) folds are
+  // explicit with a queue role; monotone folds are non-explicit with a
+  // net-additions/empty role. The R1e invariant ties stage1 to is_explicit.
+  assert(op.ingest_is_explicit == op.ingest_stage1);  // R1e (DR.cpp)
+  assert(op.ingest_is_explicit
+             ? (op.ingest_role == VecRole::kAddQueue ||
+                op.ingest_role == VecRole::kDeleteQueue)
+             : (op.ingest_role == VecRole::kNetAddition ||
+                op.ingest_role == VecRole::kEmpty));
   assert(op.ingest_sign == 1 || op.ingest_sign == -1);
-  assert(op.ingest_role == VecRole::kAddQueue ||
-         op.ingest_role == VecRole::kDeleteQueue);
+  // The sign is tied to the shape: an explicit fold's sign matches its queue
+  // role; a monotone fold is always the +1 arrival fold.
+  assert(op.ingest_is_explicit
+             ? ((op.ingest_sign > 0) == (op.ingest_role == VecRole::kAddQueue))
+             : op.ingest_sign == 1);
 
   const QueryView receive = *op.ingest_receive;
   TABLE *const table = op.ingest_table;
   assert(table != nullptr);
   const bool is_add = 0 < op.ingest_sign;
+
+  // F1 discipline: the fold's derivation class is CONSUMED from the op payload
+  // (both authorities push the kCounter effect first), never re-derived here.
+  // Every reachable receive is kNonRecursive today (nothing feeds a receive);
+  // the klass rides the Site-5 key below, so payload drift aborts per-compile.
+  assert(!op.effects.empty() && op.effects.front().kind == EffKind::kCounter);
+  const DerivClass klass = op.effects.front().klass;
 
   const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
       impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
@@ -1900,7 +1940,7 @@ void LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
   loop->vector.Emplace(loop, loop_vec);
 
   UPDATECOUNT *const fold = impl->operation_regions.CreateDerived<UPDATECOUNT>(
-      loop, is_add, DerivClass::kNonRecursive, op.ingest_is_explicit);
+      loop, is_add, klass, op.ingest_is_explicit);
   fold->table.Emplace(fold, table);
   loop->body.Emplace(loop, fold);
 
@@ -1912,18 +1952,34 @@ void LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
     fold->col_values.AddUse(var);
   }
 
-  VECTOR *const queue = TableDeltaVector(
-      impl, context, table,
-      op.ingest_role == VecRole::kAddQueue ? VectorKind::kAddQueue
-                                           : VectorKind::kDeleteQueue);
-  VECTORAPPEND *const append =
-      impl->operation_regions.CreateDerived<VECTORAPPEND>(
-          fold, ProgramOperation::kAppendToInductionVector);
-  append->vector.Emplace(append, queue);
-  for (auto col : receive.Columns()) {
-    append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+  // The queue append is the DELETION-CAPABLE fold's own body. A MONOTONE fold
+  // emits NOTHING here — the descent (BuildEagerInsertionRegions) owns the
+  // net-additions append at its actual fold-nesting site (§2.4), filling the
+  // returned UPDATECOUNT's hole.
+  if (op.ingest_is_explicit) {
+    VECTOR *const queue = TableDeltaVector(
+        impl, context, table,
+        op.ingest_role == VecRole::kAddQueue ? VectorKind::kAddQueue
+                                             : VectorKind::kDeleteQueue);
+    VECTORAPPEND *const append =
+        impl->operation_regions.CreateDerived<VECTORAPPEND>(
+            fold, ProgramOperation::kAppendToInductionVector);
+    append->vector.Emplace(append, queue);
+    for (auto col : receive.Columns()) {
+      append->tuple_vars.AddUse(fold->VariableFor(impl, col));
+    }
+    fold->body.Emplace(fold, append);
   }
-  fold->body.Emplace(fold, append);
+
+  // V-INGEST-XCHECK Site 5: record the emitted fold. `table` and `klass` are
+  // read back off the constructed node (what the emission actually holds);
+  // sign/is_explicit/role/message identify the op it lowered from.
+  context.emitted_ingest_folds.push_back(
+      {static_cast<const void *>(fold->table.get()), op.ingest_sign,
+       op.ingest_is_explicit, static_cast<uint8_t>(op.ingest_role),
+       static_cast<uint8_t>(fold->deriv_class), op.ingest_message->Id()});
+
+  return fold;
 }
 
 // R2 FAMILY #3 — COMMIT-SWEEP BAND LOWERING (dr → cf).
@@ -2036,6 +2092,67 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   ValidateDRInventory(dr_flow);
   ValidateDROps(dr_flow, impl, context, query, recursive_sccs);
   LinearizeAndValidateDRFlow(dr_flow, impl, context, query, recursive_sccs);
+
+  // V-PRED-XCHECK Site 5 — INGEST FOLD-OP COVERAGE + PAYLOAD (subgraphs/demand
+  // P1, §5). Ties the folds LowerIngestFold actually EMITTED (recorded at
+  // emission time into `context.emitted_ingest_folds`, since the flow does not
+  // exist at walk time — the §12.6 authority shape) back to the flow's
+  // kIngestFold ops, in the Site-4 mold. A per-op (table, sign, is_explicit,
+  // role, message) 5-tuple multiset (the R1e census key, DR.cpp): every emitted
+  // fold must have an enrolled op (a fold the flow never censused = a
+  // MakeStageOneIngestFolds/MakeMonotoneIngestFold-vs-walk divergence), and
+  // every EMITTABLE flow op (stage1==true, or stage1==false with a table) must
+  // have been emitted (a fold the census counted but the walk dropped).
+  // BLIND to tree SHAPE — the descent's net-additions append PLACEMENT and the
+  // hole-fill site are the -ir-out structural gate's job, not Site 5's. Closes
+  // the P2 cutover's un-cross-checked-ingest deviation for BOTH the
+  // deletion-capable (already DR-lowered) and monotone (§6 DR-lowered) folds.
+  {
+    using Key =
+        std::tuple<const void *, int, bool, uint8_t, uint8_t, uint64_t>;
+    std::vector<Key> emitted;
+    emitted.reserve(context.emitted_ingest_folds.size());
+    for (const auto &e : context.emitted_ingest_folds) {
+      emitted.emplace_back(e.table, e.sign, e.is_explicit, e.role, e.klass,
+                           e.message);
+    }
+    std::vector<Key> enrolled;
+    for (const DROp &op : dr_flow.ops) {
+      if (op.kind != DROpKind::kIngestFold) {
+        continue;
+      }
+      // Only the EMITTABLE flow ops: a deletion-capable pair (stage1) and a
+      // monotone table-bearing op (stage1==false, table!=null). A table-less
+      // monotone receive enrolls no ingest op (DR.cpp), so none appears here.
+      if (!op.ingest_stage1 && op.ingest_table == nullptr) {
+        continue;
+      }
+      // Both authorities push the kCounter effect first; its klass is the
+      // payload field LowerIngestFold consumed (R-KLASS closed).
+      assert(!op.effects.empty() &&
+             op.effects.front().kind == EffKind::kCounter);
+      enrolled.emplace_back(static_cast<const void *>(op.ingest_table),
+                            op.ingest_sign, op.ingest_is_explicit,
+                            static_cast<uint8_t>(op.ingest_role),
+                            static_cast<uint8_t>(op.effects.front().klass),
+                            op.ingest_message->Id());
+    }
+    std::sort(emitted.begin(), emitted.end());
+    std::sort(enrolled.begin(), enrolled.end());
+    if (emitted != enrolled) {
+      // Its own abort text (not the PredXCheckFail predicate wording): this is
+      // a coverage/payload multiset failure, the Site-5 flavor of the family.
+      std::fprintf(
+          stderr,
+          "error: V-INGEST-XCHECK (Site 5) failed: the emitted ingest folds' "
+          "(table, sign, is_explicit, role, klass, message) multiset "
+          "disagrees with the flow's emittable kIngestFold enrollment — a "
+          "MakeStageOneIngestFolds/MakeMonotoneIngestFold-vs-walk coverage "
+          "or payload divergence (%zu emitted vs %zu enrolled)\n",
+          emitted.size(), enrolled.size());
+      std::abort();
+    }
+  }
 
   // ALWAYS stash the flow graph (before any early return) so
   // `PublishDifferentialMessageVectors` can lower the commit-sweep band from its

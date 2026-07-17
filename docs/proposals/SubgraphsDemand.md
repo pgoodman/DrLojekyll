@@ -197,6 +197,62 @@ PRE-REGISTERED PREDICTIONS (§14.3-P0): ALL HIT — zero emission change,
 suite 164 byte-identical, validators green corpus-wide; the "census may
 fire on a real miscount" house bet correctly did NOT pay (see above).
 
+### P1 — §6 MONOTONE/DESCENT INGEST STAGE LANDED (2026-07-16)
+
+THE LAST HAND-CODED EMISSION SURFACE IS EXTERNALIZED: a monotone
+table-bearing receive's ingest fold now lowers from the DR-IR at the
+original walk position, with the eager descent filling the returned
+UPDATECOUNT's body (the §6 hole contract). 5 files, +254/−94 (pre-nit):
+- MakeMonotoneIngestFold (DR.cpp) — the single payload authority for
+  the monotone op; BuildDRInventory's census enrollment and the walk
+  lowering share one constructor (the §12.6 discipline).
+- LowerIngestFold (Stratum.cpp) returns the UPDATECOUNT OP* cursor;
+  asserts relaxed to the two disjoint legal shapes + the Fable-nit sign
+  tie; the fold's DerivClass is CONSUMED from the op payload (R-KLASS
+  closed — the F1 discipline now holds for every payload field); a
+  monotone fold emits an EMPTY hole (no queue append — the descent owns
+  the net-additions append at its actual fold-nesting site, artifact §5).
+- ExtendEagerProcedure's monotone arm: LowerIngestFold at the original
+  walk position → the INGEST-CURSOR-SHAPE always-on check
+  (AsUpdateCount + table identity, the Induction.cpp idiom — the
+  amended-§3 validator replacing the judge-caught never-fires hole
+  check) → BuildEagerInsertionRegions with the cursor as next_parent.
+  Table-less receives keep the hand-coded VECTORLOOP-only path.
+- V-INGEST-XCHECK Site 5 (Stratum.cpp, in BuildStratumPhases where
+  dr_flow is live): order-free (table, sign, is_explicit, role, klass,
+  message) multiset compare of emitted folds (recorded at emission,
+  table+klass read back off the node) vs the flow's emittable
+  kIngestFold ops; its own fprintf+abort. The eager ingest web is now
+  in the cross-checked model — the P2-cutover deviation's obligation
+  DISCHARGED for both receive classes; the F17/F18 bug-class kill now
+  covers the last surface's fold ops (tree shape delegated, by design,
+  to the -ir-out structural gate).
+
+FABLE REVIEW (pre-commit, owner-mandated): APPROVE-WITH-NITS — verified
+the assert partition, cursor contract order, token-level id-stream
+identity vs the deleted arm, Site-5 no-spurious-fire/no-miss analysis
+(both sides iterate query.IOs()×Receives() with identical branch
+tests; recording is inside LowerIngestFold itself), and the role-
+stability question (MonotoneIngestRoleDR reads NO lazily-populated
+state — walk-time ≡ census-time by construction, and Site 5 catches it
+anyway). All four nits landed pre-commit: (1) MEDIUM R-KLASS (above);
+(2) sign-tie asserts; (3) Site-5-specific abort text; (4) <vector>
+include. The PredXCheckFail-vs-ValidatorFail deviation reviewed and
+accepted (DR.cpp-local helper; Site 5 now has its own message anyway).
+
+GATES (all green on the exact committed tree, re-run post-nits):
+BYTE-IDENTITY STRUCTURAL GATE 20/20 (full -ir-out + datalog.h, opt AND
+nocf, on cf16_4 / negate_lower_strata / deep_chain_retract / cf14_3 /
+average_weight vs the pre-§6 fixtures — the ratified §3.1 policy;
+permcheck never exercised, nothing to bless); FULL SUITE PASS (164)
+zero golden churn; ctest 3/3; debug + release green (the cursor check
+and Site 5 always-on under NDEBUG); Q5 spot @128 release 0.11-0.12s /
+debug 0.94-0.95s (flat). FIRE-TEST (scaffolding deleted pre-commit):
+a perturbed Site-5 key aborted exit-134 on all four witness classes
+incl. monotone-kEmpty and aggregate. PRE-REGISTERED PREDICTIONS: ALL
+HIT (zero golden churn, suite 164, driver churn 0, Q5 neutral, no
+FINDINGS entry — no validator fired on a real divergence).
+
 ## 3. The diff plan as designed and judged (checkpoint 2+3; 2026-07-16)
 
 Workflow: 4 opus designers (P1-§6 / P2c-config / P2b-instances /

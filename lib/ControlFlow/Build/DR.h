@@ -797,13 +797,26 @@ void LowerCommitSweeps(ProgramImpl *impl, Context &context,
 std::vector<DROp> MakeStageOneIngestFolds(ParsedMessage message,
                                           QueryView receive, TABLE *table);
 
-// P2 CUTOVER: emit ONE stage-1 ingest fold — VECTORLOOP over `loop_vec` →
-// explicit UPDATECOUNT± → VECTORAPPEND into the receive table's add/delete
-// queue (the memoized TableDeltaVector; VecRole→VectorKind mapped only here,
-// §9) — from the DROp payload. Byte-identical to the deleted
-// build_explicit_loop (Procedure.cpp), driven by op data (the F1 discipline:
-// the lowering CONSUMES sign/is_explicit/role/table, never re-derives them).
-void LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
-                     PARALLEL *parent, VECTOR *loop_vec);
+// §6 (subgraphs/demand P1): the single authority for a MONOTONE table-bearing
+// receive's ONE stage-1=false ingest-fold op (is_explicit=false, single-signed
+// +1, role from the boundary predicate, counter klass = EmissionDerivClass).
+// Sibling to MakeStageOneIngestFolds; shared by BuildDRInventory's census
+// enrollment and the ExtendEagerProcedure → LowerIngestFold walk-position
+// lowering (§12.6 single-authority discipline). Pure function of its inputs
+// (no ids).
+DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
+                            ParsedMessage message, QueryView receive,
+                            TABLE *table);
+
+// Emit ONE ingest fold from the DROp payload — VECTORLOOP over `loop_vec` →
+// UPDATECOUNT± → (deletion-capable only) VECTORAPPEND into the receive table's
+// add/delete queue (the memoized TableDeltaVector; VecRole→VectorKind mapped
+// only here, §9). Driven by op data (the F1 discipline: the lowering CONSUMES
+// sign/is_explicit/role/table, never re-derives them). Since §6 (subgraphs/
+// demand P1) it also lowers the MONOTONE table-bearing fold (non-explicit +1,
+// EMPTY body — the descent fills the hole). RETURNS the UPDATECOUNT fold body
+// cursor (E-34 (iii): the caller threads it as `next_parent`).
+OP *LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
+                    PARALLEL *parent, VECTOR *loop_vec);
 
 }  // namespace hyde

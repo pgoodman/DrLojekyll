@@ -796,6 +796,48 @@ std::vector<DROp> MakeStageOneIngestFolds(ParsedMessage message,
   return ops;
 }
 
+// §6 (subgraphs/demand P1): the single authority for a MONOTONE table-bearing
+// receive's ONE stage-1=false ingest-fold op. Sibling to
+// MakeStageOneIngestFolds — the monotone op differs on four fields
+// (is_explicit=false, stage1=false, single-signed +1, role from the boundary
+// predicate not from polarity) and its counter klass is EmissionDerivClass, not
+// a hard kNonRecursive; two constructors, one census. Both the flow enrollment
+// (BuildDRInventory's INGEST_FOLD block) and the walk-position lowering
+// (ExtendEagerProcedure → LowerIngestFold) construct their op here, so the
+// censused payload and the lowered payload cannot diverge (§12.6 single-
+// authority discipline). Pure function of (impl, context, message, receive,
+// table) — no ids. `impl`/`context` are threaded because MonotoneIngestRoleDR
+// and EmissionDerivClass both need them.
+DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
+                            ParsedMessage message, QueryView receive,
+                            TABLE *table) {
+  assert(!receive.CanReceiveDeletions());
+  assert(table != nullptr);
+  DROp op(DROpKind::kIngestFold);
+  op.ctx = Ctx::kEager;
+  op.ingest_message = message;
+  op.ingest_receive = receive;
+  op.ingest_table = table;
+  op.ingest_sign = 1;
+  op.ingest_is_explicit = false;
+  op.ingest_stage1 = false;
+  op.ingest_role = MonotoneIngestRoleDR(context, table);
+  DREffect cnt;
+  cnt.kind = EffKind::kCounter;
+  cnt.counter_table = table;
+  cnt.sign = 1;
+  cnt.klass = EmissionDerivClass(impl, context, receive);
+  op.effects.push_back(cnt);
+  if (op.ingest_role != VecRole::kEmpty) {
+    DREffect app;
+    app.kind = EffKind::kVecAppend;
+    app.value_table = table;
+    app.vec_role = op.ingest_role;
+    op.effects.push_back(app);
+  }
+  return op;
+}
+
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map) {
@@ -1719,7 +1761,8 @@ DRFlowGraph BuildDRInventory(
   // (Build.cpp:1048-1051 for every negate view). This is one cleanly-derivable
   // half of the eager web; the other, the eager INGEST_FOLD family, is
   // populated in P2/R1e below (deletion-capable receives stage-1; the
-  // monotone/descent surface is deferred — P2 artifact §6).
+  // monotone/descent surface lowered via LowerIngestFold since §6 —
+  // subgraphs/demand P1).
   for (QueryNegate negate : query.Negations()) {
     const QueryView negate_view(negate);
     const QueryView negated_view = negate.NegatedView();
@@ -1762,11 +1805,12 @@ DRFlowGraph BuildDRInventory(
   // monotone table is itself monotone plumbing (a deletion-receiving member
   // would make the table differential) and hence eager-walked, so member-set
   // existence == the walk's provisioning (§7d cross-checks that on every
-  // compile). The fold body hosts the eager descent, so the op stays
-  // hand-coded (§0/§6 — its INSERT stream publish is a WALK effect of the
-  // descent, never an ingest-seed effect). A table-less monotone receive
-  // mints no counter fold (ExtendEagerProcedure's monotone arm) and is not an
-  // ingest fold.
+  // compile). Since §6 (subgraphs/demand P1) the fold LOWERS via
+  // LowerIngestFold from MakeMonotoneIngestFold — the same op the census
+  // enrolls — and the descent's INSERT-stream publish / net-additions append
+  // is a WALK effect emitted INTO the returned UPDATECOUNT's hole, never an
+  // ingest-seed effect. A table-less monotone receive mints no counter fold
+  // (ExtendEagerProcedure's monotone else-branch) and is not an ingest fold.
   // Construction is ID-NEUTRAL (no region/vector ids); the queue-vec ids are
   // minted at LOWER time in the same (message, receive, polarity) order (§4).
   for (QueryIO io : query.IOs()) {
@@ -1796,32 +1840,13 @@ DRFlowGraph BuildDRInventory(
         continue;  // no cut/descent for a deletion-capable receive.
       }
 
-      // Monotone with a table (STAGE-1 OUT): inventoried + censused, never
-      // lowered this stage (the hand-coded walk still emits it).
+      // Monotone with a table (STAGE-1 OUT): inventoried + censused, and since
+      // §6 (subgraphs/demand P1) LOWERED via LowerIngestFold from this SAME
+      // constructor (the hand-coded monotone arm is gone). The single-authority
+      // MakeMonotoneIngestFold is shared with the walk-position lowering.
       if (table != nullptr) {
-        DROp op(DROpKind::kIngestFold);
-        op.ctx = Ctx::kEager;
-        op.ingest_message = message;
-        op.ingest_receive = receive;
-        op.ingest_table = table;
-        op.ingest_sign = 1;
-        op.ingest_is_explicit = false;
-        op.ingest_stage1 = false;
-        op.ingest_role = MonotoneIngestRoleDR(context, table);
-        DREffect cnt;
-        cnt.kind = EffKind::kCounter;
-        cnt.counter_table = table;
-        cnt.sign = 1;
-        cnt.klass = EmissionDerivClass(impl, context, receive);
-        op.effects.push_back(cnt);
-        if (op.ingest_role != VecRole::kEmpty) {
-          DREffect app;
-          app.kind = EffKind::kVecAppend;
-          app.value_table = table;
-          app.vec_role = op.ingest_role;
-          op.effects.push_back(app);
-        }
-        flow.ops.push_back(std::move(op));
+        flow.ops.push_back(
+            MakeMonotoneIngestFold(impl, context, message, receive, table));
         // NO def-edge: the monotone kNetAddition vec is not minted by the
         // differential-only MintTableVec loop; the append parks via
         // TableDeltaVector at LOWER time (§3a).
