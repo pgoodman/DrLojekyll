@@ -1420,6 +1420,9 @@ static void LowerGroupUpdate(
   for (auto col : op.summary_cols) {
     gu->summary_positions.push_back(pos_of(col));
   }
+  // P2c: the config split (the tail of group_positions). EmitGroupUpdate reads
+  // this to pass the config frontier locals as leading Fold args (@invertible).
+  gu->num_config_positions = op.num_config_cols;
 }
 
 // Lower ONE stratum's ACYCLIC band from the DR-IR flow graph into `stratum_seq`:
@@ -2178,6 +2181,9 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     for (auto col : cell.summary_cols) {
       desc.summary_types.push_back(col.Type());
     }
+    // P2c: the config split (the tail of key_types). Codegen slices the config
+    // type suffix for the reduction ABI's leading params + the ConfigTuple.
+    desc.num_config_types = cell.num_config_cols;
     impl->state_cells.push_back(std::move(desc));
   }
 

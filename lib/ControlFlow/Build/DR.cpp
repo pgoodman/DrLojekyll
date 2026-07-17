@@ -640,7 +640,7 @@ static void BuildGroupUpdateOps(
     const std::unordered_map<TABLE *, unsigned> &scc_map, QueryView agg_view,
     AggProvenance prov, std::vector<QueryColumn> group,
     std::vector<QueryColumn> summary, QueryView input,
-    const ParsedFunctor &algebra_functor) {
+    const ParsedFunctor &algebra_functor, unsigned num_config_cols) {
   const Algebra alg = SelectAlgebra(algebra_functor);
   TABLE *const agg_table =
       impl->view_to_model[agg_view]->FindAs<DataModel>()->table;
@@ -671,6 +671,7 @@ static void BuildGroupUpdateOps(
   cell.key_cols = group;
   cell.summary_cols = summary;
   cell.algebra_functor = &algebra_functor;
+  cell.num_config_cols = num_config_cols;
   flow.statecells.push_back(std::move(cell));
 
   DROp op(DROpKind::kGroupUpdate);
@@ -683,6 +684,7 @@ static void BuildGroupUpdateOps(
   op.statecell_id = sc;
   op.group_cols = std::move(group);
   op.summary_cols = std::move(summary);
+  op.num_config_cols = num_config_cols;
 
   // ---- BAND (a) frontier_in : two per-sign arms over the input net frontiers.
   // Structurally a THIRD frontier-vec consumer, sibling of CROSSOVER/
@@ -1069,13 +1071,16 @@ DRFlowGraph BuildDRInventory(
     for (auto col : agg.InputAggregatedColumns()) {
       summary.push_back(col);
     }
+    // P2c: the config columns are the tail of `group` (pushed after the group-by
+    // columns above). Their count is the reduction-ABI split the codegen needs.
+    const unsigned num_config = agg.NumConfigurationColumns();
     // The summarized input is the aggregate's predecessor carrying the
     // aggregated columns (Link.cpp binds it as a predecessor). A plain over()
     // aggregate has a single incoming summarized relation.
     QueryView input = QueryView(agg).Predecessors()[0];
     BuildGroupUpdateOps(flow, impl, context, scc_map, QueryView(agg),
                         AggProvenance::kOver, std::move(group),
-                        std::move(summary), input, agg.Functor());
+                        std::move(summary), input, agg.Functor(), num_config);
   }
   for (QueryKVIndex kv : query.KVIndices()) {
     std::vector<QueryColumn> group;  // config = () for a KV index
@@ -1089,7 +1094,7 @@ DRFlowGraph BuildDRInventory(
     QueryView input = QueryView(kv).Predecessors()[0];
     BuildGroupUpdateOps(flow, impl, context, scc_map, QueryView(kv),
                         AggProvenance::kKv, std::move(group), std::move(summary),
-                        input, kv.NthValueMergeFunctor(0));
+                        input, kv.NthValueMergeFunctor(0), /*num_config=*/0u);
   }
 
   // ------------------------------------------------------------- branches/joins
@@ -2817,10 +2822,11 @@ void ValidateDROps(
   // flow-derived (E-27: `flow.statecells.size()` is pushed in lockstep with
   // the ops by BuildGroupUpdateOps and would compare flow against itself).
   // The recount is tight: the mint loops iterate the same accessors with no
-  // skip, and the Build.cpp pre-pass rejects (induction-owned input, config
-  // columns, undeclared KV algebra) bail via the num_errors→nullopt gate
-  // BEFORE any DR construction, so no unsupported agg/kv view coexists with
-  // a running census. The key is (agg table, provenance, algebra, view id),
+  // skip, and the Build.cpp pre-pass rejects (induction-owned input,
+  // config-column @recompute aggregates, undeclared KV algebra) bail via
+  // the num_errors→nullopt gate BEFORE any DR construction, so no
+  // unsupported agg/kv view coexists with a running census (config
+  // @invertible aggregates lower since P2c and are censused like any other). The key is (agg table, provenance, algebra, view id),
   // compared order-free — statecell_id is a mint-order artifact and is
   // deliberately NOT keyed (E-28); its bijection with the seals is the
   // V-AGG-PAIR structural check below.

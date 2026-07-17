@@ -608,7 +608,9 @@ class Oracle {
   // the incremental paths, so the per-view presence cross-check extends to
   // aggregate views for free (spec §4). A `Slot` here references a column
   // POSITION in the input view, or a constant.
-  enum class AggKind : uint8_t { kSum, kCount, kMerge };
+  // kSumAbove (P2c): a CONFIG-DEPENDENT sum — sum of Val over members whose
+  // Val >= the per-group Threshold (a configuration column read from the key).
+  enum class AggKind : uint8_t { kSum, kCount, kMerge, kSumAbove };
   struct AggInfo {
     ViewModel *head{nullptr};   // the aggregate/KV output view
     ViewModel *input{nullptr};  // the single summarized input view
@@ -616,6 +618,10 @@ class Oracle {
     // Input-column slots for the grouping key: group ++ config (agg) or the
     // key columns (KV). These form the group key AND the leading output cols.
     std::vector<Slot> key_slots;
+    // P2c: how many of the TRAILING key_slots are CONFIGURATION columns (the
+    // tail beyond the true group-by columns). A config-dependent reduction
+    // reads them from the group key. 0 for a config-free aggregate / KV index.
+    unsigned num_config_slots{0u};
     // The aggregated / value column slot (the reduced column). For count this
     // is still read (to iterate members) but its value is unused.
     Slot val_slot;
@@ -1300,14 +1306,25 @@ class Oracle {
       }
       ai.val_slot = ResolveInputSlot(agg.NthInputAggregateColumn(0), ai.input);
 
+      // P2c: the config columns are the tail of key_slots (pushed after the
+      // group-by columns above); a config-dependent reduction reads them there.
+      ai.num_config_slots = agg.NumConfigurationColumns();
+
       const std::string fname(agg.Functor().NameAsString());
       if (fname == "sum_i32") {
         ai.kind = AggKind::kSum;
       } else if (fname == "count_i32") {
         ai.kind = AggKind::kCount;
+      } else if (fname == "sum_above") {
+        // Config-dependent sum: sum of Val over members with Threshold <= Val.
+        // The threshold is the single config column (the last key slot).
+        ai.kind = AggKind::kSumAbove;
+        if (ai.num_config_slots != 1u) {
+          Fail("oracle sum_above expects exactly one config column (threshold)");
+        }
       } else {
-        Fail("oracle implements only sum_i32/count_i32 aggregate functors "
-             "by name (got '" +
+        Fail("oracle implements only sum_i32/count_i32/sum_above aggregate "
+             "functors by name (got '" +
              fname + "')");
       }
       ai.arity = static_cast<unsigned>(ai.key_slots.size()) + 1u;
@@ -1373,6 +1390,13 @@ class Oracle {
         key.push_back(slot_val(s, row));
       }
       const auto v = static_cast<int64_t>(slot_val(ai.val_slot, row));
+      // P2c: a config-dependent reduction reads its config from the group key
+      // (the config columns are the trailing key slots). For sum_above the
+      // single config column is the per-group threshold gating the sum.
+      const bool above_gate =
+          (ai.kind != AggKind::kSumAbove) ||
+          (v >= static_cast<int64_t>(
+                    key[ai.key_slots.size() - ai.num_config_slots]));
       auto it = acc.find(key);
       if (it == acc.end()) {
         int64_t init = 0;
@@ -1380,6 +1404,7 @@ class Oracle {
           case AggKind::kSum: init = v; break;
           case AggKind::kCount: init = 1; break;
           case AggKind::kMerge: init = v; break;  // last-writer; see below
+          case AggKind::kSumAbove: init = above_gate ? v : 0; break;
         }
         acc.emplace(key, init);
         key_order.push_back(key);
@@ -1388,6 +1413,7 @@ class Oracle {
           case AggKind::kSum: it->second += v; break;
           case AggKind::kCount: it->second += 1; break;
           case AggKind::kMerge: it->second = v; break;  // last member wins
+          case AggKind::kSumAbove: if (above_gate) { it->second += v; } break;
         }
       }
     }

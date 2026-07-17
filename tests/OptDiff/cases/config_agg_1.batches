@@ -1,0 +1,18 @@
+# config_agg_1 oracle sidecar: mirrors config_agg_1.main.cpp exactly.
+# Batch 1: per-sensor thresholds + readings; the config gate excludes
+#          below-threshold readings from each sum.
+# Batch 2: an above-threshold reading arrives -> the sum CHANGES (the
+#          emit_touched change arm: -old, +new).
+batch
++ set_threshold 1 15
++ set_threshold 2 50
++ add_reading 1 10
++ add_reading 1 20
++ add_reading 1 30
++ add_reading 2 40
++ add_reading 2 60
++ add_reading 2 100
+end
+batch
++ add_reading 1 25
+end

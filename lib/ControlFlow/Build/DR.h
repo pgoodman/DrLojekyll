@@ -536,6 +536,12 @@ class DROp {
   unsigned statecell_id{0u};
   std::vector<QueryColumn> group_cols;    // group ++ config (the cell key)
   std::vector<QueryColumn> summary_cols;  // the folded value column(s)
+  // P2c: how many of the trailing `group_cols` are CONFIGURATION columns (the
+  // tail beyond the true group-by columns). The (group ++ config) split is
+  // invisible to the key/row projection (they treat it uniformly) but the
+  // reduction ABI needs it: the last `num_config_cols` group positions are the
+  // config leading args to Fold (@invertible) / ReduceLive (@recompute).
+  unsigned num_config_cols{0u};
 
   // The per-arm structure (A-3). A FIXPOINT_FIRE has one arm per same-SCC delta
   // position; a SEED_FOLD/CHAIN_FOLD has exactly one. Empty for the per-table
@@ -627,6 +633,10 @@ class DRStateCell {
   std::vector<QueryColumn> key_cols;
   std::vector<QueryColumn> summary_cols;
   const ParsedFunctor *algebra_functor{nullptr};
+  // P2c: how many of the trailing `key_cols` are CONFIGURATION columns (the
+  // tail beyond the group-by columns). Codegen slices the config type suffix
+  // from `KeyTypes()` for the reduction ABI's leading params.
+  unsigned num_config_cols{0u};
 
   explicit DRStateCell(QueryView agg_view_) : agg_view(agg_view_) {}
 };

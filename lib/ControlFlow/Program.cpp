@@ -224,6 +224,10 @@ ParsedFunctor ProgramStateCellInfo::Functor(void) const noexcept {
   return static_cast<const ProgramStateCell *>(impl)->functor;
 }
 
+unsigned ProgramStateCellInfo::NumConfigTypes(void) const noexcept {
+  return static_cast<const ProgramStateCell *>(impl)->num_config_types;
+}
+
 // Return the query used to build this program.
 ::hyde::Query Program::Query(void) const noexcept {
   return impl->query;
@@ -697,6 +701,10 @@ ProgramGroupUpdateRegion::GroupPositions(void) const noexcept {
 const std::vector<unsigned> &
 ProgramGroupUpdateRegion::SummaryPositions(void) const noexcept {
   return impl->summary_positions;
+}
+
+unsigned ProgramGroupUpdateRegion::NumConfigPositions(void) const noexcept {
+  return impl->num_config_positions;
 }
 
 DataTable ProgramGroupUpdateRegion::AggTable(void) const {

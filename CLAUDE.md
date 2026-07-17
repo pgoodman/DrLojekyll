@@ -48,8 +48,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 164 corner-case programs as of the
-delta-relational-IR epoch) has one committed expected output in
+(`<name>.dr` + `<name>.main.cpp`, 165 corner-case programs as of the
+subgraphs/demand epoch) has one committed expected output in
 `tests/OptDiff/goldens/<name>.stdout`, and the 4 optimization modes are
 just execution variants — EVERY mode's stdout is byte-compared against the
 same golden (cross-mode agreement is implied). A case with a
@@ -279,7 +279,10 @@ compile.
 
 CLEAN-DIAGNOSTIC gaps that remain: a `mutable()` merge functor with NO
 declared `@`-algebra (V-ALGEBRA reject — must be `@invertible`/`@recompute`);
-aggregates with configuration columns; aggregates/KV over INDUCTION-OWNED
+config-column `@recompute` aggregates (the `@invertible` config arm LANDED
+in the subgraphs/demand epoch — `config_agg_1`, config-dependent reduction,
+free functions gain a leading config parameter; `config_agg_2` pending);
+aggregates/KV over INDUCTION-OWNED
 (recursively-derived) inputs; unstratified aggregation (an aggregate over
 its OWN recursive result, rejected by the dataflow Stratify pass as the
 sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).

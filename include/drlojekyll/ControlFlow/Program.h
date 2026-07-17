@@ -820,6 +820,11 @@ class ProgramGroupUpdateRegion
   const std::vector<unsigned> &GroupPositions(void) const noexcept;
   const std::vector<unsigned> &SummaryPositions(void) const noexcept;
 
+  // P2c: how many of the trailing `GroupPositions()` are CONFIGURATION columns.
+  // For an @invertible cell EmitGroupUpdate passes these config frontier locals
+  // as leading `Fold` args; 0 for a config-free aggregate or a KV index.
+  unsigned NumConfigPositions(void) const noexcept;
+
   // The aggregate's OWN differential table (sole deriver) and its delete / add
   // queues (emit_touched appends, BAND (b)).
   DataTable AggTable(void) const;
@@ -1326,6 +1331,11 @@ class ProgramStateCellInfo {
   // Column types of the group ++ config key and the summary value.
   const std::vector<TypeLoc> &KeyTypes(void) const noexcept;
   const std::vector<TypeLoc> &SummaryTypes(void) const noexcept;
+
+  // P2c: how many of the trailing `KeyTypes()` are CONFIGURATION columns (the
+  // tail beyond the group-by columns). Codegen slices these as the config type
+  // suffix for the reduction ABI's leading params + the ConfigTuple.
+  unsigned NumConfigTypes(void) const noexcept;
 
   // The reduction functor (over() summary or kv merge) backing this cell.
   ParsedFunctor Functor(void) const noexcept;

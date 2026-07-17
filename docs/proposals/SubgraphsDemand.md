@@ -253,6 +253,75 @@ incl. monotone-kEmpty and aggregate. PRE-REGISTERED PREDICTIONS: ALL
 HIT (zero golden churn, suite 164, driver churn 0, Q5 neutral, no
 FINDINGS entry — no validator fired on a real divergence).
 
+### P2(c) — CONFIG-COLUMN AGGREGATES LANDED (2026-07-16)
+
+The CLAUDE.md clean-diagnostic gap "aggregates with configuration
+columns" is CLOSED for the @invertible arm: config-dependent
+@invertible aggregates lower end-to-end. 10 files +277/−46 (+ nits) +
+6 new corpus/golden files:
+- RUNTIME (StateCell.h): store-Fold raw-pack forward (the Summary(...)
+  wrapper dropped — E-31/amendment 1); Invertible::Fold variadic →
+  Combine/Uncombine with leading config; the HasConfigPolicy concept +
+  kHasConfig/ConfigTuple discriminator; DebugValidate synthesizes
+  identity-config probes (amendment option (i) — the algebra property
+  checks stay alive, exercised at the emitted commit tail).
+- COMPILER: the ControlFlow fence lifted + the stale comment fixed
+  (E-31 tail); num_config threaded DROp/DRStateCell → ProgramStateCell/
+  ProgramGroupUpdate → the emitters; EmitGroupUpdate's fold arm is
+  ALGEBRA-FORKED (@invertible: config prefix at Fold; @recompute config
+  routed to Emit/ReduceLive — amendment 2, plumbing present but the
+  emit-arm wiring deferred with config_agg_2).
+- ORACLE: config-aware per-group recompute (kSumAbove; threshold read
+  from the group-key config slot; definitional gate on the live
+  multiset).
+- CORPUS: config_agg_1 (.dr + driver + .batches + stdout/oracle/
+  monotone goldens BLESSED FROM ORACLE TRUTH after hand-verification)
+  — SUITE GROWS 164 → 165 (the aggregate_1-flip precedent).
+
+FABLE REVIEW: APPROVE-WITH-NITS, no correctness defects. Verified the
+raw-pack forward is behavior-identical for 1-element packs (why the
+config-free corpus is byte-identical), the discriminator compiles all
+four algebra×config quadrants, the fence predicate exact in all four
+quadrants (config@recompute + undeclared-default reject; config
+@invertible + config-free @recompute pass), the oracle definitional
+with the config in the right key slot, the goldens hand-verified, and
+THE PREDICTION-7 PROJECTION SEMANTICS: state keyed (sensor, threshold),
+output total_above/2 = ∃T-projection with correct derivation counting —
+empirically demonstrated on a two-thresholds-one-sensor probe (totals
+union; equal totals coalesce with count 2 and retract correctly). Nits
+landed in-commit: DR.cpp census-tightness comment reworded; CLAUDE.md
+gap list narrowed + suite count 165; the group-update IR printer splits
+`config@{...}` (elided when config-free — byte-identical dumps for the
+existing corpus, verified).
+
+DEVIATIONS FOR RATIFICATION: (1) a NEW residual fence — config-column
+aggregates whose functor is not @invertible (incl. the over()
+@recompute default) are rejected with a clean diagnostic ("…require an
+'@invertible' reduction…"): lifting the fence unconditionally would
+have regressed config @recompute from clean-diagnostic to uncompilable
+generated code (the store's bulk Seal() cannot extract per-group config
+without a caller argument). (2) config_agg_2 (@recompute config) is a
+FOLLOW-ON: the runtime/codegen ABI for it is present but the emit-arm
+wiring (Emit/Seal config forwarding) is not — carried with the fence
+pointing at it.
+
+GATES (all green on the exact committed tree): existing-corpus
+BYTE-IDENTITY (average_weight / pairwise_average_weight / aggregate_1,
+datalog.h + full -ir-out, opt+nocf) + the group-update printer nit
+re-verified against the epoch-start witness; FULL SUITE PASS (165) —
+the existing 164 zero churn; ctest 3/3 (StateCellTest passes UNTOUCHED
+— the ABI extension is additive); COUNTER-SEAM NO-OP re-verified after
+the Runtime header edit (OFF/ON objects both clean; seams compile away
+off — the standing gate's first firing this epoch); BENCH NEUTRAL BY
+BYTE-IDENTITY (no flagship uses aggregates; all 5 workloads' generated
+headers byte-identical pre/post — no timing needed); release green
+(config_agg_1 release-compiled matches the golden); Q5 spot @128
+release 0.11s / debug 0.94s (flat). PRE-REGISTERED PREDICTIONS: suite
+164→165 HIT; zero existing churn HIT; driver churn 0 HIT; Q5 neutral
+HIT; goldens from oracle truth HIT; prediction 7 (the projection
+cross-check) did NOT fire — a clean pass on the sharpest risk, no
+FINDINGS entry.
+
 ## 3. The diff plan as designed and judged (checkpoint 2+3; 2026-07-16)
 
 Workflow: 4 opus designers (P1-§6 / P2c-config / P2b-instances /
