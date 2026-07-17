@@ -1771,6 +1771,15 @@ debug/opt 0.87-0.95s @128 vs the run-8 149.4ms/925.1ms baselines).
 
 ### Deviations for ratification (SEED TO NEXT EPOCH)
 
+RATIFIED 2026-07-16 (owner, at close — all five as recorded below):
+the landed P1 banner gating, the landed R1e table-level monotone
+queue-role rule (+ the two §7(c) scopings and the omitted publication
+field), the P2 cutover authority shape (walk-position lowering from
+constructor-fresh copies; §12.3 superseded by artifact §12.6; the
+emitted-tree↔flow cross-check stays the §6 follow-on's obligation),
+the P3 retirement + re-charter, and the FINDINGS.md no-entry
+disposition. Nothing re-opens; the §14 seed carries them as settled.
+
 1. P1 BANNER GATING: the identity artifact emitted the new header
    banners unconditionally, breaking its own functor-free byte-identity
    prediction; the landed form gates them on any_map_decl. The gate
