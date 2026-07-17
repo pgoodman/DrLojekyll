@@ -285,3 +285,26 @@ corpus subset; E-32 discharge covers p' but not the d_p projections.
 CHURN FACT (verified twice, independently): 37-38 of 164 corpus cases
 carry bound #query columns — an unconditional transform rewrites ~23%
 of the corpus; any in-scope P3 must be mode-gated off by default.
+
+## 3.1 Owner decisions (2026-07-16, ratified at the design checkpoint)
+
+1. EPOCH CUT: P1 (§6 monotone/descent, as amended per its judge) +
+   P2(c) (config-column aggregates, as amended per its judge) are the
+   epoch's EMISSION diffs. P2(b) keyed instances is PAPER-ONLY this
+   epoch: the substrate design (effect domain, scheduler pricing,
+   seven-point mapping, acyclic-frozen-first) is ratified as the
+   standing record; the InstanceStore sealed-word redesign + the
+   demand-wired witness are next-epoch design obligations, no emission.
+2. §6 GOLDEN POLICY: BYTE-IDENTITY is the hard target, guarded by the
+   §12.4-precedent structural gate — full -ir-out + datalog.h byte-
+   compared pre/post in opt AND nocf on cf16_4 / negate_lower_strata /
+   deep_chain_retract / cf14_3 (mixed) / average_weight; suite 164 zero
+   stdout churn; oracle + monotone sidecars byte-identical; permcheck
+   permutation-bless ONLY as a reviewed fallback, never to green red.
+3. P3/DEMAND: DESIGN-ONLY this epoch, re-chartered on the SEED
+   MECHANISM (the judge's CRITICAL: no demand-seed injection point
+   exists in the eager/push model; generalizing the forcing-message
+   surface is the candidate; per-adornment splits + the all-free-
+   forces-full interaction must be specified). The amended invariant
+   argument is the standing gate; any live transform is mode-gated off
+   by default (37-38/164 corpus cases carry bound queries).
