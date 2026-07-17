@@ -282,11 +282,27 @@ SURFACE-1/SURFACE-2 carry. Amendments A1-A5 (old()-across-rebuild;
 differential input wired or cleanly rejected; churn priced; a real
 recount input; the recognizer dependency stated) before any emission.
 
-## 2.1 Owner decisions
+## 2.1 Owner decisions (2026-07-17, ratified at the design checkpoint)
 
-(PENDING — brought to the owner with this record: (a) the cut/re-rank,
-(b) the D1 surface + mode-flag granularity, (c) the D2 fork, (d) D4
-in-scope vs re-seed.)
+1. EPOCH CUT RE-RANKED: D2 (config_agg_2, as amended per its judge) is
+   the epoch's first EMISSION diff and lands now; the D1 and D3
+   amendment + re-judge rounds run in PARALLEL as paper-only work (no
+   shared code with D2). D3 remains paper until it survives re-judge.
+2. D1 SURFACE: (iii) a per-program `-demand` CLI flag, default-off,
+   ORTHOGONAL to the 4 golden modes (never a 5th mode; a per-query
+   pragma is a later strict refinement). The MECHANISM amendment is
+   the judge's recoverable path: fabricate a real ParsedMessage at
+   DataFlow-build time (mode-gated, module-registered) + suppress the
+   kMessageHandler public-entry leak.
+3. D2 FORK: (i) — the codegen-emitted per-touched-group seal loop for
+   config-@recompute cells, via a store SealOne(gid, cfg...) that IS
+   the store's own Seal body (judge-verified no-drift), the opaque
+   bulk Seal() retained for every other cell class.
+4. D4: CONDITIONAL — the checkpoint-3 spike (hand-author the demanded
+   .dr the transform would synthesize; compile; diff against the D1
+   §5 hand-written graph) + the D1 amendment + re-judge run first; a
+   go/no-go checkpoint follows. If either fails, D4 re-seeds to the
+   follow-on epoch.
 
 ## 3. Artifact index
 
