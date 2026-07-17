@@ -457,6 +457,41 @@ recipe — hand-write the spliced QueryImpl graph node-by-node for the
 witness against the ACTUAL post-ConnectInsertsToSelects graph (dump
 it), answer the intra-pass column-id discipline, then implement.
 
+### D4-S3 recipe DESIGNED + JUDGED over three rounds (2026-07-17):
+### APPROVE-WITH-NITS — Road-G ratified-quality, S3+S4 implementable
+
+Artifact: DemandSeeds.artifacts/d4s3-recipe.md (body + AMENDMENTS +
+AMENDMENTS ROUND 3 + in-place SUPERSEDED markers). Judge reports:
+scratchpad design/judge-d4s3{,-round2,-round3}.md. DECISION: ROAD-G
+(graph-level splice at the :2575 slot) over Road-C (clause-level
+fabrication) — the landed foundation IS a Road-G foundation; zero
+re-argument of the judged (a)-(f)/p3-§1.3 rationale; Road-C would
+strand the one-ParsedMessage simplification and re-open placement.
+EVERY round found something real (rounds now ELEVEN for the epoch):
+round 1 CRITICAL — the recipe misread the spike (a FOURTH JOIN gates
+the query projection on the RAW demand-seed receive, Optimize-stable)
++ the injector hole (S3-alone has no runtime seeder — S3+S4 LAND
+TOGETHER, re-staged) + a nonexistent SELECT ctor; round 2 —
+guard-on-OUTPUT was wrong (the spike pushes the guard DOWN to the
+demanded-subgoal read: JOIN 18 = d_path ⋈ path → TABLE 19 → JOIN 22 =
+edge_2 ⋈ TABLE 19), the fabricated-read-predicate route deleted (it
+was the Road-C chain in disguise; sole read construction = TUPLE over
+the pass-minted MERGE), fresh receive projection for the query guard;
+round 3 verified the node-for-node replay reaches ALL FOUR JOINs with
+dump-matching ids. LOUD flags for owner ratification (both judged
+sound): A1 — FabricateDemandLocal (a second fabricated decl, the
+display-buffer naming route, F5); A2 — the pass mints the d_path
+MERGE/reader plumbing itself (ConnectInsertsToSelects never re-runs;
+resolution (ii)). Implementation deltas the recipe binds: the
+demand_fabricated flag moves from FabricateDemandMessage to the
+pass's single guarded entry (N5); d_rel->inserts cleared mirroring
+Connect (N4). STAGING: S3a decls+plumbing → S3b path guard (push-
+down) → S3c SIP propagation → S3d query-projection guard (each with
+the dump-diff gate vs the spike graph) → S4 injector registry +
+public-entry suppression (lands WITH S3; the first answer gate) →
+S5 witness corpus (goldens predicted from the spike modulo the
+message name + suppression) → S6 the COST spike.
+
 ## 3. Artifact index
 
 - d1-demand-seed-mechanism.md — the demand-seed mechanism design:
