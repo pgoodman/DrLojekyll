@@ -944,8 +944,17 @@ class Query {
   // Build and return a new query. When `optimize` is `false`, the data flow
   // graph is built and canonicalized, but the aggressive whole-graph
   // optimization pass (CSE, union sinking, dead flow elimination) is skipped.
+  //
+  // When `demand_mode` is `true`, the live demand transform (magic-sets /
+  // SLDMagic; DemandSeeds.artifacts/d1-demand-seed-mechanism.md) runs as a
+  // dedicated pass immediately before `Optimize`, mode-gated so that with
+  // `demand_mode == false` (the default) NOTHING is minted and the graph is
+  // bit-for-bit identical to today. It is ORTHOGONAL to the four golden
+  // optimization modes (never a fifth mode); it is exercised only under the
+  // `-demand` CLI flag.
   static std::optional<Query> Build(const ParsedModule &module,
-                                    const ErrorLog &log, bool optimize = true);
+                                    const ErrorLog &log, bool optimize = true,
+                                    bool demand_mode = false);
 
   ~Query(void);
 

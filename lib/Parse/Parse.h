@@ -4,6 +4,8 @@
 
 #include <drlojekyll/Display/Display.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
+#include <drlojekyll/Display/DisplayManager.h>
+#include <drlojekyll/Lex/StringPool.h>
 #include <drlojekyll/Lex/Token.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parse.h>
@@ -12,6 +14,7 @@
 #include <cassert>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -560,6 +563,23 @@ class ParsedModuleImpl
   ParsedModuleImpl(const DisplayConfiguration &config_);
 
   const DisplayConfiguration config;
+
+  // The display manager the parser used to build this module. Threaded here
+  // (a copyable shared handle) so the live demand transform (Query::Build,
+  // `-demand`) can intern synthetic message names as real display buffers —
+  // codegen resolves a token's spelling via `SpellingRange()` -> the display
+  // manager, so a fabricated demand message MUST carry real display-backed
+  // name/param tokens (DemandSeeds A7/G1). Left unset (an empty handle) for
+  // modules built without a parser; the demand fabrication asserts it is set.
+  // Held in optionals because `DisplayManager` has no copy-assignment.
+  std::optional<DisplayManager> display_manager;
+  std::optional<StringPool> string_pool;
+
+  // Set `true` once the demand transform has fabricated its demand messages
+  // onto this module, so a second `Query::Build` on the SAME module instance
+  // is detected and hard-aborts rather than re-fabricating stale decls
+  // (DemandSeeds G2 — Query::Build is at-most-once per module instance).
+  bool demand_fabricated{false};
 
   // Used by anonymous declarations.
   unsigned next_anon_decl_id{1};

@@ -11,8 +11,10 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace hyde {
 
@@ -869,6 +871,22 @@ class ParsedModule {
 
   // The root module of this parse.
   ParsedModule RootModule(void) const;
+
+  // COMPILER-INTERNAL (the live demand transform, `-demand`). Fabricate a real
+  // `#message`-kind declaration named `name` with one parameter per entry of
+  // `param_types`, registered in this module, so the demand pass can drive the
+  // existing message receive / injector / handler machinery for a synthesized
+  // demand seed (DemandSeeds Option D'). The synthetic name is interned as a
+  // real display buffer so codegen's `SpellingRange()` naming path resolves
+  // (A7/G1). Returns `std::nullopt` on a G3 collision (a user already declared
+  // a message with this reserved name) — a clean-diagnostic reject the caller
+  // reports. Not for general use; there is no source syntax that reaches it.
+  std::optional<ParsedMessage> FabricateDemandMessage(
+      std::string_view name, const std::vector<TypeLoc> &param_types) const;
+
+  // COMPILER-INTERNAL. `true` once `FabricateDemandMessage` has run on this
+  // module instance — the demand pass hard-aborts on re-entry (G2).
+  bool DemandMessagesFabricated(void) const noexcept;
 
   inline ParsedModule(const std::shared_ptr<ParsedModuleImpl> &impl_)
       : impl(impl_) {}

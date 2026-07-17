@@ -2515,7 +2515,8 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 }  // namespace
 
 std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
-                                  const ErrorLog &log, bool optimize) {
+                                  const ErrorLog &log, bool optimize,
+                                  bool demand_mode) {
 
   std::shared_ptr<QueryImpl> impl(new QueryImpl(module));
 
@@ -2560,6 +2561,21 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   }
 
   if (!impl->ConnectInsertsToSelects(log)) {
+    return std::nullopt;
+  }
+
+  // The LIVE DEMAND TRANSFORM (magic-sets / SLDMagic). Slotted here — AFTER
+  // `ConnectInsertsToSelects` (so predicate producing rules and demanding
+  // subgoals are wired end-to-end) and BEFORE `Optimize` (so demand
+  // relations are folded by the SAME CSE/canonicalize fixpoint — the
+  // shared-demand-frontier fusion) / `IdentifyInductions` / `Stratify` (so
+  // the induction cross-check validates the demand edges). Mode-gated: with
+  // `demand_mode == false` the pass returns at its head before minting any
+  // node, so the graph is byte-identical to today.
+  if (!impl->ApplyDemandTransform(module, log, demand_mode)) {
+    return std::nullopt;
+  }
+  if (num_errors != log.Size()) {
     return std::nullopt;
   }
 

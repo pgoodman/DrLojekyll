@@ -45,6 +45,7 @@ namespace {
 static unsigned gFirstId = 0u;
 static bool gOptimizeDataFlow = true;
 static bool gOptimizeControlFlow = true;
+static bool gDemand = false;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
 static const char *gCxxOutDir = nullptr;
@@ -55,7 +56,8 @@ static OutputStream *gIRStream = nullptr;
 
 static int CompileModule(const Parser &parser, DisplayManager display_manager,
                          ErrorLog error_log, ParsedModule module) {
-  auto query_opt = Query::Build(module, error_log, gOptimizeDataFlow);
+  auto query_opt =
+      Query::Build(module, error_log, gOptimizeDataFlow, gDemand);
   if (!query_opt) {
     return EXIT_FAILURE;
   }
@@ -188,6 +190,7 @@ static int HelpMessage(const char *argv[]) {
       << "                            dead flow elimination)." << std::endl
       << "  -disable-controlflow-opt  Skip control-flow IR optimization (region flattening, no-op removal," << std::endl
       << "                            procedure deduplication)." << std::endl
+      << "  -demand                   Enable the live demand transform (magic-sets) for bound queries." << std::endl
       << std::endl
       << "OTHER OPTIONS:" << std::endl
       << "  -help, -h                 Show help and exit." << std::endl
@@ -334,6 +337,12 @@ extern "C" int main(int argc, const char *argv[]) {
     } else if (!strcmp(argv[i], "-disable-controlflow-opt") ||
                !strcmp(argv[i], "--disable-controlflow-opt")) {
       hyde::gOptimizeControlFlow = false;
+
+    // Enable the live demand transform (magic-sets / SLDMagic). Default-off,
+    // orthogonal to the dataflow/controlflow optimization toggles.
+    } else if (!strcmp(argv[i], "-demand") ||
+               !strcmp(argv[i], "--demand")) {
+      hyde::gDemand = true;
 
     // Datalog module file search path.
     } else if (!strcmp(argv[i], "-M")) {

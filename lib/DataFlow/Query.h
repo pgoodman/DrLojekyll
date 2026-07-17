@@ -1005,6 +1005,16 @@ class QueryImpl {
   // does not need to be visible for point queries.
   bool ConnectInsertsToSelects(const ErrorLog &log);
 
+  // The LIVE DEMAND TRANSFORM (magic-sets / SLDMagic). See
+  // lib/DataFlow/Demand.cpp for the algorithm, pseudocode, and before/after
+  // diagram. Mode-gated: returns `true` immediately (a total no-op — no node
+  // minted, no module mutation) when `demand_mode` is `false`. Returns
+  // `false` on a clean-diagnostic reject (multi-adornment, or demand through
+  // a negation/aggregate sink). `module` is threaded so the pass can
+  // fabricate demand messages and reach the display manager for interning.
+  bool ApplyDemandTransform(const ParsedModule &module, const ErrorLog &log,
+                            bool demand_mode);
+
   // Canonicalize the dataflow. This tries to put each node into its current
   // "most optimal" form. Previously it was more about re-arranging columns
   // to encourange better CSE results.

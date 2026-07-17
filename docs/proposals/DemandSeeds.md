@@ -406,6 +406,57 @@ entry, not an _input alias (driver fixed). Stale-comment sweeps
 (CLAUDE.md / PerfRoadmap / p2c artifact) deferred to the epoch-close
 sweep per the implementer's declared surface.
 
+### D4 stage 1 — the -demand FOUNDATION LANDED (2026-07-17);
+### the graph-surgery core CHARTERED as a design sub-task
+
+The implementer landed S1+S2 of the ratified D4 plan and STOPPED
+before the QueryImpl graph rewrite per the R4/P3 discipline — the
+correct call: the rewrite's node-construction recipe at the :2566
+slot (guard-splice into post-ConnectInsertsToSelects INSERT/UNION
+chains, demand-source minting, SIP over the BUILT graph, intra-pass
+column-id discipline) is design-unanswered, and its miscompile risk
+is invisible to the flag-off containment gate. LANDED (11 files,
++346/−4): the `-demand` CLI flag threaded Main.cpp →
+Query::Build(..., demand_mode=false) → ApplyDemandTransform at the
+:2566 slot (lib/DataFlow/Demand.cpp, house doc-comment; mode gate at
+the head; `-demand` currently a CLEAN diagnostic, never a silent
+no-op); the Option D′ fabrication machinery
+(ParsedModule::FabricateDemandMessage in lib/Parse/Demand.cpp — the
+layer-boundary resolution: fabrication needs Parse-library privates,
+so it lives in Parse behind a COMPILER-INTERNAL public method): a
+real ParsedMessageImpl via the Aggregate.cpp CreateDerived precedent,
+the A7/G1 naming via DisplayManager::OpenBuffer + a real lex (cleaner
+than the artifact's StringPool sketch — the token's SpellingRange
+resolves through the shared display-manager handle codegen reads,
+now threaded onto ParsedModuleImpl as optional members), G3 reserved-
+prefix collision scan → nullopt/clean diagnostic, G2 re-entry
+hard-fail in the pass + a belt-and-suspenders assert in the
+fabricator. KEY SIMPLIFICATION found at implementation:
+BuildPredicate is NOT needed — the pred-less QuerySelectImpl ctor +
+BuildIOProcedure's minimal reads collapse the fabrication to ONE
+ParsedMessage (no ParsedPredicate/clause/variable chain).
+
+FABLE REVIEW (pre-commit): APPROVE with one fix landed in-review —
+the fabricator's G2 assert was `!x || "msg"` (a tautology that can
+never fire); corrected to `&& "msg"`. RECORDED CAVEAT: the
+fabrication machinery lands compiled-but-UNEXERCISED (reachable only
+under -demand, which cleanly rejects until S3) — its first live
+exercise is the S3 witness, and its G1 naming claim is validated
+today only by the spike's equivalent hand-written path.
+
+GATES (exact committed tree, re-run post-fix): FULL SUITE PASS (166)
+byte-identical flag-off (run 4× across the stage); ctest 3/3; debug +
+release green; byte-identity vs the pre-D4 snapshot on transitive_
+closure/average_weight/force/config_agg_2; Q5 interleaved ABABAB
+release ~−1.5% (noise); no Runtime header touched. Predictions: §6.1
+HIT (off-mode byte-identity), §6.5 HIT (Q5 neutral), G1 HIT (display
+backing required); §6.2-§6.4/§6.6 not reached (S3-S6).
+
+S3-S6 CHARTER (next): a design sub-task + judge for the graph-surgery
+recipe — hand-write the spliced QueryImpl graph node-by-node for the
+witness against the ACTUAL post-ConnectInsertsToSelects graph (dump
+it), answer the intra-pass column-id discipline, then implement.
+
 ## 3. Artifact index
 
 - d1-demand-seed-mechanism.md — the demand-seed mechanism design:
