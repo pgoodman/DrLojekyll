@@ -192,13 +192,20 @@ exact signatures before writing a driver.
   `LowerDRFlow` (acyclic seeds/crossovers/product arms/claim drains/
   frontier filters), `LowerDRRounds` (per-SCC×phase fixpoint round shells),
   `LowerCommitSweeps` (commit + Seal), `LowerGroupUpdate` (R3 aggregates),
-  all in `Stratum.cpp`. Since the P2 cutover (ADL/functor-surface epoch),
-  a deletion-capable receive's two explicit ingest folds lower from the
-  DR-IR's stage-1 `kIngestFold` pair (`MakeStageOneIngestFolds` the single
-  payload authority, `LowerIngestFold` at the original walk position —
-  id-stream identity); the MONOTONE receive folds + the eager successor
-  walk (`BuildEagerRegion`, `Build.cpp`) remain the last hand-coded
-  emission surface (the P2 artifact §6 hole-contract follow-on).
+  all in `Stratum.cpp`. Since the subgraphs/demand epoch, EVERY ingest
+  fold lowers from the DR-IR: a deletion-capable receive's two explicit
+  folds from the stage-1 `kIngestFold` pair (`MakeStageOneIngestFolds`,
+  ADL/functor-surface P2 cutover) and a monotone table-bearing receive's
+  fold from its monotone op (`MakeMonotoneIngestFold`, the §6 stage) —
+  each the single payload authority, `LowerIngestFold` at the original
+  walk position (id-stream identity), which RETURNS the UPDATECOUNT
+  cursor whose EMPTY body the still-hand-coded eager descent
+  (`BuildEagerInsertionRegions`, `Build.cpp`) fills (the hole contract;
+  an always-on INGEST-CURSOR-SHAPE check guards the cursor, and
+  V-INGEST-XCHECK Site 5 multiset-compares every emitted fold against
+  the flow's kIngestFold enrollment — the eager web is in the
+  cross-checked model). The descent itself (`BuildEagerRegion`ff) is
+  the remaining hand-coded emission surface.
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —

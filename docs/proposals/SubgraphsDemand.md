@@ -1,8 +1,10 @@
 # Subgraphs / demand epoch — design ledger
 
-Status: OPEN. Opened 2026-07-16 on branch `subgraphs-demand` off main
-0a4a9225 (the ADL/functor-surface epoch merged + its §13 deviations
-ratified). This file is the epoch's working ledger, in the
+Status: EPOCH CLOSED 2026-07-16 (landing record: PerfRoadmap §15; next
+epoch seeded as PerfRoadmap §16, the demand-seeds/keyed-instances
+epoch; §15 deviations 1-4 pending owner ratification at close). Opened
+2026-07-16 on branch `subgraphs-demand` off main 0a4a9225 (the
+ADL/functor-surface epoch merged + its §13 deviations ratified). This file is the epoch's working ledger, in the
 ADLFunctorSurface.md mold: the PerfRoadmap §14.2/§14.3 seed's
 re-verification record (errata continue at E-27), the diff plan as
 amended, the hand-written target artifacts index, and — as they land —
@@ -433,3 +435,25 @@ of the corpus; any in-scope P3 must be mode-gated off by default.
    forces-full interaction must be specified). The amended invariant
    argument is the standing gate; any live transform is mode-gated off
    by default (37-38/164 corpus cases carry bound queries).
+
+## 4. Artifact index
+
+- p1-cf16-hole-target.md — P1/§6 identity target: the entry-proc trees
+  (opt+nocf) for the five witnesses annotated with emitter ownership +
+  the hole; the diff plan; the INGEST-CURSOR-SHAPE validator (amended);
+  Site 5 as fold-op coverage/payload (amended); the interior-fold
+  witness record (deep_chain_retract suffices; the §5 directed-witness
+  CSE question resolved in §4). LANDED as amended (14790a28).
+- p2c-config-agg-target.md — P2(c): config_agg_1 (.dr/driver/batches +
+  expected DR ops + expected datalog.h fragments), the raw-pack
+  store-Fold + algebra-forked config routing + kHasConfig (all
+  amended), the oracle plan. LANDED as amended (9d14f57e); the
+  @recompute arm carried (config_agg_2, PerfRoadmap §16.1).
+- p2b-instance-target.md — P2(b) substrate record (RATIFIED as paper):
+  the effect sub-domain, ACYCLIC-FROZEN-FIRST (the C-0b answer),
+  seven-point plug-in pricing; the store + witness holes are §16.1
+  obligations. NOT implemented this epoch (owner decision §3.1).
+- p3-demand-argument.md — P3 invariant argument as amended (E-32/E-33
+  + the judge's CRITICAL premise hole); the standing gate for any
+  future demand code; re-chartered on the seed mechanism (PerfRoadmap
+  §16.2).
