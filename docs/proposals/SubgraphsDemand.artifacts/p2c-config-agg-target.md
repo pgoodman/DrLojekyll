@@ -3,8 +3,9 @@
 Lane P2(c), subgraphs/demand epoch (branch `subgraphs-demand`, P0 census
 landed). Closes the CLAUDE.md clean-diagnostic gap "aggregates with
 configuration columns". Binding inputs: ledger erratum **E-31** (the fork:
-config-as-KEY is threaded end-to-end and needs only the `Build.cpp:1108`
-fence lifted + corpus; a config-DEPENDENT reduction needs the C-5 free-
+config-as-KEY is threaded end-to-end and needs only the
+`lib/ControlFlow/Build/Build.cpp:1108` fence lifted + corpus; a
+config-DEPENDENT reduction needs the C-5 free-
 function ABI extended so the reduction body receives the config value — and
 the corpus case MUST exercise a config-dependent reduction) and
 `v3-spec-statecell.md §1-§2`.
@@ -54,13 +55,13 @@ threshold gating which values enter the sum — precisely to force FACT B's
 ABI extension into the diff.
 
 **Empirical confirmation (this session):** the case parses, passes
-dataflow, and reaches EXACTLY the `Build.cpp:1108` reject
-("Aggregates with configuration columns are not yet supported") — no
+dataflow, and reaches EXACTLY the `lib/ControlFlow/Build/Build.cpp:1108`
+reject ("Aggregates with configuration columns are not yet supported") — no
 earlier and no other diagnostic. Reproduced with the real
 `build/debug/bin/drlojekyll` on the source in §1. A malformed first attempt
 (config var only in the surrounding clause, not the over-block) instead hit
-"Could not find configuration variable 'T'" from `Build.cpp:1080` — see §1
-for why the config var must appear in the over-block signature.
+"Could not find configuration variable 'T'" from `lib/DataFlow/Build.cpp:1080`
+— see §1 for why the config var must appear in the over-block signature.
 
 ---
 
@@ -72,16 +73,18 @@ A configuration column is a functor parameter with the `bound` binding
 (`Aggregate.cpp:33-36`: a `bound` param → `impl->config_vars.AddUse`). In
 the dataflow builder `ApplyAggregate`, a config var is resolved by
 `FindColVarInView(context, base_view, var)` where `base_view` is the
-over-block's SELECT (`Build.cpp:1076-1089`). **The config variable must be a
-column produced INSIDE the over-block** (range-restricted by the block
-body) — exactly like a group variable. If it is only bound in the
-surrounding clause, `FindColVarInView` returns null and `Build.cpp:1080`
-fires "Could not find configuration variable". This is a hard constraint on
+over-block's SELECT (`lib/DataFlow/Build.cpp:1076-1089`). **The config
+variable must be a column produced INSIDE the over-block** (range-restricted
+by the block body) — exactly like a group variable. If it is only bound in
+the surrounding clause, `FindColVarInView` returns null and
+`lib/DataFlow/Build.cpp:1080` fires "Could not find configuration variable".
+This is a hard constraint on
 the corpus source (verified empirically this session).
 
 The config columns are input-view positions: `config_columns` are USES of
-columns in `base_view` (`Build.cpp:1087`, `view->config_columns.AddUse(col)`
-where `col = FindColVarInView(...)`), and `InputConfigurationColumns()`
+columns in `base_view` (`lib/DataFlow/Build.cpp:1087`,
+`view->config_columns.AddUse(col)` where `col = FindColVarInView(...)`), and
+`InputConfigurationColumns()`
 returns those uses (`Query.cpp:1028-1032`). So the config value **rides the
 input frontier row** and is available to `pos_of` in `LowerGroupUpdate`
 (`Stratum.cpp:1396-1404`, position in `input.Columns()` order) — the
@@ -105,7 +108,7 @@ why the diff must not accidentally special-case literals.
 ; per-sensor Threshold. The threshold is RELATION-FED (threshold/2, set by a
 ; message) and joined INSIDE the over-block so it is range-restricted there
 ; and becomes a CONFIGURATION column of the aggregate (Aggregate.cpp:33-36 /
-; Build.cpp:1076-1089). This is the smallest program that forces BOTH the
+; lib/DataFlow/Build.cpp:1076-1089). This is the smallest program that forces BOTH the
 ; config-as-key projection (already threaded, E-31 FACT A) AND the
 ; config-dependent reduction ABI (the E-31 FACT B extension): the fold body
 ; must see the threshold to decide whether each Val enters the sum.
@@ -138,7 +141,7 @@ Notes:
 - `T` appears in the over-block signature `over (i32 Sensor, i32 T, i32 Val)`
   and is range-restricted by `threshold(Sensor, T)` inside the block. This is
   REQUIRED (see §1.1) — the earlier attempt with `T` only in the surrounding
-  clause failed `Build.cpp:1080`.
+  clause failed `lib/DataFlow/Build.cpp:1080`.
 - The over-block's base view is a JOIN of `threshold(Sensor, _)` and
   `reading(Sensor, _)` on `Sensor`. Its columns (input-view space) are
   `(Sensor, T, Val)` — group = `{Sensor}`, config = `{T}`, aggregate =
@@ -585,7 +588,7 @@ arm and the config gate.
 
 ## 4. The diff plan against the compiler
 
-### 4.1 Lift the `Build.cpp:1108` fence (exact replacement)
+### 4.1 Lift the `lib/ControlFlow/Build/Build.cpp:1108` fence (exact replacement)
 
 ```diff
    for (auto agg : query.Aggregates()) {
@@ -606,13 +609,13 @@ arm and the config gate.
 ```
 
 **Residual validation that STILL applies** (unchanged by this diff):
-- `has_induction_owned_input` (C-4, `Build.cpp:1099`) — a config aggregate
+- `has_induction_owned_input` (C-4, `lib/ControlFlow/Build/Build.cpp:1099`) — a config aggregate
   over an induction-owned input is still rejected (config does not lift the
   induction fence; the input has no phase-owned differential frontiers).
 - The `@invertible`/`@recompute` mutual-exclusion + duplicate-pragma rejects
   in `Functor.cpp` (the `algebra_conflict_1`/`algebra_dup_1` diagnostics) —
   unchanged; config does not touch algebra selection.
-- V-ALGEBRA for the KV sibling (`Build.cpp:1135`) — unchanged (KV indices
+- V-ALGEBRA for the KV sibling (`lib/ControlFlow/Build/Build.cpp:1135`) — unchanged (KV indices
   carry no config; `group = InputKeyColumns` only, `DR.cpp:1039-1041`).
 - `SelectAlgebra` acyclic fence assert (`DR.cpp:718`, `klass ==
   kNonRecursive`) — unchanged; a config aggregate is still acyclic.
@@ -624,8 +627,58 @@ Two coordinated changes: the runtime policy signatures and the codegen.
 **(a) Runtime `StateCell.h` — forward a variadic TRAILING pack; the fixed
 `Reduce::Combine` signature absorbs config.** The store `Fold` already takes
 a variadic `Summary_&&... s` (`StateCell.h:305-315`) and forwards it to
-`Algebra::Fold`. Make `Algebra::Fold` forward that SAME trailing pack to
-`Reduce::Combine`/`Uncombine` unchanged:
+`Algebra::Fold`. TWO coordinated edits are needed — the store `Fold` AND the
+`Algebra::Fold` policy — because the store TODAY re-wraps the pack in a
+`Summary(...)` constructor, which throws away any leading config args and
+arity-mismatches the config-dependent `Reduce::Combine`.
+
+**Edit 1 — the store `Fold` must forward the RAW pack (drop the `Summary(...)`
+wrapper).** The live line is `StateCell.h:315` (verified this session):
+
+```cpp
+// BEFORE (StateCell.h:305-316, the live body): re-constructs a single Summary
+// from the pack, so a caller that passes (cfg0, v) collapses to Summary(cfg0,v)
+// — WRONG type/arity for a config-dependent Combine, and drops config entirely
+// for a scalar Summary.
+template <typename... Summary_>
+void Fold(uint32_t gid, int32_t sign, Summary_ &&...s) {
+  ...
+  Working w = working[gid];
+  Algebra::Fold(w, sign, Summary(static_cast<Summary_ &&>(s)...));   // <-- L315
+  working.Set(gid, w);
+  ...
+}
+```
+
+```cpp
+// AFTER: rename the pack to `Args` and forward it RAW (config ++ value)
+// straight to Algebra::Fold — no Summary(...) reconstruction. The config-free
+// path (pack == one Summary value) forwards byte-identically to today; the
+// config path forwards (cfg0.., v) intact to the fixed Combine signature.
+template <typename... Args>
+void Fold(uint32_t gid, int32_t sign, Args &&...args) {
+  ...
+  Working w = working[gid];
+  Algebra::Fold(w, sign, static_cast<Args &&>(args)...);            // raw pack
+  working.Set(gid, w);
+  ...
+}
+```
+
+Byte-identity note: for the config-FREE case the pack is a single summary
+scalar and `Algebra::Fold(w, sign, static_cast<T&&>(v))` binds the same
+`const Summary &v` parameter the old `Summary(v)` produced — no observable
+change to `Combine`/`Uncombine`, and all 164 goldens stay byte-identical
+(prediction 2). The `Summary(...)` wrapper existed only to normalize a
+brace-init pack into one blob; with a scalar summary it was a no-op, and with
+config it is actively wrong.
+
+**Edit 2 — `Algebra::Fold` forwards the RAW trailing pack to
+`Reduce::Combine`/`Uncombine`.** Make `Algebra::Fold` variadic and forward the
+whole pack; the Algebra policy's `Fold` accepts `(Working&, sign,
+[config...,] summary)` per its arity (config-free = `(Working&, sign,
+summary)` as today; config-dependent = the codegen-emitted fixed
+`Reduce::Combine(Working&, cfg0.., const Summary&)`):
 
 ```cpp
 // Invertible (StateCell.h:117-123): forward the whole trailing pack (config
@@ -655,18 +708,31 @@ analogue — the mechanism guaranteeing prediction 2's zero churn). For
 `@recompute`, `Emit`/`SealFrom` (`StateCell.h:193-203`) gain config via the
 store call site (§4.4), NOT a middle pack.
 
-**Caveat the implementer must resolve:** the `DebugValidate` round-trip
-(`StateCell.h:557-570`) calls `Algebra::Fold(w, +1, probe)` /
-`Fold(w, -1, probe)` with a `Summary probe{}` and NO config. Under the
-trailing-pack shape this would call `Reduce::Combine(w, probe)` — arity
-mismatch against the config-dependent `Combine(w, cfg0, v)`. The validator
-must either (i) be config-arity-aware (skip or supply a probe config), or
-(ii) the round-trip check is gated off for config-dependent cells. Simplest:
-gate the round-trip on `!kHasConfig` (a new policy constant), since the
-invertibility law still holds per-group but the validator can't synthesize a
-representative config. See §4.3 — this is why the split (`num_config_cols`)
-must also reach the runtime policy as a compile-time flag if the round-trip
-check is kept.
+**Caveat the implementer must resolve (RESOLVED — option (i), the config-aware
+probe):** the `DebugValidate` round-trip (`StateCell.h:557-570`, verified this
+session: `Algebra::Fold(w, +1, probe)` / `Fold(w, -1, probe)` with a
+`Summary probe{}` and NO config) would, under the raw-pack shape, call
+`Reduce::Combine(w, probe)` — an arity mismatch against the config-dependent
+`Combine(w, cfg0, v)`. Two options were sketched: **(i)** give the emitted
+policy a compile-time config count so DebugValidate can synthesize identity
+config probes; **(ii)** suppress DebugValidate entirely for config-bearing
+cells (a recorded residue). **CHOSEN: option (i).** The invertibility law
+`Uncombine(cfg, Combine(cfg, w, v), v) == w` holds for *any fixed* `cfg`
+(the fold and unfold apply the SAME `cfg`-parametric gate — §2.4), so a
+value-initialized probe config is a sound representative; and synthesizing
+`num_config` value-initialized scalars is a two-line loop, so keeping the
+property check alive is not disproportionate. Concretely, the emitted
+`Reduce_<id>` policy carries `static constexpr unsigned num_config = <N>;`
+(and `static constexpr bool kHasConfig = (N != 0)`), and DebugValidate
+expands to `Algebra::Fold(w, +1, <cfg-probes...>, probe)` where the config
+probes are `Cfg_i{}` value-inits (the config types come from the same
+`ConfigTypes()` suffix §4.3 threads onto `ProgramStateCell`). The
+`Algebra::Fold` signature is unchanged (it already forwards a variadic pack);
+only DebugValidate's call site widens to prepend the synthesized config
+probes. See §4.3 — this makes the config split (`num_config_cols`) ALSO a
+compile-time discriminator on the emitted policy, one more threading site
+than the group/config emission split alone (folded into prediction 8's
+count below).
 
 **(b) Codegen `Database.cpp`.** `EmitStateCellStructs`
 (`Database.cpp:1076-1159`) emits the reduction decls + policy with config
@@ -703,10 +769,39 @@ question is whether anything downstream needs them SEPARATED. Findings:
 - `Database.cpp:2028-2032` (`agg_tuple_exprs` from `gpos`): fine — the agg row
   is `(group ++ config ++ summary)`, all of `gpos` then `val`. **No split
   needed.**
-- `Database.cpp:2014` (the `Fold` call): **SPLIT NEEDED** — must pass the
-  config subset of `gpos` as leading args. Uses the `config_count` from
+- `Database.cpp:2014` (the `Fold` call, inside the single `emit_fold_arm`
+  lambda at `Database.cpp:1982-2018`): **SPLIT NEEDED, AND ALGEBRA-FORKED** —
+  must pass the config subset of `gpos` as leading args **ONLY for
+  `@invertible` cells**. Uses the `config_count` from
   `ProgramGroupUpdateRegion` above: config locals are `f<gpos[k]>` for the
-  last `config_count` entries of `gpos`.
+  last `config_count` entries of `gpos`. **The fork is on the fold-call
+  ARGUMENT LIST at exactly `Database.cpp:2014`** (the sole `sc << ".Fold(gid,
+  " << sign << ", " << summary_expr` emission — `emit_fold_arm` runs once per
+  frontier arm, ±): for an `@invertible` cell the emitted call becomes
+  `Fold(gid, sign, <config locals>, summary_expr)`; for a `@recompute` cell
+  the call stays `Fold(gid, sign, summary_expr)` config-free (see the
+  @recompute-suppression rule below). The algebra is already available to
+  `EmitGroupUpdate` (the cell/region carries the `Algebra` selector used to
+  choose the `Invertible<>`/`Recompute<>` store instantiation, §2.3), so the
+  conditional is a local `if (cell.IsInvertible())` around the config-local
+  prefix — no new field beyond `config_count`.
+
+  **@recompute-CONFIG-SUPPRESSION RULE (the missing rule the judge flagged).**
+  A `@recompute` cell's `Working` is a MEMBERSHIP MULTISET (values + counts,
+  `StateCell.h:159-208`), and its `Fold`/band-(a) job is only to record
+  presence of each SUMMARY value — it stores ONLY summary values. Passing
+  config leading args into the `@recompute` Fold would corrupt that multiset
+  (the config scalar would be recorded as if it were a summary member, or
+  arity-mismatch the multiset insert). So a `@recompute` cell SUPPRESSES
+  config at the Fold arm entirely and routes config through the REDUCE path
+  instead: `Emit`/`ReduceLive` see config as a LEADING parameter (§4.4),
+  loaded from `KeyAt(gid)` at emit time (config is a key column). This is the
+  natural division: `@invertible` applies the config gate incrementally at
+  fold time (so config must reach `Combine`/`Uncombine`); `@recompute`
+  rescans the whole live multiset at emit time (so config reaches
+  `ReduceLive`, and the fold stays a pure presence record). Concretely the
+  artifact's earlier "§4.3 unconditional Fold-split" is WRONG for
+  `@recompute` — the split is `@invertible`-only at the Fold arm.
 - `EmitStateCellStructs` (`Database.cpp:1076`): **SPLIT NEEDED** — must emit
   the config leading params on the reduction decls/policy. Uses
   `cell.KeyTypes()` (group ++ config) and a new `cell.NumConfigTypes()` (or
@@ -725,19 +820,29 @@ a small, mechanical addition — the config split is NEEDED only at the two
 emission sites that talk to the REDUCTION ABI (the Fold call and the policy
 decls), never at the key/row projection sites.
 
-### 4.4 The `@recompute` arm (for `config_agg_2`)
+### 4.4 The `@recompute` arm (for `config_agg_2`) — where config actually enters
 
-The store `Emit`/`Old`/`Seal` (`StateCell.h:338-363`) forward `KeyAt(gid)`'s
-config slots to `Recompute::Emit`→`ReduceLive`. This needs the store to know
-which key slots are config (a `config_slot_count` template/ctor param, or
-pass config explicitly). Because the store is keyed on `Key` (an opaque hash
+Per the @recompute-config-suppression rule (§4.3): a `@recompute` cell does
+NOT receive config at the Fold arm — its `Fold` stays config-free
+(`Fold(gid, sign, summary_expr)`), because its `Working` is a summary-only
+membership multiset. Config enters ONLY at the emit/reduce path. The store
+`Emit`/`Old`/`Seal` (`StateCell.h:338-363`) forward `KeyAt(gid)`'s config
+slots to `Recompute::Emit`→`ReduceLive`. This needs the store to know which
+key slots are config (a `config_slot_count` template/ctor param, or pass
+config explicitly). Because the store is keyed on `Key` (an opaque hash
 struct), the cleanest shape is: the store takes the config as an explicit
 argument to `Emit`/`Old` at the call site (EmitGroupUpdate already has
 `key.c<config_slot>` in scope at `Database.cpp:2076`). I.e. for `@recompute`
 config-dependent, EmitGroupUpdate passes `key.c<config_slots>` to
-`statecell_0.Emit(gid, key.c1)` / `.Old(gid, key.c1)`. This keeps the store
-config-agnostic in its layout and forwards config only where the reduction
-needs it. (`@invertible` needs no such change — §2.2 point 2.)
+`statecell_0.Emit(gid, key.c1)` / `.Old(gid, key.c1)`, and the reduce sees
+config as a LEADING parameter (`ReduceLive(cfg0.., values, counts)`, §2.5).
+This keeps the store config-agnostic in its layout and forwards config only
+where the reduction needs it. (`@invertible` needs no such change at emit
+time — §2.2 point 2; it took its config at the Fold arm instead.) **So the
+two algebra arms take config at DISJOINT sites: `@invertible` at the Fold
+arm (`Combine`/`Uncombine`), `@recompute` at the emit arm (`ReduceLive`) —
+never both, and the `emit_fold_arm` fork (§4.3, `Database.cpp:2014`) is the
+switch.**
 
 ### 4.5 The oracle (`bin/Oracle/Main.cpp`) — the referee learns config-dep reduction
 
@@ -767,7 +872,7 @@ already accommodates the extra config key column.
 
 `config_agg_2`'s `max_above` adds `AggKind::kMaxAbove` the same way.
 
-### 4.6 Fix the stale `Build.cpp:1106-1107` comment (E-31 tail)
+### 4.6 Fix the stale `lib/ControlFlow/Build/Build.cpp:1106-1107` comment (E-31 tail)
 
 The in-code comment "configuration columns are not yet threaded through the
 state-cell key projection" is stale — the KEY projection IS threaded
@@ -799,7 +904,7 @@ future drift where the group/config split is miscomputed.
 
 Per the aggregate_1-flip precedent (a case FLIPPED diagnostic→golden at the
 R3 stage-C flip, CLAUDE.md), `config_agg_1` flips from the
-`Build.cpp:1108` diagnostic (today) to a 4-mode golden + oracle/monotone
+`lib/ControlFlow/Build/Build.cpp:1108` diagnostic (today) to a 4-mode golden + oracle/monotone
 referee.
 
 ### 5.1 The `.batches` sidecar (`tests/OptDiff/cases/config_agg_1.batches`)
@@ -904,7 +1009,7 @@ arity 3 and a projecting SELECT to `total_above/2` (dropping Threshold) must
 sit above it. The implementer must confirm the dataflow builder inserts that
 projection (it should — the query relation `total_above/2` is a distinct view
 from the arity-3 aggregate view; `ApplyAggregate` creates the agg view with
-all group++config++summary columns, `Build.cpp:1052-1128`, and the head
+all group++config++summary columns, `lib/DataFlow/Build.cpp:1052-1128`, and the head
 clause projects). If the projection is missing or mis-columned, the
 oracle/emission cross-check fires here (§6 prediction 7). Generated names
 verified this session: `add_reading_2`/`set_threshold_2` messages
@@ -942,13 +1047,24 @@ verified this session: `add_reading_2`/`set_threshold_2` messages
    a FINDINGS.md entry (F23+) records it. This is the single most likely
    real-defect site; if it does NOT fire, that is a clean pass (config's
    uniform treatment held).
-8. **The group/config split (§4.3) is the only real compiler plumbing
-   addition** (`num_config_cols` threaded DR statecell → DROp →
-   ProgramStateCell/ProgramGroupUpdate → the two emission sites). Everything
-   else is fence removal + ABI-param addition + oracle by-name extension. If
-   an implementer finds a SECOND consumer of `group_cols`/`summary_cols` that
-   needs the split beyond the two emission sites enumerated in §4.3, this
-   prediction is falsified.
+8. **The group/config split (`num_config_cols`) threads to exactly THREE
+   emission-facing sites** (widened post-judge from "the two emission
+   sites"): threaded DR statecell → DROp → ProgramStateCell/ProgramGroupUpdate,
+   then consumed at (i) the `EmitGroupUpdate` Fold call
+   (`Database.cpp:2014`, `@invertible`-only config-local prefix — the algebra
+   fork of §4.3), (ii) the `EmitStateCellStructs` reduction decls/policy
+   (`Database.cpp:1076-1159`, config leading params on `Combine`/`Uncombine`
+   or `ReduceLive`), and (iii) the emitted `Reduce_<id>` policy's
+   `static constexpr num_config`/`kHasConfig` discriminator that
+   `DebugValidate` (`StateCell.h:557-570`) reads to synthesize identity config
+   probes (§4.2 option (i)). Everything else is fence removal + ABI-param
+   addition + oracle by-name extension. If an implementer finds a FOURTH
+   consumer of `group_cols`/`summary_cols` (or of the config split) that needs
+   the split beyond these three enumerated sites, this prediction is
+   falsified. (The judge's LOW finding — DebugValidate's config-free
+   `Fold(w,±1,probe)` call — is discharged by site (iii), not by dropping the
+   debug check: option (i) keeps the invertibility round-trip alive for
+   config cells.)
 
 ---
 
@@ -957,11 +1073,11 @@ verified this session: `add_reading_2`/`set_threshold_2` messages
 | Claim | Anchor | Verified |
 |-------|--------|----------|
 | config = `bound` functor param → config_var | Aggregate.cpp:33-36 | read |
-| config var resolved in over-block base view | Build.cpp:1076-1089 | read |
-| "Could not find configuration variable" | Build.cpp:1080 | read + empirical |
+| config var resolved in over-block base view | lib/DataFlow/Build.cpp:1076-1089 | read |
+| "Could not find configuration variable" | lib/DataFlow/Build.cpp:1080 | read + empirical |
 | config columns are input-view uses | Query.cpp:1028-1032 | read |
 | group_cols = group ++ config | DR.cpp:1019-1025 | read |
-| the fence to lift | Build.cpp:1105-1112 | read + empirical |
+| the fence to lift | lib/ControlFlow/Build/Build.cpp:1105-1112 | read + empirical |
 | key_cols → key_types | Stratum.cpp:2053-2064 | read |
 | Key_<id> emission over KeyTypes | Database.cpp:1082-1090 | read |
 | Reduce_<id> policy + C-5 decls | Database.cpp:1113-1158 | read |
@@ -983,3 +1099,83 @@ verified this session: `add_reading_2`/`set_threshold_2` messages
 | average_weight fold+emit_touched witness | witness datalog.h:417-448 | read |
 | BuildGroupUpdateOps effect set | DR.cpp:638-758 | read |
 | P0 census (config-blind key multiset) | SubgraphsDemand.md §2 (E-28) | read |
+| store Fold re-wraps pack in Summary(...) (AMEND 1) | StateCell.h:315 | read |
+| emit_fold_arm single Fold-call site (AMEND 2) | Database.cpp:1982-2018 (call :2014) | read |
+| DebugValidate config-free Fold(w,±1,probe) (AMEND 3) | StateCell.h:557-570 | read |
+| config-var resolution (DataFlow) (AMEND 4) | lib/DataFlow/Build.cpp:1076-1089 | read |
+| the fence (ControlFlow) (AMEND 4) | lib/ControlFlow/Build/Build.cpp:1108 | read |
+
+---
+
+## AMENDMENTS (2026-07-16, post-judge)
+
+The P2c adversarial judge (SubgraphsDemand.md §3, "P2c — config-column
+aggregates": REVISE, premise VERIFIED, three edits then GO for
+`config_agg_1`) returned four findings. All four are applied below; every
+new code anchor was re-read this session against the `subgraphs-demand` tip
+with P0 landed. The judge's premise (E-31 FACT A/B — config-as-KEY threaded,
+reduction ABI config-blind) stands unchanged; these are the local, targeted
+fixes it required before the diff is landable.
+
+**AMEND 1 — STORE-FOLD REWRITE (§4.2a), judge finding (1) MEDIUM.** The §4.2a
+runtime edit was incomplete: it rewrote only `Algebra::Fold` and left the
+STORE `Fold` (`StateCell.h:315`, verified live:
+`Algebra::Fold(w, sign, Summary(static_cast<Summary_ &&>(s)...))`)
+re-constructing a single `Summary` around the pack. That wrapper collapses a
+config-carrying `(cfg0, v)` call into `Summary(cfg0, v)` — wrong arity/type
+for a config-dependent `Combine`, and it silently drops config for a scalar
+summary — so the mandatory `config_agg_1` case would NOT compile. Added an
+explicit **Edit 1** before/after block: DROP the `Summary(...)` wrapper,
+rename the pack `Summary_`→`Args`, and forward it RAW
+(`Algebra::Fold(w, sign, static_cast<Args &&>(args)...)`); the Algebra
+policy's `Fold` accepts `(Working&, sign, [config...,] summary)` per its
+arity. Byte-identity for the config-free path is preserved (a scalar
+summary binds `const Summary &v` identically to the old `Summary(v)`), so
+prediction 2 holds. WHY: without dropping the wrapper the instruction is not
+compile-true on the case E-31 mandates.
+
+**AMEND 2 — @recompute CONFIG ROUTING (§4.3/§4.4), judge finding (2)
+MEDIUM.** The artifact's §4.3 Fold-split was stated unconditionally; for a
+`@recompute` cell that would corrupt the Working MEMBERSHIP MULTISET (which
+stores only summary values). Added the **@recompute-config-suppression
+rule**: config args at the Fold arm are emitted ONLY for `@invertible`
+cells; a `@recompute` cell suppresses config at the Fold arm and routes it
+through the emit/reduce path (`ReduceLive` sees config as a leading
+parameter, loaded from `KeyAt(gid)`). Stated exactly where the emitted code
+forks: `EmitGroupUpdate`'s single `emit_fold_arm` lambda
+(`Database.cpp:1982-2018`) gains an algebra conditional on the fold-call
+argument list at `Database.cpp:2014` (the sole `.Fold(gid, sign, ...)`
+emission) — `@invertible` prepends config locals, `@recompute` stays
+config-free. §4.4 rewritten to make explicit that the two algebra arms take
+config at DISJOINT sites (invertible = Fold arm, recompute = emit arm),
+never both. WHY: the unconditional split would corrupt the recompute
+multiset.
+
+**AMEND 3 — PREDICTION 8 + DebugValidate (§4.2), judge finding (3) LOW.**
+Widened the DebugValidate caveat and prediction 8's threading inventory. The
+config split must ALSO reach the emitted `Reduce_<id>` policy as a
+compile-time discriminator, because `StateCellStore::DebugValidate`
+(`StateCell.h:557-570`, verified) calls `Algebra::Fold(w, ±1, probe)`
+config-free and would arity-mismatch a config-dependent `Combine`.
+**RECORDED CHOICE: option (i)** — a `static constexpr num_config`/`kHasConfig`
+on the emitted policy letting DebugValidate synthesize identity config
+probes. Justification (two sentences, in §4.2): the invertibility law
+`Uncombine(cfg, Combine(cfg, w, v), v) == w` holds for any fixed `cfg`
+(fold and unfold apply the same `cfg`-gate), so a value-initialized probe
+config is a sound representative; and synthesizing `num_config`
+value-initialized scalars is a two-line loop, so keeping the property check
+alive is not disproportionate. Option (ii) (suppress DebugValidate for
+config cells) was NOT taken — it would silence the invertibility round-trip
+for exactly the new class of cells. Prediction 8's site count widened from
+TWO emission sites to THREE (Fold call, reduction decls/policy, and the
+DebugValidate discriminator).
+
+**AMEND 4 — ANCHOR DISAMBIGUATION, judge finding (4) LOW.** Every bare
+`Build.cpp:NNNN` is now qualified. Verified live this session: the
+config-var resolution (`FindColVarInView`, "Could not find configuration
+variable", `config_columns.AddUse`) is in **lib/DataFlow/Build.cpp**
+(~:1076-1089; the `ApplyAggregate` body spans :1052-1128); the feature-gap
+fence and its residual rejects (induction-owned :1099, V-ALGEBRA KV :1135,
+the stale :1106-1107 comment) are in **lib/ControlFlow/Build/Build.cpp**
+(fence at :1108). All in-prose, in-`.dr`-comment, §4.1/§4.6 heading, §5, and
+appendix-table occurrences updated.

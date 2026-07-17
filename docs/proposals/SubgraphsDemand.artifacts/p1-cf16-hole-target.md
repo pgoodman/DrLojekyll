@@ -265,9 +265,14 @@ CHANGES (E-34 (i)+(iii)):
 1. **Signature** → `OP *LowerIngestFold(...)`. Returns the fold body cursor:
    the UPDATECOUNT `fold` (`Stratum.cpp:1902`) for a table-bearing op — the
    exact analog of the hand-coded arm's `next_parent = insert`
-   (`Procedure.cpp:77`). Deletion-capable callers (Procedure.cpp:52,
-   DR.cpp lowering path) DISCARD the return (their body is the bare queue
-   append, no descent) — a `(void)` cast at the two existing call sites.
+   (`Procedure.cpp:77`). There is exactly ONE existing call site
+   (`Procedure.cpp:52`, a single textual `LowerIngestFold(` call inside the
+   deletion-capable two-op loop — grep-verified this session, only one hit
+   across `lib/`). It DISCARDS the return (its body is the bare queue append,
+   no descent). The return type changes to `OP*`, which is NOT `[[nodiscard]]`,
+   so the existing deletion-capable call needs NO edit at all — no `(void)` cast
+   is required (the earlier "two call sites / `(void)` cast" note was wrong on
+   both counts; see AMENDMENTS §3).
 
 2. **Relax `Stratum.cpp:1887`**: replace
    `assert(op.ingest_stage1 && op.ingest_is_explicit)` with the two disjoint
@@ -384,56 +389,71 @@ externalizes, the append does not migrate.
 
 ---
 
-## §3. THE HOLE-FILLED-EXACTLY-ONCE VALIDATOR
+## §3. THE INGEST-CURSOR-SHAPE VALIDATOR
 
 ### 3.1 Design
 
-WHERE IT RUNS: per-compile, in `ExtendEagerProcedure`, immediately after the
-`BuildEagerInsertionRegions` call returns for a table-bearing monotone receive
-(Procedure.cpp, the new arm §2.3). It is a POST-WALK check on the UPDATECOUNT
-cursor `LowerIngestFold` returned — NOT a DR-flow validator (it inspects the
-emitted CF tree, which the DR validators never touch — p2 §7:456-497).
+> AMENDED post-judge (finding 1, MEDIUM). The originally-drafted
+> "hole-filled-exactly-once / `if (!fold->body) ValidatorFail(...)`" check CAN
+> NEVER FIRE and is REMOVED. The descent unconditionally fills the hole:
+> `BuildEagerInsertionRegionsImpl` creates the PARALLEL and does
+> `parent->body.Emplace(parent, par)` (Build.cpp:759, verified this session) on
+> every entry — so `fold->body` is ALWAYS non-null by the time the walk returns,
+> and a hypothetical DOUBLE fill would already abort inside `Emplace` on the
+> occupied single-slot `UseRef` (the `loop->body.Emplace` single-slot pattern at
+> Stratum.cpp:1905). A non-empty check is therefore vacuous and a double-fill is
+> caught EARLIER, as an uninformative `Emplace` abort. The real risk the §6
+> refactor introduces is R-CURSOR (§7): `LowerIngestFold` returning the WRONG
+> cursor (the VECTORLOOP instead of the UPDATECOUNT, or an UPDATECOUNT for the
+> wrong table). The redesigned validator catches THAT, at the descent invocation
+> site, BEFORE an Emplace-under-the-wrong-parent turns it into an
+> uninformative crash.
 
-WHAT IT CHECKS, per receive class:
+WHERE IT RUNS: per-compile, in `ExtendEagerProcedure`, IMMEDIATELY BEFORE the
+`BuildEagerInsertionRegions` call for a table-bearing monotone receive
+(Procedure.cpp, the new arm §2.3) — i.e. on the cursor `LowerIngestFold`
+returned, before it is handed to the descent. It is a POST-EMISSION check on the
+returned OP* cursor — NOT a DR-flow validator (it inspects an emitted CF node,
+which the DR validators never touch — p2 §7:456-497).
 
-| receive class                          | ingest_role   | hole (`fold->body`) after descent |
-|----------------------------------------|---------------|-----------------------------------|
-| kEmpty monotone, no cut successor      | kEmpty        | EXACTLY ONE child subtree (the publish / relation descent). NEVER empty — a table-bearing monotone receive always has ≥1 successor reached (else it would be dead-flow-eliminated). |
-| kNetAddition monotone (cut / negate / agg) | kNetAddition | EXACTLY ONE child subtree, whose leaves include the net-additions `vector-append` (Build.cpp:890) at its fold-nesting site. |
+WHAT IT CHECKS: the returned cursor is GENUINELY the fold — an UPDATECOUNT whose
+`table` is the receive's own model table. This is the exact in-repo downcast
+idiom at `Induction.cpp:952-953`, verified this session:
 
-Both classes: `fold->body` (the `if-crossed` hole) must be filled EXACTLY ONCE
-— `LowerIngestFold` leaves it empty (`fold->body` unset), the descent
-(`BuildEagerInsertionRegionsImpl`'s `parent->body.Emplace(parent, par)` at
-Build.cpp:759) fills it with exactly one PARALLEL. The check:
+    if (auto fold = op->AsUpdateCount(); fold && fold->table.get() == table) { … }
 
-    // §6 HOLE-FILLED-EXACTLY-ONCE (subgraphs/demand P1). LowerIngestFold left
-    // fold->body empty; the descent must have filled it with exactly one region.
-    // `next_parent` IS the UPDATECOUNT `LowerIngestFold` returned (a
-    // UPDATECOUNT* == ProgramUpdateCountRegionImpl*, Program.h:859), so
-    // fold->body is a direct null-check — or, if the cursor is kept as an
-    // OP*, `next_parent->AsUpdateCount()` (the Induction.cpp:952 pattern).
+`OP::AsUpdateCount()` is the real accessor: the base virtual is
+`Program.h:546`, the `ProgramUpdateCountRegionImpl` override is `Program.h:826`
+(the artifact previously mis-cited "Program.h:859"); `UPDATECOUNT::table` is a
+`UseRef<TABLE>` on the impl class, read via `.get()`. The check:
+
+    // §6 INGEST-CURSOR-SHAPE (subgraphs/demand P1). LowerIngestFold must return
+    // the table-bearing monotone fold's UPDATECOUNT (Stratum.cpp:1902), NOT the
+    // VECTORLOOP and NOT a fold over a different table — the descent will
+    // Emplace the publish/net-additions subtree INTO fold->body, and a
+    // wrong-cursor hand-off (R-CURSOR) would silently mis-parent it (or abort
+    // inside Emplace with no context). Catch it here, informatively.
+    // The idiom is Induction.cpp:952-953's downcast-and-table-compare.
     if (table) {
-      UPDATECOUNT *const fold = next_parent->AsUpdateCount(); // the returned cursor
-      if (!fold->body) {
-        ValidatorFail("§6 HOLE: monotone ingest fold body left empty by descent");
+      UPDATECOUNT *const fold = next_parent->AsUpdateCount();  // returned cursor
+      if (!fold || fold->table.get() != table) {
+        ValidatorFail("§6 INGEST-CURSOR: LowerIngestFold returned a non-fold "
+                      "or wrong-table cursor for a monotone ingest");
       }
-      // Exactly one: UPDATECOUNT::body is a single Emplace slot, so a second
-      // fill would have aborted at Emplace; the non-null check IS the "exactly
-      // once". (No count needed — the slot enforces it structurally.)
     }
 
-The "exactly once" is STRUCTURALLY guaranteed by `UPDATECOUNT::body` being a
-single `UseRef` slot (`Program.h`): a second `Emplace` on an occupied slot
-aborts. So the validator degenerates to a NON-EMPTY assert. The empty case
-(kEmpty monotone with NO successor) cannot occur for a TABLE-BEARING receive
-that survives dead-flow elimination — but if it ever did, the descent's
-`Build.cpp:758-759` still emplaces an empty PARALLEL (non-null), so the check
-passes and the empty PARALLEL optimizes out. Correct in all four modes.
+WHY THIS AND NOT THE HOLE CHECK: the hole is filled unconditionally by the
+descent (Build.cpp:759), so "was it filled?" is not a real question — but "is
+the thing we're about to fill actually the fold, over the right table?" IS the
+load-bearing invariant the §6 hand-off depends on (Procedure.cpp:77 sets
+`next_parent=insert`; the descent Emplaces into `next_parent->body`). Running it
+BEFORE the descent call means a wrong cursor is reported with a message rather
+than surfacing later as an anonymous Emplace/SIGABRT. Correct in all four modes
+(it reads a single downcast + a `TABLE*` identity, independent of flattening).
 
 ABORT STYLE: `ValidatorFail(...)` — the established fprintf+abort that survives
-NDEBUG (DR.cpp validators), so the check runs in release too. This is the
-kEmpty/otherwise distinction the §6 contract (p2 §6:445-447) named, realized as
-a structural non-empty gate.
+NDEBUG (DR.cpp validators), so the check runs in release too. This realizes the
+R-CURSOR guard the §6 contract's residual-risk list (§7) named.
 
 HOW IT SURVIVES ALL 4 MODES: it inspects the RAW emitted tree BEFORE
 `impl->Optimize()` runs (Build.cpp:1259-1269 runs Optimize AFTER
@@ -522,19 +542,38 @@ concern, deferred.
 
 ---
 
-## §5. THE EMITTED-TREE↔FLOW CROSS-CHECK (V-PRED-XCHECK Site 5+)
+## §5. THE INGEST FOLD-OP COVERAGE + PAYLOAD CHECK (V-PRED-XCHECK Site 5)
+
+> AMENDED post-judge (finding 2, MEDIUM). This section previously claimed Site 5
+> "ties the EMITTED tree back to the flow ops". That OVERSTATES the mechanism.
+> Site 5 is a per-receive fold-op COVERAGE + PAYLOAD check — the V-PRED-XCHECK
+> Site 4 mold (the `EmitFrontierFilter` cross-check): it looks up each emitted
+> fold's `(table, sign, class, role)` against the flow's `kIngestFold` op keyed
+> by `(message, receive, sign)`, and aborts on a MISSING op or a PAYLOAD
+> mismatch. It is BLIND to the descent's net-additions append PLACEMENT (the
+> append is the descent's, at a fold-nesting site the flow op does not encode —
+> §2.4), and it does NOT walk `entry_proc->body`. Tree SHAPE — including
+> hole-fill placement and the net-additions append site — is DELEGATED to the
+> `-ir-out` structural golden gate (owner decision 2, ledger §3.1:298-303:
+> byte-identity + the §12.4 structural gate on cf16_4 / negate_lower_strata /
+> deep_chain_retract / cf14_3 / average_weight, opt AND nocf). Site 5 and the
+> structural gate are COMPLEMENTARY: Site 5 = payload identity, the gate = tree
+> shape.
 
 This discharges the P2 cutover deviation's obligation (§12.6:1022-1024 +
 §14.0.2 item 4, PerfRoadmap:2028-2033): the cutover left the emitted CF ingest
-tree UN-cross-checked against the flow's kIngestFold ops. §6 adds the
+folds UN-cross-checked against the flow's kIngestFold ops. §6 adds the
 per-compile check, covering BOTH deletion-capable (already DR-lowered) and
 monotone (newly DR-lowered) folds.
 
-### 5.1 Design (V-INGEST-XCHECK, Site 5)
+### 5.1 Design (V-INGEST-XCHECK, Site 5 — a fold-op coverage + payload check)
 
 The existing V-PRED-XCHECK family (CLAUDE.md: "ties the DR model to the
-surviving Emit* templates") is per-emitter. Site 5 = the ingest lowering. It
-runs PER-COMPILE, after the eager walk completes, before Optimize.
+surviving Emit* templates") is per-emitter. Site 5 = the ingest lowering,
+modeled on Site 4 (`EmitFrontierFilter`, the P2-stage-iv cross-check). It runs
+PER-COMPILE, after the eager walk completes, before Optimize. It is a COVERAGE +
+PAYLOAD check over fold ops, NOT a tree cross-check — it never inspects the
+emitted region tree's shape (that is the structural gate's job, §6 below).
 
 WHERE IT HOOKS: in `LowerIngestFold` itself (Stratum.cpp), at emission time —
 each lowered fold records its emitted `(table, sign, is_explicit, role)` tuple
@@ -544,12 +583,16 @@ emitted multiset against the flow's kIngestFold op multiset (the SAME
 `(ingest_table, ingest_sign, ingest_is_explicit, ingest_role, ingest_message)`
 5-tuple the R1e census keys on, DR.cpp:2864-2867).
 
-WHICH FIELDS, KEYED HOW: the 5-tuple `(TABLE* table, int sign, bool
-is_explicit, VecRole role, ParsedMessage message)`, compared ORDER-FREE (sorted
-multiset equality, mirroring the IngestKey census DR.cpp:2858-2871). This ties
-the EMITTED tree (what LowerIngestFold actually produced) to the FLOW ops (what
-BuildDRInventory censused) — closing the §12.6 gap where "no per-compile
-V-PRED-XCHECK analog ties the emitted CF tree back to the flow ops".
+WHICH FIELDS, KEYED HOW: each emitted fold is looked up against the flow's
+`kIngestFold` op by the `(message, receive, sign)` key (the Site-4 mold: a keyed
+lookup, then a payload compare), and the payload `(TABLE* table, class, VecRole
+role)` is compared for equality (with `is_explicit` implied by the R1e
+`is_explicit == stage1` invariant). Missing op → abort; payload mismatch →
+abort. This ties the emitted fold's PAYLOAD (what `LowerIngestFold` actually
+produced) to the FLOW op's payload (what `BuildDRInventory` censused) — closing
+the §12.6 gap for fold identity. It does NOT verify where in the tree the fold
+sits, nor where the descent appended net-additions — that is BLIND to Site 5 by
+design and covered by the structural gate (§6).
 
 WHAT IT ABORTS ON: any emitted fold whose 5-tuple is not in the flow's
 kIngestFold multiset (a fold emitted that the flow never enrolled → a
@@ -569,20 +612,40 @@ COVERAGE of both fold kinds:
   (DR.cpp:1767-1769) — excluded from both sides, so it cannot cause a
   false-positive abort.
 
-### 5.2 Why a multiset, not a tree walk
+### 5.2 Why a coverage/payload check, not a tree walk
 
 The R1e census established (p2 §7:456-497) that ingest validation is
 DERIVED-vs-DERIVED, never a tree walk — there is no precedent for walking
-`entry_proc->body`. Site 5 keeps that: it compares an EMITTED-op multiset (a
-by-product recorded at emission) against the FLOW-op multiset. It is immune to
-region re-parenting/flattening (it reads the recorded tuples, not the tree
-shape) — the exact property the §12.6 note wanted. The `-ir-out` structural
-gate (§6 below) covers tree SHAPE; V-INGEST-XCHECK covers PAYLOAD identity.
-Together they close the deviation.
+`entry_proc->body`. Site 5 keeps that: it compares each EMITTED fold's payload
+(a by-product recorded at emission) against its keyed FLOW op — coverage
+(every emitted fold has an enrolled op, every table-bearing enrolled op is
+emitted) plus payload equality. It is immune to region re-parenting/flattening
+(it reads the recorded tuples, not the tree shape), and by the same token it is
+BLIND to where the descent placed the net-additions append — the exact scope
+the §12.6 note allows and the judge's finding 2 pins down. The `-ir-out`
+STRUCTURAL gate (§6 below, owner decision 2) is what covers tree SHAPE — the
+hole-fill site and the net-additions append placement; V-INGEST-XCHECK Site 5
+covers PAYLOAD identity only. Together they close the deviation.
 
 ---
 
-## §6. GOLDEN POLICY PROPOSAL (for the owner)
+## §6. GOLDEN POLICY (RATIFIED — owner decision 2, ledger §3.1)
+
+> RATIFIED policy, quoted VERBATIM from SubgraphsDemand.md §3.1 decision 2
+> (2026-07-16):
+>
+> > 2. §6 GOLDEN POLICY: BYTE-IDENTITY is the hard target, guarded by the
+> >    §12.4-precedent structural gate — full -ir-out + datalog.h byte-
+> >    compared pre/post in opt AND nocf on cf16_4 / negate_lower_strata /
+> >    deep_chain_retract / cf14_3 (mixed) / average_weight; suite 164 zero
+> >    stdout churn; oracle + monotone sidecars byte-identical; permcheck
+> >    permutation-bless ONLY as a reviewed fallback, never to green red.
+>
+> NOTE on the witness set: the ratified list names **cf14_3** as the mixed
+> witness (the design draft below used transitive_closure2 for the table-less
+> case). Both are honored — the ratified five are the STRUCTURAL-GATE witnesses;
+> transitive_closure2 remains a design stress case (§1.4) proving the table-less
+> arm is not rerouted.
 
 Following the §12.4 precedent (p2 §12.4:858-911): region-tree structural
 comparison, opt+nocf, on named witnesses. §6 is a BYTE-IDENTITY refactor (moves
@@ -624,9 +687,14 @@ red case). average_weight (agg input, kNetAddition) rides its oracle/monotone
 referees too and should be added as a fifth witness for the aggregate-input
 hole class.
 
-GATE: PASS = (structural tree shape identical in ALL 4 modes) ∧ (opt-mode text
-byte-identical) ∧ (suite 164 stdout + oracle + monotone sidecars byte-identical)
-∧ (V-INGEST-XCHECK Site 5 + the §3 hole validator green on all 164).
+GATE: PASS = (structural tree shape identical in ALL 4 modes on the ratified
+witnesses cf16_4 / negate_lower_strata / deep_chain_retract / cf14_3 /
+average_weight — this gate, not Site 5, is what verifies the hole-fill site and
+the net-additions append placement) ∧ (opt-mode text byte-identical) ∧ (suite
+164 stdout + oracle + monotone sidecars byte-identical) ∧ (V-INGEST-XCHECK Site
+5 fold-op coverage/payload check + the §3 INGEST-CURSOR-SHAPE validator green on
+all 164). The never-fires "hole-filled-exactly-once" check is REMOVED from the
+gate (finding 1); the §3 check is now the cursor-shape guard.
 
 ---
 
@@ -653,7 +721,7 @@ byte-identical) ∧ (suite 164 stdout + oracle + monotone sidecars byte-identica
    compile/runtime cost. (Spot-check @128 expected flat vs the SubgraphsDemand.md
    §0 baseline: release/opt 0.11-0.12s, debug/opt 0.94s.)
 
-5. **FINDINGS entry IFF a validator fires.** The §3 hole-filled-exactly-once
+5. **FINDINGS entry IFF a validator fires.** The §3 INGEST-CURSOR-SHAPE
    validator or the §5 V-INGEST-XCHECK Site 5 firing during the refactor would
    witness a real emitter/flow divergence (the house bet: like R1e's day-one
    catch, §6 may surface a latent monotone-role or fold-nesting bug). If neither
@@ -670,7 +738,10 @@ byte-identical) ∧ (suite 164 stdout + oracle + monotone sidecars byte-identica
   not the loop body (Procedure.cpp:77 sets `next_parent=insert`, not `loop`).
   For a hypothetical table-less op LowerIngestFold is never called (§2.3
   else-branch), so the cursor is always the UPDATECOUNT. VERIFY: the returned
-  `OP*` `->AsUpdateCount()` is non-null at the call site.
+  `OP*` `->AsUpdateCount()` is non-null AND `->table.get() == table` at the call
+  site — this is now the §3 INGEST-CURSOR-SHAPE validator (the redesigned §3
+  check exists precisely to convert R-CURSOR from a latent Emplace-abort into an
+  informative one, per finding 1).
 - **R-KLASS**: the monotone counter's `klass` is `EmissionDerivClass(impl,
   context, receive)` (DR.cpp:1815), NOT hard `kNonRecursive`. For the three
   witnesses it resolves to kNonRecursive (emitted `+nonrecursive`), but
@@ -682,6 +753,67 @@ byte-identical) ∧ (suite 164 stdout + oracle + monotone sidecars byte-identica
   key on klass today — the 5-tuple omits it; ADD klass to the Site-5 key or
   assert it separately).
 - **R-EMPTY-HOLE**: a table-bearing monotone receive with zero reached
-  successors would leave the hole empty. §3 argues dead-flow elimination
-  prevents this; the validator's non-empty gate catches it if it ever occurs
-  (abort, not silent). CONFIRM no corpus case trips it (expected: none).
+  successors would leave the hole empty. Dead-flow elimination prevents this,
+  and the descent's `Build.cpp:759` Emplace fills the hole unconditionally in
+  any case (so this is NOT a real fire condition — see finding 1). This is no
+  longer a validator target (the never-fires non-empty gate was removed); it
+  survives here only as a note that the empty-hole state cannot arise for a
+  table-bearing surviving receive. CONFIRM no corpus case trips it (expected:
+  none).
+
+---
+
+## AMENDMENTS (2026-07-16, post-judge)
+
+Three amendments applied per the adversarial judge's findings, recorded in
+SubgraphsDemand.md §3 ("P1 — §6 monotone/descent stage"). Every line anchor
+below was re-verified against HEAD this session. The artifact's structure is
+preserved; only the three flagged mechanisms were revised.
+
+**A1 — §3 validator redesign (judge finding 1, MEDIUM).** The drafted
+`if (!fold->body) ValidatorFail(...)` "hole-filled-exactly-once" check CAN NEVER
+FIRE: `BuildEagerInsertionRegionsImpl` unconditionally emplaces the descent
+PARALLEL into `parent->body` (Build.cpp:759, `parent->body.Emplace(parent, par)`
+— verified this session; the judge cited 758-759), so `fold->body` is always
+non-null post-walk, and a double-fill would abort earlier inside `Emplace` on
+the occupied single-slot `UseRef` (the Stratum.cpp:1905 `loop->body.Emplace`
+pattern). REDESIGNED §3 into the INGEST-CURSOR-SHAPE validator: at the descent
+invocation site, BEFORE the `BuildEagerInsertionRegions` call, assert the cursor
+`LowerIngestFold` returned is genuinely the fold —
+`next_parent->AsUpdateCount()` non-null AND `->table.get() == table` (the
+receive's model table). This catches the real R-CURSOR risk with a message
+before an Emplace-under-wrong-parent turns it into an anonymous SIGABRT. The
+downcast idiom is the real in-repo pattern at Induction.cpp:952-953
+(`if (auto fold = op->AsUpdateCount(); fold && fold->table.get() == table)`).
+`AsUpdateCount()` verified: base virtual Program.h:546, override Program.h:826
+(the artifact previously mis-cited "Program.h:859" — corrected). §6 GATE updated:
+the never-fires check dropped, the cursor-shape check added; the §7 R-CURSOR and
+R-EMPTY-HOLE risk notes and the §7 prediction-5 reference retitled accordingly.
+
+**A2 — §5 Site 5 scope downgrade (judge finding 2, MEDIUM).** §5 previously
+claimed Site 5 "ties the EMITTED tree back to the flow ops". Downgraded to what
+the mechanism actually is: a per-receive fold-op COVERAGE + PAYLOAD check (the
+V-PRED-XCHECK Site 4 / `EmitFrontierFilter` mold) — each emitted fold's
+`(table, sign, class, role)` looked up against the flow's `kIngestFold` op by
+`(message, receive, sign)` key, aborting on a missing op or a payload mismatch.
+Stated explicitly that it is BLIND to the descent's net-additions append
+PLACEMENT and does not walk the region tree; tree SHAPE (hole-fill site + append
+placement) is DELEGATED to the `-ir-out` structural golden gate (owner decision
+2, ledger §3.1: byte-identity + the §12.4 structural gate on cf16_4 /
+negate_lower_strata / deep_chain_retract / cf14_3 / average_weight, opt AND
+nocf). §5 title, intro block, §5.1, and §5.2 all revised; the two are now framed
+as complementary (Site 5 = payload, gate = shape).
+
+**A3 — §2.2 step 1 call-site count (judge finding 3, LOW).** Corrected "two
+existing call sites" to ONE: grep over `lib/` finds a single textual
+`LowerIngestFold(` call, at Procedure.cpp:52 (inside the deletion-capable two-op
+loop). Dropped the `(void)`-cast note — the return type changes to `OP*`, which
+is not `[[nodiscard]]`, so the existing discarding call needs no edit.
+
+**Also:** incorporated the ratified golden policy (ledger §3.1 decision 2)
+VERBATIM as a quoted block at the head of §6, with a note reconciling the
+ratified witness cf14_3 against the design draft's transitive_closure2 (both
+honored: the ratified five are the structural-gate witnesses; tc2 stays a design
+stress case for the table-less arm).
+
+No code files were touched; this is a documentation-only amendment.
