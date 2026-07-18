@@ -355,3 +355,98 @@ recursive arms tie on hash AND first-col-id; only det_seq orders
 them) as a PERMANENT corpus determinism witness: 30-run byte-stable,
 all-4-mode golden blessed from hand-verified closure truth. SUITE
 168 → 169.
+
+## 3. Mid-epoch checkpoint (2026-07-18, tip 5d642d9b — T1 + (F)
+## landed): the as-landed surfaces as PSEUDOCODE, the remaining path
+## as DIFFS against them (SINGLE-PASS record by this session — the
+## next session re-verifies per the E-1..E-54 house precedent;
+## continue errata at E-55)
+
+    (A) THE DETERMINISM SUBSTRATE (new since (F); every future diff
+    must respect it):
+
+      QueryViewImpl::det_seq (lib/DataFlow/Query.h, next to `hash`):
+        unsigned, ~0u = unstamped. STAMPED in ForEachView (per-kind
+        DefList insertion) order at TWO entries: CSE() head
+        (Optimize.cpp) and IdentifyInductions head (Induction.cpp).
+        Public accessor QueryView::DeterministicOrder()
+        (include/.../DataFlow/Query.h + Query.cpp; asserts stamped).
+      OrderViewsDeterministically (lib/DataFlow/Induction.cpp, above
+        IdentifyInductions): Sort()==Hash() → first-col-id → det_seq;
+        TOTAL. Drives the :~590 merge-set labeling loop (sorted key
+        vector; group_id assignment + related_merges/cyclic_views
+        population both canonical) and the injection-sites loop.
+      OrderQueryViews + OrderedViewMap<V> (lib/ControlFlow/Program.h
+        :~46): std::map<QueryView, V, det_seq-order>. INDUCTION's
+        view_to_add_vec / view_to_swap_vec / view_to_output_vec /
+        output_cycles / fixpoint_cycles use it.
+      HashInit (lib/DataFlow/View.cpp): FNV-1a over KindName CONTENT.
+      FinalizeDepths (lib/DataFlow/Link.cpp): resets EVERY DefList
+        incl. is_dead views, then recomputes in fixed order.
+      QueryJoinImpl::Depth (lib/DataFlow/Join.cpp): walks columns
+        list, never out_to_in bucket order.
+      CSE (lib/DataFlow/Optimize.cpp): stamps det_seq at entry;
+        candidates sorted by det_seq; to_replace comparator total;
+        FillViews stable_sort.
+      HOUSE RULES (in-code comments carry them): (1) NEVER iterate a
+        pointer-keyed container into emission-visible state; (2)
+        Node<> operator< / UniqueId() / wrapper Hash() are POINTER-
+        derived — std::map<QueryView,...>/std::set<QueryView> are
+        pointer-ordered; use OrderedViewMap or sort by
+        DeterministicOrder(); (3) symrec_tie_1 is the standing
+        tripwire; (4) until T3 lands, the regression instrument is
+        the scripted 8-run -ir-out corpus sweep (ledger §1/§2).
+
+    (B) THE DUMP SURFACES T2 BUILDS AGAINST (as-landed reality):
+      -dot-out: DataFlow → GraphViz (lib/DataFlow/Format.cpp; public
+        OutputStream operator<< in include/.../DataFlow/Format.h).
+      -ir-out: ControlFlow textual dump (include/.../ControlFlow/
+        Format.h family), gIRStream wired in bin/drlojekyll/Main.cpp
+        :~271-282.
+      lib/DeltaRel/DeltaRel.{h,cpp}: NO dump surface (only validator
+        fprintf+abort). Post-rename target name DeltaRel; mutual
+        internal includes with ControlFlow stand (§2.4 lineage).
+
+    (C) T2 AS A DIFF — the two dumps (ir-dump-formats.md is the
+    binding draft; reconcile its §2 against fleet-d0/lane-drir.md):
+      + -df-out <PATH> (Main.cpp flag + DataFlow emitter): the BB
+        tail-call form per ir-dump-formats.md §1 — blocks in a
+        deterministic id order (the det_seq stamp is the natural
+        ^kind.<id>; decide det_seq vs a FinalizeColumnIDs-style
+        renumber at design), MERGE = block-args join point, JOIN =
+        ports, producer tags shown (D1's annotation becomes visible).
+      + -deltarel-out <PATH> (flag + emitter in lib/DeltaRel/): per
+        ir-dump-formats.md §2 — vecs in id order, ops in the CHECKED
+        LINEARIZATION order (reuse the linearizer's list, never
+        re-sort), effect sets + membership predicates + bands;
+        emitted from validate-exit so a dump always describes a
+        validated graph.
+      Both flag-off-invisible to the suite; dumps deterministic BY
+      the (A) substrate; predictions: zero golden churn, zero
+      emission change.
+    (D) T3 AS A DIFF — IR-golden sidecars (the harness hook):
+      + per-case opt-in sidecars (the .batches/.drflags idiom) pinned
+        (mode, level[, after=<pass> once P1 exists]) per ledger
+        §0.5.5; runall.sh/diffrun.sh grow the compare arms; blessing
+        via --bless only. First carriers: demand_tc_witness (.h +
+        .ir demand-ON — THE permanent (F) gate), symrec_tie_1 (.ir),
+        then the curated directed witnesses. Suite count unchanged;
+        goldens/ grows.
+    (E) P1 AS A DIFF — the pass harness (pass-harness-design.md §2/§4
+      P1 slice): PassPolicy from CLI, registry df.*/cf.* names,
+      -opt-disable/-opt-only with the legacy flags as EXACT aliases,
+      global -opt-bisect-limit. Byte-identity by construction at
+      default config; the 4 golden modes re-expressed as aliases must
+      be byte-identical.
+    (F') D1 AS A DIFF — unchanged from epoch-diffs.md §D1 (with
+      E-46/E-52/E-53 folded): the release-surviving per-guard-site
+      annotation (three GuardSite kinds; two demand sides), the
+      PICK-A non-recursive witness (§0.6.2), BuildSubgraphOps in the
+      BuildGroupUpdateOps mold, census from the query-side annotation
+      count, the dual-lowering equivalence gate (§0.6.3), the
+      acyclic-DEMAND fence, demand-retract = death. Design + judge
+      BEFORE code; witness-deltarel-target.md is the draft IR to
+      re-verify against the landed dump format.
+
+    ORDER (ratified §0.6.1): T2 → T3 → P1 (non-blocking) → D1 →
+    D2 → D3 → D4-design. The next session starts at T2.

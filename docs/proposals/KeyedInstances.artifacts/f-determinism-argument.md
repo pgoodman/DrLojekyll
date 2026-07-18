@@ -1,5 +1,18 @@
 # The (F) determinism fix — the post-verdict argument
 
+> **[SUPERSEDED IN PART — 2026-07-18, the (F) landing (5d642d9b).]**
+> The single-locus theory below DID NOT SURVIVE its first gate run: the
+> landing is SIX sites, and this artifact's §1.1 claim that `HashInit`
+> is pointer-free is FALSE (erratum E-54 — `std::hash<const char *>` at
+> View.cpp:401-:406 hashed the KindName POINTER, ASLR-salting every
+> view hash; neither this artifact nor its adversarial verifier read
+> that line). The authoritative as-landed record is
+> **KeyedInstances.md §2 "(F)"**. This artifact remains the record of
+> the §1.1 locus adjudication (correct), the canonical-order statement
+> (§2, still the right frame), the blast-radius method (§3, prediction
+> partially right: select_5 named; two more renumberings appeared), and
+> the acceptance-gate shapes (§4, all enforced).
+
 Checkpoint step 3, artifact 2. Written against branch `keyed-instances`
 tip `fa9a8cc2` (evidence gathered on the frozen baseline
 `baseline-bin/drlojekyll.debug.60821adf`; the fix does not exist yet —
