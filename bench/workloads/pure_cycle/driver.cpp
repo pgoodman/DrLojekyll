@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // pure_cycle engine driver: the OQ7(a) pure-cycle overdelete-wave isolator
 // (design R16). Times the generated incremental database (the hidden-friend

@@ -1,4 +1,4 @@
-# Copyright 2020, Trail of Bits, Inc. All rights reserved.
+# Copyright 2026, Peter Goodman. All rights reserved.
 
 set(DR_SRCS
     "DR.h"

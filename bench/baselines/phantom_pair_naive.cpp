@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // phantom_pair from-scratch baseline (the COST honesty line, design R3/R13):
 // a persistent live-edge set mutated as the same phantom-pair stream arrives

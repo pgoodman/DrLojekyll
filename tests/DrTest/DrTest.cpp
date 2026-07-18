@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // Entry point for the `drtest` harness: runs every registered test case and
 // returns a non-zero exit code if any of them fail.

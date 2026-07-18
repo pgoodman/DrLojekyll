@@ -1,4 +1,4 @@
-// Copyright 2020, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // The delta-relational IR (DR-IR) construction + validation — R1a inventory.
 //

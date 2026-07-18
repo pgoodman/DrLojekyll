@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // Shared transitive-closure machinery for the tc_random hand-written
 // baselines: flat adjacency, per-source bitset closure rows, BFS with a

@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // flip_storm / phantom_pair engine driver: times the generated incremental
 // database (the hidden-friend surface, one Database per run) over the shared

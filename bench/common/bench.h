@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // Shared driver kit for the bench harness (PerfRoadmap.md §2/§6.3). Pure
 // driver-side code: nothing here touches lib/Runtime or the generated

@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // Knobbed, seeded random edge-stream generator for the tc_random family.
 // Shared by the engine driver AND both hand-written baselines so all three

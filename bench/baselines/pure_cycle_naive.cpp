@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // pure_cycle from-scratch baseline (the COST honesty line, design R3/R13):
 // the SAME planted-ring stream as the pure_cycle engine driver, replayed

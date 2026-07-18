@@ -1,3 +1,4 @@
+// Copyright 2026, Peter Goodman. All rights reserved.
 // Copyright 2026, Trail of Bits. All rights reserved.
 //
 // The C++ backend. Emits a header-only implementation of a Datalog

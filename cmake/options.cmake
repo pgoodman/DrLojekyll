@@ -1,3 +1,4 @@
+# Copyright 2026, Peter Goodman. All rights reserved.
 # Copyright 2020, Trail of Bits, Inc. All rights reserved.
 
 option(DRLOJEKYLL_ENABLE_INSTALL "Set to true to enable the install targets" OFF)

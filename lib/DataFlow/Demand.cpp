@@ -1,4 +1,4 @@
-// Copyright 2021, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // THE LIVE DEMAND TRANSFORM (magic-sets / SLDMagic as a Query-graph rewrite).
 //

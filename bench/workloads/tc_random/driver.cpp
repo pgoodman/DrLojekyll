@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // tc_random engine driver: times the generated incremental database (the
 // hidden-friend surface, one Database instance per run) over the shared

@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // tc_random from-scratch baseline (the COST honesty line, design R3/R13):
 // a persistent adjacency structure mutated as edges arrive (edge ingestion

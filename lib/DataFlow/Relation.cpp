@@ -1,4 +1,4 @@
-// Copyright 2022, Trail of Bits. All rights reserved.
+// Copyright 2022, Peter Goodman. All rights reserved.
 
 #include "Query.h"
 

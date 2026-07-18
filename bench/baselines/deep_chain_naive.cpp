@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // deep_chain from-scratch baseline (the COST honesty line, design R3/R13): the
 // reach set over the descending next-chain + base fact, recomputed from scratch

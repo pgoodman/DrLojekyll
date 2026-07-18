@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // Knobbed, seeded phantom-pair edge-stream generator for the flip_storm
 // family. Shared by the engine driver AND the hand-written baseline so both

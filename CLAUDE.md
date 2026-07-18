@@ -363,3 +363,9 @@ compiles in all 4 modes.
   `-o run -o bt` sometimes truncates.
 - clangd diagnostics in this repo are noise (it lacks include paths); trust
   the real build only.
+- COPYRIGHT: this is not a Trail of Bits project anymore. NEW files carry
+  ONLY `// Copyright <year>, Peter Goodman. All rights reserved.` (comment
+  leader per file type) — never copy the Trail of Bits header idiom from
+  neighboring files. ToB-era files keep their historical ToB line SECOND,
+  beneath the Peter Goodman line (the 2026 project-wide sweep). vendor/ is
+  third-party: never touch its notices.

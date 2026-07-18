@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // The StateCell store: standing per-group state for ONE aggregating functor
 // (a QueryAggregate or a desugared QueryKVIndex). It is the runtime backing

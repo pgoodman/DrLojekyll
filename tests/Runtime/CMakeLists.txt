@@ -1,4 +1,4 @@
-# Copyright 2026, Trail of Bits, Inc. All rights reserved.
+# Copyright 2026, Peter Goodman. All rights reserved.
 
 add_executable(runtime_test
   RuntimeTest.cpp

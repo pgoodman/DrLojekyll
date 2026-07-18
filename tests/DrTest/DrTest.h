@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // A tiny, dependency-free unit-test harness. It provides just enough of the
 // GoogleTest surface used by the Dr. Lojekyll tests: a `TEST(suite, name)`

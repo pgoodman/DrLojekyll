@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // Unit tests for the StateCell store (include/drlojekyll/Runtime/StateCell.h,
 // the R3a delta-relational-IR runtime primitive, spec

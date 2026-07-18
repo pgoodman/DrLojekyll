@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // Knobbed, seeded synthetic disassembly-stream generator for the
 // disasm_synth family (design R19: the realistic-program point). Mirrors

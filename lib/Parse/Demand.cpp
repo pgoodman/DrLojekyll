@@ -1,4 +1,4 @@
-// Copyright 2021, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // FABRICATION of demand decls for the live demand transform (`-demand`,
 // DemandSeeds Option D' / A1 / A7; recipe d4s3-recipe.md A1/F5/N5). The

@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits, Inc. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // drlojekyll-oracle: the executable specification of the derivation-counter
 // differential-maintenance design (docs/proposals/StackSafeNegation.md §5).

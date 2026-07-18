@@ -1,4 +1,4 @@
-// Copyright 2026, Trail of Bits. All rights reserved.
+// Copyright 2026, Peter Goodman. All rights reserved.
 //
 // disasm_synth engine driver (design R19: the realistic-program point).
 // Times the generated recursive disassembler (the hidden-friend surface,

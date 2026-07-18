@@ -1,3 +1,4 @@
+// Copyright 2026, Peter Goodman. All rights reserved.
 // Copyright 2019, Trail of Bits, Inc. All rights reserved.
 
 #include <drlojekyll/Parse/ErrorLog.h>
