@@ -558,6 +558,62 @@ D3 surface question and the eventual demand-keyed-instance lowering.
    materialization (DEMAND SEMANTICS, the oracle gate). A future
    #subgraph/#demand surface must declare which contract it offers.
 
+3. INTRODUCE IMPLICIT ASYNCHRONY (owner, 2026-07-18): make the
+   compiler able to introduce asynchrony seams ITSELF where
+   productive, not only where the user writes an unlock/forcing
+   message. The D4 machinery is the existence proof and the first
+   instance: a FABRICATED INTERNAL MESSAGE (compiler-minted,
+   ABI-suppressed via the F2-B(ii) registry — invisible to the
+   driver) is a first-class seam device; demand seeding is its first
+   use. Generalizations to price later: demand-gated/deferred strata
+   (a stratum unlocked by an internal message rather than evaluated
+   eagerly), keyed-instance boundaries (note 1's α-seam = an async
+   subgraph boundary), scheduling/staging seams, and eventually
+   batch-shaped external boundaries (the WASM-functor ABI direction —
+   async seams are natural ABI cut points). CONTRACT CONSTRAINT: an
+   implicitly-introduced seam must preserve DEMAND semantics (the
+   compiler owes the seeding that makes it answer-identical) or be
+   observation-invisible — and the observation points are queries AND
+   published deltas; within a batch, deferral is invisible (the batch
+   is already the async quantum), across batches it changes
+   observable publication timing and needs a declared contract.
+   OWNER SHARPENING (same session): the seam-placement trigger is
+   "where a subgraph/demand transform suggests it would be
+   PROFITABLE, so you inject it in" — placement is an outcome of the
+   transform's own analysis (adornment/SIP/cost), measure-first per
+   the COST discipline, not a surface the user marks. And the runtime
+   consequence, stated plainly: THE SYSTEM MUST SOMETIMES INJECT
+   MESSAGES TO ITSELF. The forcer proc is already self-injection in
+   miniature (inject_N appends to a vec and calls the message-detail
+   proc, in-process) — what implicit seams change is WHO triggers it:
+   today the driver via the query entry; under implicit asynchrony,
+   generated code itself, upon deriving a seam token (an append site
+   in the eager web + a drain that re-enters the detail proc; the
+   suppression registry keeps such injector twins off the public
+   ABI). Within a batch that is ordinary deferred-vector phasing;
+   ACROSS batches it is a self-pump in the epoch loop (drain internal
+   queues, re-enter, repeat) whose termination needs the finite-
+   demand-lattice / zero-crossing argument one level up. DR-IR home
+   when it lands: a seam is a first-class vec with its own append/
+   drain effects + a cross-batch carried role — the v3-spec §2
+   reserved-sub-domain extension pattern, so seams enter the checked
+   model, never the hand-coded web.
+
+## 2.4 Close-sweep queue (housekeeping, not epoch work)
+
+- CLAUDE.md / PerfRoadmap / p2c-artifact stale-comment flips from the
+  D2 landing (recorded in §2.2).
+- The D2 StateCellTest deviation (no new unit; corpus+oracle+seam
+  cover it) — ratify or add the unit at close.
+- lib/ restructure question (owner, 2026-07-18): the delta-relational
+  IR lives as private headers of the Program::Build pass
+  (lib/ControlFlow/Build/DR.{h,cpp}, included only by Stratum.cpp +
+  Procedure.cpp; no public include/ surface) — organic growth, never
+  forced out. Promoting it to its own lib/ directory (own CMake
+  target, possibly a public dump surface) is a mechanical
+  byte-identity-gated move; do it at close, not mid-D4, and it gets
+  more attractive if seams/instances grow the DR-IR further.
+
 ## 3. Artifact index
 
 - d1-demand-seed-mechanism.md — the demand-seed mechanism design:
