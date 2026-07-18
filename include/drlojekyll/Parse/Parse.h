@@ -884,9 +884,29 @@ class ParsedModule {
   std::optional<ParsedMessage> FabricateDemandMessage(
       std::string_view name, const std::vector<TypeLoc> &param_types) const;
 
-  // COMPILER-INTERNAL. `true` once `FabricateDemandMessage` has run on this
-  // module instance — the demand pass hard-aborts on re-entry (G2).
+  // COMPILER-INTERNAL (the live demand transform). Fabricate a real
+  // `#local`-kind declaration for a demand relation `d_p` (recipe A1/F5: the
+  // `QueryRelationImpl` ctor requires a `ParsedDeclaration`, and the name is
+  // interned via the same display-buffer route as the message so any
+  // emitted-name read resolves). Returns `std::nullopt` on a G3 collision.
+  std::optional<ParsedLocal> FabricateDemandLocal(
+      std::string_view name, const std::vector<TypeLoc> &param_types) const;
+
+  // COMPILER-INTERNAL. G3 pre-check: `true` iff fabricating a demand message
+  // named `msg_name` or a demand local named `local_name` (arity `arity`)
+  // would collide with a user declaration. Run BEFORE any fabrication so a
+  // collision rejects without mutating the module.
+  bool DemandFabricationWouldCollide(std::string_view msg_name,
+                                     std::string_view local_name,
+                                     size_t arity) const;
+
+  // COMPILER-INTERNAL. `true` once the demand pass has fabricated its demand
+  // decls onto this module instance — the pass hard-rejects on re-entry (G2).
+  // N5: the flag admits one fabrication PASS (message + local together); the
+  // fabrication primitives above never touch it — the demand pass checks it
+  // once at its head and sets it once at its end via `MarkDemandFabricated`.
   bool DemandMessagesFabricated(void) const noexcept;
+  void MarkDemandFabricated(void) const noexcept;
 
   inline ParsedModule(const std::shared_ptr<ParsedModuleImpl> &impl_)
       : impl(impl_) {}

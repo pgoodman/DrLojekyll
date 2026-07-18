@@ -1422,9 +1422,16 @@ void Generator::EmitDatabaseDecl(void) {
   }
 
   // Message entry points: thin hidden-friend wrappers over the handler
-  // detail twins.
+  // detail twins. A FABRICATED demand-seed message (the live demand
+  // transform, `-demand`) gets NO public entry point — a raw call would
+  // inject unguarded demand rows, corrupting the demand frontier (the
+  // F2-B(ii) registry suppression; d1 §A2). Its `_detail` twin stays: the
+  // query's injector procedure calls it.
   for (ProgramProcedure proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
+      continue;
+    }
+    if (auto m = proc.Message(); m && program.Query().IsDemandMessage(*m)) {
       continue;
     }
     const auto &fx = EffectsOf(proc);
@@ -3069,9 +3076,14 @@ void Generator::Run(void) {
 
   EmitShapeStructs();
 
-  // Friendly aliases for each message's input-tuple shape.
+  // Friendly aliases for each message's input-tuple shape. Suppressed for a
+  // fabricated demand-seed message (the F2-B(ii) registry; see the message
+  // entry-point loop) — no public surface names it.
   for (ProgramProcedure proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
+      continue;
+    }
+    if (auto m = proc.Message(); m && program.Query().IsDemandMessage(*m)) {
       continue;
     }
     auto vec_params = proc.VectorParameters();

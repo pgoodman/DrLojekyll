@@ -502,6 +502,82 @@ public-entry suppression (lands WITH S3; the first answer gate) →
 S5 witness corpus (goldens predicted from the spike modulo the
 message name + suppression) → S6 the COST spike.
 
+### D4 S3-S6 — THE LIVE DEMAND TRANSFORM LANDED (2026-07-18)
+
+-demand is LIVE for the single-adornment slice: the SIP walk +
+demand-relation minting + push-down guard JOIN in lib/DataFlow/
+Demand.cpp (~1000 lines, house doc-comment), per the three-round-
+judged d4s3 recipe; FabricateDemandLocal + the pass-owned single-shot
+fabrication (N5); the pass-minted d_path MERGE/reader plumbing (A2
+(ii), N4); the QueryDemandForcing registry threaded Query → CF
+Context → codegen; BuildQueryForceProcedureFromRegistry (the :317-367
+shape, ForcingMessage() stays nullopt); the F2-B(ii) public-entry
+suppression at both kMessageHandler sites (_detail twin stays;
+DatabaseLog untouched as predicted); the .drflags harness hook
+(per-case compiler flags, documented in both script headers; the
+existing corpus carries no sidecar and is untouched); the
+demand_tc_witness corpus case (a PLAIN base .dr — the transform does
+all the work), goldens BLESSED from oracle truth after
+hand-verification; out-of-slice shapes ALL clean diagnostics.
+
+THE BIG REVIEW (owner-mandated, replacing the solo Fable pass):
+5 opus xhigh lanes over the full diff + per-finding adversarial
+verification (~670k tokens, 8 agents). ONE HIGH CONFIRMED AND
+REPRODUCED pre-fix: the injector registry matched queries by
+context-keyed ParsedQuery equality, and DeclarationContexts key on
+(name, arity) only — a bf+fb pair of adornments of ONE query name
+shared the entry, so the non-transformed fb entry point inherited the
+bf injector and silently seeded demand with the fb-bound To (wrong
+rows, verifier-reproduced). FIXED WITH BOTH BELTS: the demand pass
+rejects a demanded query name carrying >1 binding pattern (clean
+diagnostic, the D-4 conservatism extended), AND the registry match is
+additionally BindingPattern-keyed (a future fence-lift cannot
+re-open the cross-wire). The repro is now the PERMANENT corpus
+diagnostic case demand_multi_adorn_1 (via its .drflags sidecar) —
+SUITE 167 → 168. Zero review findings refuted; punch-list folded
+in-round: both-G3-scans-before-any-fabrication (no half-fabricated
+module on a reject), the (f) tripwire made REAL (walks d_p's members
+to the fabricated receive — no validator theater), the q_consumer
+consistency guard, strict one-atom+EOF lexing in LexInternedAtom,
+the __demand_→demand__ comment sweep, the diffrun.sh usage doc, the
+OpenBuffer aliasing-comment fix. Fable review of the fix round:
+APPROVE (both belts + case registration verified in code).
+
+GATES (exact committed tree, re-run post-fix): FULL SUITE PASS (168)
+— the 166 pre-D4 cases zero churn, byte-identical flag-off (force.dr
+datalog.h byte-identical to the pre-D4 snapshot in debug AND
+release); witness answer gate (demand-ON ≡ demand-OFF answers, incl.
+incremental re-probe + late-demanded key); ctest 3/3; no Runtime file
+touched; Q5 interleaved ABABAB ~−1.0% (noise). THE COST SPIKE
+(measure-first, p3 §3.2, scratchpad record): demanded chain 1..10 +
+disjoint chain 11..400 — idx_adds 425 vs 152,198 (~358×), finds ~80×,
+wall ~48µs vs ~8.5ms (~175×), ANSWERS IDENTICAL — the honesty bar
+passed by ~2 orders; the guard prunes path's OWN materialization at
+runtime (the round-2 judge's structural claim, measured).
+
+PREDICTIONS: recipe bets 1/2 prevented-by-directive (never fired);
+bet 3 (id discipline benign) HIT; SIP-wrong-answer did not occur
+(oracle-verified); goldens-from-spike structural identity HIT; suite
+count HIT (167 + the review-added diagnostic = 168); Q5 neutral HIT.
+NO FINDINGS.md entry: the review HIGH was caught pre-commit (the
+house convention — nothing escaped to a golden).
+
+DEVIATIONS FOR RATIFICATION (implementation + review round):
+- D-1: the reserved prefix is demand__ not the designed __demand_ (a
+  leading underscore lexes as a VARIABLE; G3 scan + diagnostics
+  unchanged; doc comments swept).
+- D-2/D-3: Connect.cpp's has_one_insert is DEAD CODE (computed after
+  Swap empties the list — every relation gets a MERGE, even
+  single-clause); the pass models the live behavior (descends the
+  1-member UNION, mints the d_path MERGE unconditionally).
+  DISPOSITION PROPOSED: ledger-record only (found by code-reading,
+  not a golden divergence — the SubgraphsDemand precedent), no
+  FINDINGS.md entry, the dead branch left for a future cleanup.
+- D-4: slice conservatism beyond the recipe's letter (>1 bound query,
+  >1 adornment per name, NEGATE/AGG anywhere in p's bodies,
+  left-linear propagation, stray consumers, multi-clause queries —
+  all clean diagnostics, never miscompiles).
+
 ## 2.3 Owner design notes (2026-07-18): demand keys, asynchrony, and
 ## the subgraph unification
 

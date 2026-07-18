@@ -367,11 +367,111 @@ static std::optional<ProgramProcedure> BuildQueryForceProcedureImpl(
   return proc;
 }
 
+// Build the forcing procedure for a DEMAND-TRANSFORMED query from the
+// demand-forcing registry (the live demand transform, `-demand`; recipe F2).
+// A thin sibling of `BuildQueryForceProcedureImpl`: the proc creation, the
+// per-bound-param input vars, the vectors, the VECTORAPPEND, the CALL to
+// `messsage_handler[message]`, and the RETURN are the same shape — but the
+// clause-var DisjointSet re-derivation is REPLACED by the registry's
+// binding (a demand-transformed query has NO parse-level forcing predicate;
+// the registry's fabricated message's Nth parameter corresponds to the
+// query's `bound_params[N]`-th parameter). The handler entry exists because
+// the fabricated message minted a real `QueryIO` with a non-empty receive,
+// so `BuildIOProcedure` registered it in the same IO loop as user messages.
+// Column types come from the fabricated message's own parameters.
+static std::optional<ProgramProcedure> BuildQueryForceProcedureFromRegistry(
+    ProgramImpl *impl, Context &context, ParsedQuery query,
+    const QueryDemandForcing &entry) {
+
+  ParsedDeclaration query_decl(query);
+  const ParsedMessage message = entry.message;
+  assert(message.IsReceived());
+  assert(message.Arity() == entry.bound_params.size());
+  assert(context.messsage_handler.count(message) &&
+         "The fabricated demand message has no handler procedure");
+
+  auto proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kQueryMessageInjector);
+  proc->has_raw_use = true;
+
+  // One parameter per bound query parameter, in message-parameter order.
+  for (unsigned param_index : entry.bound_params) {
+    const auto var =
+        proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
+    var->parsed_param = query_decl.NthParameter(param_index);
+  }
+
+  // Vector column types from the fabricated message's own parameters.
+  std::vector<TypeLoc> col_types;
+  for (auto i = 0u; i < message.Arity(); ++i) {
+    col_types.push_back(message.NthParameter(i).Type());
+  }
+
+  VECTOR *add_vec = proc->vectors.Create(
+      impl->next_id++, VectorKind::kParameter, col_types,
+      0  /* disambiguation */);
+  VECTOR *del_vec = nullptr;
+
+  if (message.IsDifferential()) {
+    del_vec = proc->vectors.Create(
+        impl->next_id++, VectorKind::kEmpty, col_types, 0);
+  }
+
+  SERIES *seq = impl->series_regions.Create(proc);
+  proc->body.Emplace(proc, seq);
+
+  VECTORAPPEND *append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+      seq, ProgramOperation::kAppendQueryParamsToMessageInjectVector);
+  seq->regions.AddUse(append);
+  append->vector.Emplace(append, add_vec);
+  for (VAR *param_var : proc->input_vars) {
+    append->tuple_vars.AddUse(param_var);
+  }
+
+  CALL *call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, seq, context.messsage_handler[message]);
+  seq->regions.AddUse(call);
+  call->arg_vecs.AddUse(add_vec);
+  if (del_vec) {
+    call->arg_vecs.AddUse(del_vec);  // Empty.
+  }
+
+  RETURN *ret = impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure);
+  seq->regions.AddUse(ret);
+
+  return proc;
+}
+
 // Try to build a forcing procedure. We'll re-figure out the relation between
 // clause head variables and the forced message variables here, rather than
 // trying to wire through all the information.
 static std::optional<ProgramProcedure> BuildQueryForceProcedure(
     ProgramImpl *impl, Context &context, ParsedQuery query) {
+
+  // A demand-transformed query's forcer comes from the registry (it has no
+  // parse-level forcing predicate). The user `@first` forcing surface below
+  // stays live for hand-written forcing queries.
+  //
+  // The match is by PER-ADORNMENT identity: `ParsedQuery::operator==` alone
+  // compares by DeclarationContext, which is keyed on (name, arity) ONLY —
+  // two adornments of one query name share a context and would compare
+  // EQUAL, cross-wiring the transformed adornment's injector (and its
+  // bound-parameter binding) onto a sibling adornment's entry point (a
+  // silent miscompile). The demand pass ALSO rejects multi-adornment query
+  // names outright (the first belt); this binding-pattern check is the
+  // second belt so a future fence-lift cannot re-open the cross-wire.
+  if (context.demand_forcings) {
+    for (const QueryDemandForcing &entry : *context.demand_forcings) {
+      if (entry.query == query &&
+          ParsedDeclaration(entry.query).BindingPattern() ==
+              ParsedDeclaration(query).BindingPattern()) {
+        return BuildQueryForceProcedureFromRegistry(impl, context, query,
+                                                    entry);
+      }
+    }
+  }
+
   if (auto pred = query.ForcingMessage()) {
     return BuildQueryForceProcedureImpl(
         impl, context, query, ParsedClause::Containing(*pred), *pred);
@@ -1174,6 +1274,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   Context context;
   context.init_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kInitializer);
+
+  // The demand-forcing registry (empty unless built under `-demand`): the
+  // injector builder consults it for demand-transformed queries (recipe F2).
+  context.demand_forcings = &query.DemandForcings();
 
   BuildDataModel(query, program);
 

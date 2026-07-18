@@ -10,6 +10,9 @@
 #
 # Usage: diffrun.sh <case.dr> <driver.cpp> <workdir>
 #
+# A cases/<name>.drflags sidecar (if present) is appended to every mode's
+# compiler invocation (see the mode loop below and the runall.sh header).
+#
 # Environment:
 #   DR       path to the drlojekyll compiler         (required)
 #   CXX      C++ compiler                            (default: clang++)
@@ -46,6 +49,14 @@ for mode in opt nodf nocf none; do
     nocf) flags="-disable-controlflow-opt" ;;
     none) flags="-disable-dataflow-opt -disable-controlflow-opt" ;;
   esac
+
+  # Optional per-case extra compiler flags: a cases/<name>.drflags sidecar's
+  # contents are appended to EVERY mode's compiler invocation (e.g. `-demand`
+  # for the demand-transform witness — orthogonal to the four optimization
+  # modes, never a fifth mode). Cases without a sidecar are untouched.
+  if [[ -f "$HERE/cases/$NAME.drflags" ]]; then
+    flags="$flags $(cat "$HERE/cases/$NAME.drflags")"
+  fi
 
   out="$WORK/$NAME.$mode"
   mkdir -p "$out"

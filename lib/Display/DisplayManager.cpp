@@ -210,7 +210,11 @@ std::string_view DisplayManager::DisplayName(DisplayPosition position) const {
   return std::string_view();
 }
 
-// Open a buffer as a display. This will copy the underlying data.
+// Open a buffer as a display. NOTE: this does NOT copy the underlying data —
+// the stream ALIASES the caller's buffer until the display has been read to
+// exhaustion, at which point the display swaps in its own accumulated copy.
+// A caller passing a short-lived buffer must fully consume the display (e.g.
+// lex it to end-of-file) before the buffer dies.
 Display DisplayManager::OpenBuffer(std::string_view data,
                                    const DisplayConfiguration &config) const {
   auto id = static_cast<unsigned>(impl->displays.size());

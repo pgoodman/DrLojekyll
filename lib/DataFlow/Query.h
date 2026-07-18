@@ -1116,6 +1116,11 @@ class QueryImpl {
   DefList<QueryCompareImpl> compares;
   DefList<QueryInsertImpl> inserts;
 
+  // COMPILER-INTERNAL (the live demand transform): the demand-forcing
+  // registry, populated by `ApplyDemandTransform` — one entry per
+  // demand-transformed bound `#query`. Empty unless built under `-demand`.
+  std::vector<QueryDemandForcing> demand_forcings;
+
   // Number of strata (SCCs of the condensation) assigned by `Stratify`;
   // view/model stratum ids range over `[0, num_strata)`.
   unsigned num_strata{0u};
