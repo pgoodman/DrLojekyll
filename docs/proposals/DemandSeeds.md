@@ -502,6 +502,62 @@ public-entry suppression (lands WITH S3; the first answer gate) →
 S5 witness corpus (goldens predicted from the spike modulo the
 message name + suppression) → S6 the COST spike.
 
+## 2.3 Owner design notes (2026-07-18): demand keys, asynchrony, and
+## the subgraph unification
+
+Two owner observations, recorded verbatim-in-spirit; they bear on the
+D3 surface question and the eventual demand-keyed-instance lowering.
+
+1. BOUND QUERY PARAMS, PROPAGATED BACKWARD, ARE CANDIDATE SUBGRAPH
+   KEYS. The demand transform's SIP walk already computes, per reached
+   predicate p, the propagated bound-column set α. D4 realizes p^α
+   FLAT (the guarded copy p ⋈ d_p^α into one shared table, demanded
+   keys interleaved as rows); the same α is an INSTANCE KEY for a
+   NESTED realization — an InstanceStore keyed on α, one nested
+   sub-relation per demanded key, d_p^α as the store's demand frontier
+   (the p2b §1 acyclic-frozen input), p's free columns as the
+   published rows. Flat-guard and keyed-instance become two LOWERINGS
+   of one semantic object (the @invertible/@recompute pattern, one
+   level up). Consequences: (a) the D3-F6 recognizer hole dissolves —
+   the demand pass MINTS the guard joins and can annotate them
+   ("this JOIN's pivot set is a demand key"; the implementation
+   already tags producer="DEMAND-GUARD"), so no structural
+   recognition is needed; (b) p2b §4.1 candidate (i) (bound #query →
+   demand-keyed instance) returns WITHOUT its judged defect — post-D4
+   the demand is a real dataflow frontier (the fabricated message's
+   receive), not a driver-supplied boundary edge. Sharp edges pinned:
+   multi-adornment = distinct key spaces (one store per adornment or
+   a union key — the same boundary D4's slice cleanly rejects);
+   all-free = no key = no instance = full materialization (degrades
+   to the status quo); the D3 acyclic condition must be restated as
+   ACYCLIC DEMAND (ViewSelfReachable of the demand view through the
+   instance), NOT non-recursive content — a bf-tc instance has
+   acyclic demand but recursively-derived content (Rederive = a
+   fixpoint per demanded key).
+
+2. THE ENGINE ALREADY HAS AN IMPLIED DEMAND MECHANISM: ASYNCHRONY.
+   The corpus contains BOTH halves of D4 as manual idioms —
+   transitive_closure_lazy.dr is the GUARD half (unlock_reaching_to
+   IS a hand-written d_tc for the To-bound adornment; the gated
+   recursive rule is the guarded copy; demand seeded manually by the
+   driver), and force.dr is the INJECTOR half (@first forcing = query-
+   time demand injection). D4 is their synthesis plus the plumbing.
+   Because demand is JUST A MESSAGE STREAM it inherits the engine's
+   message algebra for free: demand arrival COMMUTES with data
+   arrival (tc_lazy's golden certifies the interleaving-invariance),
+   demand is batchable, and @differential demand is RETRACTABLE —
+   which is exactly instance death in the D3 frozen-pair model
+   (demand-add = birth, demand-retract = death, the unlock payload =
+   the instance key — note 1 and note 2 are one picture at two
+   levels). THE CONTRACT DISTINCTION (pin before any explicit
+   surface): tc_lazy's manual gating is NOT answer-preserving — the
+   demand CLOSURE (transitively unlocking what a demanded answer
+   needs) is left to the driver, so partial demand yields a partial
+   relation (UNLOCK SEMANTICS). The D4 transform's d_p propagation
+   mechanizes that closure, making -demand answer-identical with less
+   materialization (DEMAND SEMANTICS, the oracle gate). A future
+   #subgraph/#demand surface must declare which contract it offers.
+
 ## 3. Artifact index
 
 - d1-demand-seed-mechanism.md — the demand-seed mechanism design:
