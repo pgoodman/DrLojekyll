@@ -213,3 +213,22 @@ machinery — flag-off emissions may legitimately change shape once
 (one canonical order), so the byte-identity-with-structural-gate
 policy applies vs the pre-fix snapshot, and stdout goldens must be
 zero-churn.
+
+MEASURED FLAG-OFF INSTABILITY FLOOR (2026-07-18, frozen baseline
+binary, corpus-wide -ir-out hash sweep, 6 runs/case; detection is
+probabilistic so this is a FLOOR): 11 cases tripped —
+cond_in_induction (6 variants/6 runs), kcfa_tiny (6), kcfa_tiny_merged
+(6), cf14_2 (3), cond_in_induction_deep (3), product_ind,
+transitive_closure_multiple_clause_bodies, transitive_closure2,
+transitive_closure3, transitive_closure5, two_inductions (2 each);
+union with the fleet's independent runs adds cf14_1 (3 distinct/12
+there) → 12 KNOWN-UNSTABLE, every one a multi-induction/multi-
+merge-set program, zero non-recursive cases — consistent with the
+E-48 root cause. 147 cases stable 6/6; 10 no-compile = the expected
+diagnostics. (A first sweep that flagged all 158 was a measurement
+bug — zsh non-word-splitting produced a phantom empty hash line; the
+CLAUDE.md ${=var} gotcha in a new costume. Recorded as a cautionary
+note: stability sweeps must count from a FILE of hashes, one per
+line.) These 12 are the (F) fix's expected one-time-shift +
+newly-stabilized set; any case NOT in this list that shifts shape
+under the fix needs an explanation before bless.
