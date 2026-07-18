@@ -2942,3 +2942,117 @@ implementers write partial progress to disk in small edits, resume
 dropped agents via SendMessage rather than respawning; push to
 git@github.com:pgoodman/DrLojekyll.git (the https origin tracking
 ref goes stale).
+
+### 18.5 Close-session amendment (2026-07-18): the surfaces as
+### PSEUDOCODE, first-hand anchors, and the D1-D4 path expressed as
+### diffs against them (written by the closing session from the merged
+### main 43463162; still a SINGLE-PASS record — the next session
+### re-verifies per the E-1..E-45 precedent, E-46+)
+
+    (A) THE DEMAND PIPELINE AS LANDED (the surface D1 annotates and
+    D3/D4 extend). lib/DataFlow/Demand.cpp:363 ApplyDemandTransform:
+
+      ApplyDemandTransform(module, log, demand_mode):     # :363
+        if !demand_mode: return true          # the containment gate
+        if module.DemandMessagesFabricated(): reject      # G2
+        q = THE one bound #query (>1 bound query, >1 binding
+            pattern per name, multi-clause q -> clean reject)
+        α = q's bound param indices; all-free -> inert skip
+        p_read = trace q's projection chain to its full-width
+                 reader TUPLE over p's post-Connect MERGE
+        sites = per MERGE member of p, locate the guard site:
+                  recursive read of p carrying α  -> kPushDown
+                  no interior read (base rule)    -> kBaseAtom
+                  read at a different position / self-join /
+                  NEGATE/AGG on the path -> clean reject
+        if module.DemandFabricationWouldCollide(...): reject # both
+                  G3 scans BEFORE any fabrication
+        msg   = module.FabricateDemandMessage("demand__<q>_<α>", ...)
+        d_rel = module.FabricateDemandLocal(...)   # Parse/Demand.cpp
+                # :163/:206; display-buffer-interned names (A7/G1 —
+                # synthetic tokens are text-less); module.
+                # MarkDemandFabricated() ONCE at pass end (:159)
+        mint the d_p MERGE + readers BY THE PASS (Connect never
+                re-runs); root member = TUPLE over msg's receive;
+                one propagation member per demanding-subgoal read
+        per site: MintGuardJoin (:150) — the E-32 N-pivot join,
+                out_to_in carries BOTH inputs; kPushDown: guard
+                joins AT the recursive p read (JOIN-18 -> T19 ->
+                JOIN-22), NEVER on the rule-body output
+        query guard: a FRESH receive-projection TUPLE (T23) joined
+                against q's p read on α (JOIN-7)
+        (f) tripwire: ≥1 d_p member traces to the fabricated
+                receive, else abort (REAL, not construction-order)
+        REGISTER QueryDemandForcing{q, msg, bound binding} on the
+                Query (include/.../Query.h:949)
+
+      THE INJECTOR (ControlFlow Build.cpp): context.demand_forcings
+      wired at :1280; the match at :464-473 requires entry.query ==
+      query AND BindingPattern equality (the big-review belt — the
+      context-keyed == aliases adornments of one name);
+      BuildQueryForceProcedureFromRegistry (:382) = the :317-367
+      injector shape, col_types from the fabricated message,
+      ParsedQuery::ForcingMessage() stays nullopt. SUPPRESSION:
+      Database.cpp:1425/:3080 — a registry-listed fabricated message
+      gets NO public entry point; its _detail twin remains; the
+      DatabaseLog loop is clause-keyed and needs nothing.
+
+    (B) THE R-A FROZEN-PAIR STORE (paper, d3 A0-A11 — the D1/D2
+    emission target): per instance iid, TWO MONOTONE nested Tables:
+      current  — working published set; Rederive rebuild = teardown +
+                 MakeTable (no Reset primitive exists; MEASURE-FIRST)
+      frozen   — batch-start snapshot; old(iid) reads it whole;
+                 WRITTEN only by the seal-time SWAP (zero row copy):
+                 Seal(iid): frozen <-> current; fresh empty current
+      publish_touched nets frozen-vs-current membership at ONE
+      instant pre-swap (the F2 partition; (T,T) emits nothing);
+      V-INST-FRESH asserts current empty at rebuild entry; the
+      demand-retract arm empties current (death = -frozen rows);
+      sole-writer: publish_touched is the ONLY outer-table writer.
+
+    (C) D1 AS A DIFF against (A)+(B) — the instance lowering:
+      + the pass ANNOTATES each MintGuardJoin site: {pivot set = the
+        instance key α, the demand side = d_p^α} (a QueryImpl-side
+        mark the DR inventory reads — NO structural recognizer; the
+        producer="DEMAND-GUARD" debug tag becomes a real attribute)
+      + BuildSubgraphOps (the BuildGroupUpdateOps mold, lib/DR/):
+        mint SUBGRAPH_INSTANTIATE + INSTANCE_SEAL from the
+        annotation, effect sets per d3 §5.2 as amended; census from
+        the QUERY-side annotation count (never the mint loop — E-27;
+        the A7/NF1 honest scope), no mint-order keys (E-28)
+      + the TWO-LOWERINGS EQUIVALENCE GATE: flat (landed D4) vs
+        nested (this diff) must be ANSWER-IDENTICAL — the oracle
+        referees the same witness under both lowerings; the
+        acyclic-DEMAND fence (ViewSelfReachable of the demand view
+        through the instance), NOT non-recursive content.
+
+    (D) D3 AS A DIFF against (A) — the multi-adornment lift:
+      - the >1-binding-pattern rejects (Demand.cpp ~:434 + the two
+        per-site rejects) narrow to: one d_p^α + one guarded family
+        PER adornment; the registry becomes per-adornment natively
+        (the BindingPattern key already lands the identity)
+      + the four-adornment tc witness (E-41: {bf,fb,ff,bb}); the
+        raw-seed-vs-d_p guard DIVERGENCE becomes live here (the
+        d4s3 F1 coincidence argument no longer holds sideways).
+
+    (E) D4 AS A DIFF — implicit-asynchrony seams (design+judge FIRST;
+    the termination argument is the R4-style gate):
+      + a seam = an internal fabricated message + an append site in
+        the eager web + a drain re-entering the detail proc; placed
+        where the transform's analysis says PROFITABLE (measure-
+        first); ABI-suppressed via the (A) registry mechanism
+      + cross-batch: the epoch loop self-pumps internal queues;
+        termination = the finite demand lattice (zero-crossing one
+        level up)
+      + DR-IR: a seam vec with its own append/drain effects + a
+        cross-batch carried role (the v3-spec §2 reserved-sub-domain
+        pattern) — seams enter the checked model.
+
+    (F) DO-FIRST DIFF (the §18.1 LOUD issue): the demand-ON emitted
+    datalog.h permutes run-to-run (address-dependent iteration
+    somewhere in the -demand/DR path; .ir stable, flag-off
+    deterministic). Find the pointer-keyed iteration (suspects: any
+    unordered container of VIEW*/COL* walked during minting or
+    lowering on the demand path), make it id-ordered, then RESTORE
+    the .h byte-identity gate for demand-ON cases. This diff gates
+    the rest — the epoch builds on this path.
