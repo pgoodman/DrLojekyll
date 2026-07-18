@@ -179,9 +179,11 @@ exact signatures before writing a driver.
   — no deaths, and `sealed` is an id-order watermark); join/scan body
   membership gates read predicates on the scan cursor id (the emitter's
   row-binding scope stack — the value-keyed re-Find is gone).
-- Delta-relational IR (`lib/DR/DR.{h,cpp}` — promoted to its own
-  compiler-internal static-library target at the demand-seeds close, still
-  no `include/drlojekyll/` surface; the DR-IR epoch): a typed-value flow
+- Delta-relational IR (`lib/DeltaRel/DeltaRel.{h,cpp}` — its own
+  compiler-internal static-library target, still no
+  `include/drlojekyll/` surface; renamed from lib/DR at the
+  keyed-instances epoch open to mirror DataFlow/ControlFlow): a
+  typed-value flow
   graph between Query and Program that is now
   the SOLE authority for the stratum machinery (the hand-coded scheduling
   fixpoint + DiscoverBranches path-DFS were deleted). Objects: typed DRVecs

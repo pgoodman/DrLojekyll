@@ -1,15 +1,15 @@
 # Copyright 2026, Peter Goodman. All rights reserved.
 
-set(DR_SRCS
-    "DR.h"
+set(DELTAREL_SRCS
+    "DeltaRel.h"
 
-    "DR.cpp"
+    "DeltaRel.cpp"
 )
 
-set(DR_PRIV_DEPS
+set(DELTAREL_PRIV_DEPS
 )
 
-set(DR_DEPS
+set(DELTAREL_DEPS
     DataFlow
     Display
     Lex
@@ -17,11 +17,11 @@ set(DR_DEPS
     Util
 )
 
-dr_define_static_library(DR
+dr_define_static_library(DeltaRel
   CURDIR ${CMAKE_CURRENT_SOURCE_DIR}
-  SOURCES ${DR_SRCS}
-  DEPENDENCIES ${DR_DEPS}
-  PRIVATE_DEPS ${DR_PRIV_DEPS}
+  SOURCES ${DELTAREL_SRCS}
+  DEPENDENCIES ${DELTAREL_DEPS}
+  PRIVATE_DEPS ${DELTAREL_PRIV_DEPS}
 )
 
 # The DR-IR is a private compiler-internal IR of the Program::Build pass: it
@@ -32,7 +32,7 @@ dr_define_static_library(DR
 # mutually referencing static libraries, resolved at the final executable
 # link. Expose ControlFlow's internal dirs to this target so the quoted
 # includes ("Program.h", "Build.h") resolve; no public surface is created.
-target_include_directories(DR PRIVATE
+target_include_directories(DeltaRel PRIVATE
   "${PROJECT_SOURCE_DIR}/lib/ControlFlow"
   "${PROJECT_SOURCE_DIR}/lib/ControlFlow/Build"
 )

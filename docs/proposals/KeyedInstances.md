@@ -53,6 +53,44 @@ Errata numbering: the .ir-stability contradiction is an errata
 candidate pending the D0 consolidator's adjudication (E-46+ numbering
 assigned there, §1 below).
 
+## 0.6 Owner decisions (2026-07-18, RATIFIED at the design checkpoint
+## — "ratified as recommended, incl. (c) for the sort key")
+
+1. CUT: T1 rename → T2 dumps → (F) fix (parallelizable with T1/T2;
+   interim scripted hash-sweep gate until T2/T3 exist) → T3 demand-ON
+   IR+header golden sidecars land AS (F)'s acceptance → D1
+   design+judge → D2 emission → D3 → D4 design-only (emission gated
+   on the termination judge + a measured-profitable seam witness).
+   Pass-harness P1 non-blocking after (F); P2-P5 next-epoch.
+2. D1 WITNESS: PICK-A — a NEW non-recursive directed witness carries
+   the nested lowering (demand_tc_witness is RECURSIVE; R-A is
+   acyclic-frozen-first). Flat stays the DEFAULT lowering; nested
+   behind a knob this epoch; the annotation records eligibility.
+3. EQUIVALENCE GATE: same-witness dual-lowering oracle runs (one .dr
+   + one .batches under both knobs vs the SAME oracle golden); both
+   lowerings stay alive permanently.
+4. D4: design+judge in-scope; emission gated (R4-style termination
+   judge + measured-profitable witness) else re-seeds. E-50-corrected
+   DR-IR home (existing kVecAppend/kVecDrain + new epoch-carried
+   VecRole, B-10 precedent).
+5. (F): locus (i) — sort the Induction.cpp:520 merge_sets ITERATION;
+   sort key = OPTION (c): a stable per-view CREATION-SEQUENCE ID
+   minted at Create (total by construction; also serves the BB-dump
+   ^kind.id naming and all future ordering needs); the :359
+   std::set<VIEW*> site fixed in the SAME landing; pre-fix snapshot
+   of all 168 .ir+.h; shifts outside the known-12 + predicted
+   multi-arm list need explanations before bless; the symmetric-
+   recursion counterexample becomes a committed determinism witness
+   (gate 1b).
+6. D3-stage flags ratified as recommended: suppression keyed off a
+   FABRICATED-MESSAGE SET decoupled from the forcing registry (the
+   bb leak); mixed all-free-consumer + demanded programs CLEAN-REJECT
+   in the D3 slice; REJECT-18 lift scoped in D3 design;
+   demand_multi_adorn_1 disposition deferred to D3 design;
+   SUBGRAPH_INSTANTIATE fully DR-lowered (LowerGroupUpdate mold, no
+   hand-coded web); full mint-loop census day one; the mid-stream
+   monotone-edge-add divergence FENCED at compile for the D2 slice.
+
 ## 0.5 Owner directives at epoch open (2026-07-18) — IR observability
 
 Four directives, adopted as epoch work items (tooling diffs, all
