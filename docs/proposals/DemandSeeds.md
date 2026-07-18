@@ -1,6 +1,11 @@
 # Demand-seeds / keyed-instances epoch — design ledger
 
-Status: OPEN. Opened 2026-07-17 on branch `demand-seeds` off main
+Status: EPOCH CLOSED 2026-07-18 (landing record: PerfRoadmap §17;
+next epoch seeded as §18, DEMAND-KEYED INSTANCES + IMPLICIT
+ASYNCHRONY; all deviations RATIFIED at close — §2.2 D-1..D-4 +
+the D2 StateCellTest partial, owner 2026-07-18, with the
+has_one_insert ledger-record-only disposition). Opened 2026-07-17
+on branch `demand-seeds` off main
 ca569dd8 (the subgraphs/demand epoch merged; its §15 deviations 1-4
 RATIFIED at close; the §16.5 close-session amendment on main). This
 file is the epoch's working ledger, in the SubgraphsDemand.md mold:
@@ -689,6 +694,31 @@ D3 surface question and the eventual demand-keyed-instance lowering.
   target, possibly a public dump surface) is a mechanical
   byte-identity-gated move; do it at close, not mid-D4, and it gets
   more attractive if seams/instances grow the DR-IR further.
+  [DONE AT CLOSE: lib/DR/ with its own static target, byte-identity
+  gates green. HONESTY CORRECTION to the "mechanical" framing: DR is
+  NOT cleanly isolable — it reads ControlFlow's INTERNAL headers
+  (Program.h, Build/Build.h Context) while ControlFlow links DR, so
+  the move required cross-target include dirs in BOTH directions. A
+  true decoupling (an interface DR does not reach through) is future
+  work, priced only if the seam/instance growth justifies it.]
+
+### Known issue carried at close (LOUD): demand-ON emitted-header
+### nondeterminism
+
+Found by the close sweep's byte-identity gate: demand_tc_witness's
+emitted datalog.h PERMUTES run-to-run on the SAME binary (vec
+renumbering / block reordering — an address-dependent iteration order
+somewhere in the -demand/DR path). The -ir-out dump is byte-stable,
+the suite stdout goldens are stable in all 4 modes, and answers are
+oracle-verified — correctness is not in question, and the 166
+pre-existing cases (flag-off) are fully deterministic. But emitted-
+text nondeterminism is against the house reproducibility discipline
+and the .h byte-identity gate is NOT a valid discriminator for
+demand-ON cases until fixed. CARRIED as a named next-epoch
+obligation (PerfRoadmap §18.1): find the pointer-keyed iteration in
+the demand path and make it deterministic (id-ordered), then restore
+the .h gate for demand cases. No FINDINGS.md entry (no golden
+divergence; caught by a gate pre-merge).
 
 ## 3. Artifact index
 

@@ -5,8 +5,8 @@
 // This header is the vocabulary-v3 core (spec §7.1), trimmed to what R1a
 // derives: the ENUM vocabulary, an `DREffect` value, and three node families
 // (`DRVec`, `DRTable`, `DROp`) owned by a `DRFlowGraph`. It is INTERNAL to the
-// build directory: the public header (include/drlojekyll/ControlFlow/DR.h)
-// arrives when the API stabilizes (R2+). R1a builds ONLY two op families —
+// compiler (lib/DR, no include/drlojekyll/ surface): a public header arrives
+// when the API stabilizes (R2+). R1a builds ONLY two op families —
 // the negation CROSSOVER arm-pair and the differential @product ARM — derived
 // INDEPENDENTLY from the `Query` (never by copying the old discovery structs)
 // and cross-checked against that discovery by an always-on isomorphism
@@ -29,7 +29,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../Program.h"  // TABLE, VECTOR, ProgramImpl, MembershipPredicate
+#include "Program.h"  // TABLE, VECTOR, ProgramImpl, MembershipPredicate
 
 namespace hyde {
 

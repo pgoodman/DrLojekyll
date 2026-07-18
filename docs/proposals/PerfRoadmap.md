@@ -2475,7 +2475,7 @@ source-less and dead-flow collapses). The re-charter question is the
 SEED MECHANISM (generalize the forcing-message surface), plus
 per-adornment splits and the all-free-forces-full interaction; the
 amended invariant argument (E-32/E-33 + judge) is the standing gate;
-any live transform is mode-gated off (37-38/164 corpus cases carry
+any live transform is mode-gated off (38 corpus cases carry
 bound queries).
 
 ### THE NUMBERS (bench/BASELINE.md run 10)
@@ -2742,3 +2742,203 @@ https origin tracking ref goes stale).
     demand→instance through a REAL edge (else dead-flow collapses it);
     acyclic-frozen-first under the ViewSelfReachable fence (the
     ratified C-0b answer).
+
+## 17. Landing record (2026-07-18) — DEMAND-SEEDS/KEYED-INSTANCES
+## EPOCH CLOSED
+
+Branch `demand-seeds` off main ca569dd8. The epoch's working ledger is
+docs/proposals/DemandSeeds.md (§0 baseline, §1 the seed re-verification
+errata E-35..E-45, §2 the designs as judged over ELEVEN judge rounds,
+§2.1 owner decisions 1-5, §2.2 the three landing records, §2.3 the
+owner design notes, §2.4 the close-sweep queue); binding artifacts in
+DemandSeeds.artifacts/ (d1-demand-seed-mechanism.md A0-A7,
+d2-config-agg-2-target.md + AMENDMENTS, d3-instance-store-target.md
+A0-A11, d4s3-recipe.md + two amendment rounds).
+
+Method (the checkpoint method, at full stretch): fleet re-verification
+of the §16 seed BEFORE building (5 derivation lanes seed-unread + 5
+adversarial verifiers + consolidator, ~759k tokens — THE PRECEDENT
+HELD AN EIGHTH TIME: E-35 REAL-DEFECT, the D3 sealed-side anchor named
+a DiffTable Seal/sealed watermark that does not exist); three designs
+judged and re-judged (D1 CRITICAL: the no-ParsedMessage Option D was
+impossible against the code — recovered as Option D′ fabrication; D3
+CRITICAL ×2: the monotone-nested rebuild broke old() — recovered as
+the R-A frozen-pair); a checkpoint-3 SPIKE (the hand-authored .dr the
+transform would synthesize) compiled in all 4 modes BEFORE any
+transform code; the S3 recipe judged over three rounds (the spike's
+guard is a PUSH-DOWN to the demanded-subgoal read, not guard-on-
+output); owner decisions before every emission-changing step; a
+5-lane BIG REVIEW with per-finding adversarial verification over the
+flagship diff (ONE HIGH confirmed AND reproduced pre-commit — the
+adornment-aliased injector cross-wire — fixed with two belts and
+landed as a permanent diagnostic case); Fable review before each of
+the three emission commits.
+
+### What landed
+
+D2 — CONFIG_AGG_2 (@recompute config aggregates): the P2c residual
+fence CLOSED — both algebra arms of a config-column aggregate lower
+(fork (i): SealOne = the store's own per-gid seal body, codegen-
+emitted per-touched-group loop for config-@recompute only; Old(gid)
+NON-variadic config-free — a genuine correction to E-39's framing).
+SUITE 165 → 166.
+
+D4 — THE LIVE DEMAND TRANSFORM (-demand, single-adornment slice):
+magic-sets as a mode-gated Query-graph rewrite. The compiler
+FABRICATES a real ParsedMessage + #local (display-buffer-interned
+names, reserved demand__ prefix), mints the demand relation + the
+SIP push-down guard JOINs + the query-projection guard, synthesizes
+the injector from a BindingPattern-keyed registry (ForcingMessage
+stays nullopt), and suppresses the fabricated message's public entry
+point. Out-of-slice shapes are ALL clean diagnostics. The .drflags
+per-case harness hook carries demand-ON corpus cases. SUITE 166 →
+168 (demand_tc_witness, oracle-blessed answer-identity;
+demand_multi_adorn_1, the cross-wire fire-test as a permanent
+diagnostic). THE COST WITNESS MEASURED: idx_adds 425 vs 152,198
+(~358×), wall ~175×, answers identical — the demand guard prunes the
+recursive relation's OWN materialization at runtime; the p3 §3.2
+honesty bar passed by two orders. The P3-judge CRITICAL that
+re-chartered last epoch ("no demand seed exists in the eager/push
+model") is ANSWERED with a landed, measured mechanism.
+
+D1/D3 — PAPER-RATIFIED (post-amendment APPROVE-WITH-NITS): the
+Option D′ mechanism record (now largely LANDED via D4) and the R-A
+frozen-pair InstanceStore design (two monotone nested tables per
+instance, swap-not-copy; the double-count seam closed by sole-writer;
+differential summarized inputs fenced; census scoped honestly to the
+mint loop). D3 emission is the next epoch's work, on the now-REAL
+demand frontier.
+
+### The numbers
+
+Suite 165 → 168 (all growth oracle-refereed; the 165 pre-epoch cases
+zero churn THROUGHOUT — every emission diff byte-identical for
+existing programs, flag-off). ctest 3/3 throughout. Q5: absolutes
+confounded by desktop load this session (recorded honestly in
+BASELINE run 11); every per-diff comparison ran SAME-SESSION
+INTERLEAVED ABABAB and came back ≤2.5% (noise-level). Bench neutral
+by byte-identity at the flagships. Counter-seam no-op re-verified at
+the one Runtime header edit (D2). FINDINGS.md UNCHANGED — every
+catch (E-35, the D1/D3 CRITICALs, the S3 recipe rounds, the big-
+review HIGH) was design/judge/review-time, pre-commit, per the house
+convention.
+
+### Deviations — RATIFIED 2026-07-18 (owner, at close)
+
+1. D-1: the reserved fabrication prefix is demand__ (a leading
+   underscore lexes as a variable).
+2. D-2/D-3: Connect.cpp's has_one_insert is DEAD CODE (every relation
+   gets a MERGE); the pass models live behavior; ledger-record only,
+   no FINDINGS.md entry; the dead branch on the cleanup list.
+3. D-4: slice conservatism — >1 bound query, >1 adornment per name,
+   NEGATE/AGG in the demanded bodies, left-linear propagation, stray
+   consumers, multi-clause queries: all clean diagnostics.
+4. D2's StateCellTest PARTIAL: no new unit; the path is covered by
+   the corpus + oracle cross-check + the seam probe.
+
+EPOCH CLOSED. E-numbering continues at E-46. Next epoch per §18.
+
+## 18. Epoch-start addendum (2026-07-18, at the demand-seeds close):
+## the NEXT EPOCH SEED — DEMAND-KEYED INSTANCES + IMPLICIT ASYNCHRONY
+## (SINGLE-PASS SEED by the closing session — to-be-re-verified per
+## the house precedent: E-1..E-45 across EIGHT epochs, EVERY pre-code
+## re-verification has found a real seed defect. Anchors are
+## close-time positions on branch demand-seeds; the close-sweep lib/DR
+## move may shift DR-IR paths — re-derive every one. Continue the
+## E-numbering at E-46.)
+
+### 18.0 Why an epoch here
+
+The demand frontier is now REAL: d_p^α exists as a compiler-minted
+relation fed by a fabricated message, and the demand pass MINTS the
+guard joins it would hand to an instance lowering. The owner's §2.3
+unification (DemandSeeds.md) is the charter: the flat guarded copy
+(landed D4) and a keyed nested instance (the ratified D3 R-A paper)
+are TWO LOWERINGS of one object p^α — the epoch builds the second
+lowering on the first's frontier, plus the owner's implicit-asynchrony
+direction (compiler-injected seams; the system injecting messages to
+itself).
+
+### 18.1 Carried residue (each with its home)
+
+  - THE KEYED-INSTANCE EMISSION (D3 → code): SUBGRAPH_INSTANTIATE +
+    INSTANCE_SEAL per the R-A frozen-pair record
+    (d3-instance-store-target.md A0-A11), driven by the D4 demand
+    frontier under the §2.3 note-1 annotation route (the pass marks
+    its guard joins as instance-key sites — NO structural recognizer;
+    the D3-F6 hole is closed by construction). Census from day one
+    (P0 template; the A7/NF1 honest scope).
+  - MULTI-ADORNMENT (the slice lift): >1 adornment per name currently
+    cleanly rejects (the big-review belt); lifting it needs
+    per-adornment registries + the four-adornment tc model (E-41) and
+    re-opens the raw-seed-vs-d_p guard divergence noted in the d4s3
+    F1 coincidence argument.
+  - IMPLICIT ASYNCHRONY (owner §2.3 note 3): seams injected where the
+    transform finds them profitable; internal self-injection (the
+    cross-batch pump + the finite-demand-lattice termination
+    argument); DR-IR home = a seam vec with its own effects + carried
+    role (the v3-spec §2 reserved-sub-domain pattern). Measure-first.
+  - The UNLOCK-vs-DEMAND CONTRACT (owner §2.3 note 2): any explicit
+    #subgraph/#demand surface must declare which it offers.
+  - DEMAND-ON EMITTED-HEADER DETERMINISM (ledger §2.4 known issue,
+    LOUD): demand_tc_witness's datalog.h permutes run-to-run on one
+    binary (address-dependent iteration in the -demand/DR path; .ir
+    and all goldens stable; flag-off fully deterministic). Find the
+    pointer-keyed iteration, make it id-ordered, restore the .h
+    byte-identity gate for demand-ON cases. Do this EARLY — the
+    epoch builds on this path.
+  - Close-sweep leftovers (ledger §2.4): the has_one_insert
+    dead-branch cleanup; the demand-COST witness's promotion from
+    scratchpad spike to a bench/ runspec; a true DR/ControlFlow
+    interface decoupling (priced only if seam/instance growth
+    justifies it — the close move left mutual internal includes).
+  - P4 residue carried unchanged from §16.1 (fusion, WASM-gated
+    dead-arm excision, sorted-multiset MIN/MAX, KVINDEX node
+    deletion, aggregates over monotone inputs, WCOJ re-motivation
+    bar, StateCell/instance dead-group compaction MEASURE-FIRST).
+
+### 18.2 The path as diffs (owner re-ranks at epoch start)
+
+  D0  Re-verify this seed (E-46+; the lib/DR move shifts anchors).
+  D1  The instance-lowering design + judge: the D4-annotation →
+      SUBGRAPH_INSTANTIATE mint, the R-A store emission, the
+      two-lowerings equivalence argument (flat vs nested must be
+      answer-identical — the oracle referees), the demand-retract =
+      instance-death arm. Hand-write the witness IR before code.
+  D2  The instance emission, acyclic-frozen-first, census day one.
+  D3  Multi-adornment slice lift (per-adornment registries; the
+      four-adornment tc witness).
+  D4  Implicit-asynchrony seams: design + judge FIRST (the
+      termination argument is the R4-style gate), measure-first.
+
+### 18.3 Bootstrap (next session)
+
+Branch off main once demand-seeds merges. Read IN ORDER:
+docs/proposals/DemandSeeds.md END TO END (the ledger: errata
+E-35..E-45, eleven judge rounds, §2.1 decisions 1-5, §2.3 the owner
+notes — the charter); THIS file's §17; DemandSeeds.artifacts/ (d3 as
+the emission target, d4s3 + d1 as the landed mechanism records);
+SubgraphsDemand.artifacts/p2b-instance-target.md (the substrate
+ratification d3 amends). Code anchors (post-lib/DR-move paths):
+lib/DataFlow/Demand.cpp (the transform; the guard-join mint sites to
+annotate); lib/Parse/Demand.cpp (fabrication); the QueryDemandForcing
+registry (DataFlow Query.h → CF Build.h → Database.cpp suppression);
+lib/DR/ (the DR-IR home post-move); StateCell.h + Table.h (the R-A
+substrate); tests/OptDiff/cases/demand_tc_witness.* + the .drflags
+hook (runall.sh/diffrun.sh headers). Method: the checkpoint method
+unchanged — fleet re-verify before building; hand-write witness IR
+before generalizing; owner decisions before emission-changing code;
+Fable review (or the big-review shape for flagship diffs) before each
+emission commit; gates per the standing policy (suite 168 growing
+oracle-refereed, byte-identity-with-structural-gate, permcheck never
+to green red, counter-seam no-op after Runtime edits, bench neutral
+at the flagships, Q5 per-diff SAME-SESSION INTERLEAVED A/B — the
+run-11 note: absolutes want an idle-machine re-spot, ctest 3/3,
+landing record → §19). Environment gotchas carried: export
+PATH="/Users/pag/Code/.brew/bin:$PATH"; macOS bash 3.2 (no declare
+-A); zsh ${=var}; never rebuild mid-suite; never time bench
+concurrently; agents on this box hit mid-response connection drops —
+implementers write partial progress to disk in small edits, resume
+dropped agents via SendMessage rather than respawning; push to
+git@github.com:pgoodman/DrLojekyll.git (the https origin tracking
+ref goes stale).
