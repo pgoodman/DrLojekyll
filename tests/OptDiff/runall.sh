@@ -16,7 +16,9 @@
 #
 # Case expectations:
 #   kvindex_2/3/4, agg_in_scc_1, kv_in_scc_1, algebra_dup_1,
-#   algebra_conflict_1, evm_func_parse, nonascii_1, truncated_decl_1
+#   algebra_conflict_1, evm_func_parse, nonascii_1, truncated_decl_1,
+#   demand_multi_adorn_1 (via its -demand .drflags sidecar: a demanded query
+#     name with two binding patterns — the adornment cross-wire reject)
 #     — the compiler must exit 1 with a rendered diagnostic (no assert/crash)
 #     in all 4 modes (evm_func_parse: unstratified negation, rejected by the
 #     dataflow Stratify pass; agg_in_scc_1/kv_in_scc_1: unstratified
@@ -41,6 +43,13 @@
 #     (drlojekyll-oracle <case.dr> <case.batches> --project-monotone: the
 #     program over only the surviving inputs), byte-compared against
 #     goldens/<name>.monotone.stdout.
+#   any case with a cases/<name>.drflags sidecar has that file's contents
+#     appended to EVERY mode's compiler invocation (e.g. `-demand` for
+#     demand_tc_witness — the demand transform is orthogonal to the four
+#     optimization modes, never a fifth mode). The oracle NEVER receives
+#     these flags: it referees ANSWER-identity from the plain program
+#     (demand must change materialization, never answers). Cases without a
+#     sidecar are untouched.
 #
 # Blessing: goldens are updated ONLY by an explicit --bless invocation, after
 # reviewing the outputs of a run — never automatically on failure. --bless
@@ -112,11 +121,16 @@ if [ "${1:-}" = "--one" ]; then
 
   flags_of() {
     case $1 in
-      opt) echo "" ;;
-      nodf) echo "-disable-dataflow-opt" ;;
-      nocf) echo "-disable-controlflow-opt" ;;
-      none) echo "-disable-dataflow-opt -disable-controlflow-opt" ;;
+      opt) mflags="" ;;
+      nodf) mflags="-disable-dataflow-opt" ;;
+      nocf) mflags="-disable-controlflow-opt" ;;
+      none) mflags="-disable-dataflow-opt -disable-controlflow-opt" ;;
     esac
+    # Per-case extra compiler flags (the .drflags sidecar; see the header).
+    if [ -f "$HERE/cases/$NAME.drflags" ]; then
+      mflags="$mflags $(cat "$HERE/cases/$NAME.drflags")"
+    fi
+    echo "$mflags"
   }
 
   expect_diagnostic() {  # $1=mode; exit 1 unless the compiler exits 1 cleanly
@@ -214,7 +228,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|nonascii_1|truncated_decl_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|nonascii_1|truncated_decl_1|demand_multi_adorn_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

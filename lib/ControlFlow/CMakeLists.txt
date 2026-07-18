@@ -11,8 +11,6 @@ set(ControlFlow_SRCS
     "Build/Build.h"
     "Build/Build.cpp"
     "Build/Compare.cpp"
-    "Build/DR.h"
-    "Build/DR.cpp"
     "Build/Generate.cpp"
     "Build/Induction.cpp"
     "Build/Induction.h"
@@ -45,6 +43,7 @@ set(ControlFlow_PRIV_DEPS
 
 set(ControlFlow_DEPS
     DataFlow
+    DR
     Display
     Lex
     Parse
@@ -57,4 +56,12 @@ dr_define_static_library(ControlFlow
   PUBLIC_HEADERS ${ControlFlow_PUBLIC_H}
   DEPENDENCIES ${ControlFlow_DEPS}
   PRIVATE_DEPS ${ControlFlow_PRIV_DEPS}
+)
+
+# DR.{h,cpp} moved to lib/DR (its own static-library target, linked above via
+# ControlFlow_DEPS). Build/{Stratum,Procedure}.cpp include "DR.h" — expose the
+# lib/DR dir so the quoted include resolves. The DR-IR stays compiler-internal
+# (no include/drlojekyll/ surface).
+target_include_directories(ControlFlow PRIVATE
+  "${PROJECT_SOURCE_DIR}/lib/DR"
 )

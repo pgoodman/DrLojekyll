@@ -1179,3 +1179,18 @@ fence and its residual rejects (induction-owned :1099, V-ALGEBRA KV :1135,
 the stale :1106-1107 comment) are in **lib/ControlFlow/Build/Build.cpp**
 (fence at :1108). All in-prose, in-`.dr`-comment, §4.1/§4.6 heading, §5, and
 appendix-table occurrences updated.
+
+**LANDING POINTER (demand-seeds epoch, 2026-07-18).** config_agg_2 —
+the config-column `@recompute` aggregate arm this artifact targets — LANDED
+in the demand-seeds epoch (DemandSeeds.md §2.2, the "D2 — config_agg_2"
+record). The §2.5/§4.4 `@recompute` plan was implemented AS AMENDED at its
+judge round: fork **(i)** (a codegen-emitted per-touched-group seal loop via
+the store's own `SealOne(gid, cfg...)` body — no bulk-`Seal()` bookkeeping
+drift), and the E-39 correction was honored in the emission — `Old(gid)`
+stayed **config-free** (non-variadic; only `Emit`→`ReduceLive` forwards the
+config tail; the three config-free compile-failure sites collapsed to the
+single `Emit` site plus the two guarded `SealFrom` births). The P2c residual
+fence in `lib/ControlFlow/Build/Build.cpp` is deleted; both algebra arms of
+a config-column aggregate now lower end-to-end (`config_agg_1` @invertible,
+`config_agg_2` @recompute). Gates: SUITE PASS (the pre-existing 165 zero
+churn, byte-identical), Fable review APPROVE.

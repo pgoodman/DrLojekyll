@@ -11,8 +11,10 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace hyde {
 
@@ -869,6 +871,42 @@ class ParsedModule {
 
   // The root module of this parse.
   ParsedModule RootModule(void) const;
+
+  // COMPILER-INTERNAL (the live demand transform, `-demand`). Fabricate a real
+  // `#message`-kind declaration named `name` with one parameter per entry of
+  // `param_types`, registered in this module, so the demand pass can drive the
+  // existing message receive / injector / handler machinery for a synthesized
+  // demand seed (DemandSeeds Option D'). The synthetic name is interned as a
+  // real display buffer so codegen's `SpellingRange()` naming path resolves
+  // (A7/G1). Returns `std::nullopt` on a G3 collision (a user already declared
+  // a message with this reserved name) — a clean-diagnostic reject the caller
+  // reports. Not for general use; there is no source syntax that reaches it.
+  std::optional<ParsedMessage> FabricateDemandMessage(
+      std::string_view name, const std::vector<TypeLoc> &param_types) const;
+
+  // COMPILER-INTERNAL (the live demand transform). Fabricate a real
+  // `#local`-kind declaration for a demand relation `d_p` (recipe A1/F5: the
+  // `QueryRelationImpl` ctor requires a `ParsedDeclaration`, and the name is
+  // interned via the same display-buffer route as the message so any
+  // emitted-name read resolves). Returns `std::nullopt` on a G3 collision.
+  std::optional<ParsedLocal> FabricateDemandLocal(
+      std::string_view name, const std::vector<TypeLoc> &param_types) const;
+
+  // COMPILER-INTERNAL. G3 pre-check: `true` iff fabricating a demand message
+  // named `msg_name` or a demand local named `local_name` (arity `arity`)
+  // would collide with a user declaration. Run BEFORE any fabrication so a
+  // collision rejects without mutating the module.
+  bool DemandFabricationWouldCollide(std::string_view msg_name,
+                                     std::string_view local_name,
+                                     size_t arity) const;
+
+  // COMPILER-INTERNAL. `true` once the demand pass has fabricated its demand
+  // decls onto this module instance — the pass hard-rejects on re-entry (G2).
+  // N5: the flag admits one fabrication PASS (message + local together); the
+  // fabrication primitives above never touch it — the demand pass checks it
+  // once at its head and sets it once at its end via `MarkDemandFabricated`.
+  bool DemandMessagesFabricated(void) const noexcept;
+  void MarkDemandFabricated(void) const noexcept;
 
   inline ParsedModule(const std::shared_ptr<ParsedModuleImpl> &impl_)
       : impl(impl_) {}

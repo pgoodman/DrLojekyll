@@ -1,0 +1,18 @@
+# demand_tc_witness -- the oracle's input batches (the SAME edge stream the
+# driver sends). The oracle evaluates the plain (undemanded) program, so its
+# reachable_from rows are the FULL closure -- the answer-identity referee
+# for the demand-ON driver's per-key answers.
+#
+# Batch 1: chain 1->2->3->4 plus the detached 7->8.
+batch
++ edge_2 1 2
++ edge_2 2 3
++ edge_2 3 4
++ edge_2 7 8
+end
+
+# Batch 2: close the cycle 4->1 and bridge the components 4->7.
+batch
++ edge_2 4 1
++ edge_2 4 7
+end

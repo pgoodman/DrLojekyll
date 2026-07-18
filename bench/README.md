@@ -26,7 +26,11 @@ runs never gate it, and goldens never change from here.
 
 runspec lines: `engine <family> <case.dr relpath> <k=v ...>`,
 `baseline <name> <k=v ...>`, `progsize <rules> ...`. See runbench.sh's
-header comment for REPS/CTIMEOUT/RTIMEOUT/COUNTS.
+header comment for REPS/CTIMEOUT/RTIMEOUT/COUNTS. The `k=v` knobs are
+RUNTIME stream parameters, not compiler flags; the harness carries no
+compiler-transform flag (the OptDiff `.drflags`/`-demand` mechanism is
+suite-only). No flagship uses `-demand` today — a demand-benefit workload
+would need harness support first (BASELINE.md run 11 COST note).
 
 Never rebuild the compiler mid-run; never time bench runs concurrently
 with suite runs or each other.

@@ -1,0 +1,18 @@
+; demand_multi_adorn_1 -- an ALL-4-MODES-DIAGNOSTIC case under -demand (the
+; .drflags sidecar passes the flag; flag-off this program compiles fine and
+; is exercised nowhere else). THE ADORNMENT CROSS-WIRE FIRE TEST: a query
+; NAME redeclared at TWO binding patterns (bf and fb) shares ONE
+; DeclarationContext -- context-keyed ParsedQuery equality would let the fb
+; entry point inherit the bf adornment's demand injector (seeding the
+; fb-bound To as bf demand on From: a silent wrong answer, reproduced by the
+; big-review verifier pre-fix). The demand pass must REJECT a demanded query
+; name carrying more than one binding pattern (the first belt; the
+; ControlFlow registry match is additionally binding-pattern-keyed, the
+; second belt).
+#message edge_2(u64 From, u64 To).
+#local path(u64 From, u64 To).
+path(F, T) : edge_2(F, T).
+path(F, T) : path(F, M), edge_2(M, T).
+#query reachable_from(bound u64 From, free u64 To).
+#query reachable_from(free u64 From, bound u64 To).
+reachable_from(From, To) : path(From, To).

@@ -48,8 +48,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 165 corner-case programs as of the
-subgraphs/demand epoch) has one committed expected output in
+(`<name>.dr` + `<name>.main.cpp`, 168 corner-case programs as of the
+demand-seeds epoch) has one committed expected output in
 `tests/OptDiff/goldens/<name>.stdout`, and the 4 optimization modes are
 just execution variants — EVERY mode's stdout is byte-compared against the
 same golden (cross-mode agreement is implied). A case with a
@@ -62,7 +62,12 @@ REDERIVE partial-restore + phantom pairs + add-side stale drops),
 memoization guard), and the R3 aggregate corpus (`average_weight`,
 `pairwise_average_weight`, `aggregate_1`, all with `.batches` +
 oracle/monotone goldens; `algebra_invertible_1` witnesses the `@invertible`
-surface). `tests/OptDiff/permcheck.py` mechanizes the permutation-only
+surface; `config_agg_2` witnesses the config-column `@recompute` arm with a
+descending-max retraction). `demand_tc_witness` is the demand-ON witness — a
+plain base `.dr` compiled under `-demand` via its `<name>.drflags` sidecar
+(per-case compiler flags appended by runall.sh/diffrun.sh; the four
+optimization modes stay orthogonal to it), the transform doing all the work.
+`tests/OptDiff/permcheck.py` mechanizes the permutation-only
 bless referee (published-delta tokens compare order-free per epoch, all
 other lines byte-identical) for any emission-shape change under the
 delta-relational-IR golden policy.
@@ -78,7 +83,9 @@ delta-relational-IR golden policy.
   as the negation reject), `algebra_dup_1`, `algebra_conflict_1` (the
   @-algebra pragma surface: a duplicate pragma / the mutually-exclusive
   @invertible+@recompute pair, rejected in Functor.cpp), `evm_func_parse`,
-  `nonascii_1`, `truncated_decl_1`; `kvindex_1` is MODE-SPLIT (compiles
+  `nonascii_1`, `truncated_decl_1`, `demand_multi_adorn_1` (a `-demand` query
+  name carrying >1 binding pattern — the demand pass's clean per-name reject,
+  via its `.drflags` sidecar); `kvindex_1` is MODE-SPLIT (compiles
   under opt/nocf where KVINDEX→TUPLE elimination fires, V-ALGEBRA-rejects
   under nodf/none). `aggregate_1` FLIPPED from diagnostic to a 4-mode
   golden at the R3 stage-C flip.
@@ -172,8 +179,10 @@ exact signatures before writing a driver.
   — no deaths, and `sealed` is an id-order watermark); join/scan body
   membership gates read predicates on the scan cursor id (the emitter's
   row-binding scope stack — the value-keyed re-Find is gone).
-- Delta-relational IR (`lib/ControlFlow/Build/DR.{h,cpp}`, the DR-IR
-  epoch): a typed-value flow graph between Query and Program that is now
+- Delta-relational IR (`lib/DR/DR.{h,cpp}` — promoted to its own
+  compiler-internal static-library target at the demand-seeds close, still
+  no `include/drlojekyll/` surface; the DR-IR epoch): a typed-value flow
+  graph between Query and Program that is now
   the SOLE authority for the stratum machinery (the hand-coded scheduling
   fixpoint + DiscoverBranches path-DFS were deleted). Objects: typed DRVecs
   (queues/frontiers/pivots) with def/use edges; DROps carrying sign /
@@ -205,7 +214,9 @@ exact signatures before writing a driver.
   V-INGEST-XCHECK Site 5 multiset-compares every emitted fold against
   the flow's kIngestFold enrollment — the eager web is in the
   cross-checked model). The descent itself (`BuildEagerRegion`ff) is
-  the remaining hand-coded emission surface.
+  the PRINCIPAL (not the only) remaining hand-coded emission surface — the
+  table-less monotone receive also hand-mints a VECTORLOOP shim in
+  `ExtendEagerProcedure` (`Procedure.cpp`) via no DR-IR op (E-42).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —
@@ -284,15 +295,50 @@ aggregate_1}` (drivers + `.batches` + oracle/monotone goldens; the oracle
 paths). `data/examples/average_weight.dr` + `pairwise_average_weight.dr`
 compile.
 
+Config-column aggregates lower on BOTH algebra arms as of the demand-seeds
+epoch: the `@invertible` config arm landed in the subgraphs/demand epoch
+(`config_agg_1`, config-dependent reduction, free functions gain a leading
+config parameter), and the `@recompute` config arm landed in demand-seeds
+(`config_agg_2`, fork (i): a codegen-emitted per-touched-group seal loop via
+the store's `SealOne(gid, cfg...)`; `Old(gid)` stays config-free) — the P2c
+residual fence is gone.
+
 CLEAN-DIAGNOSTIC gaps that remain: a `mutable()` merge functor with NO
 declared `@`-algebra (V-ALGEBRA reject — must be `@invertible`/`@recompute`);
-config-column `@recompute` aggregates (the `@invertible` config arm LANDED
-in the subgraphs/demand epoch — `config_agg_1`, config-dependent reduction,
-free functions gain a leading config parameter; `config_agg_2` pending);
 aggregates/KV over INDUCTION-OWNED
 (recursively-derived) inputs; unstratified aggregation (an aggregate over
 its OWN recursive result, rejected by the dataflow Stratify pass as the
 sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).
+
+## The demand transform (`-demand`, magic-sets — LANDED, single-adornment slice)
+
+`-demand` (Main.cpp `gDemand` → `Query::Build(..., demand_mode)`) is a live
+magic-sets / SLDMagic rewrite of the Query graph for bound `#query`s: a SIP
+walk propagates the query's bound columns backward, mints a demand relation
+per reached predicate, and push-down-joins a guard (`d_p ⋈ p`) so a demanded
+subgoal materializes only the rows a demanded answer needs. The pass lives in
+`lib/DataFlow/Demand.cpp` (`QueryImpl::ApplyDemandTransform`, run at the
+post-`ConnectInsertsToSelects` slot in `Build.cpp`); the fabrication half is
+`ParsedModule::FabricateDemandMessage`/`FabricateDemandLocal`
+(`lib/Parse/Demand.cpp` — real `ParsedMessageImpl`/`ParsedLocalImpl` minted at
+DataFlow-build time under the reserved lowercase `demand__` prefix, a user
+collision is a clean-diagnostic reject; the fabricated message's public ABI
+entry is suppressed via a registry at the `kMessageHandler` codegen sites so
+no driver-callable demand seam leaks). The demand seed is injected by a forcer
+proc built from a `QueryDemandForcing` registry (BindingPattern-keyed).
+
+It is MODE-GATED OFF: `demand_mode == false` returns at the pass head before
+minting anything, so the flag is ORTHOGONAL to the 4 golden optimization modes
+(never a 5th mode) and the 166 pre-demand corpus cases are byte-identical
+flag-off. Per-case activation is the `<name>.drflags` sidecar (runall.sh /
+diffrun.sh append its contents to the compiler line): `demand_tc_witness` is
+the demand-ON witness, `demand_multi_adorn_1` the >1-adornment reject. The
+slice is single-adornment: >1 bound query, >1 binding pattern per name,
+NEGATE/AGG in a demanded body, left-linear propagation, stray consumers, and
+multi-clause queries are all clean diagnostics (never miscompiles). ~23% of
+corpus cases carry bound queries (38/165 at the demand-seeds seed sweep; the
+3 new cases added more) — an unconditional transform would rewrite ~a quarter
+of the goldens, so mode-gating is mandatory.
 
 ## Other known feature gaps (clean diagnostics)
 

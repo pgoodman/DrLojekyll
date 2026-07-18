@@ -1,0 +1,47 @@
+; config_agg_2: a CONFIG-DEPENDENT @recompute aggregate. max_above(bound
+; Threshold, aggregate Val, summary Max) is the MAX of the readings whose
+; Val >= the per-sensor Threshold. @recompute (max has no O(1) inverse) is the
+; arm that takes config at the EMIT/REDUCE path (ReduceLive), NOT at Fold --
+; the P2c residual the @invertible config_agg_1 did not cover. The threshold is
+; RELATION-FED (threshold/2) and joined INSIDE the over-block so it is a
+; CONFIGURATION column. add_reading is @differential so a retraction can LOWER
+; the max, forcing the @recompute rescan (an @invertible max could not).
+;
+; Group key = (Sensor, Threshold); output max_of(Sensor, Max). A group whose
+; every live reading is BELOW threshold has NO max -> emits NO row (the
+; occupancy 'death' case; contrast a sum, which is 0).
+;
+; INVARIANT: every (Sensor, Threshold) group keeps >=1 above-threshold live
+; member in EVERY batch state -- do not edit a batch to violate this, or the
+; engine (occupancy by fold count) publishes INT32_MIN while the oracle
+; suppresses the row, and the cross-check FIRES (the recorded occupancy-vs-gate
+; gap; d2-config-agg-2-target.md sec 2.3 NOTE / sec 6 prediction 8).
+;
+; HAND-COMPUTED EXPECTATION (mirrors config_agg_2.batches / .main.cpp):
+;   Batch 1: thresholds sensor 1 -> 15, sensor 2 -> 50; readings
+;     sensor 1: {10 (<15 excluded), 20, 30}            -> max 30
+;     sensor 2: {40 (<50 excluded), 60, 100}           -> max 100
+;   Batch 2 (RETRACT 100 from sensor 2): live {40 (<50), 60} -> max 60
+;     (the descending step: @recompute rescan drops 100, 60 is the new max).
+;   Batch 3 (ADD sensor 1 reading 25 >=15): {20,30,25} -> max 30 (unchanged
+;     value; group touched but new==old -> emit nothing, the no-op arm).
+;   Expected Dump (s max, sorted, `--` between batches):
+;     1 30 / 2 100 / -- / 1 30 / 2 60 / -- / 1 30 / 2 60 / --
+
+#functor max_above(bound i32 Threshold, aggregate i32 Val, summary i32 Max) @recompute.
+
+#local reading(i32 Sensor, i32 Val).
+#local threshold(i32 Sensor, i32 Threshold).
+#message add_reading(i32 Sensor, i32 Val) @differential.
+#message set_threshold(i32 Sensor, i32 Threshold).
+#query max_of(bound i32 Sensor, free i32 Max).
+
+reading(Sensor, Val) : add_reading(Sensor, Val).
+threshold(Sensor, T) : set_threshold(Sensor, T).
+
+max_of(Sensor, Max)
+  : max_above(T, Val, Max)
+    over (i32 Sensor, i32 T, i32 Val) {
+      threshold(Sensor, T),
+      reading(Sensor, Val)
+    }.

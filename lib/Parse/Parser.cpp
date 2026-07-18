@@ -2033,6 +2033,12 @@ ParserImpl::ParseDisplay(Display display, const DisplayConfiguration &config) {
   const auto prev_num_errors = context->error_log.Size();
   module = std::make_shared<ParsedModuleImpl>(config);
 
+  // Thread the display manager + string pool onto the module (copyable shared
+  // handles) so the live demand transform can intern synthetic message names
+  // as real display buffers / interned identifier tokens (DemandSeeds A7/G1).
+  module->display_manager.emplace(context->display_manager);
+  module->string_pool.emplace(context->string_pool);
+
   // Initialize now, even before we know that we have a valid parsed module,
   // just in case we have recursive/cyclic imports.
   weak_module = module;

@@ -1422,9 +1422,16 @@ void Generator::EmitDatabaseDecl(void) {
   }
 
   // Message entry points: thin hidden-friend wrappers over the handler
-  // detail twins.
+  // detail twins. A FABRICATED demand-seed message (the live demand
+  // transform, `-demand`) gets NO public entry point — a raw call would
+  // inject unguarded demand rows, corrupting the demand frontier (the
+  // F2-B(ii) registry suppression; d1 §A2). Its `_detail` twin stays: the
+  // query's injector procedure calls it.
   for (ProgramProcedure proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
+      continue;
+    }
+    if (auto m = proc.Message(); m && program.Query().IsDemandMessage(*m)) {
       continue;
     }
     const auto &fx = EffectsOf(proc);
@@ -2134,9 +2141,24 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
   cc << cc.Indent() << "const auto &key = " << sc << ".KeyAt(gid);\n";
   cc << cc.Indent() << "const bool w_occ = " << sc << ".WorkingOccupied(gid);\n";
   cc << cc.Indent() << "const bool s_occ = " << sc << ".SealedOccupied(gid);\n";
+  // P2c config-@recompute: config actuals for Emit ONLY, loaded from the key
+  // (config is the trailing group positions key.c<first>..key.c<last>). Empty
+  // for config-free / @invertible cells (they take config at the Fold arm, or
+  // none), so `Emit(gid)` stays byte-identical there. Old(gid) NEVER takes
+  // config — it reads the pre-reduced sealed scalar (Old is non-variadic;
+  // Old(gid, cfg) would not compile), so the config actuals apply to the single
+  // Emit site only.
+  std::string emit_cfg;
+  if (!region.IsInvertible() && num_config != 0u) {
+    const unsigned first = static_cast<unsigned>(gpos.size()) - num_config;
+    for (unsigned k = 0u; k < num_config; ++k) {
+      emit_cfg += ", key.c" + std::to_string(first + k);
+    }
+  }
   cc << cc.Indent() << "if (w_occ) {\n";
   cc.PushIndent();
-  cc << cc.Indent() << "const auto new_v = " << sc << ".Emit(gid);\n";
+  cc << cc.Indent() << "const auto new_v = " << sc << ".Emit(gid" << emit_cfg
+     << ");\n";
   cc << cc.Indent() << "if (s_occ) {\n";
   cc.PushIndent();
   cc << cc.Indent() << "const auto old_v = " << sc << ".Old(gid);\n";
@@ -2292,13 +2314,59 @@ void Generator::EmitCommitSweep(ProgramCommitSweepRegion region) {
   // R3: STATE_SEAL rides the commit-sweep tail — sealed := Emit(working) for
   // this agg table's StateCell, AFTER emit_touched read working as `new`
   // (spec §2.3 E5). Emitted at EVERY exit of the sweep.
+  //
+  // P2c config-@recompute fork (i) (A-F3): a config-DEPENDENT @recompute cell
+  // seals per-touched-group via SealOne(gid, key.c<cfg>..) so SealFrom ->
+  // ReduceLive gets the group's config; every other cell class keeps the opaque
+  // bulk `statecell_<id>.Seal();` (byte-identical). `SealStateCellId()` returns
+  // only the id, so look up the cell's algebra + config bits from
+  // program.StateCells() (the config slice keys off KeyTypes().size(), the same
+  // base as the DECL-side slice — a GroupUpdate `gpos` is not in scope here).
   const auto emit_seal = [&]() {
-    if (auto id = region.SealStateCellId()) {
-      cc << cc.Indent() << "statecell_" << *id << ".Seal();\n";
-      cc << "#ifndef NDEBUG\n";
-      cc << cc.Indent() << "statecell_" << *id << ".DebugValidate();\n";
-      cc << "#endif\n";
+    auto id = region.SealStateCellId();
+    if (!id) {
+      return;
     }
+    // `program.StateCells()` returns a fresh vector BY VALUE; a `ProgramState-
+    // CellInfo` is a cheap `const void *impl` handle, so copy the matched one
+    // out (never hold a pointer into the temporary vector — it dangles).
+    bool found = false;
+    bool is_recompute = false;
+    unsigned nc = 0u;
+    unsigned key_types_size = 0u;
+    for (const ProgramStateCellInfo &c : program.StateCells()) {
+      if (c.Id() == *id) {
+        found = true;
+        is_recompute = !c.IsInvertible();
+        nc = c.NumConfigTypes();
+        key_types_size = static_cast<unsigned>(c.KeyTypes().size());
+        break;
+      }
+    }
+    assert(found);
+    (void) found;
+    if (is_recompute && nc != 0u) {
+      const unsigned first = key_types_size - nc;
+      std::string seal_cfg;
+      for (unsigned k = 0u; k < nc; ++k) {
+        seal_cfg += ", key.c" + std::to_string(first + k);
+      }
+      cc << cc.Indent() << "for (const auto gid : statecell_" << *id
+         << ".Touched()) {\n";
+      cc.PushIndent();
+      cc << cc.Indent() << "const auto &key = statecell_" << *id
+         << ".KeyAt(gid);\n";
+      cc << cc.Indent() << "statecell_" << *id << ".SealOne(gid" << seal_cfg
+         << ");\n";
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";
+      cc << cc.Indent() << "statecell_" << *id << ".ClearTouched();\n";
+    } else {
+      cc << cc.Indent() << "statecell_" << *id << ".Seal();\n";
+    }
+    cc << "#ifndef NDEBUG\n";
+    cc << cc.Indent() << "statecell_" << *id << ".DebugValidate();\n";
+    cc << "#endif\n";
   };
 
   // Monotone table: the sweep advances the sealed row-id watermark so the
@@ -3008,9 +3076,14 @@ void Generator::Run(void) {
 
   EmitShapeStructs();
 
-  // Friendly aliases for each message's input-tuple shape.
+  // Friendly aliases for each message's input-tuple shape. Suppressed for a
+  // fabricated demand-seed message (the F2-B(ii) registry; see the message
+  // entry-point loop) — no public surface names it.
   for (ProgramProcedure proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
+      continue;
+    }
+    if (auto m = proc.Message(); m && program.Query().IsDemandMessage(*m)) {
       continue;
     }
     auto vec_params = proc.VectorParameters();

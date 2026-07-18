@@ -329,3 +329,55 @@ StateCell.h ABI extension), gated on byte-identity rather than timing:
   monotone goldens blessed from oracle truth; the pre-existing 164
   UNCHANGED — zero golden churn anywhere in the epoch); ctest 3/3;
   oracle + monotone sidecars byte-identical throughout.
+
+## Accepted run 11 (demand-seeds/keyed-instances epoch CLOSE, 2026-07-18) — DRAFT
+
+COMPILER-SIDE epoch, BENCH-NEUTRAL BY BYTE-IDENTITY for the flagships: no
+bench flagship uses aggregates/`mutable` or the `-demand` transform, so the
+epoch's two emission diffs (config_agg_2 @recompute config aggregates; the
+`-demand` magic-sets transform) touch no timed workload. The gates that make
+this a byte-identity epoch rather than a timing epoch:
+
+- config_agg_2 (config-column @recompute, StateCell.h ABI + Database.cpp
+  fork (i)/SealOne): the existing 165 provably byte-identical (no mutating
+  path fires for non-config-@recompute cells); average_weight + config_agg_1
+  datalog.h AND full -ir-out byte-identical opt AND nocf; COUNTER-SEAM no-op
+  re-verified after the StateCell.h edit.
+- `-demand` (mode-gated OFF): the 166 pre-D4 corpus cases byte-identical
+  flag-off (force.dr datalog.h byte-identical to the pre-D4 snapshot in
+  debug AND release; suite re-run 4× across the stage). The flag is
+  orthogonal to the 4 golden modes — no flagship's generated header moves.
+- The DR-IR directory promotion (lib/ControlFlow/Build/DR.{h,cpp} →
+  lib/DR/, its own static-library target): includes/CMake only, byte-
+  identity-gated — force/average_weight datalog.h + -ir-out byte-identical
+  pre/post-move; suite PASS zero churn (a build-organization move, no
+  emission path touched).
+
+- Q5 spots @128: ABSOLUTES CONFOUNDED BY DESKTOP LOAD this session and
+  recorded honestly, NOT accepted as a cross-session baseline — debug/opt
+  ~977-990ms, release/opt ~140-150ms under an active-desktop load
+  (Chrome/audio/session), +11-15% over the run-10 release high edge with NO
+  compiler-source regression (the epoch's diffs are byte-identity-gated on
+  the flagships). Per-diff comparisons ran SAME-SESSION INTERLEAVED ABABAB
+  (ambient load cancels), and it is those deltas the >10% stop-line governs:
+  config_agg_2 release ≤2.5% / debug ≤0.7%; the `-demand` foundation and the
+  live-transform diffs release ~−1.0..−1.5% (noise). All per-diff deltas
+  ≤2.5%; no knee. METHODOLOGY NOTE: run 12 should re-spot the Q5 absolutes
+  on an IDLE machine — this session's cross-session absolutes are a
+  measurement-environment shift, not a code signal (the run-10 §0 / epoch-
+  start disposition, carried forward).
+
+- NEW-INSTRUMENT COST demand witness (not a flagship; the p3 §3.2
+  measure-first spike for `-demand`, recorded as an instrument reading, not
+  a timed-flagship comparison): demanded chain 1..10 + disjoint chain
+  11..400, demand-ON vs demand-OFF, ANSWERS IDENTICAL — idx_adds 425 vs
+  152,198 (~358×), finds ~80×, wall ~48µs vs ~8.5ms (~175×). The guard
+  prunes path's OWN materialization at runtime. This is a demand-benefit
+  witness (the honesty bar passed by ~2 orders), not a flagship baseline;
+  a demand workload enters the timed harness only once runbench carries a
+  compiler-flag mechanism (bench/README.md note).
+
+- Suite at close: 168 cases (config_agg_2, demand_tc_witness, and the
+  demand_multi_adorn_1 diagnostic ADDED, goldens blessed from oracle truth;
+  the pre-existing 165 UNCHANGED — zero golden churn); ctest 3/3; oracle +
+  monotone sidecars byte-identical throughout.
