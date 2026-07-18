@@ -13,6 +13,7 @@
 #include <drlojekyll/Util/EqualitySet.h>
 
 #include <iostream>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -37,6 +38,21 @@ struct hash<std::pair<::hyde::QueryView, ::hyde::QueryView>> {
 
 }  // namespace std
 namespace hyde {
+
+// Deterministic, pointer-free ordering for view-keyed containers whose
+// iteration order reaches emitted output (the (F) determinism fix).
+// CAUTION: `QueryView`'s own `operator<`, `UniqueId()`, and wrapper
+// `Hash()` are all IMPL-POINTER-derived (Util/Node.h) — a plain
+// `std::map<QueryView, ...>` or `std::set<QueryView>` is pointer-ordered
+// and varies run to run. Key emission-visible maps with this comparator.
+struct OrderQueryViews {
+  inline bool operator()(QueryView a, QueryView b) const noexcept {
+    return a.DeterministicOrder() < b.DeterministicOrder();
+  }
+};
+
+template <typename V>
+using OrderedViewMap = std::map<QueryView, V, OrderQueryViews>;
 
 class ProgramInductionRegion;
 class ProgramOperationRegion;
@@ -1813,28 +1829,28 @@ class ProgramInductionRegionImpl final : public REGION {
   // This is the cycle vector, i.e. each iteration of the induction's fixpoint
   // loop operates on this vector. The init region of an induction fills this
   // vector.
-  std::unordered_map<QueryView, VECTOR *> view_to_add_vec;
+  OrderedViewMap<VECTOR *> view_to_add_vec;
 
   // This is the swap vector. Inside of a fixpoint loop, we swap this with the
   // normal vector, so that the current iteration of the loop can append to
   // the normal vector, while still allowing us to iterate over what was added
   // from the prior iteration of the fixpoint loop.
-  std::unordered_map<QueryView, VECTOR *> view_to_swap_vec;
+  OrderedViewMap<VECTOR *> view_to_swap_vec;
 
   // We try to share swap vectors as much as possible.
   std::unordered_map<std::string, VECTOR *> col_types_to_swap_vec;
 
   // This is the output vector; it accumulates everything from all iterations
   // of the fixpoint loop.
-  std::unordered_map<QueryView, VECTOR *> view_to_output_vec;
+  OrderedViewMap<VECTOR *> view_to_output_vec;
 
   // List of append to vector regions inside this induction.
   std::vector<REGION *> init_appends;
   std::vector<OP *> cycle_appends;
 
-  std::unordered_map<QueryView, PARALLEL *> output_cycles;
+  OrderedViewMap<PARALLEL *> output_cycles;
 
-  std::unordered_map<QueryView, PARALLEL *> fixpoint_cycles;
+  OrderedViewMap<PARALLEL *> fixpoint_cycles;
 
   const unsigned id;
 

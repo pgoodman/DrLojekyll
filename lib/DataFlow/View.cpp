@@ -399,11 +399,23 @@ unsigned QueryViewImpl::NumUses(void) const noexcept {
   return static_cast<unsigned>(users.size());
 }
 
-static const std::hash<const char *> kCStrHasher;
+// DETERMINISM (F): hash the kind-name's CONTENT, never the pointer.
+// `std::hash<const char *>` is the pointer specialization, and string
+// literals move with the binary image's per-run ASLR slide — a pointer
+// hash here salted EVERY view hash with the load address, making
+// "structural" hash order run-varying compiler-wide.
+static uint64_t HashCString(const char *s) noexcept {
+  uint64_t h = 0xcbf29ce484222325ull;  // FNV-1a.
+  for (; *s; ++s) {
+    h ^= static_cast<uint8_t>(*s);
+    h *= 0x100000001b3ull;
+  }
+  return h;
+}
 
 // Initializer for an updated hash value.
 uint64_t QueryViewImpl::HashInit(void) const noexcept {
-  uint64_t init_hash = kCStrHasher(this->KindName());
+  uint64_t init_hash = HashCString(this->KindName());
   init_hash <<= 1u;
   init_hash |= can_receive_deletions;
   init_hash <<= 1u;

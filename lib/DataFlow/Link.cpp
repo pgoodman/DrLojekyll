@@ -435,9 +435,29 @@ void QueryImpl::LinkViews(bool recursive) {
 
 // Finalize all depth calculations.
 void QueryImpl::FinalizeDepths(void) const {
-  this->ForEachView([=](VIEW *view) {
-    view->depth = 0;
-  });
+
+  // DETERMINISM (F): reset EVERY view's memoized depth, including dead
+  // ones — `ForEachView` filters `is_dead`, but a dead view can still be
+  // reachable through a live view's input columns, and a stale depth
+  // memoized mid-optimization (whose first-call order is not canonical)
+  // would seed the cycle-cutting estimate below with a run-varying value.
+  // A reset dead view recomputes on demand inside the fixed traversal,
+  // so every depth becomes canonical by construction.
+  const auto reset_all = [](const auto &def_list) {
+    for (auto view : def_list) {
+      view->depth = 0;
+    }
+  };
+  reset_all(selects);
+  reset_all(tuples);
+  reset_all(kv_indices);
+  reset_all(joins);
+  reset_all(maps);
+  reset_all(aggregates);
+  reset_all(merges);
+  reset_all(negations);
+  reset_all(compares);
+  reset_all(inserts);
 
   // Force depth calculation.
   for (auto view : inserts) {

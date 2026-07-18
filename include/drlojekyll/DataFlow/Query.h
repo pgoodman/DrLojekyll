@@ -427,6 +427,12 @@ class QueryView : public Node<QueryView, QueryViewImpl> {
   // nodes are typically responses to queries, or message publications.
   unsigned Depth(void) const noexcept;
 
+  // Deterministic, pointer-free total-order stamp over all views
+  // (ForEachView order, assigned by dataflow building). This is THE key
+  // for ordering any view-keyed container whose iteration order reaches
+  // emitted output — never iterate such a container in pointer order.
+  unsigned DeterministicOrder(void) const noexcept;
+
   // Color value for formatting. This is influenced by the `@highlight`
   // pragma, for example:
   //

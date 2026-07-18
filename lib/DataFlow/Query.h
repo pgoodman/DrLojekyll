@@ -462,6 +462,15 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // building. This is a good hint for CSE when the data flow is acyclic.
   uint64_t hash{0u};
 
+  // Deterministic total-order stamp over all views: assigned in
+  // `ForEachView` (per-kind DefList insertion) order at the head of
+  // `IdentifyInductions`, re-stamped on every entry. Never derived from
+  // pointers. This is the FINAL tie-break wherever the compiler must
+  // iterate a pointer-keyed container into emission-visible order — a
+  // structural hash plus column-id comparator alone is not a total order
+  // (two same-shape recursive arms tie on both). `~0u` means unstamped.
+  unsigned det_seq{~0u};
+
   // The group ID of this node that it will push forward to its dependencies.
   unsigned group_id{0u};
 

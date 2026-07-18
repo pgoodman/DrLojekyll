@@ -277,6 +277,15 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
   EqualitySet eq;
   CandidateLists candidate_groups;
 
+  // DETERMINISM (F): (re-)stamp the pointer-free total order over all
+  // views before any comparator below consults it — views minted since
+  // the last stamp still carry the unstamped sentinel. ForEachView order
+  // (per-kind DefList insertion) is deterministic at every point the
+  // passes themselves are, which this stamp inductively preserves.
+  auto next_det_seq = 0u;
+  const_cast<const QueryImpl *>(impl)->ForEachView(
+      [&next_det_seq](VIEW *v) { v->det_seq = next_det_seq++; });
+
   // Bucket by refined color (see above). Buckets are iterated in first-seen
   // order over `all_views` so that CSE's merge order stays independent of
   // the pointer-derived color values.
@@ -308,7 +317,11 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
   for (auto group_color : group_order) {
     auto &candidates = candidate_groups[group_color];
 
-    std::sort(candidates.begin(), candidates.end());
+    // DETERMINISM (F): order candidates by the det_seq stamp — the raw
+    // pointer sort this replaces made the (v1, v2) merge pairing (and so
+    // WHICH structurally-equal view survives) vary run to run.
+    std::sort(candidates.begin(), candidates.end(),
+              [](VIEW *a, VIEW *b) { return a->det_seq < b->det_seq; });
     for (auto i = 0u; i < candidates.size(); ++i) {
       auto v1 = candidates[i];
       for (auto j = i + 1u; j < candidates.size(); ++j) {
@@ -349,8 +362,20 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
                 const auto b_v1 = std::get<1>(b);
                 const auto b_v2 = std::get<3>(b);
 
-                return std::min(a_v1->Depth(), a_v2->Depth()) <
-                       std::min(b_v1->Depth(), b_v2->Depth());
+                const auto a_depth = std::min(a_v1->Depth(), a_v2->Depth());
+                const auto b_depth = std::min(b_v1->Depth(), b_v2->Depth());
+                if (a_depth != b_depth) {
+                  return a_depth < b_depth;
+                }
+
+                // DETERMINISM (F): total tie-break — depth ties are common
+                // and `std::sort` is unstable, so without this the
+                // replacement order (and the `resolve` chain results) kept
+                // pointer order.
+                if (a_v1->det_seq != b_v1->det_seq) {
+                  return a_v1->det_seq < b_v1->det_seq;
+                }
+                return a_v2->det_seq < b_v2->det_seq;
               });
 
     while (!to_replace.empty()) {
@@ -388,8 +413,12 @@ static void FillViews(T &def_list, CandidateList &views_out) {
       views_out.push_back(view);
     }
   }
-  std::sort(views_out.begin(), views_out.end(),
-            [](VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
+  // DETERMINISM (F): stable sort — the input order (DefList insertion) is
+  // deterministic and depth ties are common; an unstable sort let equal-
+  // depth views keep pointer order, which leaked into the CSE color
+  // buckets' first-seen ordering.
+  std::stable_sort(views_out.begin(), views_out.end(),
+                   [](VIEW *a, VIEW *b) { return a->Depth() < b->Depth(); });
 }
 
 }  // namespace

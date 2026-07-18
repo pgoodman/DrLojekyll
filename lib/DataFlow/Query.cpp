@@ -423,6 +423,15 @@ unsigned QueryView::Depth(void) const noexcept {
   return impl->depth;
 }
 
+// Deterministic, pointer-free total-order stamp over all views
+// (ForEachView order, assigned at the head of IdentifyInductions, which
+// runs unconditionally during dataflow building — so every view a
+// downstream consumer can see carries a valid stamp).
+unsigned QueryView::DeterministicOrder(void) const noexcept {
+  assert(impl->det_seq != ~0u);
+  return impl->det_seq;
+}
+
 // Color value for formatting. This is influenced by the `@highlight`
 // pragma, for example:
 //

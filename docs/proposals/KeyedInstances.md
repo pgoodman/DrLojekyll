@@ -270,3 +270,88 @@ note: stability sweeps must count from a FILE of hashes, one per
 line.) These 12 are the (F) fix's expected one-time-shift +
 newly-stabilized set; any case NOT in this list that shifts shape
 under the fix needs an explanation before bless.
+
+## 2. Implementation record (one diff at a time)
+
+### T1 — lib/DR → lib/DeltaRel LANDED (2026-07-18, 17a24e66)
+
+Mechanical rename per §0.5.1: DeltaRel.{h,cpp}, target DeltaRel,
+cross-target include dirs both directions, CLAUDE.md living paths.
+GATES: byte-identity on 6 stable witnesses vs the frozen baseline
+binary; FULL SUITE PASS (168); ctest 3/3; both presets green.
+
+### (F) — THE DETERMINISM FIX (record written pre-commit, at owner
+### review)
+
+THE SINGLE-LOCUS THEORY WAS WRONG — the artifact's one-hunk fix did
+not survive its first gate run. The landing is SIX sites, each found
+by the reproduce → trace → fix → re-measure loop (a manual
+prefiguration of the pass-harness §3 workflow; every temporary trace
+deleted before commit):
+
+1. lib/DataFlow/View.cpp HashInit — THE ROOT: std::hash<const char*>
+   hashed the KindName POINTER; string literals move with the binary
+   image's per-run ASLR slide, so EVERY "structural" view hash was
+   run-salted. Replaced with FNV-1a over the string CONTENT. (New
+   erratum E-54: f-determinism-argument.md §1.1 and its adversarial
+   verifier both asserted HashInit pointer-free citing
+   View.cpp:405-415 — the std::hash<const char*> at :401-:406 was
+   never read. Found empirically by the gate loop, not by review.)
+2. lib/DataFlow/Induction.cpp — the det_seq stamp at
+   IdentifyInductions entry + OrderViewsDeterministically
+   (Sort() → first-col-id → det_seq, TOTAL) driving BOTH the :520
+   merge_sets labeling loop AND the :359 injection-site loop
+   (ratified option (a): sorted, not asserted).
+3. lib/DataFlow/Join.cpp Depth() — iterated out_to_in
+   (unordered_map<COL*,...>) in pointer order; on cycles the memoized
+   cycle-cut makes depth VALUES visit-order-dependent (observed:
+   join depth 3 vs 19 on one binary). Now iterates the join's
+   columns list.
+4. lib/DataFlow/Link.cpp FinalizeDepths — the reset skipped is_dead
+   views (ForEachView filters them), letting stale mid-optimization
+   depths leak into cycle-cutting estimates. Reset now covers every
+   DefList including dead views.
+5. lib/DataFlow/Optimize.cpp CSE — std::sort(candidates) BY RAW
+   POINTER decided which structurally-equal view SURVIVES a merge
+   (rare GRAPH-shape variance, observed live: kcfa_tiny with
+   different %col ids run-to-run); the to_replace comparator was
+   non-total under an unstable sort; FillViews' depth sort untied.
+   All three now det_seq-total (CSE re-stamps at entry; the stamp is
+   inductively deterministic).
+6. lib/ControlFlow/Program.h — INDUCTION's five QueryView-keyed
+   unordered_maps (view_to_add/swap/output_vec,
+   output/fixpoint_cycles) iterated at emission → OrderedViewMap
+   (std::map under OrderQueryViews on the new public
+   QueryView::DeterministicOrder()). CAUTION recorded in-code:
+   Node<> operator< / UniqueId() / wrapper Hash() are ALL
+   impl-pointer-derived — a plain std::map<QueryView,...> is
+   pointer-ordered too.
+
+DEVIATION from the ratified §0.6.5 wording: det_seq is STAMPED
+(ForEachView order, at CSE entries + IdentifyInductions entry), not
+minted at Create — same totality/stability guarantee, zero ctor
+plumbing; now also load-bearing intra-optimization.
+
+GATES (exact tree under review): demand-ON 20-run byte-stability
+(.h + .ir) on demand_tc_witness = 1 distinct; the 13 known-unstable
+cases 12-run stable; WHOLE-CORPUS 8-run -ir-out sweep = 0 unstable
+(the fix overshot the demand-ON goal — the ENTIRE corpus is now
+emission-deterministic); FULL SUITE PASS, zero stdout churn; ctest
+3/3; snapshot diff vs pre-fix = 16 shifted (.ir/.h SHAPE only): the
+12 known-unstable + demand_tc_witness (their snapshots were arbitrary
+draws) + THREE explained one-time canonicalization renumberings
+(select_5 — in the artifact's MAY-shift list; deadflowelimination_5 +
+elim-cond-cycle-simple — same induction-vector renumbering signature,
+verified by diff); Q5 progsize@128 release SAME-SESSION INTERLEAVED
+ABABAB: A 149.2ms vs B 150.4ms (+0.8%, noise; round-1 cold outlier
+discarded and recorded); release build green; no Runtime file touched
+(counter-seam re-verify not applicable). FINDINGS.md: the F20
+IR-sweep note's open reproducibility question marked RESOLVED (no new
+entry — gate-caught, nothing escaped to a golden).
+
+GATE 1b: tests/OptDiff/cases/symrec_tie_1 — the critique's
+symmetric-recursion counterexample (two structurally symmetric
+recursive arms tie on hash AND first-col-id; only det_seq orders
+them) as a PERMANENT corpus determinism witness: 30-run byte-stable,
+all-4-mode golden blessed from hand-verified closure truth. SUITE
+168 → 169.

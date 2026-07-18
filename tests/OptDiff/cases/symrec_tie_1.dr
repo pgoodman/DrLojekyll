@@ -1,0 +1,21 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; symrec_tie_1 -- DETERMINISM WITNESS (the (F) landing's gate 1b,
+; KeyedInstances.md sec 0.6.5). The two recursive arms are STRUCTURALLY
+; SYMMETRIC: same shape, same base relation (edge), same output vars --
+; so their inductive views tie on BOTH the structural hash and the
+; first-column-id comparator levels, and only the det_seq stamp (the
+; ForEachView-order total key) orders them. Before the (F) landing this
+; program's emitted .ir/.h permuted run to run (2 distinct hashes / 6
+; runs); it must stay byte-stable forever. A regression here means a
+; pointer-ordered iteration crept back into an emission-visible path.
+
+#message edge(u64 A, u64 B).
+#local tc(u64 A, u64 B).
+#query out(free u64 A, free u64 B).
+
+tc(A, B) : edge(A, B).
+tc(A, B) : tc(A, X), edge(X, B).
+tc(A, B) : edge(A, X), tc(X, B).
+
+out(A, B) : tc(A, B).

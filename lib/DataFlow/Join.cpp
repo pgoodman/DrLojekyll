@@ -76,10 +76,19 @@ unsigned QueryJoinImpl::Depth(void) noexcept {
     return depth;
   }
 
+  // DETERMINISM (F): iterate the input edges in OUTPUT-COLUMN LIST order,
+  // never in `out_to_in`'s pointer-bucket order. The final value is a max,
+  // but on a cyclic graph the memoized cycle-cutting estimate makes the
+  // result depend on the VISIT ORDER of these edges — a pointer-ordered
+  // walk made join depths (and the work-list priorities computed from
+  // them) vary run to run.
   auto estimate = 1u;
-  for (const auto &[out_col, in_cols] : out_to_in) {
-    (void) out_col;
-    for (COL *in_col : in_cols) {
+  for (COL *out_col : columns) {
+    const auto it = out_to_in.find(out_col);
+    if (it == out_to_in.end()) {
+      continue;
+    }
+    for (COL *in_col : it->second) {
       estimate = std::max(estimate, in_col->view->depth);
     }
   }
@@ -87,9 +96,12 @@ unsigned QueryJoinImpl::Depth(void) noexcept {
   depth = estimate + 1u;  // Base case in case of cycles.
 
   auto real = 1u;
-  for (const auto &[out_col, in_cols] : out_to_in) {
-    (void) out_col;
-    real = GetDepth(in_cols, real);
+  for (COL *out_col : columns) {
+    const auto it = out_to_in.find(out_col);
+    if (it == out_to_in.end()) {
+      continue;
+    }
+    real = GetDepth(it->second, real);
   }
 
   depth = real + 1u;

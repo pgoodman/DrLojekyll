@@ -96,6 +96,35 @@ class MergeSet : public DisjointSet {
 
 }  // namespace
 
+// Deterministic total order for iterating a pointer-keyed container of
+// views into emission-visible state (the (F) determinism fix). Key
+// levels, in order:
+//
+//   1. `Sort()` (== the memoized structural `Hash()`): pointer-free, so
+//      the order is stable under unrelated creation-order churn — an
+//      IR-golden-friendly primary key.
+//   2. The first output column's id. At `IdentifyInductions` time this
+//      is the VarId-derived, source-lexical id from `BuildClause` (the
+//      pass runs BEFORE `FinalizeColumnIDs` — load-bearing ordering).
+//   3. `det_seq`, the ForEachView-order stamp: total by construction.
+//      Levels 1+2 alone are NOT total (two same-shape recursive arms
+//      over the same base tie on both).
+static bool OrderViewsDeterministically(VIEW *a, VIEW *b) {
+  const auto a_key = a->Sort();
+  const auto b_key = b->Sort();
+  if (a_key != b_key) {
+    return a_key < b_key;
+  }
+  assert(!a->columns.Empty() && !b->columns.Empty());
+  const auto a_col = (*a->columns.begin())->id;
+  const auto b_col = (*b->columns.begin())->id;
+  if (a_col != b_col) {
+    return a_col < b_col;
+  }
+  assert(a == b || (a->det_seq != b->det_seq && a->det_seq != ~0u));
+  return a->det_seq < b->det_seq;
+}
+
 // Identify the inductive unions in the data flow.
 void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
@@ -103,6 +132,16 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     const_cast<const QueryImpl *>(this)->ForEachView(
         [](VIEW *v) { v->induction_info.reset(); });
   }
+
+  // DETERMINISM (F): stamp every view with the total-order key before
+  // any pointer-keyed container below is iterated into emission-visible
+  // state. ForEachView walks the per-kind DefLists in insertion order,
+  // which is run-stable; pointer values are not. Injection below
+  // restarts this whole pass, so mid-pass-minted UNIONs are re-stamped
+  // on re-entry before they can reach an ordered iteration.
+  auto next_det_seq = 0u;
+  const_cast<const QueryImpl *>(this)->ForEachView(
+      [&next_det_seq](VIEW *v) { v->det_seq = next_det_seq++; });
 
   // Mapping of inductive MERGEs to their equivalence classes.
   std::unordered_map<VIEW *, MergeSet> merge_sets;
@@ -355,8 +394,19 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
 
   // There is an inductive successor of `merge` that reaches `view`, and the
   // edge from `view` to `succ_view` leads out of the UNION.
+  //
+  // DETERMINISM (F): `injection_sites` is `std::set<VIEW *>` — pointer-
+  // ordered. The loop MINTS new MERGEs, whose node/column ids follow
+  // visit order, so with two or more sites the mint order would be
+  // address-dependent (today every firing corpus case has exactly one
+  // site; the sort makes the multi-site case correct rather than
+  // asserting it away).
   bool changed = false;
-  for (VIEW *view : injection_sites) {
+  std::vector<VIEW *> ordered_injection_sites(injection_sites.begin(),
+                                              injection_sites.end());
+  std::sort(ordered_injection_sites.begin(), ordered_injection_sites.end(),
+            OrderViewsDeterministically);
+  for (VIEW *view : ordered_injection_sites) {
 
     assert(!view->AsMerge());
     assert(!view->AsSelect());
@@ -515,16 +565,33 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
   // We didn't inject any new UNIONs :-) Now we can label all the merges
   // belonging to the same merge set, and make all the merges in a set know
   // about all the other merges in that set.
+  //
+  // DETERMINISM (F): `merge_sets` is `unordered_map<VIEW *, ...>`, so its
+  // native iteration order is VIEW-pointer-bucket order and varies run to
+  // run (VIEW nodes are plain `new`). Both outputs of this loop are
+  // order-sensitive and reach emission: `merge_set_id`/`group_id`
+  // assignment, and `related_merges`/`cyclic_views` population (that list
+  // IS `InductiveSet()`, walked in `VectorFor` id-allocation order by the
+  // control-flow builder — induction-vector ids permute with it). Drive
+  // the loop from a sorted key vector so both are canonical by
+  // construction.
   auto group_id = 0u;
 
+  std::vector<VIEW *> ordered_merge_views;
+  ordered_merge_views.reserve(merge_sets.size());
   for (auto &[view_, set] : merge_sets) {
-    VIEW *const view = view_;
+    ordered_merge_views.push_back(view_);
+  }
+  std::sort(ordered_merge_views.begin(), ordered_merge_views.end(),
+            OrderViewsDeterministically);
+
+  for (VIEW *const view : ordered_merge_views) {
     InductionInfo *const info = view->induction_info.get();
     if (!info) {
       continue;
     }
 
-    MergeSet *merge_set = set.FindAs<MergeSet>();
+    MergeSet *merge_set = merge_sets[view].FindAs<MergeSet>();
     if (!merge_set->related_merges) {
       merge_set->related_merges.reset(new WeakUseList<VIEW>(view));
       merge_set->merge_set_id = group_id;
