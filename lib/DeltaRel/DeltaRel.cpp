@@ -3383,7 +3383,14 @@ void LinearizeAndValidateDRFlow(
     }
   };
   // The table-id within a band (B-9: keyed on the drained source vec's debug
-  // table); sign − before + where a band holds both.
+  // table); sign − before + where a band holds both. T2b.0 (C-1): the
+  // tie-break is the table's DETERMINISTIC id — the same id the .ir prints —
+  // never the pointer (the (F) anti-pattern; the T2b -deltarel-out dump, once
+  // landed, walks pinned_order, so this key becomes emitted bytes). A NULL
+  // table (eager negate gates, seed/chain folds, pivot assembles) maps to 0;
+  // real ids shift +1 into the 64-bit key space (table ids are 32-bit), so
+  // the sentinel is disjoint BY CONSTRUCTION — id+1 cannot be 0 here even if
+  // an adversarial -first-id wraps `unsigned next_id` and mints table id 0.
   const auto op_table_id = [&](const DROp &op) -> uintptr_t {
     TABLE *t = op.table_op_table ? op.table_op_table
                : op.product_table ? op.product_table
@@ -3391,7 +3398,7 @@ void LinearizeAndValidateDRFlow(
                : op.negate_table  ? op.negate_table
                : op.ingest_table  ? op.ingest_table
                                    : op.fire_table;
-    return reinterpret_cast<uintptr_t>(t);
+    return t ? uintptr_t(t->id) + 1u : 0u;
   };
   const auto op_sign = [&](const DROp &op) -> int {
     // − (negative) sorts before + (positive); 0 for signless.
@@ -3675,10 +3682,11 @@ void LinearizeAndValidateDRFlow(
 
   // V-BAND-HAZARD (finding 3(a)): every INTRA-SCOPE (non-loop-carried) edge must
   // run FORWARD in the band key — from the lower-key op to the higher-key op.
-  // The band key IS the emission walk order, so an intra-scope edge that ran
-  // against it would force the topo sort to invert the walk (a producer emitted
-  // after its consumer, with no loop-carried role to make the read a legal
-  // cross-iteration read). emit_rw_hazard/emit_waw direct every edge from the
+  // The band key MODELS the emission walk's band structure (T2b.0: the emitter
+  // itself re-derives its walk from construction order and never reads this
+  // key), so an intra-scope edge that ran against it would force the topo sort
+  // to invert the modeled walk (a producer ordered after its consumer, with no
+  // loop-carried role to make the read a legal cross-iteration read). emit_rw_hazard/emit_waw direct every edge from the
   // lower-key op by construction, so this can only trip if a FUTURE edge deriver
   // introduced a key-inverting forced edge — we ABORT rather than let the old
   // code's silent flip hide it. (Loop-carried edges legitimately run backward in
@@ -3698,7 +3706,8 @@ void LinearizeAndValidateDRFlow(
   // Build the intra-epoch adjacency (loop-carried edges EXCLUDED — they cross a
   // scope boundary and are validated by V-LOOP, not the topo sort). Kahn's
   // algorithm with the band key as the ready-set tie-break gives a STABLE topo
-  // order that matches the emission driver's band walk.
+  // order consistent with the band-key model (which the emitter never reads —
+  // it re-derives its walk from construction order; T2b.0).
   std::vector<std::vector<unsigned>> adj(n);
   std::vector<unsigned> indeg(n, 0u);
   for (const DRDep &d : flow.dep_edges) {
@@ -3967,20 +3976,26 @@ void LinearizeAndValidateDRFlow(
   // golden gate; the load-bearing DR-graph checks that CAN fail on a
   // perturbation are V-READY, V-RETIRE-AFTER, V-LOOP, and the order check below.)
   // ===========================================================================
-  // Emission-order consistency: the derived pinned order must be NON-
-  //     DECREASING in the composite band key — the band key IS the emission
-  //     driver's walk order (lead: eager gates first / phase / commit last;
+  // Band-key order consistency: the derived pinned order must be NON-
+  //     DECREASING in the composite band key. The key MODELS the emission
+  //     walk's band structure (lead: eager gates first / phase / commit last;
   //     then stratum ascending; then the B-9 band template; then table-id;
-  //     then sign − before +). Because every non-loop-carried dep edge is
-  //     DIRECTED by this key (§4/2b), the Kahn sort is key-monotonic by
-  //     construction; this check is the standing guard that the two never
-  //     drift (a future independent edge deriver that produced a key-inverting
-  //     forced edge would trip here). Combined with V-LINEAR, it proves the
-  //     derived order equals the emitter's band walk for the ops both know.
+  //     then sign − before +) but the EMITTER never reads it — lowering
+  //     re-derives its walk from construction order (the Stratum.cpp band
+  //     walk; the kIngestFold key_of note above says the same). So this is a
+  //     LINEARIZER-INTERNAL guard: every non-loop-carried dep edge is
+  //     DIRECTED by this key (§4/2b), making the Kahn sort key-monotonic by
+  //     construction; a future independent edge deriver that produced a
+  //     key-inverting forced edge would trip here. Combined with V-LINEAR, it
+  //     keeps the linearization consistent with the band model the validators
+  //     rely on (and the T2b -deltarel-out dump, once landed — it walks
+  //     pinned_order, which is why this key must be pointer-free).
   for (unsigned i = 1u; i < flow.pinned_order.size(); ++i) {
     if (key_less(keys[flow.pinned_order[i]], keys[flow.pinned_order[i - 1u]])) {
-      ValidatorFail("V-OLD-EQUIV(order): pinned order inverts the emission "
-                    "band key (linearization diverged from the emission walk)");
+      ValidatorFail("V-OLD-EQUIV(order): pinned order inverts the composite "
+                    "band key (linearization diverged from the band-key model; "
+                    "the emitter never reads this key — audit the linearizer's "
+                    "edge derivation, not Stratum.cpp emission)");
     }
   }
 }

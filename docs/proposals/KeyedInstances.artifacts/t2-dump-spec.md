@@ -152,6 +152,29 @@ emission commit.
     deletion-capable; table-less = no table. RECURSION DOES NOT IMPLY
     DIFFERENTIAL — a fully monotone recursive program (insert-only
     tc) is class=monotone throughout.
+  - v3.1 SESSION-PINNED EMITTER RULINGS (from the artifact-revision
+    critique round — grammar points the byte-golden artifacts cannot
+    leave open):
+      (p1) UNIFORM BLOCK HEADER: `<kind> ^<kind>.<det_seq> (<own
+           finalized column tokens>)` for ALL kinds INCLUDING select
+           and join — no `() -> (...)` arrow form, no `[pivot ...]`
+           header tag (redundant with the body pivot line); the
+           leading keyword always equals the id kind (`select`, not
+           `recv`); a select's message provenance renders in the
+           trailing `;` comment.
+      (p2) IDENTITY EDGES: in `=>` maps, an identity mapping renders
+           the BARE token; `dst=src` appears ONLY when the names
+           differ. Applies to producer-side edges into joins too.
+      (p3) PRODUCER-SIDE JOIN EDGES: a producer block DOES emit its
+           `=> ^join.<id> .in<K> (...)` line (tail-call
+           completeness), rendering the producer's OWN tokens (bare
+           where identity per p2); the join block owns the role
+           mapping. The .in<K> assignment is joined_views UseList
+           position — artifacts carry it as PREDICTED until the
+           first bless code-reads it.
+      (p4) `reads:` renders Pred spellings ONLY; a frozen-InI read
+           is the kInIReadFrozen EffKind and renders under
+           `effects:`, never on `reads:` (deltarel surface).
   - PRODUCER TAG — v1's conditional producer= is WITHDRAWN
     (spec-critic 4.1 HIGH): `producer` is #ifndef NDEBUG-only
     (Query.h:531-535; every write NDEBUG-guarded), which would make
@@ -207,10 +230,17 @@ E-64 + t2b0-critic A/B/C + predictions-critic A3):
     itself NULL for kNegateGate(eager)/kSeedFold/kChainFold/
     kPivotAssemble ops — today reinterpret_cast maps null→0
     harmlessly; a bare `t->id` null-derefs (exit 139) on nearly every
-    corpus case. The hardened form is `return t ? t->id : 0u;`.
-    Collision-free invariant to document in-code: real table ids are
-    ≥3 (the constant-var ids 0/1/2 precede any table Create), so
-    null→0 never ties a real table.
+    corpus case. The hardened form is `return t ? uintptr_t(t->id) +
+    1u : 0u;` — AS-LANDED STRENGTHENING (the T2b.0 Fable review's
+    CONFIRMED finding): the v3-recommended `t ? t->id : 0u` relied on
+    the "real ids ≥ first_id+3" invariant, which is FALSE under
+    unsigned wraparound — the unvalidated `-first-id` flag
+    (Main.cpp:329, strtoul into unsigned) at ≥ UINT_MAX-2 wraps
+    next_id so the first table mints id 0, silently colliding with
+    the null sentinel (no validator catches it — key_less stays a
+    total order). The +1 shift into the 64-bit key space (table ids
+    are 32-bit) makes the sentinel disjoint BY CONSTRUCTION and
+    preserves real-table order.
   - PRECISE RATIONALE (replaces v2's "any consistent total order is a
     valid linearization", which wrongly implies inertness): the
     tie-break feeds pinned_order POSITION and same-band dep-edge

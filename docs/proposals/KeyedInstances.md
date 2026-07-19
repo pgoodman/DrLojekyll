@@ -356,6 +356,34 @@ them) as a PERMANENT corpus determinism witness: 30-run byte-stable,
 all-4-mode golden blessed from hand-verified closure truth. SUITE
 168 → 169.
 
+### T2b.0 — THE BAND-KEY HARDENING LANDED (2026-07-19, owner-approved
+### at the Fable-review brief)
+
+One functional hunk in lib/DeltaRel/DeltaRel.cpp: op_table_id
+pointer tie-break → `t ? uintptr_t(t->id) + 1u : 0u` — the REVIEW-
+STRENGTHENED form (the ratified `t->id : 0u` minimum relied on the
+ids-≥-3 invariant, FALSE under -first-id unsigned wraparound; the +1
+shift into the 64-bit key space makes the null sentinel disjoint BY
+CONSTRUCTION). Plus the comment sweep the review demanded: the
+retracted "band key IS the emission walk order" claim removed from
+the V-BAND-HAZARD + Kahn comments AND the V-OLD-EQUIV(order) abort
+string (which now directs debugging at the linearizer's edge
+derivation, not Stratum.cpp emission); -deltarel-out cited as the
+unlanded T2b deliverable, not present tense. Review: 4 finders + 5
+verifiers, 9 candidates → 3 CONFIRMED (all fixed pre-commit), 1
+refuted (uintptr_t "leftover" — now load-bearing for the 64-bit
+disjointness).
+
+GATES (all green, re-run after the review fixes): E-62 tripwire
+re-grep (zero body_ops/output_ops readers); 676-row corpus A/B (169
+cases × 4 modes, exit + .h + .ir hashes) BYTE-IDENTICAL vs the
+frozen 63c8443c baseline binary — the emission-neutrality prediction
+held exactly; data/ 36-file A/B clean; FULL SUITE PASS (169); ctest
+3/3; Q5 progsize@128 release SAME-SESSION INTERLEAVED ABABAB A
+{142.5,140.6,141.5} vs B {139.4,141.3,140.8} ms (−0.5% median,
+noise; warmup discarded); no Runtime file touched. The deltarel
+golden surface is now pointer-free — T2b may land.
+
 ## 3. Mid-epoch checkpoint (2026-07-18, tip 5d642d9b — T1 + (F)
 ## landed): the as-landed surfaces as PSEUDOCODE, the remaining path
 ## as DIFFS against them (SINGLE-PASS record by this session — the
@@ -800,7 +828,11 @@ pre-code.
   kChainFold/kPivotAssemble; a bare t->id null-derefs (exit 139) on
   nearly every corpus case. MANDATORY form `t ? t->id : 0u`;
   collision-free because real table ids ≥ 3. Spec v3 §2.0 carries
-  it as a hard precondition of (b2).
+  it as a hard precondition of (b2). AS-LANDED STRENGTHENING (the
+  T2b.0 Fable review): the ≥3 invariant is FALSE under -first-id
+  unsigned wraparound (table id 0 mintable, silent sentinel
+  collision) — landed as `t ? uintptr_t(t->id) + 1u : 0u`, sentinel
+  disjoint by construction in the 64-bit key space.
 - E-65 (SPEC defect, LOAD-BEARING, misdirects T3): v2's
   `$WORKROOT/$NAME/irgold/` layout claimed to "match run_oracle" —
   run_oracle actually writes `$NAME.oracle`/`$NAME.monotone`
