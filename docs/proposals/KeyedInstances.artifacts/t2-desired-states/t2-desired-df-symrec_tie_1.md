@@ -69,6 +69,28 @@ strata, classes, tables, arm assignments, cycle set — incl. the §2
 det_seq tie-break determinism claim). Pre-amendment renderings in
 derivation prose are HISTORICAL.
 
+TUPLE-ID PIN (2026-07-19, T2a first emission at the 3fe76759 tree):
+the seven ILLUSTRATIVE-PREDICTED tuple ids are now PINNED from the
+live emitter (the pre-registered bless-time adjudication). The
+creation order differs from the illustrative guess — the role
+bijection, verified 1:1 against this artifact's FIRM
+(role, stratum, table, edge-shape) triples:
+tuple.1=arm2-result (was 4), tuple.2=arm3-result (was 5),
+tuple.3=tc-readback (was 6), tuple.4=out-path (was 7),
+tuple.5=edge-side-arm2 (was 3), tuple.6=edge-side-arm3 (was 2),
+tuple.7=base-case (was 1). Every FIRM claim held LIVE: select.0 /
+join.8=arm2 / join.9=arm3 (the det_seq tie-break determinism claim),
+the .in<K> arm assignments exactly as §2's Build.cpp pivot-group
+code-read predicted (the F3 falsifiability cross-check), merge.10 /
+insert.11, all strata/classes/tables, the 7-EDGE cycle set (seven
+`; cycle` markers over the 6-NODE loop — the T2a Fable review's
+count-fix; §2.5's seven-edge table is the FIRM count). §2's
+derivation prose still uses the PRE-PIN illustrative ids — read
+EVERY §2 tuple id through the bijection, old->new: 1->7, 2->6,
+3->5, 4->1, 5->2, 6->3, 7->4 (e.g. §2's "tuple.2 feeds join.9
+.in0" is live tuple.6). The §1 block is the byte contract; §2 ids
+are never live ids.
+
 ## §1 — THE DESIRED `-df-out` TEXT
 
 Rendered per t2-dump-spec.md v3 §1.2/§1.3:
@@ -118,38 +140,38 @@ dataflow
 
 select ^select.0 (A:u64, X:u64)                    ; recv #message edge/2
   ATTRIBUTES class=table-less stratum=0
-  => ^tuple.1 (A, X)
-  => ^tuple.2 (A, X)
-  => ^tuple.3 (A, X)
+  => ^tuple.5 (A, X)
+  => ^tuple.6 (A, X)
+  => ^tuple.7 (A, X)
 
-tuple ^tuple.1 (A:u64, X:u64)
-  ATTRIBUTES class=table-less stratum=1
-  => ^merge.10 (A, B=X)
-
-tuple ^tuple.2 (A:u64, X:u64)
-  ATTRIBUTES table=%table:8 class=monotone stratum=2
-  => ^join.9 .in0(X, A)
-
-tuple ^tuple.3 (A:u64, X:u64)
-  ATTRIBUTES table=%table:8 class=monotone stratum=3
-  => ^join.8 .in1(A, X)
-
-tuple ^tuple.4 (A:u64, B:u64)
+tuple ^tuple.1 (A:u64, B:u64)
   ATTRIBUTES class=table-less stratum=4
   => ^merge.10 (A, B)                              ; cycle
 
-tuple ^tuple.5 (A:u64, B:u64)
+tuple ^tuple.2 (A:u64, B:u64)
   ATTRIBUTES class=table-less stratum=4
   => ^merge.10 (A, B)                              ; cycle
 
-tuple ^tuple.6 (A:u64, B:u64)
+tuple ^tuple.3 (A:u64, B:u64)
   ATTRIBUTES table=%table:4 class=monotone stratum=4
   => ^join.8 .in0(B, A)                            ; cycle
   => ^join.9 .in1(A, B)                            ; cycle
 
-tuple ^tuple.7 (A:u64, B:u64)
+tuple ^tuple.4 (A:u64, B:u64)
   ATTRIBUTES class=table-less stratum=5
   => ^insert.11 (A, B)
+
+tuple ^tuple.5 (A:u64, X:u64)
+  ATTRIBUTES table=%table:8 class=monotone stratum=3
+  => ^join.8 .in1(A, X)
+
+tuple ^tuple.6 (A:u64, X:u64)
+  ATTRIBUTES table=%table:8 class=monotone stratum=2
+  => ^join.9 .in0(X, A)
+
+tuple ^tuple.7 (A:u64, X:u64)
+  ATTRIBUTES class=table-less stratum=1
+  => ^merge.10 (A, B=X)
 
 join ^join.8 (X:u64, A:u64, B:u64) {
   pivot X:u64 <- .in0.B, .in1.A
@@ -157,7 +179,7 @@ join ^join.8 (X:u64, A:u64, B:u64) {
   out B:u64 <- .in1.X
 }
   ATTRIBUTES class=table-less stratum=4 set=0 depth=1
-  => ^tuple.4 (A, B)                               ; cycle
+  => ^tuple.1 (A, B)                               ; cycle
 
 join ^join.9 (X:u64, A:u64, B:u64) {
   pivot X:u64 <- .in0.X, .in1.A
@@ -165,12 +187,12 @@ join ^join.9 (X:u64, A:u64, B:u64) {
   out B:u64 <- .in1.B
 }
   ATTRIBUTES class=table-less stratum=4 set=0 depth=1
-  => ^tuple.5 (A, B)                               ; cycle
+  => ^tuple.2 (A, B)                               ; cycle
 
-merge ^merge.10 (A:u64, B:u64)                     ; callers: ^tuple.1, ^tuple.4, ^tuple.5
+merge ^merge.10 (A:u64, B:u64)                     ; callers: ^tuple.1, ^tuple.2, ^tuple.7
   ATTRIBUTES table=%table:4 class=monotone stratum=4 set=0 depth=1
-  => ^tuple.6 (A, B)                               ; cycle
-  => ^tuple.7 (A, B)
+  => ^tuple.3 (A, B)                               ; cycle
+  => ^tuple.4 (A, B)
 
 insert ^insert.11 (A:u64, B:u64) into %table:4
   ATTRIBUTES class=monotone stratum=6

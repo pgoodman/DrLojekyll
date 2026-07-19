@@ -52,6 +52,7 @@ static bool gHasDatabaseName = false;
 static const char *gCxxOutDir = nullptr;
 
 static OutputStream *gDOTStream = nullptr;
+static OutputStream *gDFStream = nullptr;
 static OutputStream *gDRStream = nullptr;
 static OutputStream *gIRStream = nullptr;
 
@@ -106,6 +107,14 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   if (gDOTStream) {
     (*gDOTStream) << *query_opt;
     gDOTStream->Flush();
+  }
+
+  // The DataFlow BB-with-args text dump, through the QueryDF tag struct so
+  // the DOT operator<< above is untouched. Post-Program::Build for the same
+  // reason as the DOT drain: TableId() is populated by then.
+  if (gDFStream) {
+    (*gDFStream) << hyde::QueryDF{*query_opt};
+    gDFStream->Flush();
   }
 
   return ret;
@@ -183,6 +192,7 @@ static int HelpMessage(const char *argv[]) {
       << "  -dr-out <PATH>            Emit an amalgamation of all the input and transitively." << std::endl
       << "                            imported modules to PATH." << std::endl
       << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
+      << "  -df-out <PATH>            Emit the data flow IR in BB-with-arguments text form to PATH." << std::endl
       << "  -first-id <N>             The first integer number used for identifiers in the control-flow IR." << std::endl
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
@@ -251,6 +261,7 @@ extern "C" int main(int argc, const char *argv[]) {
   hyde::gOut = &os;
 
   std::unique_ptr<hyde::FileStream> dot_out;
+  std::unique_ptr<hyde::FileStream> df_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -313,6 +324,22 @@ extern "C" int main(int argc, const char *argv[]) {
                              << "' for GraphViz DOT output";
         }
         hyde::gDOTStream = &(dot_out->os);
+      }
+
+    // DataFlow BB-with-arguments text dump (the `-df-out` surface).
+    } else if (!strcmp(argv[i], "--df-out") || !strcmp(argv[i], "-df-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "DataFlow IR output";
+      } else {
+        df_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!df_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for DataFlow IR output";
+        }
+        hyde::gDFStream = &(df_out->os);
       }
 
     // First ID for the control-flow IR. Helps when we use multiple auto-

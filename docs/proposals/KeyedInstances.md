@@ -384,6 +384,70 @@ held exactly; data/ 36-file A/B clean; FULL SUITE PASS (169); ctest
 noise; warmup discarded); no Runtime file touched. The deltarel
 golden surface is now pointer-free — T2b may land.
 
+### T2a — `-df-out` (record written pre-commit, at the owner brief)
+
+The DataFlow BB-with-arguments dump, implemented against the §10-
+amended emitter pseudocode + spec v3/v3.1/v3.2 pins. Shape: QueryDF
+tag-struct operator<< (include/.../DataFlow/Format.h; emitter in
+lib/DataFlow/Format.cpp beside the DOT operator); Main.cpp gDFStream
++ -df-out arm on the -dot-out mold, drained post-Program::Build
+(TableId populated). Emitter: kind-tagged det_seq-order traversal
+(the ten public per-kind iterators in IMPL order, is_dead-skipped —
+A1; NEVER the joins-first public ForEachView — L1); PASS-1 seen-
+bitset bijection witness (always-on fprintf+abort, raw impl->det_seq
+read, N==0-safe); `=>` edge model built from every user's input
+columns (p2 bare identity, p3 producer-token .in<K> in join-port
+order); iterative Tarjan over the emitter's OWN `=>` edge set (A3 —
+never Successors(), which carries INSERT→SELECT materialization
+edges) for reachability-exact `; cycle`; p5-p9 grammar (ATTRIBUTES
+keyword, byte-52 comments, p7 provenance, p9 join bodies, typed
+tokens via `os << *Variable()` — A2 AutoVar_N).
+
+FIRST EMISSION vs the byte-contracts: transitive_closure and
+demand-ON demand_tc_witness BYTE-EXACT ON THE FIRST RUN;
+symrec_tie_1 byte-exact after its pre-registered ILLUSTRATIVE
+tuple-id pin (role bijection verified 1:1 against the FIRM
+(role, stratum, table, edge-shape) triples; the det_seq tie-break
+arm2=^join.8/arm3=^join.9 and the .in<K> code-read predictions —
+tc R2's F3 falsifiability cross-check — all HELD LIVE; pin recorded
+in the artifact banner with the old->new id read-through table).
+
+FABLE REVIEW (workflow, 17 agents ~781k tokens): 1 CONFIRMED crash
+— the select provenance called QueryIO::From on CONSTANT streams
+(clause literals / condition TrueColumn / tags; conditions_to_bools
+repro exit 134) — fixed with the IsIO() guard (constant-stream
+selects render NO provenance comment pending PIN-1); 1 CONFIRMED
+dump defect — compare header rendered [copied, LHS, RHS], a
+permutation of the finalized [LHS(,RHS), copied] order — fixed to
+QueryView::Columns() order (edge ports likewise); 2 CONFIRMED doc
+defects in the symrec pin paragraph (6-edge -> 7-EDGE cycle count;
+§2 pre-pin ids now read THROUGH the explicit old->new table) —
+fixed; PIN-3 recorded (below); cleanups applied: dead min_port
+removed, insert header render deduped, first-char kind dispatch ->
+enum indices, ref() checked (DF-REF abort). Recorded not-applied:
+the for_each_df_view/Tarjan duplication notes (the impl ForEachView
+is private; Stratify's Tarjan is file-static — refactor deferred).
+
+PIN-3 (owner, from the review — blocks only negate-carrying bless):
+class= is per-view CanReceiveDeletions; a non-@never NEGATE's own
+table is deletion-capable via its crossover while the negate view
+does not receive deletions, so a negate block labels its own table
+monotone while table-sharing views say differential. Refine
+(producer-side / table-level) before any negate-carrying dump is
+blessed. In-code comment at attrs_line carries it.
+
+GATES (all green, RE-RUN in full after the review fixes): byte-diff
+vs the three contracts EXACT; 5-run dump determinism (3 carriers,
+1 hash each, unchanged by the fixes); FULL SUITE PASS (169), zero
+stdout churn; 676-row corpus A/B (169×4, exit+.h+.cpp+.ir) BYTE-
+IDENTICAL vs the frozen 35b89aab baseline — flag-off invisibility
+held exactly; data/ 36-file A/B clean; ctest 3/3; constant-stream +
+compare/negate crash repros exit 0; Q5 progsize@128 release SAME-
+SESSION INTERLEAVED ABABAB A {150.1,151.1,150.0} vs B {149.8,149.3,
+149.6} ms (−0.6% median, noise); no Runtime file touched. The A1
+rider (%table eyeball) satisfied by byte-match on contracts carrying
+%table:4/8 (tc, symrec) and %table:4/8/12/15/19/23 (demand).
+
 ## 3. Mid-epoch checkpoint (2026-07-18, tip 5d642d9b — T1 + (F)
 ## landed): the as-landed surfaces as PSEUDOCODE, the remaining path
 ## as DIFFS against them (SINGLE-PASS record by this session — the
