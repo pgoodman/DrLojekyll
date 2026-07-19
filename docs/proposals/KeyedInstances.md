@@ -672,7 +672,8 @@ method paying again):
           (Link.cpp:437-472).
         RESIDUAL (§4 census; E-63-scoped): nothing pointer-ordered
           reaches emission ON THE CURRENT CORPUS — one dormant gap:
-          Build.cpp:501 iterates const_to_vc (unordered_map) into
+          lib/DataFlow/Build.cpp:501 (E-68) iterates const_to_vc
+          (unordered_map) into
           ALL-CONSTS tuple column layout unsorted; fires only on an
           all-constants clause body with ≥2 distinct constant
           columns, nil today. Future hardening: col->id sort first.
@@ -918,15 +919,17 @@ the owner before each emission commit.
           kind-order note: ForEachView pushes selects, tuples,
           kv_indices, joins, maps, aggregates, merges, NEGATIONS,
           COMPARES, inserts — Query.h:1176-1214/:1248-1258; E-63's
-          const_to_vc dormant gap recorded in place).
+          const_to_vc dormant gap recorded in place — lib/DataFlow/
+          Build.cpp:501 per E-68).
 
       A.2 THE DELTAREL LINEARIZER, post-T2b.0 (LANDED 97d02111,
           §2 record; supersedes §5's pointer-form lines):
             key_of(op) = {lead, stratum, band, op_table_id, sign,
                           ctor}                # DeltaRel.cpp:~3437
             op_table_id = t ? uintptr_t(t->id) + 1u : 0u
-                          # t = first non-null of six DROp table
-                          # fields else fire_table; +1 shift into the
+                          # t = first non-null of five DROp table
+                          # fields else fire_table (six total, E-69);
+                          # +1 shift into the
                           # 64-bit key space -> null sentinel 0 is
                           # disjoint BY CONSTRUCTION (survives even
                           # -first-id wraparound minting table id 0
@@ -934,10 +937,11 @@ the owner before each emission commit.
                           # t->id == the .ir's %table:<id>
             pinned_order = Kahn topo sort over non-loop-carried dep
                           edges, ready-set tie-broken by key_less
-                          (:~3702-3739)
-            consumers   = validators (:~3817-3981) + the NEVER-READ
+                          (argmin loop :3731-3748; E-67)
+            consumers   = validators (:3830-4000; V-LINEAR :3834 ..
+                          V-OLD-EQUIV(order) :3995) + the NEVER-READ
                           body_ops/output_ops substrate loop
-                          (:~3804-3815); EMISSION READS NEITHER
+                          (:3813-3824); EMISSION READS NEITHER
                           (Lower* walk construction order) — the
                           E-62 tripwire: re-grep body_ops/output_ops
                           readers before trusting this at any future
@@ -1044,3 +1048,55 @@ the owner before each emission commit.
     unchanged; the scripted 8-run sweep is still the (F) regression
     instrument until T3 blesses. Next session: re-verify §7
     (E-67+), then T2a.
+
+## 8. §7 re-verification record (2026-07-19, tip 35b89aab; the
+## eleventh fleet run — 4 seed-unread derivation lanes (3 opus + 1
+## sonnet harness) + 4 seed-read adversarial verifiers + xhigh
+## consolidator; 9 agents ~679k tokens, 223 tool uses; record
+## COMMITTED as KeyedInstances.artifacts/s7-fleet-consolidated.md —
+## raw lane/verify reports stayed in the session scratchpad)
+
+Baseline re-confirmed this session before the fleet: both presets
+green (incremental), ctest 3/3, SUITE PASS (169), binaries frozen
+to session scratchpad baseline-bin/ at 35b89aab.
+
+THE §7 SEED HELD (third consecutive clean core): all four verifiers
+independently SEED-HOLDS-WITH-ERRATA; every load-bearing A.1/A.2/
+A.4 mechanism and every (B) T2a code-ASSUMPTION CODE-CONFIRMED (the
+consolidated record's §3 per-claim table; (B)'s design choices were
+out of the fleet's scope — the emitter-pseudocode critique round is
+the next step). The E-62 tripwire was re-grepped by four verifiers
++ the consolidator: CLEAN — zero emission-path readers of
+pinned_order/body_ops/output_ops. NO STOP finding; T2a UNBLOCKED.
+
+### Errata E-67..E-69 (consolidator-adjudicated; all cosmetic,
+### fixed in place in §5/§7 this session)
+
+- E-67 (STALE-ANCHOR): §7 A.2's linearizer anchors drifted AND
+  transposed at the boundary (inherited from §5, not re-floated
+  after T2b.0 shifted surrounding code). Corrected: Kahn ready-set
+  argmin loop DeltaRel.cpp:3731-3748; body_ops/output_ops
+  substrate-fill loop :3813-3824 (pushes :3817/:3821); validators
+  :3830-4000 (V-LINEAR :3834 .. V-OLD-EQUIV(order) :3995; the fn
+  closes :4001). The seed's ":3817-3981 = validators" landed :3817
+  INSIDE the substrate loop — a T2b implementer harvesting
+  ValidatorFail literals by that span starts in the wrong loop. The
+  E-62 tripwire itself (a NAME re-grep, not a line lookup) is
+  unaffected.
+- E-68 (SEED-DEFECT cosmetic): E-63's bare "Build.cpp:501" is
+  ambiguous — lib/DataFlow/Build.cpp AND lib/ControlFlow/Build/
+  Build.cpp both have a line 501. The const_to_vc gap is
+  lib/DataFlow/Build.cpp:501 (AllConstantsView; decl :83); the
+  ControlFlow :501 is an unrelated DataTable line.
+- E-69 (SEED-DEFECT cosmetic): "first non-null of six DROp table
+  fields else fire_table" double-counts — the chain is FIVE
+  ternary-guarded fields (table_op_table, product_table, agg_table,
+  negate_table, ingest_table) whose final else IS fire_table, six
+  total (DeltaRel.cpp:3394-3402). The +1-shift sentinel logic is
+  unaffected and re-confirmed.
+
+REJECTED candidate recorded: verify-linearizer's "lane mis-cite —
+the never-read comment is only at DeltaRel.h:592" is FALSE — the
+comment appears at BOTH :584-586 (body_ops) AND :592 (output_ops);
+the lane's cite was correct. Two further lane nits logged as
+non-issues in the consolidated record.
