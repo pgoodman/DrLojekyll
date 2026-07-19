@@ -4,127 +4,152 @@ Hand-written EXACT desired text for the future `-df-out` DataFlow BB-with-args
 dump of the non-linear transitive-closure case. Implementation later means
 "make the compiler print exactly the §1 block, gated by strict byte-diff".
 
+STATUS: REVISED 2026-07-18 against ratified t2-dump-spec v3 (post-E-61..E-66).
+Was DRAFT-PENDING-REVISION, verdicted UNSOUND by
+`critique-df-transitive_closure.md` (tc-critic F1/F2 CRITICAL: block params were
+rendered with the caller's names, not the view's OWN finalized columns). This
+revision applies EVERY enumerated finding and re-verifies against the frozen
+tip-binary dumps regenerated this session.
+
+AMENDMENTS APPLIED IN THIS REVISION (v3 rules win all conflicts):
+- F1/F2/F3 (CRITICAL/MED): block params = the view's OWN finalized columns;
+  caller renames appear ONLY in `=>` `dst=src` maps (dst=user token,
+  src=producer token). `^tuple.2` header is now `(AutoVar_2:u64, Node:u64)`,
+  `^tuple.3` is `(From:u64, X:u64)` — the merge.11 `=>` lines carry the renames.
+- F4 + spec §1.3 JOIN GRAMMAR (E-61): the join block now renders `.in<K>`
+  (by joined_views position) / `pivot` / `out` in output-column-position
+  accessor order; NO `lhs`/`rhs` role labels; header arity = ALL output
+  columns including the projected pivot `(X, From, To)`.
+- Cycle marker (decision a2-i): `; back-edge` (the withdrawn det_seq-comparison
+  rule) is GONE. `; cycle` now marks exactly the edges whose DEF (the producer
+  emitting the `=>`) is REACHABLE FROM the USER (target) — i.e. every edge
+  internal to the tc SCC {merge.11, tuple.2, tuple.3, join.10, tuple.1}, and
+  nothing else. Six edges, computed in §2.3.
+- Kind order (E-61): ForEachView pushes NEGATIONS before COMPARES; the kind
+  sequence in §2.1 is corrected to
+  selects, tuples, kv_indices, joins, maps, aggregates, merges, negations,
+  compares, inserts. (This case has neither negations nor compares, so det_seq
+  is unaffected — the sequence text is corrected regardless.)
+- Header line is exactly `dataflow` (tc-critic F8): the invented
+  `;; module: ...` clause block is REMOVED — clause text is not reliably
+  recoverable post-optimize and is not emitter output.
+- `; callers:` ONLY on MERGE blocks (spec §1.3, ascending det_seq): removed
+  from every non-merge block (was F6, an over-extension).
+- No `producer=` anywhere (decision a3): already absent; confirmed correct
+  (this case is compiled without `-demand`).
+- INSERT header is terminal `insert ^insert.<id> (<producer col tokens>) into
+  %table:<TableId>`, NO ATTRIBUTES table= line; class=/stratum= stay.
+- Column token `<var-or-cN>:<type>`, no `@cN` suffix; cN only as a fallback
+  (none needed here — every finalized column has a variable name).
+
 --------------------------------------------------------------------
 ## §0 Provenance
 
-INPUTS READ THIS SESSION (all at branch keyed-instances tip b577735e):
+INPUTS READ THIS SESSION (revision pass, all at branch keyed-instances tip
+63c8443c — the frozen witness binary):
 - SPEC (binding): `docs/proposals/KeyedInstances.artifacts/t2-dump-spec.md`
-  §1 (T2a `-df-out`), read in full. STATUS in that file: DRAFT pending owner
-  ratification of decisions (a)-(d); this desired-state is written against it.
-- FORM it refines: `docs/proposals/KeyedInstances.artifacts/ir-dump-formats.md`
-  §1 (the BB-with-arguments sketch + conventions), read in full.
-- VERIFIED as-landed record:
-  `scratchpad/fleet-ckpt/consolidated.md` §1.A (det_seq facts), §1.B
-  (surfaces), §3 (reconciliation), §4.a/§4.b (id-space + dump-position facts).
-- GROUND TRUTH of the post-optimize graph (generated this session from the
-  FROZEN b577735e binary):
-  - GraphViz: `scratchpad/dump-inputs/transitive_closure.dot`
-  - ControlFlow IR: `scratchpad/dump-inputs/transitive_closure.ir`
+  §1 (T2a `-df-out`) — v3, RATIFIED 2026-07-18. Read END TO END. Where an
+  earlier draft/critique conflicts, v3 rules.
+- The committed critique this revision discharges:
+  `docs/proposals/KeyedInstances.artifacts/t2-desired-states/critique-df-transitive_closure.md`.
+- GROUND TRUTH of the post-optimize graph, regenerated this session from the
+  FROZEN tip binary (`baseline-bin/drlojekyll.debug.63c8443c`) into the session
+  scratchpad `ground/`:
+  - GraphViz: `ground/tc.dot`
+  - ControlFlow IR: `ground/tc.ir`
   - source: `tests/OptDiff/cases/transitive_closure.dr`
 - id-rule code re-read this session:
   - `lib/DataFlow/Query.h:1176-1214` — `QueryImpl::ForEachView` (the per-kind
-    DefList iteration order — the det_seq / FinalizeColumnIDs traversal).
+    DefList iteration order — the det_seq / FinalizeColumnIDs traversal; E-61:
+    negations pushed BEFORE compares).
   - `lib/DataFlow/Columns.cpp:13-25` — `FinalizeColumnIDs` (col ids assigned
     in ForEachView order, `next_col_id` from 1, sequential per view/column).
+  - `lib/DataFlow/Query.cpp:810-850` — `QueryJoin::NthInputPivotSet` /
+    `NthInputMergedColumn` (the output-column-position accessor order the
+    JOIN grammar renders in).
   - `lib/DataFlow/Insert.cpp:24-34` — `KindName`: MATERIALIZE = query INSERT.
-  - `lib/DataFlow/Query.h:472,534` — `det_seq{~0u}`, `producer` field.
 
-BINARY-HASH SOURCE: the .dot/.ir were dumped from the compiler built at
-b577735e (the frozen witness binary; the fleet's re-derivation baseline).
-
-SPEC VERSION: t2-dump-spec.md as of b577735e (DRAFT). Decisions this
-desired-state COMMITS TO (per spec recommendations): (a) block id = det_seq,
-rendered `^<kind>.<det_seq>`, blocks in ascending det_seq order; (b) drain
-post-Program (so `table=%table:N` is populated); §1.3 column naming
-`<var-or-cN>:<type>` with N = finalized column id.
+DECISIONS this desired-state COMMITS TO (per v3): (a) block id = det_seq,
+rendered `^<kind>.<det_seq>`, blocks ascending det_seq; (a2-i) reachability-exact
+`; cycle`; (a3) no `producer=`; (b) drain post-Program (so `table=%table:N` is
+populated); §1.3 column naming `<var-or-cN>:<type>` with N = finalized column id;
+JOIN grammar `.in<K>`/pivot/out; INSERT terminal header.
 
 --------------------------------------------------------------------
 ## §1 THE DESIRED `-df-out` TEXT (complete — nothing elided)
 
 ```
-;; module: transitive_closure
-;;   #message add_edge(u64 From, u64 To).
-;;   #query   reachable_from(bound u64 From, free u64 To).
-;;   #query   reaching_to(free u64 From, bound u64 To).
-;;   #query   is_node(free u64 Node).
-;;   tc(From, To) : tc(From, X), tc(X, To).
-;;   tc(From, To) : add_edge(From, To).
-;;   reachable_from(From, To) : tc(From, To).
-;;   reaching_to(From, To) : tc(From, To).
-;;   is_node(Node) : tc(Node, _).
-;;   is_node(Node) : tc(_, Node).
+dataflow
 
-recv ^select.0 () -> (From:u64, To:u64)          ; #message add_edge/2
+recv ^select.0 () -> (From:u64, To:u64)
   ATTRIBUTES class=table-less stratum=0
   => ^tuple.9 (From, To)
 
-tuple ^tuple.1 (From:u64, To:u64)                ; callers: ^join.10
+tuple ^tuple.1 (From:u64, To:u64)
   ATTRIBUTES class=table-less stratum=2
-  => ^merge.11 (From, To)
+  => ^merge.11 (From, To)                         ; cycle
 
-tuple ^tuple.2 (From:u64, To:u64)                ; callers: ^merge.11
+tuple ^tuple.2 (AutoVar_2:u64, Node:u64)
   ATTRIBUTES table=%table:4 class=monotone stratum=2
-  => ^join.10 .rhs(AutoVar_2=From, Node=To)
+  => ^join.10 .in1(AutoVar_2, Node)                ; cycle
 
-tuple ^tuple.3 (From:u64, To:u64)                ; callers: ^merge.11
+tuple ^tuple.3 (From:u64, X:u64)
   ATTRIBUTES table=%table:4 class=monotone stratum=2
-  => ^join.10 .lhs(From, X=To)
+  => ^join.10 .in0(X, From)                        ; cycle
 
-tuple ^tuple.4 (Node:u64)                        ; callers: ^merge.11 (Node=From)
+tuple ^tuple.4 (Node:u64)
   ATTRIBUTES class=table-less stratum=3
   => ^merge.12 (Node)
 
-tuple ^tuple.5 (Node:u64)                        ; callers: ^merge.11 (Node=To)
+tuple ^tuple.5 (Node:u64)
   ATTRIBUTES class=table-less stratum=4
   => ^merge.12 (Node)
 
-tuple ^tuple.6 (From:u64, To:u64)                ; callers: ^merge.11
+tuple ^tuple.6 (From:u64, To:u64)
   ATTRIBUTES class=table-less stratum=5
   => ^insert.13 (From, To)
 
-tuple ^tuple.7 (From:u64, To:u64)                ; callers: ^merge.11
+tuple ^tuple.7 (From:u64, To:u64)
   ATTRIBUTES class=table-less stratum=6
   => ^insert.14 (From, To)
 
-tuple ^tuple.8 (Node:u64)                        ; callers: ^merge.12
+tuple ^tuple.8 (Node:u64)
   ATTRIBUTES class=table-less stratum=8
   => ^insert.15 (Node)
 
-tuple ^tuple.9 (From:u64, To:u64)                ; callers: ^select.0
+tuple ^tuple.9 (From:u64, To:u64)
   ATTRIBUTES class=table-less stratum=1
   => ^merge.11 (From, To)
 
-join ^join.10 [pivot X:u64] {
-  .lhs <- ^tuple.3  (From, X)                     ; tc(From, X)
-  .rhs <- ^tuple.2  (X=AutoVar_2, To=Node)        ; tc(X, To)
-} -> (From:u64, To:u64)
+join ^join.10 (X:u64, From:u64, To:u64) {
+  pivot X <- .in0.X, .in1.AutoVar_2
+  out From <- .in0.From
+  out To <- .in1.Node
+}
   ATTRIBUTES class=table-less stratum=2
-  => ^tuple.1 (From, To)                          ; back-edge
+  => ^tuple.1 (From, To)                          ; cycle
 
 merge ^merge.11 (From:u64, To:u64)               ; callers: ^tuple.1, ^tuple.9
   ATTRIBUTES table=%table:4 class=monotone stratum=2 set=0 depth=1
-  => ^tuple.2 (From, To)                          ; back-edge
-  => ^tuple.3 (From, To)                          ; back-edge
-  => ^tuple.4 (Node=From)                         ; back-edge
-  => ^tuple.5 (Node=To)                           ; back-edge
-  => ^tuple.6 (From, To)                          ; back-edge
-  => ^tuple.7 (From, To)                          ; back-edge
+  => ^tuple.2 (AutoVar_2=From, Node=To)           ; cycle
+  => ^tuple.3 (From, X=To)                         ; cycle
+  => ^tuple.4 (Node=From)
+  => ^tuple.5 (Node=To)
+  => ^tuple.6 (From, To)
+  => ^tuple.7 (From, To)
 
 merge ^merge.12 (Node:u64)                        ; callers: ^tuple.4, ^tuple.5
   ATTRIBUTES class=table-less stratum=7
-  => ^tuple.8 (Node)                              ; back-edge
+  => ^tuple.8 (Node)
 
-insert ^insert.13 (From:u64, To:u64) into reachable_from
-  ATTRIBUTES table=%table:4 class=monotone stratum=9
-  ; terminal (MATERIALIZE #query reachable_from)
+insert ^insert.13 (From, To) into %table:4
+  ATTRIBUTES class=monotone stratum=9
 
-insert ^insert.14 (From:u64, To:u64) into reaching_to
-  ATTRIBUTES table=%table:4 class=monotone stratum=10
-  ; terminal (MATERIALIZE #query reaching_to)
+insert ^insert.14 (From, To) into %table:4
+  ATTRIBUTES class=monotone stratum=10
 
-insert ^insert.15 (Node:u64) into is_node
-  ATTRIBUTES table=%table:8 class=monotone stratum=11
-  ; terminal (MATERIALIZE #query is_node)
+insert ^insert.15 (Node) into %table:8
+  ATTRIBUTES class=monotone stratum=11
 ```
 
 --------------------------------------------------------------------
@@ -134,13 +159,17 @@ insert ^insert.15 (Node:u64) into is_node
 
 Block id = `det_seq` = a view's position in `ForEachView` order at the last
 stamp (spec §1.2, decision (a)). `ForEachView` (Query.h:1176-1214) iterates the
-per-kind DefLists in THIS FIXED KIND SEQUENCE:
+per-kind DefLists in THIS FIXED KIND SEQUENCE (E-61 — negations BEFORE compares,
+the code pushes negations at :1196-1204 / :1248-1258):
 
     selects → tuples → kv_indices → joins → maps → aggregates
            → merges → negations → compares → inserts
 
 skipping `is_dead` views. Within a kind, order = DefList insertion (creation)
-order. det_seq is the flat 0-based counter across that whole traversal.
+order. det_seq is the flat 0-based counter across that whole traversal. This
+case has NO kv_indices/maps/aggregates/negations/compares, so the negation/
+compare transposition does not move any id here — the sequence text is
+corrected regardless.
 
 FIRMNESS PROOF (independent of guessing creation order):
 `FinalizeColumnIDs` (Columns.cpp:13-25) assigns `col->id` from `next_col_id=1`,
@@ -180,9 +209,17 @@ uncertain id assignment in the whole dump.
 
 ### 2.2 Block-by-block mapping to .dot evidence
 
-Node aliases below use the .dot raw pointer names (IGNORE the names per the
-brief; they anchor the evidence quote only). All columns u64 (.ir table
-%table:4[u64,u64] %col:5=From %col:6=To/X/Node; %table:8[u64] %col:9=Node).
+NOTE (revision): the DOT was regenerated this session from the frozen tip
+binary into `ground/tc.dot`; the raw pointer aliases and absolute line numbers
+below are from the ORIGINAL draft's dump and differ from the regenerated file,
+but the load-bearing facts — the finalized col ids c1..c23, strata, and TABLE
+annotations — are BYTE-IDENTICAL to `ground/tc.dot` (re-verified: select.0
+c1=From/c2=To; tuple.2 c5=AutoVar_2/c6=Node; tuple.3 c7=From/c8=X; join.10
+c18=X(pivot)/c19=From/c20=To with ports p0=X p1=AutoVar_2 p2=From p3=Node;
+merge.11 c21=From/c22=To TABLE 4 SET 0 DEPTH 1; is_node MATERIALIZE TABLE 8).
+Aliases anchor the evidence quote only (names are ignored per the brief).
+All columns u64 (.ir table %table:4[u64,u64] %col:5=From %col:6=To/X/Node;
+%table:8[u64] %col:9=Node — `ground/tc.ir:9-18`).
 
 ^select.0  RECV — DOT line 12:
   `v4391463104 [... STRATUM 0 ... RECEIVE c1=From c2=To]`; line 11
@@ -199,18 +236,26 @@ brief; they anchor the evidence quote only). All columns u64 (.ir table
   DOT:51 `v4391459808 -> v4391459360`. Forward: `=> ^merge.11 (From, To)`.
   No TABLE annotation → class=table-less. stratum=2.
 
-^tuple.2  tc read (rhs of join) — DOT:29
+^tuple.2  tc read (the .in1 side of the join) — DOT:29
   `v4391456096 [TABLE 4 STRATUM 2 EQ SET 12 TUPLE c5=AutoVar_2 c6=Node]`.
-  Reads UNION tc: DOT:30-31 `:p0->v4391459808:c21`, `:p1->:c22`. Caller
-  ^merge.11. Feeds the JOIN rhs: DOT:15,17 `v4391460368:p1->v4391456096:c5`
-  (AutoVar_2→join p1), `:p3->:c6` (Node→join p3). TABLE 4 → class=monotone,
-  table=%table:4. stratum=2. Forward edge is a back-edge (user det_seq 10 >
-  def 2 is forward — NOT a back-edge; see 2.3).
+  Its OWN finalized columns are (AutoVar_2, Node) — so its BLOCK HEADER is
+  `(AutoVar_2:u64, Node:u64)` (F1 fix; NOT From/To). Reads UNION tc:
+  DOT:30-31 `:p0->v4391459808:c21`, `:p1->:c22` — its input ports From/To read
+  merge.11.From/To, and it RENAMES them to its outputs AutoVar_2/Node. That
+  rename is recorded on the PRODUCER (merge.11) `=>` line as `dst=src`:
+  `=> ^tuple.2 (AutoVar_2=From, Node=To)`. Feeds the JOIN input labeled
+  `.in1`: DOT:15,17 `v4391460368:p1->v4391456096:c5` (AutoVar_2→join p1),
+  `:p3->:c6` (Node→join p3). TABLE 4 → class=monotone, table=%table:4.
+  stratum=2.
 
-^tuple.3  tc read (lhs of join) — DOT:32
-  `v30555635712 [TABLE 4 STRATUM 2 EQ SET 12 TUPLE c7=From c8=X]`. Reads
-  UNION tc: DOT:33-34. Feeds JOIN lhs: DOT:14,16 `:p0->v30555635712:c8`
-  (X→join p0), `:p2->:c7` (From→join p2). TABLE 4 → monotone. stratum=2.
+^tuple.3  tc read (the .in0 side of the join) — DOT:32
+  `v30555635712 [TABLE 4 STRATUM 2 EQ SET 12 TUPLE c7=From c8=X]`. Its OWN
+  finalized columns are (From, X) — BLOCK HEADER `(From:u64, X:u64)` (F1 fix).
+  Reads UNION tc: DOT:33-34 — input ports From/To read merge.11.From/To,
+  renaming To→X (From stays From). Recorded on merge.11's `=>`:
+  `=> ^tuple.3 (From, X=To)` (From identity = bare token; X=To the rename).
+  Feeds JOIN input `.in0`: DOT:14,16 `:p0->v30555635712:c8` (X→join p0),
+  `:p2->:c7` (From→join p2). TABLE 4 → monotone. stratum=2.
 
 ^tuple.4  is_node "From" arm — DOT:35
   `v30555637056 [STRATUM 3 EQ SET 5 TUPLE c9=Node]`. Single input port p0
@@ -249,11 +294,23 @@ brief; they anchor the evidence quote only). All columns u64 (.ir table
   `v4391460368 [STRATUM 2 EQ SET 11 pivot c18=X, out c19=From c20=To;
   ports p0=X p1=AutoVar_2 p2=From p3=Node]`. Port producers (DOT:14-17):
   p0(X)←tuple.3.c8, p1(AutoVar_2)←tuple.2.c5, p2(From)←tuple.3.c7,
-  p3(Node)←tuple.2.c6. So lhs=tuple.3 contributes {pivot X (p0), payload
-  From (p2)}, rhs=tuple.2 contributes {pivot AutoVar_2 (p1), payload
-  Node→To (p3)}. Pivot X. Output From←p2, To←p3. lhs/rhs bound to DOT port
-  order (p0/p2 producer = lhs, p1/p3 producer = rhs) — see §3 friction F3.
-  Feeds ^tuple.1: DOT:27-28. table-less (no TABLE annotation). stratum=2.
+  p3(Node)←tuple.2.c6.
+  v3 JOIN GRAMMAR (spec §1.3, E-61) — NO lhs/rhs labels; inputs are `.in<K>`
+  by joined_views position; the block renders in OUTPUT-COLUMN-POSITION
+  accessor order (Query.cpp:822-844): pivot columns first (num_pivots), then
+  merged out columns. HEADER ARITY = ALL output columns including the projected
+  pivot → `(X:u64, From:u64, To:u64)`.
+    - pivot X: NthInputPivotSet(0) ties the two input columns matched on X.
+      In use-list order these are `.in0.X` (tuple.3.c8=X, DOT p0) and
+      `.in1.AutoVar_2` (tuple.2.c5=AutoVar_2, DOT p1). → `pivot X <- .in0.X,
+      .in1.AutoVar_2`.
+    - out From: NthInputMergedColumn ← tuple.3.c7=From (DOT p2) → `out From
+      <- .in0.From`.
+    - out To: ← tuple.2.c6=Node (DOT p3) → `out To <- .in1.Node`.
+  `.in0`=tuple.3, `.in1`=tuple.2 by joined_views position (the pivot-set
+  use-list order p0-before-p1) — PREDICTED, not col-id-witnessed; see §3 R2.
+  Feeds ^tuple.1: DOT:27-28 (join.From→tuple.1.From,
+  join.To→tuple.1.To). table-less (no TABLE annotation). stratum=2.
 
 ^merge.11  UNION tc — DOT:50
   `v4391459808 [TABLE 4 SET 0 DEPTH 1 STRATUM 2 EQ SET 12 UNION "tc"
@@ -272,139 +329,136 @@ brief; they anchor the evidence quote only). All columns u64 (.ir table
   `v30543020544 [TABLE 4 STRATUM 9 EQ SET 12 MATERIALIZE reachable_from
   c0=From c1=To]`; `v30543021568 [TABLE 4 STRATUM 10 ... reaching_to]`;
   `v30543022592 [TABLE 8 STRATUM 11 EQ SET 9 ... is_node Node]`. Relation
-  tables point AT the inserts (DOT:4-9: t30555588288->v30543020544, etc.).
-  INSERTs are terminal (no output columns, no `=>`). MATERIALIZE = a query-
-  result INSERT (Insert.cpp:24-26). classes monotone; table=%table:4 (rf,
-  rt) / %table:8 (is_node) from the DOT TABLE annotations. strata 9/10/11.
+  tables point AT the inserts (DOT:4-9). INSERTs are TERMINAL (no output
+  columns, no `=>`). v3 INSERT HEADER (spec §1.3): `insert ^insert.<id>
+  (<producer col tokens>) into %table:<TableId>` — the tokens are the
+  PRODUCER's columns in input-position order (tuple.6=(From,To),
+  tuple.7=(From,To), tuple.8=(Node)); NO ATTRIBUTES `table=` line (redundant
+  with the header). NOTE (faithful): reachable_from and reaching_to BOTH
+  MATERIALIZE into %table:4 (they share tc's backing table, DOT TABLE 4 on
+  both) — so insert.13 and insert.14 are distinct INSERT views into the SAME
+  table id. is_node → %table:8. class=monotone on all three; strata 9/10/11
+  stay on the ATTRIBUTES line. Real table ids ≥ 4 here (constant-var ids 0/1/2
+  precede any table Create — `ground/tc.ir:1-9`).
 
-### 2.3 back-edge marks (spec §1.3: mark when USER det_seq <= DEF det_seq)
+### 2.3 `; cycle` marks (v3 decision a2-i: reachability-exact)
 
-Because det_seq is NOT topological (spec §1.3 note), many forward-in-dataflow
-edges are "back" by id. Computed per edge:
-  ^join.10 => ^tuple.1     : user 1  <= def 10 → back-edge
-  ^merge.11 => ^tuple.2    : user 2  <= def 11 → back-edge
-  ^merge.11 => ^tuple.3    : user 3  <= def 11 → back-edge
-  ^merge.11 => ^tuple.4    : user 4  <= def 11 → back-edge
-  ^merge.11 => ^tuple.5    : user 5  <= def 11 → back-edge
-  ^merge.11 => ^tuple.6    : user 6  <= def 11 → back-edge
-  ^merge.11 => ^tuple.7    : user 7  <= def 11 → back-edge
-  ^merge.12 => ^tuple.8    : user 8  <= def 12 → back-edge
-All other `=>` edges have user det_seq > def det_seq (forward, unmarked):
-  select.0=>tuple.9, tuple.1=>merge.11, tuple.2=>join.10, tuple.3=>join.10,
-  tuple.4=>merge.12, tuple.5=>merge.12, tuple.6=>insert.13,
-  tuple.7=>insert.14, tuple.8=>insert.15, tuple.9=>merge.11.
-NOTE the true SEMANTIC cycle is exactly merge.11 ↔ {tuple.2,tuple.3} → join.10
-→ tuple.1 → merge.11 (the tc fixpoint, DOT SET 0 DEPTH 1). The id-based
-back-edge mark over-reports (it flags merge.11=>tuple.6/tuple.7, which exit the
-cycle into the query sinks) — this is the documented det_seq-not-topological
-behavior, not an error.
+The withdrawn v1 rule (`; back-edge` when USER det_seq <= DEF det_seq) is GONE
+— it over-fired (flagged merge.11=>tuple.6/7, which EXIT the cycle) and is not
+what v3 emits. v3 marks `; cycle` iff the edge's DEF (the producer emitting the
+`=>` line) is REACHABLE FROM the USER (target), following dataflow producer→user
+edges — i.e. the edge closes a cycle. That is exactly every edge INTERNAL to a
+strongly-connected component.
+
+The one SCC here is the tc fixpoint {merge.11, tuple.2, tuple.3, join.10,
+tuple.1} (DOT SET 0 DEPTH 1). Its internal edges — all 6 marked:
+  ^tuple.1  => ^merge.11 : is tuple.1 reachable from merge.11?
+                           merge.11→tuple.2→join.10→tuple.1 → YES → cycle
+  ^tuple.2  => ^join.10  : join.10→tuple.1→merge.11→tuple.2       → YES → cycle
+  ^tuple.3  => ^join.10  : join.10→tuple.1→merge.11→tuple.3       → YES → cycle
+  ^join.10  => ^tuple.1  : tuple.1→merge.11→tuple.2→join.10       → YES → cycle
+  ^merge.11 => ^tuple.2  : tuple.2→join.10→tuple.1→merge.11       → YES → cycle
+  ^merge.11 => ^tuple.3  : tuple.3→join.10→tuple.1→merge.11       → YES → cycle
+Every OTHER edge is NOT marked (its def is not reachable from its user — the
+target only flows OUT to sinks / other strata):
+  select.0=>tuple.9, tuple.9=>merge.11, merge.11=>tuple.4/5/6/7,
+  tuple.4=>merge.12, tuple.5=>merge.12, merge.12=>tuple.8,
+  tuple.6=>insert.13, tuple.7=>insert.14, tuple.8=>insert.15.
+Note this is the crisp improvement over the old rule: the cycle mark now lands
+on EXACTLY the SCC and nothing else — the query-sink exits (merge.11=>tuple.6/7)
+and the is_node sub-DAG are correctly UNmarked.
 
 ### 2.4 `=>` edge ordering (spec §1.3: by (user det_seq, port))
 
 Within each block the `=>` lines are sorted by (user det_seq, then user port).
 merge.11's six users sort tuple.2,3,4,5,6,7 — already ascending det_seq, one
-port each (single-column feeds get one line; two-column feeds one line with the
-column list). This is why merge.11 lists its edges 2→3→4→5→6→7.
+line each (a two-column feed is one line with the column list). This is why
+merge.11 lists its edges 2→3→4→5→6→7.
 
 ### 2.5 Firmness summary
-  FIRM (col-id-proven): all det_seq 0..12; every column name/id; every edge
-    src/dst and its column map (read straight from .dot ports); every TABLE
-    annotation (6 nodes, re-grepped); every stratum (from .dot STRATUM);
-    every back-edge mark (arithmetic on firm det_seq).
-  ILLUSTRATIVE-PREDICTED: insert.13/14/15 relative ids (ordered by clause +
-    stratum, but no col-id witness); the exact spelling of headers/attribute
-    punctuation (spec-shape, not graph-derived); lhs/rhs labels on the join
-    (see §3 F3); `set=0 depth=1` punctuation.
+  FIRM (col-id-proven, re-verified against `ground/tc.dot` this revision):
+    all det_seq 0..12; every column name/id INCLUDING tuple.2=(AutoVar_2,Node)
+    and tuple.3=(From,X) (F1 fix); every edge src/dst and its `dst=src` map
+    (read straight from .dot ports); every TABLE annotation; every stratum;
+    every `; cycle` mark (reachability over firm edges); the JOIN pivot/out
+    structure.
+  ILLUSTRATIVE-PREDICTED / RESIDUAL: insert.13/14/15 relative ids (ordered by
+    clause + stratum, no col-id witness — §3 R1); the JOIN `.in0`/`.in1`
+    producer-identity assignment (joined_views UseList position — not read out
+    by any col-id/DOT witness — §3 R2, PREDICTED per spec pin (p3)); the
+    recv-block leading keyword (`recv` vs the `select` kind — §3 R3); the exact
+    punctuation of headers/ATTRIBUTES and `set=0 depth=1` (spec-shape).
 
 --------------------------------------------------------------------
 ## §3 Open questions / spec frictions (LOUD — feed the critique round)
 
-F1. INSERT det_seq ids are UNWITNESSED. INSERTs carry no output columns, so
-    FinalizeColumnIDs gives them no col id — the one place the .dot cannot
-    confirm det_seq. I predicted 13<14<15 from clause order + strata (9<10<11),
-    but the ONLY way to freeze this is to read the inserts DefList directly (or
-    dump det_seq itself). RECOMMENDATION for the emitter: when `-df-out` lands,
-    the FIRST bless of this golden must be reviewed against a det_seq print, not
-    trusted from this artifact. If the DefList order differs, only the three
-    insert.13/14/15 ids (and the `=> ^insert.N` targets in tuple.6/7/8) move.
+RESOLVED BY v3 (the drafts' frictions the ratified spec closed — kept as a
+paper trail, no longer open):
+- (old F3/F4, tc-critic F1/F2/F3 CRITICAL) block-param rename rule — v3 §1.3
+  RESOLVES to "block params = the view's OWN finalized columns; renames only in
+  `=>` dst=src". APPLIED: tuple.2=(AutoVar_2,Node), tuple.3=(From,X), the
+  renames on merge.11's `=>` lines.
+- (old F3) JOIN lhs/rhs labels — v3 §1.3 REMOVES role labels; the grammar is
+  `.in<K>`/pivot/out in output-column-position accessor order, header arity =
+  all output columns. APPLIED.
+- (old F2, a3) `producer=` — v3 DROPS it from the default dump (config-
+  invariance). This case carries none anyway (no `-demand`). APPLIED (absent).
+- (old F6) `; callers:` on non-merge blocks — v3 restricts `; callers:` to
+  MERGE blocks only, ascending det_seq. APPLIED (removed from all tuples/recv/
+  join/insert; kept on merge.11 and merge.12).
+- (old F8) `;; module:` clause header — v3 §1.3 makes the header exactly the
+  single line `dataflow`. APPLIED (clause block removed).
+- (old F5) class=monotone despite recursion — v3 §1.3 PINS class off
+  deletion-capability, "RECURSION DOES NOT IMPLY DIFFERENTIAL". APPLIED and
+  re-verified against `ground/tc.ir` (only +recursive/+nonrecursive, no
+  overdelete/rederive → monotone).
+- (old F9) back-edge over-report — the whole `; back-edge` rule is WITHDRAWN;
+  v3's reachability-exact `; cycle` marks exactly the SCC (§2.3). APPLIED.
+- (old F7) `set=0 depth=1` — spec §1.3 ATTRIBUTES list includes, for induction
+  members, `set=<merge_set_id> depth=<InductionDepth>`. KEPT on merge.11.
 
-F2. `producer` line is SPEC-CONDITIONAL and this graph has NONE. Spec §1.3 says
-    producer prints only when the field is non-empty (debug builds; e.g.
-    DEMAND-* tags). transitive_closure is compiled WITHOUT -demand, so no view
-    carries a producer tag — I emitted no producer line anywhere. FRICTION: the
-    spec says T3 goldens are blessed from the DEBUG preset and producer "IS
-    golden-visible" — but for THIS case debug and release agree (empty). A
-    reviewer must not expect a producer line here; it only appears on demand-ON
-    / pass-minted cases (demand_tc_witness is where that surface actually shows).
+GENUINE RESIDUALS (LOUD — surviving after v3):
 
-F3. JOIN lhs/rhs labels are a NAMING CHOICE not carried by the graph. The .dot
-    exposes only ordered ports p0..p3 and their producers; "lhs"/"rhs" is the
-    ir-dump-formats §1 sketch vocabulary. I bound lhs = the p0/p2 producer
-    (^tuple.3, the From+pivot side) and rhs = the p1/p3 producer (^tuple.2, the
-    To side). This is defensible (DOT port order) but the emitter could equally
-    key lhs/rhs off input-view index or joined_views order and flip them. The
-    STRUCTURE (pivot X; From←p2; To←p3; the two producers) is firm; the LABELS
-    are not. Spec should pin: are the join input ports rendered by (a) their
-    p-index (p0..p3, fully faithful, ugly), or (b) lhs/rhs role labels (pretty,
-    but needs a defined rule for which producer is lhs)? I chose (b); flag for
-    ratification.
+R1. INSERT det_seq ids 13/14/15 remain UNWITNESSED. INSERTs own no output
+    columns, so FinalizeColumnIDs assigns no col id — the col-id monotonicity
+    proof that firms det_seq 0..12 does not reach them. Predicted 13<14<15 from
+    (i) source clause order and (ii) strata 9<10<11. FIRM that all three come
+    AFTER both merges (kind order: inserts last). The internal order is the only
+    genuinely uncertain id assignment in the dump. FIRST BLESS must be reviewed
+    against a real det_seq print; if the inserts' DefList order differs, only the
+    three insert ids AND the `=> ^insert.N` targets on tuple.6/7/8 move together.
 
-F4. TUPLE block-param convention under RENAME. tuple.4/tuple.5 receive tc.From /
-    tc.To respectively but OUTPUT a column named Node (finalized c9/c10). I
-    render block params = OUTPUT columns (`(Node:u64)`) and show the rename ONLY
-    at the caller edge (`=> ^tuple.4 (Node=From)`) + a `callers: ^merge.11
-    (Node=From)` hint. The ir-dump-formats §1 sketch never showed a renaming
-    tuple, so this is an unratified refinement. Alternative the spec could pick:
-    print `(From:u64) -> (Node:u64)` on the tuple itself (input->output). I
-    rejected that because it double-encodes the rename (also on the edge) and
-    breaks the "params = the columns the block RECEIVES-as-its-identity /
-    finalized-col-id" rule. NEEDS a one-line spec ruling.
+R2. PRODUCER-SIDE `=>` INTO A JOIN. Presence and token form are now SANCTIONED
+    by spec pin (p3) (v3.1 session-pinned emitter rulings): a producer block
+    DOES emit its `=> ^join.<id> .in<K> (...)` line (tail-call completeness),
+    rendering the producer's OWN tokens — bare where identity, per pin (p2)
+    (§1 now renders `.in1(AutoVar_2, Node)` / `.in0(X, From)`, not the earlier
+    `dst=src` self-maps). What remains PREDICTED, per pin (p3)'s own text
+    ("artifacts carry it as PREDICTED until the first bless code-reads it"),
+    is the `.in<K>` ASSIGNMENT ITSELF — which input tuple is `.in0` vs `.in1`
+    is joined_views UseList position, a separate use-list not read out by any
+    col-id/DOT witness available to this artifact. I assigned `.in0`=tuple.3,
+    `.in1`=tuple.2 from the pivot-set use-list order (p0-before-p1) as the best
+    available heuristic; FIRST BLESS must read joined_views order in code (or
+    diff against a real emitter run) — if the assignment swaps, the two
+    producer-side `=>` lines' `.in<K>` labels and the join block's own
+    `.in0`/`.in1` labels move together (a cmp -s break otherwise).
 
-F5. `class=` for an INSERT-ONLY (monotone) program. The whole case is monotone:
-    add_edge is a #message with no deletion, the .ir shows only +recursive /
-    +nonrecursive update-counts and no overdelete/rederive, and the .dot colors
-    NO node purple (nothing CanReceiveDeletions). So every table-backed view is
-    class=monotone, NOT differential — even though tc is recursive (it uses the
-    induction/fixpoint machinery). FRICTION: "differential" (spec §1.3's three
-    classes) keys off deletion-capability, NOT recursion. A reviewer expecting
-    the recursive tc UNION to read "differential" would be wrong. The spec's
-    three-class vocabulary (differential/monotone/table-less) should note that
-    recursion alone does NOT imply differential. (If the emitter instead keys
-    `class` off "has an induction/fixpoint", every label on %table:4 flips to
-    differential and this golden is wrong — that ambiguity must be resolved
-    before first bless.)
+R3. RECV LEADING KEYWORD. Block id is `^select.0` (kind = select; a RECEIVE is
+    a SELECT over the message stream). The leading keyword rendered is `recv`
+    (descriptive) while the id keeps the `select` kind. v3 does not pin the
+    recv-block leading token; the emitter may use `select` uniformly. If it does,
+    the line becomes `select ^select.0 () -> (From:u64, To:u64)`. Cosmetic but
+    byte-affecting — pin before bless.
 
-F6. The `callers:` hint line is an ADDITION beyond the spec §1.3 letter. The
-    ir-dump-formats §1 sketch shows `; callers: ^select.1, ^tuple.9` on MERGE
-    (fan-in). I extended it to every non-source block (so a reader can navigate
-    up as well as down without a second pass). Cheap, but not spec-mandated —
-    ratify or drop. If dropped, remove every `; callers:` comment (no id/edge
-    impact).
+R4. TABLE-ID EYEBALL (spec §1.4 A1 rider). This golden asserts %table:4 (shared
+    by tc / reachable_from / reaching_to) and %table:8 (is_node), read from
+    `ground/tc.ir:9,17`. The bijection witness guards view NUMBERING only, not
+    table-id population — before bless, EYEBALL a real `%table:<id>` in the live
+    emitter output (a mis-drained emitter prints empty ids deterministically).
 
-F7. `set=0 depth=1` on the tc UNION. The .dot prints `SET 0 DEPTH 1` (the
-    induction-set watermark / InductiveSet id + depth). I surfaced it as
-    `set=0 depth=1` on the ATTRIBUTES line since it is load-bearing for
-    fixpoint review (which UNION owns the induction). Spec §1.3's ATTRIBUTES
-    list (table/class/stratum/producer) does not mention it. Add to the spec or
-    drop; if kept, pin the spelling.
-
-F8. Module header comment block (`;; module: ... ;; <clauses>`) is my
-    invention (ir-dump-formats §1.2 sketch opened with a single `;; module:`
-    comment). Provenance-in-comments is spec Q2 ("only where parse links
-    survive") — post-optimize these clause strings are NOT reliably
-    reconstructable from the Query graph, so if the emitter cannot cheaply
-    recover them it should print only `;; module: transitive_closure` (or the
-    module name alone). I included the full clause list for reviewer legibility;
-    it is the MOST likely part of §1 to not survive contact with the emitter.
-    Treat the `;;` header as illustrative, the blocks as the contract.
-
-F9. Emission ORDER vs BACK-EDGE noise. det_seq order (spec decision) means the
-    dump is not topological and 8 of 18 edges carry `; back-edge`, several of
-    which (merge.11=>tuple.6/tuple.7) are not part of any real cycle — they just
-    happen to target lower ids. This is spec-intended (§1.3: "ids, not layout,
-    carry identity") but is genuinely noisy for a human reviewer of a recursive
-    program. Non-blocking, but worth an owner eyeball: is the `; back-edge`
-    mark's stated purpose (flag true fixpoint edges) served when it over-reports
-    on a non-topological ordering? Consider marking only edges INTO a view in
-    the same induction SET, or renaming the comment to `; id<=` to avoid
-    implying "fixpoint back-edge".
+R5. HEADER/ATTRIBUTES PUNCTUATION is spec-shape, not graph-derived: the exact
+    spacing/ordering of the ATTRIBUTES line, the `-> (…)` recv arrow, the
+    `{ … }` join-block layout, and `set=0 depth=1` spelling are all illustrative
+    of the intended form; the load-bearing content (ids, tokens, edges, marks)
+    is the contract.
