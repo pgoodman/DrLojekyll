@@ -1582,3 +1582,57 @@ ms (+1.4% median, inside the noise band, A-side 162.8 outlier in
 the same run); no Runtime file touched. Contract §1 re-rendered to
 the adjudicated emission with the full pin banner; spec at v3.4
 (p13/p14).
+
+## 16. T3 landing record (2026-07-19; the IR-golden sidecar
+## machinery + the permanent (F) gate — and erratum E-72, the
+## config-variance latent the T3 audit caught before any golden
+## baked it in)
+
+MACHINERY (runall.sh, spec §3 exactly): run_irgold in the --one
+worker beside run_oracle — sidecar-guarded, ONE compile per pinned
+mode emitting all four surfaces (df/deltarel/ir via named streams;
+h via the PIN-2 post-copy out of cpp.<mode>/), strict cmp against
+goldens/<name>.<surface>.<mode>.golden, IRGOLD-FAIL/-MISSING/
+-DIVERGE all grep-visible at the :284 summary; the --bless mirror
+iterates the SIDECAR and hard-errors on a missing produced file
+(the F5 no-skip-idiom discipline), guarded [ -d ] per E-65.
+Sidecars: demand_tc_witness (h+ir+df+deltarel, opt, demand-ON via
+its .drflags — THE restored permanent (F) gate) and symrec_tie_1
+(ir+df, opt). Sidecars + goldens in the SAME commit (atomicity).
+
+- E-72 (REAL-DEFECT, caught by the reviewed-truth ritual's
+  config-invariance check BEFORE the first bless): the .ir dump
+  AND the generated datalog.h were config-VARIANT on every
+  recursive program — Induction.cpp:661 minted the INDUCTION
+  region's "set N depth M" comment under #ifndef NDEBUG, and the
+  comment renders into both surfaces. The spec's standing "the
+  .deltarel/.ir/.h are all config-invariant" assertion (the a3
+  producer rationale) was FALSE for ir/h; a debug-blessed golden
+  would have failed under the release preset. The four other
+  ControlFlow NDEBUG sites are proper assert blocks (no output).
+  FIX: the mint is now UNCONDITIONAL (values are deterministic —
+  InductionGroupId + merge depth); debug output is byte-UNCHANGED
+  (guard removal is a debug no-op, proven corpus-wide by the
+  post-fix 676-row A/B), release now aligns with debug.
+
+REVIEWED-TRUTH ritual before bless: both df goldens BYTE-EXACT vs
+their committed contracts (re-verified post-bless from the golden
+files); 3-run all-surface determinism 1 hash per carrier;
+config-invariance debug==release on ALL FOUR surfaces of BOTH
+carriers (post-E-72); the h golden stays policy-limited to the
+single demand witness.
+
+GATES (all green): filtered red run = exactly the 6 expected
+IRGOLD-MISSING; bless = 10 goldens (the 4 stdout/oracle/monotone
+re-blesses byte-identical — zero churn, confirmed by git); FULL
+SUITE PASS (169) with the irgold arms live; 676-row corpus A/B
+BYTE-IDENTICAL vs frozen e6264b54 (E-72's debug no-op proven);
+ctest 3/3; Q5 progsize@128 release ABABAB A {153.2,154.4,152.7}
+vs B {154.5,152.2,151.1} ms (−0.7% median, noise). goldens/ grows
+by 6; suite count stays 169.
+
+SWEEP RETIREMENT (per the ratified (c) ruling): with the
+demand_tc_witness + symrec_tie_1 sidecars blessed and green, the
+scripted 8-run -ir-out sweep RETIRES as the routine per-commit
+step; it is RETAINED as the acceptance gate for any
+determinism-substrate-touching change.

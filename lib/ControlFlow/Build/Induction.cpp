@@ -658,12 +658,18 @@ INDUCTION *GetOrInitInduction(ProgramImpl *impl, QueryView view,
   } else {
     induction = impl->induction_regions.Create(impl, parent);
 
-#ifndef NDEBUG
+    // UNCONDITIONAL (was #ifndef NDEBUG — E-72): this comment renders into
+    // the .ir dump AND the generated datalog.h, so gating it made BOTH
+    // surfaces config-VARIANT (debug and release compilers emitted different
+    // bytes on every recursive program) — caught by the T3 config-invariance
+    // audit; a debug-blessed ir/h golden would fail under the release
+    // preset. The values are deterministic (InductionGroupId + merge
+    // depth), so the mint is config-safe; the cost is one small string per
+    // INDUCTION region.
     const auto merge_group = *(view.InductionGroupId());
     std::stringstream ss;
     ss << "set " << merge_group << " depth " << merge_depth;
     induction->comment = ss.str();
-#endif
 
     action = new ContinueInductionWorkItem(context, view, induction);
     pending_action = action;

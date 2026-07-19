@@ -1,0 +1,209 @@
+const u64 @0 = 0
+
+const bool @1 = false
+
+const bool @2 = true
+
+global u64 @27
+
+create %table:4[u64,u64]
+  u64	%col:5	; From
+  u64	%col:6	; To
+
+  %index:7[u64,u64] on %col:5, %col:6
+  %index:109[u64,_] on %col:5
+
+create %table:8[u64,u64]
+  u64	%col:9	; From, F
+  u64	%col:10	; To, T
+
+  %index:11[u64,u64] on %col:9, %col:10
+  %index:50[u64,_] on %col:9
+
+create %table:12[u64]
+  u64	%col:13
+
+  %index:14[u64] on %col:13
+
+create %table:15[u64,u64]
+  u64	%col:16	; From
+  u64	%col:17	; To
+
+  %index:18[u64,u64] on %col:16, %col:17
+  %index:89[_,u64] on %col:17
+
+create %table:19[u64,u64]
+  u64	%col:20	; F, M
+  u64	%col:21	; T
+
+  %index:22[u64,u64] on %col:20, %col:21
+  %index:83[u64,_] on %col:20
+
+create %table:23[u64]
+  u64	%col:24
+
+  %index:25[u64] on %col:24
+
+init proc ^init:3()
+  vector-define $empty:103<u64,u64>
+  vector-define $empty:104<u64>
+  seq
+    call ^entry:26($empty:103<u64,u64>, $empty:104<u64>)
+    return-false
+
+proc ^entry:26($param:28<u64,u64>, $param:43<u64>)
+  vector-define $induction_pivots:33<u64>
+  vector-define $induction_in:35<u64>
+  vector-define $induction_pivots:39<u64>
+  vector-define $pivots:46<u64>
+  seq
+    par
+      vector-loop {@M:30, @T:31} over $param:28<u64,u64>
+        update-count +nonrecursive {@M:30, @T:31} in %table:19[u64,u64]
+          if-crossed
+            hash {@M:30} into @41
+              par
+                vector-append {@M:30} into $induction_pivots:39<u64> of-worker @41
+                vector-append {@M:30} into $induction_pivots:33<u64> of-worker @41
+      vector-loop {@45} over $param:43<u64>
+        update-count +nonrecursive {@45} in %table:23[u64]
+          if-crossed
+            par
+              vector-append {@45} into $pivots:46<u64>
+              update-count +nonrecursive {@45} in %table:12[u64]
+                if-crossed
+                  hash {@45} into @47
+                    vector-append {@45} into $induction_in:35<u64> of-worker @47
+    vector-clear $param:28<u64,u64>
+    vector-clear $param:43<u64>
+    call ^flow:110($induction_pivots:33<u64>, $induction_in:35<u64>, $induction_pivots:39<u64>, $pivots:46<u64>)
+    return-false
+
+proc ^receive:edge_2/2:94($param:95<u64,u64>)
+  vector-define $empty:97<u64>
+  seq
+    call ^entry:26($param:95<u64,u64>, $empty:97<u64>)
+    return-true
+
+proc ^receive:demand__reachable_from_bf/1:98($param:99<u64>)
+  vector-define $empty:101<u64,u64>
+  seq
+    call ^entry:26($empty:101<u64,u64>, $param:99<u64>)
+    return-true
+
+proc ^inject:105(@From:106)
+  vector-define $param:107<u64>
+  seq
+    vector-append {@From:106} into $param:107<u64>
+    call ^receive:demand__reachable_from_bf/1:98($param:107<u64>)
+    return-true
+
+proc ^flow:110($induction_pivots:33<u64>, $induction_in:35<u64>, $induction_pivots:39<u64>, $pivots:46<u64>)
+  vector-define $induction_pivots_swap:34<u64>
+  vector-define $induction_swap:36<u64>
+  vector-define $induction_in:37<u64,u64>
+  vector-define $induction_swap:38<u64,u64>
+  vector-define $induction_pivots_swap:40<u64>
+  vector-define $pivots:66<u64>
+  vector-define $pivots:67<u64>
+  seq
+    @27 += 1
+    ; set 0 depth 1
+    induction
+      empty-init
+      fixpoint-loop testing $induction_pivots:33<u64>, $induction_in:35<u64>, $induction_in:37<u64,u64>, $induction_pivots:39<u64>
+        seq
+          par
+            seq
+              vector-clear $induction_pivots_swap:34<u64>
+              vector-unique $induction_pivots:33<u64>
+              vector-swap $induction_pivots:33<u64>, $induction_pivots_swap:34<u64>
+              join-tables
+                vector-loop {@M:88} over $induction_pivots_swap:34<u64>
+                select {%col:16 as @From:92, %col:17 as @To:90} from %table:15[u64,u64] using %index:89[_,u64] where %col:17 = @M:88
+                select {%col:20 as @M:91, %col:21 as @T:93} from %table:19[u64,u64] using %index:83[u64,_] where %col:20 = @M:88
+                  if-compare {@M:88, @M:88} = {@To:90, @M:91}
+                    if-true
+                      update-count +recursive {@From:92, @T:93} in %table:8[u64,u64]
+                        if-crossed
+                          hash {@From:92, @T:93} into @64
+                            vector-append {@From:92, @T:93} into $induction_in:37<u64,u64> of-worker @64
+              vector-clear $induction_pivots_swap:34<u64>
+            seq
+              vector-clear $induction_swap:36<u64>
+              vector-unique $induction_in:35<u64>
+              vector-swap $induction_in:35<u64>, $induction_swap:36<u64>
+              vector-loop {@58} over $induction_swap:36<u64>
+                par
+                  hash {@58} into @65
+                    vector-append {@58} into $induction_pivots:39<u64> of-worker @65
+                  vector-append {@58} into $pivots:66<u64>
+            seq
+              vector-clear $induction_swap:38<u64,u64>
+              vector-unique $induction_in:37<u64,u64>
+              vector-swap $induction_in:37<u64,u64>, $induction_swap:38<u64,u64>
+              vector-loop {@F:60, @T:61} over $induction_swap:38<u64,u64>
+                par
+                  update-count +recursive {@F:60} in %table:12[u64]
+                    if-crossed
+                      hash {@F:60} into @68
+                        vector-append {@F:60} into $induction_in:35<u64> of-worker @68
+                  vector-append {@F:60} into $pivots:66<u64>
+                  vector-append {@F:60} into $pivots:67<u64>
+            seq
+              vector-clear $induction_pivots_swap:40<u64>
+              vector-unique $induction_pivots:39<u64>
+              vector-swap $induction_pivots:39<u64>, $induction_pivots_swap:40<u64>
+              join-tables
+                vector-loop {@F:82} over $induction_pivots_swap:40<u64>
+                select {%col:13 as @84} from %table:12[u64] using %index:14[u64] where %col:13 = @F:82
+                select {%col:20 as @F:85, %col:21 as @T:86} from %table:19[u64,u64] using %index:83[u64,_] where %col:20 = @F:82
+                  if-compare {@F:82, @F:82} = {@84, @F:85}
+                    if-true
+                      update-count +recursive {@F:85, @T:86} in %table:8[u64,u64]
+                        if-crossed
+                          hash {@F:85, @T:86} into @69
+                            vector-append {@F:85, @T:86} into $induction_in:37<u64,u64> of-worker @69
+              vector-clear $induction_pivots_swap:40<u64>
+          vector-unique $pivots:66<u64>
+          join-tables
+            vector-loop {@From:71} over $pivots:66<u64>
+            select {%col:13 as @72} from %table:12[u64] using %index:14[u64] where %col:13 = @From:71
+            select {%col:9 as @From:73, %col:10 as @To:74} from %table:8[u64,u64] using %index:50[u64,_] where %col:9 = @From:71
+              if-compare {@From:71, @From:71} = {@72, @From:73}
+                if-true
+                  update-count +nonrecursive {@From:73, @To:74} in %table:15[u64,u64]
+                    if-crossed
+                      hash {@To:74} into @75
+                        vector-append {@To:74} into $induction_pivots:33<u64> of-worker @75
+          vector-clear $pivots:66<u64>
+          vector-unique $pivots:67<u64>
+          join-tables
+            vector-loop {@From:77} over $pivots:67<u64>
+            select {%col:24 as @78} from %table:23[u64] using %index:25[u64] where %col:24 = @From:77
+            select {%col:9 as @From:79, %col:10 as @To:80} from %table:8[u64,u64] using %index:50[u64,_] where %col:9 = @From:77
+              if-compare {@From:77, @From:77} = {@78, @From:79}
+                if-true
+                  update-count +nonrecursive {@From:79, @To:80} in %table:4[u64,u64]
+          vector-clear $pivots:67<u64>
+      output
+        par
+          vector-clear $induction_pivots:33<u64>
+          vector-clear $induction_pivots_swap:34<u64>
+          vector-clear $induction_in:35<u64>
+          vector-clear $induction_swap:36<u64>
+          vector-clear $induction_in:37<u64,u64>
+          vector-clear $induction_swap:38<u64,u64>
+          vector-clear $induction_pivots:39<u64>
+          vector-clear $induction_pivots_swap:40<u64>
+    vector-unique $pivots:46<u64>
+    join-tables
+      vector-loop {@From:49} over $pivots:46<u64>
+      select {%col:24 as @51} from %table:23[u64] using %index:25[u64] where %col:24 = @From:49
+      select {%col:9 as @From:52, %col:10 as @To:53} from %table:8[u64,u64] using %index:50[u64,_] where %col:9 = @From:49
+        if-compare {@From:49, @From:49} = {@51, @From:52}
+          if-true
+            update-count +nonrecursive {@From:52, @To:53} in %table:4[u64,u64]
+    vector-clear $pivots:46<u64>
+    return-true
+

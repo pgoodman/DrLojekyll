@@ -1,0 +1,428 @@
+// Auto-generated file; do not edit.
+
+#pragma once
+
+#include <drlojekyll/Runtime/Allocator.h>
+#include <drlojekyll/Runtime/Hash.h>
+#include <drlojekyll/Runtime/Table.h>
+#include <drlojekyll/Runtime/Vec.h>
+
+#include <cassert>
+#include <cstdint>
+#include <optional>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+struct Tup_u64 {
+  uint64_t c0;
+  auto operator<=>(const Tup_u64 &) const noexcept = default;
+};
+
+struct Tup_u64_u64 {
+  uint64_t c0;
+  uint64_t c1;
+  auto operator<=>(const Tup_u64_u64 &) const noexcept = default;
+};
+
+using edge_2_input = Tup_u64_u64;
+
+// Rows of `reachable_from_4` (reachable_from/2).
+struct Row4 {
+  uint64_t from;
+  uint64_t to;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(from, to);
+  }
+  bool operator==(const Row4 &) const noexcept = default;
+};
+
+// Key of `idx_109` over `reachable_from_4`.
+struct Key109 {
+  uint64_t from;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(from);
+  }
+  bool operator==(const Key109 &) const noexcept = default;
+};
+
+// Rows of `table_8`.
+struct Row8 {
+  uint64_t from;
+  uint64_t to;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(from, to);
+  }
+  bool operator==(const Row8 &) const noexcept = default;
+};
+
+// Key of `idx_50` over `table_8`.
+struct Key50 {
+  uint64_t from;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(from);
+  }
+  bool operator==(const Key50 &) const noexcept = default;
+};
+
+// Rows of `table_12`.
+struct Row12 {
+  uint64_t c0;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(c0);
+  }
+  bool operator==(const Row12 &) const noexcept = default;
+};
+
+// Rows of `table_15`.
+struct Row15 {
+  uint64_t from;
+  uint64_t to;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(from, to);
+  }
+  bool operator==(const Row15 &) const noexcept = default;
+};
+
+// Key of `idx_89` over `table_15`.
+struct Key89 {
+  uint64_t to;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(to);
+  }
+  bool operator==(const Key89 &) const noexcept = default;
+};
+
+// Rows of `table_19`.
+struct Row19 {
+  uint64_t f;
+  uint64_t t;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(f, t);
+  }
+  bool operator==(const Row19 &) const noexcept = default;
+};
+
+// Key of `idx_83` over `table_19`.
+struct Key83 {
+  uint64_t f;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(f);
+  }
+  bool operator==(const Key83 &) const noexcept = default;
+};
+
+// Rows of `table_23`.
+struct Row23 {
+  uint64_t c0;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(c0);
+  }
+  bool operator==(const Row23 &) const noexcept = default;
+};
+
+// User-provided functors. Define the declared member functions in
+// your own translation unit; the generated code calls them.
+struct DatabaseFunctors {
+};
+
+// Receives published messages. The default methods do nothing.
+// Entry points deduce the log's static type, so any type
+// providing the same member signatures observes the published
+// delta stream (a @differential message publishes one call per
+// net presence change at each batch's commit sweep) with no
+// virtual dispatch.
+struct DatabaseLog {
+};
+
+// Internal flow procedures. Not driver-facing. Each signature
+// names exactly the state the procedure reads and writes.
+inline bool init_3(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27);
+inline bool proc_26(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, ::hyde::rt::Vec<Tup_u64_u64> vec28, ::hyde::rt::Vec<Tup_u64> vec43);
+inline bool edge_2_2_detail(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, ::hyde::rt::Vec<Tup_u64_u64> vec95);
+inline bool demand__reachable_from_bf_1_detail(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, ::hyde::rt::Vec<Tup_u64> vec99);
+inline bool inject_105(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, uint64_t v106);
+inline bool flow_110(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, ::hyde::rt::Vec<Tup_u64> vec33, ::hyde::rt::Vec<Tup_u64> vec35, ::hyde::rt::Vec<Tup_u64> vec39, ::hyde::rt::Vec<Tup_u64> vec46);
+
+// The sealed database state: tables, indices, and epoch counters.
+// Construction allocates empty tables and cannot fail; epoch 0
+// (the empty-program fixpoint) runs when the driver calls
+// `init(db, log, functors)`, and every entry point asserts it has
+// run. All driver-facing functions are hidden friends: reach them
+// by unqualified call with the database as an argument.
+struct Database {
+ public:
+  explicit Database(::hyde::rt::Allocator allocator_)
+    : allocator(allocator_),
+      reachable_from_4(allocator_),
+      idx_109(allocator_),
+      table_8(allocator_),
+      idx_50(allocator_),
+      table_12(allocator_),
+      table_15(allocator_),
+      idx_89(allocator_),
+      table_19(allocator_),
+      idx_83(allocator_),
+      table_23(allocator_) {}
+
+  // Epoch 0: derives the empty-EDB least model and publishes its
+  // t=0 deltas to `log`. Call exactly once, before any message.
+  template <typename Log, typename Functors>
+  friend auto init(Database &db, Log &, Functors &) {
+    assert(!db.initialized_);
+    db.initialized_ = true;
+    return init_3(db.allocator, db.reachable_from_4, db.idx_109, db.table_8, db.idx_50, db.table_12, db.table_15, db.idx_89, db.table_19, db.idx_83, db.table_23, db.g27);
+  }
+
+  // Message `edge_2/2`.
+  template <typename Log, typename Functors>
+  friend auto edge_2_2(Database &db, Log &, Functors &, ::hyde::rt::Vec<Tup_u64_u64> vec95) {
+    assert(db.initialized_);
+    return edge_2_2_detail(db.allocator, db.reachable_from_4, db.idx_109, db.table_8, db.idx_50, db.table_12, db.table_15, db.idx_89, db.table_19, db.idx_83, db.table_23, db.g27, std::move(vec95));
+  }
+
+  // Query `reachable_from/2` (bf).
+  struct reachable_from_bf_cursor {
+    Database &db;
+    uint64_t From;
+    uint32_t pos;
+    bool next(uint64_t &To) {
+      while (pos != ::hyde::rt::kNoRow) {
+        const uint32_t id = pos;
+        pos = db.idx_109.Next(id);
+        const auto row = db.reachable_from_4.RowAt(id);
+        To = row.to;
+        return true;
+      }
+      return false;
+    }
+  };
+  template <typename Log, typename Functors>
+  friend reachable_from_bf_cursor reachable_from_bf(Database &db, Log &, Functors &, uint64_t From) {
+    assert(db.initialized_);
+    inject_105(db.allocator, db.reachable_from_4, db.idx_109, db.table_8, db.idx_50, db.table_12, db.table_15, db.idx_89, db.table_19, db.idx_83, db.table_23, db.g27, From);
+    return {db, From, db.idx_109.First({From})};
+  }
+
+ private:
+  ::hyde::rt::Allocator allocator;
+
+  ::hyde::rt::Table<Row4> reachable_from_4;
+  ::hyde::rt::Index<Key109> idx_109;
+  ::hyde::rt::Table<Row8> table_8;
+  ::hyde::rt::Index<Key50> idx_50;
+  ::hyde::rt::Table<Row12> table_12;
+  ::hyde::rt::Table<Row15> table_15;
+  ::hyde::rt::Index<Key89> idx_89;
+  ::hyde::rt::Table<Row19> table_19;
+  ::hyde::rt::Index<Key83> idx_83;
+  ::hyde::rt::Table<Row23> table_23;
+
+  uint64_t g27 = 0;
+  bool initialized_ = false;
+};
+
+inline bool init_3(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27) {
+  ::hyde::rt::Vec<Tup_u64_u64> vec103(allocator);
+  ::hyde::rt::Vec<Tup_u64> vec104(allocator);
+  proc_26(allocator, reachable_from_4, idx_109, table_8, idx_50, table_12, table_15, idx_89, table_19, idx_83, table_23, g27, std::move(vec103), std::move(vec104));
+  return false;
+}
+
+inline bool proc_26(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, ::hyde::rt::Vec<Tup_u64_u64> vec28, ::hyde::rt::Vec<Tup_u64> vec43) {
+  ::hyde::rt::Vec<Tup_u64> vec33(allocator);
+  ::hyde::rt::Vec<Tup_u64> vec35(allocator);
+  ::hyde::rt::Vec<Tup_u64> vec39(allocator);
+  ::hyde::rt::Vec<Tup_u64> vec46(allocator);
+  for (auto [v30, v31] : vec28) {
+    if (const auto ins0 = table_19.TryAdd({v30, v31}); ins0.added) {
+      idx_83.Add({v30}, ins0.id);
+      const uint64_t v41 = 0;
+      (void) v41;
+      vec39.Add({v30});
+      vec33.Add({v30});
+    }
+  }
+  for (auto [v45] : vec43) {
+    if (const auto ins1 = table_23.TryAdd({v45}); ins1.added) {
+      vec46.Add({v45});
+      if (const auto ins2 = table_12.TryAdd({v45}); ins2.added) {
+        const uint64_t v47 = 0;
+        (void) v47;
+        vec35.Add({v45});
+      }
+    }
+  }
+  vec28.Clear();
+  vec43.Clear();
+  flow_110(allocator, reachable_from_4, idx_109, table_8, idx_50, table_12, table_15, idx_89, table_19, idx_83, table_23, g27, std::move(vec33), std::move(vec35), std::move(vec39), std::move(vec46));
+  return false;
+}
+
+inline bool edge_2_2_detail(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, ::hyde::rt::Vec<Tup_u64_u64> vec95) {
+  ::hyde::rt::Vec<Tup_u64> vec97(allocator);
+  proc_26(allocator, reachable_from_4, idx_109, table_8, idx_50, table_12, table_15, idx_89, table_19, idx_83, table_23, g27, std::move(vec95), std::move(vec97));
+  return true;
+}
+
+inline bool demand__reachable_from_bf_1_detail(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, ::hyde::rt::Vec<Tup_u64> vec99) {
+  ::hyde::rt::Vec<Tup_u64_u64> vec101(allocator);
+  proc_26(allocator, reachable_from_4, idx_109, table_8, idx_50, table_12, table_15, idx_89, table_19, idx_83, table_23, g27, std::move(vec101), std::move(vec99));
+  return true;
+}
+
+inline bool inject_105(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, uint64_t v106) {
+  ::hyde::rt::Vec<Tup_u64> vec107(allocator);
+  vec107.Add({v106});
+  demand__reachable_from_bf_1_detail(allocator, reachable_from_4, idx_109, table_8, idx_50, table_12, table_15, idx_89, table_19, idx_83, table_23, g27, std::move(vec107));
+  return true;
+}
+
+inline bool flow_110(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key109> &idx_109, ::hyde::rt::Table<Row8> &table_8, ::hyde::rt::Index<Key50> &idx_50, ::hyde::rt::Table<Row12> &table_12, ::hyde::rt::Table<Row15> &table_15, ::hyde::rt::Index<Key89> &idx_89, ::hyde::rt::Table<Row19> &table_19, ::hyde::rt::Index<Key83> &idx_83, ::hyde::rt::Table<Row23> &table_23, uint64_t &g27, ::hyde::rt::Vec<Tup_u64> vec33, ::hyde::rt::Vec<Tup_u64> vec35, ::hyde::rt::Vec<Tup_u64> vec39, ::hyde::rt::Vec<Tup_u64> vec46) {
+  ::hyde::rt::Vec<Tup_u64> vec34(allocator);
+  ::hyde::rt::Vec<Tup_u64> vec36(allocator);
+  ::hyde::rt::Vec<Tup_u64_u64> vec37(allocator);
+  ::hyde::rt::Vec<Tup_u64_u64> vec38(allocator);
+  ::hyde::rt::Vec<Tup_u64> vec40(allocator);
+  ::hyde::rt::Vec<Tup_u64> vec66(allocator);
+  ::hyde::rt::Vec<Tup_u64> vec67(allocator);
+  g27 += 1;
+  // set 0 depth 1
+  for (bool changed32 = true; changed32; changed32 = !(true && vec33.Empty() && vec35.Empty() && vec37.Empty() && vec39.Empty())) {
+    vec34.Clear();
+    vec33.SortAndUnique();
+    vec33.Swap(vec34);
+    for (auto [v88] : vec34) {
+      for (uint32_t j87_0 = idx_89.First({v88}); j87_0 != ::hyde::rt::kNoRow; j87_0 = idx_89.Next(j87_0)) {
+        const auto r87_0 = table_15.RowAt(j87_0);
+        const auto v92 = r87_0.from;
+        const auto v90 = r87_0.to;
+        for (uint32_t j87_1 = idx_83.First({v88}); j87_1 != ::hyde::rt::kNoRow; j87_1 = idx_83.Next(j87_1)) {
+          const auto r87_1 = table_19.RowAt(j87_1);
+          const auto v91 = r87_1.f;
+          const auto v93 = r87_1.t;
+          if (v88 == v90 && v88 == v91) {
+            if (const auto ins3 = table_8.TryAdd({v92, v93}); ins3.added) {
+              idx_50.Add({v92}, ins3.id);
+              const uint64_t v64 = 0;
+              (void) v64;
+              vec37.Add({v92, v93});
+            }
+          }
+        }
+      }
+    }
+    vec34.Clear();
+    vec36.Clear();
+    vec35.SortAndUnique();
+    vec35.Swap(vec36);
+    for (auto [v58] : vec36) {
+      const uint64_t v65 = 0;
+      (void) v65;
+      vec39.Add({v58});
+      vec66.Add({v58});
+    }
+    vec38.Clear();
+    vec37.SortAndUnique();
+    vec37.Swap(vec38);
+    for (auto [v60, v61] : vec38) {
+      if (const auto ins4 = table_12.TryAdd({v60}); ins4.added) {
+        const uint64_t v68 = 0;
+        (void) v68;
+        vec35.Add({v60});
+      }
+      vec66.Add({v60});
+      vec67.Add({v60});
+    }
+    vec40.Clear();
+    vec39.SortAndUnique();
+    vec39.Swap(vec40);
+    for (auto [v82] : vec40) {
+      if (const uint32_t j81_0 = table_12.Find({v82}); j81_0 != ::hyde::rt::kNoRow) {
+        const auto r81_0 = table_12.RowAt(j81_0);
+        const auto v84 = r81_0.c0;
+        for (uint32_t j81_1 = idx_83.First({v82}); j81_1 != ::hyde::rt::kNoRow; j81_1 = idx_83.Next(j81_1)) {
+          const auto r81_1 = table_19.RowAt(j81_1);
+          const auto v85 = r81_1.f;
+          const auto v86 = r81_1.t;
+          if (v82 == v84 && v82 == v85) {
+            if (const auto ins5 = table_8.TryAdd({v85, v86}); ins5.added) {
+              idx_50.Add({v85}, ins5.id);
+              const uint64_t v69 = 0;
+              (void) v69;
+              vec37.Add({v85, v86});
+            }
+          }
+        }
+      }
+    }
+    vec40.Clear();
+    vec66.SortAndUnique();
+    for (auto [v71] : vec66) {
+      if (const uint32_t j70_0 = table_12.Find({v71}); j70_0 != ::hyde::rt::kNoRow) {
+        const auto r70_0 = table_12.RowAt(j70_0);
+        const auto v72 = r70_0.c0;
+        for (uint32_t j70_1 = idx_50.First({v71}); j70_1 != ::hyde::rt::kNoRow; j70_1 = idx_50.Next(j70_1)) {
+          const auto r70_1 = table_8.RowAt(j70_1);
+          const auto v73 = r70_1.from;
+          const auto v74 = r70_1.to;
+          if (v71 == v72 && v71 == v73) {
+            if (const auto ins6 = table_15.TryAdd({v73, v74}); ins6.added) {
+              idx_89.Add({v74}, ins6.id);
+              const uint64_t v75 = 0;
+              (void) v75;
+              vec33.Add({v74});
+            }
+          }
+        }
+      }
+    }
+    vec66.Clear();
+    vec67.SortAndUnique();
+    for (auto [v77] : vec67) {
+      if (const uint32_t j76_0 = table_23.Find({v77}); j76_0 != ::hyde::rt::kNoRow) {
+        const auto r76_0 = table_23.RowAt(j76_0);
+        const auto v78 = r76_0.c0;
+        for (uint32_t j76_1 = idx_50.First({v77}); j76_1 != ::hyde::rt::kNoRow; j76_1 = idx_50.Next(j76_1)) {
+          const auto r76_1 = table_8.RowAt(j76_1);
+          const auto v79 = r76_1.from;
+          const auto v80 = r76_1.to;
+          if (v77 == v78 && v77 == v79) {
+            if (const auto ins7 = reachable_from_4.TryAdd({v79, v80}); ins7.added) {
+              idx_109.Add({v79}, ins7.id);
+            }
+          }
+        }
+      }
+    }
+    vec67.Clear();
+  }
+  vec33.Clear();
+  vec34.Clear();
+  vec35.Clear();
+  vec36.Clear();
+  vec37.Clear();
+  vec38.Clear();
+  vec39.Clear();
+  vec40.Clear();
+  vec46.SortAndUnique();
+  for (auto [v49] : vec46) {
+    if (const uint32_t j48_0 = table_23.Find({v49}); j48_0 != ::hyde::rt::kNoRow) {
+      const auto r48_0 = table_23.RowAt(j48_0);
+      const auto v51 = r48_0.c0;
+      for (uint32_t j48_1 = idx_50.First({v49}); j48_1 != ::hyde::rt::kNoRow; j48_1 = idx_50.Next(j48_1)) {
+        const auto r48_1 = table_8.RowAt(j48_1);
+        const auto v52 = r48_1.from;
+        const auto v53 = r48_1.to;
+        if (v49 == v51 && v49 == v52) {
+          if (const auto ins8 = reachable_from_4.TryAdd({v52, v53}); ins8.added) {
+            idx_109.Add({v52}, ins8.id);
+          }
+        }
+      }
+    }
+  }
+  vec46.Clear();
+  return true;
+}
+

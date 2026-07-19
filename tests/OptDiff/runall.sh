@@ -90,6 +90,22 @@ if [ "${1:-}" = "--bless" ]; then
       echo "blessed $name.monotone"
       n=$((n + 1))
     fi
+    # IR-golden surfaces (T3): driven by the case's .irgold sidecar; a pinned
+    # surface whose produced file is missing is a HARD ERROR (never the
+    # [ -f ] && cp skip idiom — a silent under-bless must be loud).
+    if [ -f "$HERE/cases/$name.irgold" ] && [ -d "$d$name.irgold" ]; then
+      while read -r surface mode; do
+        [ -n "$surface" ] || continue
+        isrc="$d$name.irgold/$surface.$mode.out"
+        if [ ! -f "$isrc" ]; then
+          echo "FATAL: $name.irgold pins '$surface $mode' but $isrc is missing"
+          exit 1
+        fi
+        cp "$isrc" "$HERE/goldens/$name.$surface.$mode.golden"
+        echo "blessed $name.$surface.$mode"
+        n=$((n + 1))
+      done < "$HERE/cases/$name.irgold"
+    fi
   done
   # kvindex_1 runs outside diffrun.sh, so its workdir layout is flat.
   if [ -f "$WORKROOT/kvindex_1.opt/stdout" ] \
@@ -226,6 +242,55 @@ if [ "${1:-}" = "--one" ]; then
     return $orc
   }
 
+  run_irgold() {  # IR-golden step (T3): a case with a .irgold sidecar gets its
+                  # pinned dump surfaces produced ONCE per pinned mode (one
+                  # compile emits all four surfaces; `h` has no named-path
+                  # stream, so it is post-copied out of the -cpp-out dir) and
+                  # STRICT byte-compared against
+                  # goldens/$NAME.<surface>.<mode>.golden. Sidecars are
+                  # permitted only on all-4-modes-clean golden cases.
+    sidecar="$HERE/cases/$NAME.irgold"
+    if [ ! -f "$sidecar" ]; then
+      return 0
+    fi
+    irc=0
+    iout="$WORKROOT/$NAME/$NAME.irgold"
+    mkdir -p "$iout"
+    for mode in opt nodf nocf none; do
+      grep -q " $mode\$" "$sidecar" || continue
+      # shellcheck disable=SC2046
+      if ! timeout "$TIMEOUT" "$DR" "$DRC" $(flags_of "$mode") \
+          -df-out "$iout/df.$mode.out" \
+          -deltarel-out "$iout/deltarel.$mode.out" \
+          -ir-out "$iout/ir.$mode.out" \
+          -cpp-out "$iout/cpp.$mode" \
+          >"$iout/dr.$mode.log" 2>&1; then
+        echo "$NAME irgold $mode IRGOLD-FAIL"
+        irc=1
+        continue
+      fi
+      cp "$iout/cpp.$mode/"*.h "$iout/h.$mode.out" 2>/dev/null || true
+    done
+    while read -r surface mode; do
+      [ -n "$surface" ] || continue
+      produced="$iout/$surface.$mode.out"
+      golden="$HERE/goldens/$NAME.$surface.$mode.golden"
+      if [ ! -f "$produced" ]; then
+        echo "$NAME irgold $surface.$mode IRGOLD-FAIL"
+        irc=1
+      elif [ ! -f "$golden" ]; then
+        echo "$NAME irgold $surface.$mode IRGOLD-MISSING"
+        irc=1
+      elif ! cmp -s "$golden" "$produced"; then
+        echo "$NAME irgold $surface.$mode IRGOLD-DIVERGE"
+        irc=1
+      else
+        echo "$NAME irgold $surface.$mode OK"
+      fi
+    done < "$sidecar"
+    return $irc
+  }
+
   st=0
   case $NAME in
     kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|nonascii_1|truncated_decl_1|demand_multi_adorn_1)
@@ -246,6 +311,7 @@ if [ "${1:-}" = "--one" ]; then
       ;;
   esac
   run_oracle || st=1
+  run_irgold || st=1
   exit $st
 fi
 

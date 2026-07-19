@@ -1,0 +1,16 @@
+deltarel
+
+op.0 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:19, +, NonRecursive)}
+    spine: —
+    args: table=%table:19 message=edge_2/2
+op.1 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:23, +, NonRecursive)}
+    spine: —
+    args: table=%table:23 message=demand__reachable_from_bf/1
+
+rounds:
+
+deps:
+
+census: kCrossover=0 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=0 kRetire=0 kRederive=0 kFrontierFilter=0 kCommitSweep=0 kNegateGate=0 kPivotAssemble=0 kIngestFold=2 kGroupUpdate=0 kStateSeal=0
