@@ -3128,6 +3128,80 @@ static unsigned ResolveVecIdx(const DRFlowGraph &flow, const DREffect &e,
 
 }  // namespace
 
+// The per-op stratum key (hoisted; see DeltaRel.h). The emitter and the
+// linearizer key_of() below share THIS body — never fork it.
+unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op) {
+  switch (op.kind) {
+    case DROpKind::kSeedFold:
+    case DROpKind::kChainFold:
+      if (op.seed_branch < flow.branch_stratum.size() &&
+          op.kind == DROpKind::kSeedFold) {
+        return flow.branch_stratum[op.seed_branch];
+      }
+      if (op.chain_target) {
+        if (auto it = flow.drain_stratum.find(op.chain_target);
+            it != flow.drain_stratum.end()) {
+          return it->second;
+        }
+      }
+      return 0u;
+    case DROpKind::kFixpointFire:
+    case DROpKind::kPivotAssemble: {
+      const QueryView jv =
+          (op.kind == DROpKind::kFixpointFire) ? *op.fire_join
+                                               : *op.pivot_join;
+      if (auto it = flow.join_stratum.find(jv);
+          it != flow.join_stratum.end()) {
+        return it->second;
+      }
+      return 0u;
+    }
+    case DROpKind::kCrossover:
+      if (op.negate.has_value()) {
+        if (auto it = flow.crossover_stratum.find(QueryView(*op.negate));
+            it != flow.crossover_stratum.end()) {
+          return it->second;
+        }
+      }
+      return 0u;
+    case DROpKind::kProductArm:
+      if (op.product_view.has_value()) {
+        if (auto it = flow.product_stratum.find(*op.product_view);
+            it != flow.product_stratum.end()) {
+          return it->second;
+        }
+      }
+      return 0u;
+    case DROpKind::kClaimDrain:
+    case DROpKind::kRetire:
+    case DROpKind::kRederive:
+    case DROpKind::kFrontierFilter:
+      if (op.table_op_table) {
+        if (auto it = flow.drain_stratum.find(op.table_op_table);
+            it != flow.drain_stratum.end()) {
+          return it->second;
+        }
+      }
+      return 0u;
+    case DROpKind::kGroupUpdate:
+      // R3: the GROUP_UPDATE keys on its agg view's lifted stratum (E1: above
+      // the input's frontier filters). The critique's false-negative-space
+      // fix — a silent default-0 would let a mis-stratified frontier drain
+      // pass V-READY (the equal-strata WRONG-A shape).
+      if (op.agg_view.has_value()) {
+        if (auto it = flow.group_update_stratum.find(*op.agg_view);
+            it != flow.group_update_stratum.end()) {
+          return it->second;
+        }
+      }
+      return 0u;
+    case DROpKind::kStateSeal:
+      return 0u;  // trailing commit band (V-READY skip, below)
+    default:
+      return 0u;  // negate gates (eager, pre-phase), commit sweeps (trailing)
+  }
+}
+
 void LinearizeAndValidateDRFlow(
     DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map) {
@@ -3274,75 +3348,7 @@ void LinearizeAndValidateDRFlow(
   // (acyclic drains keyed on drain_stratum, sweeps) key on their table's drain
   // stratum or a trailing band.
   const auto op_stratum = [&](const DROp &op) -> unsigned {
-    switch (op.kind) {
-      case DROpKind::kSeedFold:
-      case DROpKind::kChainFold:
-        if (op.seed_branch < flow.branch_stratum.size() &&
-            op.kind == DROpKind::kSeedFold) {
-          return flow.branch_stratum[op.seed_branch];
-        }
-        if (op.chain_target) {
-          if (auto it = flow.drain_stratum.find(op.chain_target);
-              it != flow.drain_stratum.end()) {
-            return it->second;
-          }
-        }
-        return 0u;
-      case DROpKind::kFixpointFire:
-      case DROpKind::kPivotAssemble: {
-        const QueryView jv =
-            (op.kind == DROpKind::kFixpointFire) ? *op.fire_join
-                                                 : *op.pivot_join;
-        if (auto it = flow.join_stratum.find(jv);
-            it != flow.join_stratum.end()) {
-          return it->second;
-        }
-        return 0u;
-      }
-      case DROpKind::kCrossover:
-        if (op.negate.has_value()) {
-          if (auto it = flow.crossover_stratum.find(QueryView(*op.negate));
-              it != flow.crossover_stratum.end()) {
-            return it->second;
-          }
-        }
-        return 0u;
-      case DROpKind::kProductArm:
-        if (op.product_view.has_value()) {
-          if (auto it = flow.product_stratum.find(*op.product_view);
-              it != flow.product_stratum.end()) {
-            return it->second;
-          }
-        }
-        return 0u;
-      case DROpKind::kClaimDrain:
-      case DROpKind::kRetire:
-      case DROpKind::kRederive:
-      case DROpKind::kFrontierFilter:
-        if (op.table_op_table) {
-          if (auto it = flow.drain_stratum.find(op.table_op_table);
-              it != flow.drain_stratum.end()) {
-            return it->second;
-          }
-        }
-        return 0u;
-      case DROpKind::kGroupUpdate:
-        // R3: the GROUP_UPDATE keys on its agg view's lifted stratum (E1: above
-        // the input's frontier filters). The critique's false-negative-space
-        // fix — a silent default-0 would let a mis-stratified frontier drain
-        // pass V-READY (the equal-strata WRONG-A shape).
-        if (op.agg_view.has_value()) {
-          if (auto it = flow.group_update_stratum.find(*op.agg_view);
-              it != flow.group_update_stratum.end()) {
-            return it->second;
-          }
-        }
-        return 0u;
-      case DROpKind::kStateSeal:
-        return 0u;  // trailing commit band (V-READY skip, below)
-      default:
-        return 0u;  // negate gates (eager, pre-phase), commit sweeps (trailing)
-    }
+    return DROpStratum(flow, op);
   };
 
   // The band template (B-9): a within-stratum ordinal. Seeds/crossovers/product-

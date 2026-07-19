@@ -4,6 +4,7 @@ set(DELTAREL_SRCS
     "DeltaRel.h"
 
     "DeltaRel.cpp"
+    "Format.cpp"
 )
 
 set(DELTAREL_PRIV_DEPS

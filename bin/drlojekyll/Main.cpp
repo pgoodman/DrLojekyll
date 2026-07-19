@@ -53,6 +53,7 @@ static const char *gCxxOutDir = nullptr;
 
 static OutputStream *gDOTStream = nullptr;
 static OutputStream *gDFStream = nullptr;
+static OutputStream *gDeltaRelStream = nullptr;
 static OutputStream *gDRStream = nullptr;
 static OutputStream *gIRStream = nullptr;
 
@@ -63,6 +64,12 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   if (!query_opt) {
     return EXIT_FAILURE;
   }
+
+  // T2b — install the `-deltarel-out` dump sink BEFORE Program::Build (the
+  // DeltaRel flow graph is built and drained inside it — the dump cannot be a
+  // top-level drain like -dot-out/-df-out). Null-safe: unset leaves the sink
+  // a guarded no-op.
+  SetDeltaRelDumpStream(gDeltaRelStream);
 
   auto program_opt =
       Program::Build(*query_opt, error_log, gFirstId, gOptimizeControlFlow);
@@ -193,6 +200,7 @@ static int HelpMessage(const char *argv[]) {
       << "                            imported modules to PATH." << std::endl
       << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
       << "  -df-out <PATH>            Emit the data flow IR in BB-with-arguments text form to PATH." << std::endl
+      << "  -deltarel-out <PATH>      Emit the DeltaRel (DR-IR) flow graph in text form to PATH." << std::endl
       << "  -first-id <N>             The first integer number used for identifiers in the control-flow IR." << std::endl
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
@@ -262,6 +270,7 @@ extern "C" int main(int argc, const char *argv[]) {
 
   std::unique_ptr<hyde::FileStream> dot_out;
   std::unique_ptr<hyde::FileStream> df_out;
+  std::unique_ptr<hyde::FileStream> deltarel_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -340,6 +349,23 @@ extern "C" int main(int argc, const char *argv[]) {
                              << "' for DataFlow IR output";
         }
         hyde::gDFStream = &(df_out->os);
+      }
+
+    // DeltaRel (DR-IR) text dump (the `-deltarel-out` surface).
+    } else if (!strcmp(argv[i], "--deltarel-out") ||
+               !strcmp(argv[i], "-deltarel-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "DeltaRel IR output";
+      } else {
+        deltarel_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!deltarel_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for DeltaRel IR output";
+        }
+        hyde::gDeltaRelStream = &(deltarel_out->os);
       }
 
     // First ID for the control-flow IR. Helps when we use multiple auto-

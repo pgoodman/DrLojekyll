@@ -1501,3 +1501,84 @@ reproducible findings as a compliance feature); keyed instances =
 context-sensitivity as instantiation (the kcfa corpus cases are
 literally this); demand = per-query specialization. The epoch's
 direction is convergent with the code-analysis use case.
+
+## 15. T2b first-emission adjudication (2026-07-19; record written
+## pre-commit, at the owner brief — the -deltarel-out landing)
+
+IMPLEMENTATION (one opus implementer agent against the §11-pinned
+grammar; ~242k tokens): lib/DeltaRel/Format.cpp NEW (~860 lines —
+the emitter + the EIGHTEEN enum spelling tables, the sole spelling
+authority; pre-guarded SetDeltaRelDumpStream sink), DeltaRel.h +9,
+public ControlFlow/Format.h +7 (the Main.cpp-reachable decl),
+Stratum.cpp +6 (drain at the :2167 flow ref before the no-phase
+early return), Main.cpp +26 (-deltarel-out arm; sink installed
+BEFORE Program::Build — the drain fires inside it). E-62 tripwire
+was re-grepped CLEAN pre-implementation (§11); the dump is
+pinned_order's first legitimate reader.
+
+FIRST EMISSION vs the §11-re-rendered contract: CONTENT-EXACT
+modulo four adjudicated classes (orchestrator-verified at the
+tree, not taken on report):
+- IDS: only the 10 SEED_FOLDs permuted (join-pivot folds mint
+  FIRST); branch bijection; vec + other-op ids IDENTITY. Pinned
+  from the live emission (the symrec precedent), bijections
+  verified against structural content.
+- p13 (v3.4): mechanical whitespace pinned (single-space, no
+  padding, one-line effects) — the artifacts' hand alignment was
+  unpinned + internally inconsistent.
+- p14 (v3.4): deps sort widened to (from,to,kind,scope,carried) +
+  exact-duplicate dedup (242 -> 174 rows, 0 dups). The 36-edge
+  F-9/F-10 floor is a strict subset of the live 174 — the
+  "not-certified-complete" caveat RETIRES (this IS the full
+  enrollment).
+- 4a/4b/4c rulings (each per pin p12, no guessing): agg= =
+  derivable functor name (kKv: merge functor — edge_weight was an
+  unrenderable relation-name guess); vec def=[] = faithful render
+  (the model registers NO defs for overdelete/addition/net/
+  join-pivot vecs — recorded as a model-fidelity improvement
+  candidate, surfaced via re-bless when added); spine — uniform on
+  all four join-pivot seeds.
+
+CONFIG-INVARIANCE: PROVEN DIRECTLY — the debug and release
+binaries produce BYTE-IDENTICAL dumps (the audit the (a3) ruling
+mandated before any deltarel bless; the round-3 static pre-audit
+predicted it, the A/B confirms it).
+
+FABLE REVIEW (workflow, 26 agents ~1.09M tokens) + fixes, all
+gates RE-RUN after: 2 CONFIRMED dump defects fixed — the p11
+empty-section double blank (98/169 corpus dumps violated the pin;
+separators now section-guarded; post-fix corpus sweep 0/158) and
+the kPivotAssemble index-less `($join-pivots)` (op_pivot_vec now
+reads the op's own pivot_vec_index — a multi-join SCC dump was
+AMBIGUOUS across pivot vecs and would have frozen a lossy golden);
+the 18 spelling tables' silent `?`/alias fallback arms replaced
+with the loud abort idiom (a forgotten table update must crash the
+compile, never print a plausible wrong golden); the census gains a
+sum==ops.size() cross-check (a 16th DROpKind cannot silently
+vanish); the deps comment states the true 5-field key; the
+OpStratum hand-copy HOISTED to one shared authority (DROpStratum
+in DeltaRel.{h,cpp}, called by BOTH key_of and the emitter — the
+dump can no longer silently lie about the schedule; bands are
+key_of kind constants, no helper needed); the kGroupUpdate
+input-table scan deduped; CLAUDE.md's DeltaRel boundary line
+updated (the SetDeltaRelDumpStream decl on ControlFlow's public
+Format.h is the one public seam). Recorded-not-applied: the
+ColRender/DataFlow-helper duplication (cross-target surgery
+deferred); ACCEPTED RESIDUAL: the p14 dedup hides a hypothetical
+future double-enrollment from the DUMP only — the validators read
+the raw undeduped dep_edges, so the regression class stays
+abort-visible.
+
+GATES (all green, RE-RUN in full post-fix): average_weight bytes
+UNCHANGED through every fix (the pinned contract holds); 5-run +
+3-run dump determinism 1 hash; p11 corpus sweep 0/158; FULL SUITE
+PASS (169), zero stdout churn; 676-row corpus A/B BYTE-IDENTICAL
+vs the frozen e6264b54 baseline (the DROpStratum hoist proved
+behavior-neutral); data/ 36-file A/B clean; ctest 3/3;
+CONFIG-INVARIANCE re-proven post-fix (debug==release
+byte-identical dumps); Q5 progsize@128 release SAME-SESSION
+INTERLEAVED ABABAB A {152.7,162.8,153.8} vs B {154.3,156.0,156.7}
+ms (+1.4% median, inside the noise band, A-side 162.8 outlier in
+the same run); no Runtime file touched. Contract §1 re-rendered to
+the adjudicated emission with the full pin banner; spec at v3.4
+(p13/p14).

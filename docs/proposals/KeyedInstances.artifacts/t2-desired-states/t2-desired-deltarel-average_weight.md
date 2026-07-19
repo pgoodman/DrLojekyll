@@ -1,5 +1,38 @@
 # T2 desired-state — `-deltarel-out` dump of average_weight.dr
 
+FIRST-EMISSION PIN (2026-07-19, the T2b landing tree; ledger §15):
+§1 is now the ADJUDICATED LIVE EMISSION (5-run stable, debug==release
+byte-identical — the config-invariance audit passed DIRECTLY). The
+adjudications, each code-read (never matched-to-output blindly):
+- IDS PINNED (the symrec precedent): only the 10 SEED_FOLDs permuted
+  vs the illustrative guess (actual mint order: join-pivot folds
+  FIRST — old->new 6->10 7->11 8->14 9->15 10->12 11->13 12->6
+  13->7 14->8 15->9); branch ids bijection 0->2 1->4 2->3 3->0
+  4->1; vec ids IDENTITY; all other 43 op ids IDENTITY.
+- p13 MECHANICAL WHITESPACE: single-space separators, no column
+  padding, one-line effects (the p9 precedent; the old hand
+  alignment was internally inconsistent and unpinned).
+- p14 DEPS: canonical (from,to,kind,scope,carried) sort + exact-
+  duplicate-row dedup (the flag-enrollment walk mints the same
+  edge once per access pair; the section renders the dependence
+  RELATION — no edge elided). 174 unique edges; the old 36-edge
+  floor is a strict subset (F-9/F-10 RESOLVED — this is the full
+  live enrollment, the floor caveat retires).
+- 4a agg= renders the DERIVABLE functor name (kOver: the aggregate
+  functor; kKv: the merge functor — op.4 agg=new_weight_i32, was
+  the unrenderable relation-name guess edge_weight; no model field
+  added).
+- 4b vec def=[] on overdelete/addition/net/join-pivot vecs is the
+  FAITHFUL render: the DR-IR registers no def edges for them
+  (mint_claim/filter/join-arm record effects only). MODEL-FIDELITY
+  NOTE: def enrollment for these classes is a future model
+  improvement; the dump will surface it via re-bless when added.
+- 4c spine: — renders on ALL FOUR join-pivot seeds (mechanical
+  uniformity; the old block marked only one).
+§2's derivation prose keeps the PRE-PIN illustrative ids and the
+old hand-rendered forms — HISTORICAL; read op ids through the
+bijection above. The §1 block is the byte contract.
+
 RE-RENDERED 2026-07-19 (round-3 grammar adjudication, ledger §11;
 pinned grammar = scratchpad t2b-grammar.md R-1..R-10, verifier SOUND):
 §1 re-rendered under the pinned T2b emitter grammar. ALL `;;` banners
@@ -143,346 +176,429 @@ v1 draft's `deltarel average_weight` is retired — see §3 F-4).
 ```
 deltarel
 
-vec $delete-queue.0  <ids %table:4> uniq=sort-unique-at-drain def=[op.0] use=[op.16]
-vec $add-queue.1     <ids %table:4> uniq=sort-unique-at-drain def=[op.0] use=[op.17]
-vec $overdelete-set.2 <ids %table:4> uniq=multiset def=[op.16] use=[op.18]
-vec $addition-set.3  <ids %table:4> uniq=multiset def=[op.17] use=[op.19]
-vec $net-removal.4   <ids %table:4> uniq=multiset def=[op.18] use=[op.12]
-vec $net-addition.5  <ids %table:4> uniq=multiset def=[op.19] use=[op.13]
-vec $delete-queue.6  <ids %table:8> uniq=sort-unique-at-drain def=[op.2] use=[op.20]
-vec $add-queue.7     <ids %table:8> uniq=sort-unique-at-drain def=[op.2] use=[op.21]
-vec $overdelete-set.8 <ids %table:8> uniq=multiset def=[op.20] use=[op.22]
-vec $addition-set.9  <ids %table:8> uniq=multiset def=[op.21] use=[op.23]
-vec $net-removal.10  <ids %table:8> uniq=multiset def=[op.22] use=[op.14]
-vec $net-addition.11 <ids %table:8> uniq=multiset def=[op.23] use=[op.15]
+vec $delete-queue.0 <ids %table:4> uniq=sort-unique-at-drain def=[op.0] use=[op.16]
+vec $add-queue.1 <ids %table:4> uniq=sort-unique-at-drain def=[op.0] use=[op.17]
+vec $overdelete-set.2 <ids %table:4> uniq=multiset def=[] use=[op.18]
+vec $addition-set.3 <ids %table:4> uniq=multiset def=[] use=[op.19]
+vec $net-removal.4 <ids %table:4> uniq=multiset def=[] use=[op.6]
+vec $net-addition.5 <ids %table:4> uniq=multiset def=[] use=[op.7]
+vec $delete-queue.6 <ids %table:8> uniq=sort-unique-at-drain def=[op.2] use=[op.20]
+vec $add-queue.7 <ids %table:8> uniq=sort-unique-at-drain def=[op.2] use=[op.21]
+vec $overdelete-set.8 <ids %table:8> uniq=multiset def=[] use=[op.22]
+vec $addition-set.9 <ids %table:8> uniq=multiset def=[] use=[op.23]
+vec $net-removal.10 <ids %table:8> uniq=multiset def=[] use=[op.8]
+vec $net-addition.11 <ids %table:8> uniq=multiset def=[] use=[op.9]
 vec $delete-queue.12 <ids %table:12> uniq=sort-unique-at-drain def=[op.4] use=[op.24]
-vec $add-queue.13    <ids %table:12> uniq=sort-unique-at-drain def=[op.4] use=[op.25]
-vec $overdelete-set.14 <ids %table:12> uniq=multiset def=[op.24] use=[op.26]
-vec $addition-set.15 <ids %table:12> uniq=multiset def=[op.25] use=[op.27]
-vec $net-removal.16  <ids %table:12> uniq=multiset def=[op.26] use=[op.6]
-vec $net-addition.17 <ids %table:12> uniq=multiset def=[op.27] use=[op.7]
-vec $delete-queue.18 <ids %table:17> uniq=sort-unique-at-drain def=[op.8] use=[op.28]
-vec $add-queue.19    <ids %table:17> uniq=sort-unique-at-drain def=[op.9] use=[op.29]
-vec $overdelete-set.20 <ids %table:17> uniq=multiset def=[op.28] use=[op.30]
-vec $addition-set.21 <ids %table:17> uniq=multiset def=[op.29] use=[op.31]
-vec $net-removal.22  <ids %table:17> uniq=multiset def=[op.30] use=[op.10]
-vec $net-addition.23 <ids %table:17> uniq=multiset def=[op.31] use=[op.11]
-vec $delete-queue.24 <ids %table:23> uniq=sort-unique-at-drain def=[join] use=[op.32]
-vec $add-queue.25    <ids %table:23> uniq=sort-unique-at-drain def=[join] use=[op.33]
-vec $overdelete-set.26 <ids %table:23> uniq=multiset def=[op.32] use=[op.34]
-vec $addition-set.27 <ids %table:23> uniq=multiset def=[op.33] use=[op.35]
-vec $net-removal.28  <ids %table:23> uniq=multiset def=[op.34] use=[op.8]
-vec $net-addition.29 <ids %table:23> uniq=multiset def=[op.35] use=[op.9]
-vec $delete-queue.30 <ids %table:28> uniq=sort-unique-at-drain def=[op.6] use=[op.36]
-vec $add-queue.31    <ids %table:28> uniq=sort-unique-at-drain def=[op.7] use=[op.37]
-vec $overdelete-set.32 <ids %table:28> uniq=multiset def=[op.36] use=[op.38]
-vec $addition-set.33 <ids %table:28> uniq=multiset def=[op.37] use=[op.39]
-vec $net-removal.34  <ids %table:28> uniq=multiset def=[op.38] use=[op.0,op.2]
-vec $net-addition.35 <ids %table:28> uniq=multiset def=[op.39] use=[op.0,op.2]
-vec $delete-queue.36 <ids %table:32> uniq=sort-unique-at-drain def=[op.10] use=[op.40]
-vec $add-queue.37    <ids %table:32> uniq=sort-unique-at-drain def=[op.11] use=[op.41]
-vec $overdelete-set.38 <ids %table:32> uniq=multiset def=[op.40] use=[op.42]
-vec $addition-set.39 <ids %table:32> uniq=multiset def=[op.41] use=[op.43]
-vec $net-removal.40  <ids %table:32> uniq=multiset def=[op.42] use=[]
-vec $net-addition.41 <ids %table:32> uniq=multiset def=[op.43] use=[]
-vec $join-pivots.42  <id-cols> uniq=sort-unique-at-drain def=[op.12,op.13,op.14,op.15] use=[join]
+vec $add-queue.13 <ids %table:12> uniq=sort-unique-at-drain def=[op.4] use=[op.25]
+vec $overdelete-set.14 <ids %table:12> uniq=multiset def=[] use=[op.26]
+vec $addition-set.15 <ids %table:12> uniq=multiset def=[] use=[op.27]
+vec $net-removal.16 <ids %table:12> uniq=multiset def=[] use=[op.10]
+vec $net-addition.17 <ids %table:12> uniq=multiset def=[] use=[op.11]
+vec $delete-queue.18 <ids %table:17> uniq=sort-unique-at-drain def=[op.14] use=[op.28]
+vec $add-queue.19 <ids %table:17> uniq=sort-unique-at-drain def=[op.15] use=[op.29]
+vec $overdelete-set.20 <ids %table:17> uniq=multiset def=[] use=[op.30]
+vec $addition-set.21 <ids %table:17> uniq=multiset def=[] use=[op.31]
+vec $net-removal.22 <ids %table:17> uniq=multiset def=[] use=[op.12]
+vec $net-addition.23 <ids %table:17> uniq=multiset def=[] use=[op.13]
+vec $delete-queue.24 <ids %table:23> uniq=sort-unique-at-drain def=[] use=[op.32]
+vec $add-queue.25 <ids %table:23> uniq=sort-unique-at-drain def=[] use=[op.33]
+vec $overdelete-set.26 <ids %table:23> uniq=multiset def=[] use=[op.34]
+vec $addition-set.27 <ids %table:23> uniq=multiset def=[] use=[op.35]
+vec $net-removal.28 <ids %table:23> uniq=multiset def=[] use=[op.14]
+vec $net-addition.29 <ids %table:23> uniq=multiset def=[] use=[op.15]
+vec $delete-queue.30 <ids %table:28> uniq=sort-unique-at-drain def=[op.10] use=[op.36]
+vec $add-queue.31 <ids %table:28> uniq=sort-unique-at-drain def=[op.11] use=[op.37]
+vec $overdelete-set.32 <ids %table:28> uniq=multiset def=[] use=[op.38]
+vec $addition-set.33 <ids %table:28> uniq=multiset def=[] use=[op.39]
+vec $net-removal.34 <ids %table:28> uniq=multiset def=[] use=[op.0,op.2]
+vec $net-addition.35 <ids %table:28> uniq=multiset def=[] use=[op.0,op.2]
+vec $delete-queue.36 <ids %table:32> uniq=sort-unique-at-drain def=[op.12] use=[op.40]
+vec $add-queue.37 <ids %table:32> uniq=sort-unique-at-drain def=[op.13] use=[op.41]
+vec $overdelete-set.38 <ids %table:32> uniq=multiset def=[] use=[op.42]
+vec $addition-set.39 <ids %table:32> uniq=multiset def=[] use=[op.43]
+vec $net-removal.40 <ids %table:32> uniq=multiset def=[] use=[]
+vec $net-addition.41 <ids %table:32> uniq=multiset def=[] use=[]
+vec $join-pivots.42 <id-cols> uniq=sort-unique-at-drain def=[] use=[]
 
-branch.0 src=%table:12 -> tgt=%table:28  ends_at_join=false
-branch.1 src=%table:23 -> tgt=%table:17  ends_at_join=false
-branch.2 src=%table:17 -> tgt=%table:32  ends_at_join=false
-branch.3 src=%table:4  -> join.0         ends_at_join=true
-branch.4 src=%table:8  -> join.0         ends_at_join=true
+branch.0 src=%table:4 -> join.0 ends_at_join=true
+branch.1 src=%table:8 -> join.0 ends_at_join=true
+branch.2 src=%table:12 -> tgt=%table:28 ends_at_join=false
+branch.3 src=%table:17 -> tgt=%table:32 ends_at_join=false
+branch.4 src=%table:23 -> tgt=%table:17 ends_at_join=false
 
 join.0 view=<X,Sum,Count> pivot_vec=$join-pivots.42 targets=[%table:23]
 
-op.52 kIngestFold sign=+ ctx=eager  stratum=0
-    effects: {kCounter(%table:36, +, NonRecursive),
-              kVecAppend(%table:36, kNetAddition)}
+op.52 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:36, +, NonRecursive), kVecAppend(%table:36, kNetAddition)}
     spine: —
     args: table=%table:36 message=add_edge/3
-op.4  kGroupUpdate sign=· ctx=seed  stratum=1  sc#2
-    agg=edge_weight prov=kKv algebra=kRecompute agg_table=%table:12
+op.4 kGroupUpdate sign=· ctx=seed stratum=1 sc#2
+    agg=new_weight_i32 prov=kKv algebra=kRecompute agg_table=%table:12
     group@{From:i32,To:i32} summary@{Weight:mutable(new_weight_i32)} config=0 input=%table:36
-    effects: {kVecDrain(%table:36, kNetRemoval), kStateFold(%table:12, -),
-              kVecDrain(%table:36, kNetAddition), kStateFold(%table:12, +),
-              kStateEmit(%table:12), kStateOld(%table:12),
-              kCounter(%table:12, -, NonRecursive), kInIReadFrozen(%table:12, InI, seed),
-              kVecAppend(%table:12, kDeleteQueue),
-              kCounter(%table:12, +, NonRecursive), kInIReadFrozen(%table:12, InI, seed),
-              kVecAppend(%table:12, kAddQueue)}
+    effects: {kVecDrain(%table:36, kNetRemoval), kStateFold(%table:12, -), kVecDrain(%table:36, kNetAddition), kStateFold(%table:12, +), kStateEmit(%table:12), kStateOld(%table:12), kCounter(%table:12, -, NonRecursive), kInIReadFrozen(%table:12, InI, seed), kVecAppend(%table:12, kDeleteQueue), kCounter(%table:12, +, NonRecursive), kInIReadFrozen(%table:12, InI, seed), kVecAppend(%table:12, kAddQueue)}
     spine: —
     args: agg_table=%table:12 input=%table:36 statecell=sc#2
-op.24 kClaimDrain sign=- ctx=seed  stratum=1  form=single-pass gate=kDelGateCnrNonPositive
-    effects: {kVecDrain(%table:12, kDeleteQueue), kFlagWrite(%table:12, -),
-              kVecAppend(%table:12, kOverdeleteSet)}
+op.24 kClaimDrain sign=- ctx=seed stratum=1 form=single-pass gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:12, kDeleteQueue), kFlagWrite(%table:12, -), kVecAppend(%table:12, kOverdeleteSet)}
     args: table=%table:12
-op.25 kClaimDrain sign=+ ctx=seed  stratum=1  form=single-pass gate=kAddGateTotalPositive
-    effects: {kVecDrain(%table:12, kAddQueue), kFlagWrite(%table:12, +),
-              kVecAppend(%table:12, kAdditionSet)}
+op.25 kClaimDrain sign=+ ctx=seed stratum=1 form=single-pass gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:12, kAddQueue), kFlagWrite(%table:12, +), kVecAppend(%table:12, kAdditionSet)}
     args: table=%table:12
-op.26 kFrontierFilter sign=- ctx=seed  stratum=1  deferral=immediate
+op.26 kFrontierFilter sign=- ctx=seed stratum=1 deferral=immediate
     reads: NetDeleted(%table:12)
     effects: {kVecDrain(%table:12, kOverdeleteSet), kVecAppend(%table:12, kNetRemoval)}
     args: table=%table:12
-op.27 kFrontierFilter sign=+ ctx=seed  stratum=1  deferral=immediate
+op.27 kFrontierFilter sign=+ ctx=seed stratum=1 deferral=immediate
     reads: NetAdded(%table:12)
     effects: {kVecDrain(%table:12, kAdditionSet), kVecAppend(%table:12, kNetAddition)}
     args: table=%table:12
-op.6  kSeedFold sign=- ctx=seed  stratum=2  src=%table:12 tgt=%table:28 class=NonRecursive
-    effects: {kVecDrain(%table:12, kNetRemoval), kCounter(%table:28, -, NonRecursive),
-              kInIReadFrozen(%table:28, InI, seed), kVecAppend(%table:28, kDeleteQueue)}
+op.10 kSeedFold sign=- ctx=seed stratum=2 src=%table:12 tgt=%table:28 class=NonRecursive
+    effects: {kVecDrain(%table:12, kNetRemoval), kCounter(%table:28, -, NonRecursive), kInIReadFrozen(%table:28, InI, seed), kVecAppend(%table:28, kDeleteQueue)}
     spine: kFold(%table:28, -, NonRecursive)
     args: src=%table:12 tgt=%table:28
-op.7  kSeedFold sign=+ ctx=seed  stratum=2  src=%table:12 tgt=%table:28 class=NonRecursive
-    effects: {kVecDrain(%table:12, kNetAddition), kCounter(%table:28, +, NonRecursive),
-              kInIReadFrozen(%table:28, InI, seed), kVecAppend(%table:28, kAddQueue)}
+op.11 kSeedFold sign=+ ctx=seed stratum=2 src=%table:12 tgt=%table:28 class=NonRecursive
+    effects: {kVecDrain(%table:12, kNetAddition), kCounter(%table:28, +, NonRecursive), kInIReadFrozen(%table:28, InI, seed), kVecAppend(%table:28, kAddQueue)}
     spine: kFold(%table:28, +, NonRecursive)
     args: src=%table:12 tgt=%table:28
-op.36 kClaimDrain sign=- ctx=seed  stratum=2  form=single-pass gate=kDelGateCnrNonPositive
-    effects: {kVecDrain(%table:28, kDeleteQueue), kFlagWrite(%table:28, -),
-              kVecAppend(%table:28, kOverdeleteSet)}
+op.36 kClaimDrain sign=- ctx=seed stratum=2 form=single-pass gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:28, kDeleteQueue), kFlagWrite(%table:28, -), kVecAppend(%table:28, kOverdeleteSet)}
     args: table=%table:28
-op.37 kClaimDrain sign=+ ctx=seed  stratum=2  form=single-pass gate=kAddGateTotalPositive
-    effects: {kVecDrain(%table:28, kAddQueue), kFlagWrite(%table:28, +),
-              kVecAppend(%table:28, kAdditionSet)}
+op.37 kClaimDrain sign=+ ctx=seed stratum=2 form=single-pass gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:28, kAddQueue), kFlagWrite(%table:28, +), kVecAppend(%table:28, kAdditionSet)}
     args: table=%table:28
-op.38 kFrontierFilter sign=- ctx=seed  stratum=2  deferral=immediate
+op.38 kFrontierFilter sign=- ctx=seed stratum=2 deferral=immediate
     reads: NetDeleted(%table:28)
     effects: {kVecDrain(%table:28, kOverdeleteSet), kVecAppend(%table:28, kNetRemoval)}
     args: table=%table:28
-op.39 kFrontierFilter sign=+ ctx=seed  stratum=2  deferral=immediate
+op.39 kFrontierFilter sign=+ ctx=seed stratum=2 deferral=immediate
     reads: NetAdded(%table:28)
     effects: {kVecDrain(%table:28, kAdditionSet), kVecAppend(%table:28, kNetAddition)}
     args: table=%table:28
-op.0  kGroupUpdate sign=· ctx=seed  stratum=3  sc#0
+op.0 kGroupUpdate sign=· ctx=seed stratum=3 sc#0
     agg=sum_i32 prov=kOver algebra=kInvertible agg_table=%table:4
-    group@{X:i32} summary@{BX_Weight:i32} config=0  input=%table:28
-    effects: {kVecDrain(%table:28, kNetRemoval), kStateFold(%table:4, -),
-              kVecDrain(%table:28, kNetAddition), kStateFold(%table:4, +),
-              kStateEmit(%table:4), kStateOld(%table:4),
-              kCounter(%table:4, -, NonRecursive), kInIReadFrozen(%table:4, InI, seed),
-              kVecAppend(%table:4, kDeleteQueue),
-              kCounter(%table:4, +, NonRecursive), kInIReadFrozen(%table:4, InI, seed),
-              kVecAppend(%table:4, kAddQueue)}
+    group@{X:i32} summary@{BX_Weight:i32} config=0 input=%table:28
+    effects: {kVecDrain(%table:28, kNetRemoval), kStateFold(%table:4, -), kVecDrain(%table:28, kNetAddition), kStateFold(%table:4, +), kStateEmit(%table:4), kStateOld(%table:4), kCounter(%table:4, -, NonRecursive), kInIReadFrozen(%table:4, InI, seed), kVecAppend(%table:4, kDeleteQueue), kCounter(%table:4, +, NonRecursive), kInIReadFrozen(%table:4, InI, seed), kVecAppend(%table:4, kAddQueue)}
     spine: —
     args: agg_table=%table:4 input=%table:28 statecell=sc#0
-op.16 kClaimDrain sign=- ctx=seed  stratum=4  form=single-pass gate=kDelGateCnrNonPositive
-    effects: {kVecDrain(%table:4, kDeleteQueue), kFlagWrite(%table:4, -),
-              kVecAppend(%table:4, kOverdeleteSet)}
+op.16 kClaimDrain sign=- ctx=seed stratum=4 form=single-pass gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:4, kDeleteQueue), kFlagWrite(%table:4, -), kVecAppend(%table:4, kOverdeleteSet)}
     args: table=%table:4
-op.17 kClaimDrain sign=+ ctx=seed  stratum=4  form=single-pass gate=kAddGateTotalPositive
-    effects: {kVecDrain(%table:4, kAddQueue), kFlagWrite(%table:4, +),
-              kVecAppend(%table:4, kAdditionSet)}
+op.17 kClaimDrain sign=+ ctx=seed stratum=4 form=single-pass gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:4, kAddQueue), kFlagWrite(%table:4, +), kVecAppend(%table:4, kAdditionSet)}
     args: table=%table:4
-op.18 kFrontierFilter sign=- ctx=seed  stratum=4  deferral=immediate
+op.18 kFrontierFilter sign=- ctx=seed stratum=4 deferral=immediate
     reads: NetDeleted(%table:4)
     effects: {kVecDrain(%table:4, kOverdeleteSet), kVecAppend(%table:4, kNetRemoval)}
     args: table=%table:4
-op.19 kFrontierFilter sign=+ ctx=seed  stratum=4  deferral=immediate
+op.19 kFrontierFilter sign=+ ctx=seed stratum=4 deferral=immediate
     reads: NetAdded(%table:4)
     effects: {kVecDrain(%table:4, kAdditionSet), kVecAppend(%table:4, kNetAddition)}
     args: table=%table:4
-op.2  kGroupUpdate sign=· ctx=seed  stratum=5  sc#1
+op.2 kGroupUpdate sign=· ctx=seed stratum=5 sc#1
     agg=count_i32 prov=kOver algebra=kInvertible agg_table=%table:8
-    group@{X:i32} summary@{BX_Weight:i32} config=0  input=%table:28
-    effects: {kVecDrain(%table:28, kNetRemoval), kStateFold(%table:8, -),
-              kVecDrain(%table:28, kNetAddition), kStateFold(%table:8, +),
-              kStateEmit(%table:8), kStateOld(%table:8),
-              kCounter(%table:8, -, NonRecursive), kInIReadFrozen(%table:8, InI, seed),
-              kVecAppend(%table:8, kDeleteQueue),
-              kCounter(%table:8, +, NonRecursive), kInIReadFrozen(%table:8, InI, seed),
-              kVecAppend(%table:8, kAddQueue)}
+    group@{X:i32} summary@{BX_Weight:i32} config=0 input=%table:28
+    effects: {kVecDrain(%table:28, kNetRemoval), kStateFold(%table:8, -), kVecDrain(%table:28, kNetAddition), kStateFold(%table:8, +), kStateEmit(%table:8), kStateOld(%table:8), kCounter(%table:8, -, NonRecursive), kInIReadFrozen(%table:8, InI, seed), kVecAppend(%table:8, kDeleteQueue), kCounter(%table:8, +, NonRecursive), kInIReadFrozen(%table:8, InI, seed), kVecAppend(%table:8, kAddQueue)}
     spine: —
     args: agg_table=%table:8 input=%table:28 statecell=sc#1
-op.20 kClaimDrain sign=- ctx=seed  stratum=6  form=single-pass gate=kDelGateCnrNonPositive
-    effects: {kVecDrain(%table:8, kDeleteQueue), kFlagWrite(%table:8, -),
-              kVecAppend(%table:8, kOverdeleteSet)}
+op.20 kClaimDrain sign=- ctx=seed stratum=6 form=single-pass gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:8, kDeleteQueue), kFlagWrite(%table:8, -), kVecAppend(%table:8, kOverdeleteSet)}
     args: table=%table:8
-op.21 kClaimDrain sign=+ ctx=seed  stratum=6  form=single-pass gate=kAddGateTotalPositive
-    effects: {kVecDrain(%table:8, kAddQueue), kFlagWrite(%table:8, +),
-              kVecAppend(%table:8, kAdditionSet)}
+op.21 kClaimDrain sign=+ ctx=seed stratum=6 form=single-pass gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:8, kAddQueue), kFlagWrite(%table:8, +), kVecAppend(%table:8, kAdditionSet)}
     args: table=%table:8
-op.22 kFrontierFilter sign=- ctx=seed  stratum=6  deferral=immediate
+op.22 kFrontierFilter sign=- ctx=seed stratum=6 deferral=immediate
     reads: NetDeleted(%table:8)
     effects: {kVecDrain(%table:8, kOverdeleteSet), kVecAppend(%table:8, kNetRemoval)}
     args: table=%table:8
-op.23 kFrontierFilter sign=+ ctx=seed  stratum=6  deferral=immediate
+op.23 kFrontierFilter sign=+ ctx=seed stratum=6 deferral=immediate
     reads: NetAdded(%table:8)
     effects: {kVecDrain(%table:8, kAdditionSet), kVecAppend(%table:8, kNetAddition)}
     args: table=%table:8
-op.12 kSeedFold sign=- ctx=seed  stratum=7  src=%table:4 join_pivot
+op.6 kSeedFold sign=- ctx=seed stratum=7 src=%table:4 join_pivot
     effects: {kVecDrain(%table:4, kNetRemoval), kVecAppend($join-pivots.42)}
     spine: —
     args: src=%table:4 pivots=$join-pivots.42
-op.13 kSeedFold sign=+ ctx=seed  stratum=7  src=%table:4 join_pivot
+op.7 kSeedFold sign=+ ctx=seed stratum=7 src=%table:4 join_pivot
     effects: {kVecDrain(%table:4, kNetAddition), kVecAppend($join-pivots.42)}
+    spine: —
     args: src=%table:4 pivots=$join-pivots.42
-op.14 kSeedFold sign=- ctx=seed  stratum=7  src=%table:8 join_pivot
+op.8 kSeedFold sign=- ctx=seed stratum=7 src=%table:8 join_pivot
     effects: {kVecDrain(%table:8, kNetRemoval), kVecAppend($join-pivots.42)}
+    spine: —
     args: src=%table:8 pivots=$join-pivots.42
-op.15 kSeedFold sign=+ ctx=seed  stratum=7  src=%table:8 join_pivot
+op.9 kSeedFold sign=+ ctx=seed stratum=7 src=%table:8 join_pivot
     effects: {kVecDrain(%table:8, kNetAddition), kVecAppend($join-pivots.42)}
+    spine: —
     args: src=%table:8 pivots=$join-pivots.42
-op.32 kClaimDrain sign=- ctx=seed  stratum=7  form=single-pass gate=kDelGateCnrNonPositive
-    effects: {kVecDrain(%table:23, kDeleteQueue), kFlagWrite(%table:23, -),
-              kVecAppend(%table:23, kOverdeleteSet)}
+op.32 kClaimDrain sign=- ctx=seed stratum=7 form=single-pass gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:23, kDeleteQueue), kFlagWrite(%table:23, -), kVecAppend(%table:23, kOverdeleteSet)}
     args: table=%table:23
-op.33 kClaimDrain sign=+ ctx=seed  stratum=7  form=single-pass gate=kAddGateTotalPositive
-    effects: {kVecDrain(%table:23, kAddQueue), kFlagWrite(%table:23, +),
-              kVecAppend(%table:23, kAdditionSet)}
+op.33 kClaimDrain sign=+ ctx=seed stratum=7 form=single-pass gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:23, kAddQueue), kFlagWrite(%table:23, +), kVecAppend(%table:23, kAdditionSet)}
     args: table=%table:23
-op.34 kFrontierFilter sign=- ctx=seed  stratum=7  deferral=immediate
+op.34 kFrontierFilter sign=- ctx=seed stratum=7 deferral=immediate
     reads: NetDeleted(%table:23)
     effects: {kVecDrain(%table:23, kOverdeleteSet), kVecAppend(%table:23, kNetRemoval)}
     args: table=%table:23
-op.35 kFrontierFilter sign=+ ctx=seed  stratum=7  deferral=immediate
+op.35 kFrontierFilter sign=+ ctx=seed stratum=7 deferral=immediate
     reads: NetAdded(%table:23)
     effects: {kVecDrain(%table:23, kAdditionSet), kVecAppend(%table:23, kNetAddition)}
     args: table=%table:23
-op.8  kSeedFold sign=- ctx=seed  stratum=8  src=%table:23 tgt=%table:17 class=NonRecursive
-    effects: {kVecDrain(%table:23, kNetRemoval), kCounter(%table:17, -, NonRecursive),
-              kInIReadFrozen(%table:17, InI, seed), kVecAppend(%table:17, kDeleteQueue)}
+op.14 kSeedFold sign=- ctx=seed stratum=8 src=%table:23 tgt=%table:17 class=NonRecursive
+    effects: {kVecDrain(%table:23, kNetRemoval), kCounter(%table:17, -, NonRecursive), kInIReadFrozen(%table:17, InI, seed), kVecAppend(%table:17, kDeleteQueue)}
     spine: kFold(%table:17, -, NonRecursive)
     args: src=%table:23 tgt=%table:17
-op.9  kSeedFold sign=+ ctx=seed  stratum=8  src=%table:23 tgt=%table:17 class=NonRecursive
-    effects: {kVecDrain(%table:23, kNetAddition), kCounter(%table:17, +, NonRecursive),
-              kInIReadFrozen(%table:17, InI, seed), kVecAppend(%table:17, kAddQueue)}
+op.15 kSeedFold sign=+ ctx=seed stratum=8 src=%table:23 tgt=%table:17 class=NonRecursive
+    effects: {kVecDrain(%table:23, kNetAddition), kCounter(%table:17, +, NonRecursive), kInIReadFrozen(%table:17, InI, seed), kVecAppend(%table:17, kAddQueue)}
     spine: kFold(%table:17, +, NonRecursive)
     args: src=%table:23 tgt=%table:17
-op.28 kClaimDrain sign=- ctx=seed  stratum=8  form=single-pass gate=kDelGateCnrNonPositive
-    effects: {kVecDrain(%table:17, kDeleteQueue), kFlagWrite(%table:17, -),
-              kVecAppend(%table:17, kOverdeleteSet)}
+op.28 kClaimDrain sign=- ctx=seed stratum=8 form=single-pass gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:17, kDeleteQueue), kFlagWrite(%table:17, -), kVecAppend(%table:17, kOverdeleteSet)}
     args: table=%table:17
-op.29 kClaimDrain sign=+ ctx=seed  stratum=8  form=single-pass gate=kAddGateTotalPositive
-    effects: {kVecDrain(%table:17, kAddQueue), kFlagWrite(%table:17, +),
-              kVecAppend(%table:17, kAdditionSet)}
+op.29 kClaimDrain sign=+ ctx=seed stratum=8 form=single-pass gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:17, kAddQueue), kFlagWrite(%table:17, +), kVecAppend(%table:17, kAdditionSet)}
     args: table=%table:17
-op.30 kFrontierFilter sign=- ctx=seed  stratum=8  deferral=immediate
+op.30 kFrontierFilter sign=- ctx=seed stratum=8 deferral=immediate
     reads: NetDeleted(%table:17)
     effects: {kVecDrain(%table:17, kOverdeleteSet), kVecAppend(%table:17, kNetRemoval)}
     args: table=%table:17
-op.31 kFrontierFilter sign=+ ctx=seed  stratum=8  deferral=immediate
+op.31 kFrontierFilter sign=+ ctx=seed stratum=8 deferral=immediate
     reads: NetAdded(%table:17)
     effects: {kVecDrain(%table:17, kAdditionSet), kVecAppend(%table:17, kNetAddition)}
     args: table=%table:17
-op.10 kSeedFold sign=- ctx=seed  stratum=10  src=%table:17 tgt=%table:32 class=NonRecursive
-    effects: {kVecDrain(%table:17, kNetRemoval), kCounter(%table:32, -, NonRecursive),
-              kInIReadFrozen(%table:32, InI, seed), kVecAppend(%table:32, kDeleteQueue)}
+op.12 kSeedFold sign=- ctx=seed stratum=10 src=%table:17 tgt=%table:32 class=NonRecursive
+    effects: {kVecDrain(%table:17, kNetRemoval), kCounter(%table:32, -, NonRecursive), kInIReadFrozen(%table:32, InI, seed), kVecAppend(%table:32, kDeleteQueue)}
     spine: kFold(%table:32, -, NonRecursive)
     args: src=%table:17 tgt=%table:32
-op.11 kSeedFold sign=+ ctx=seed  stratum=10  src=%table:17 tgt=%table:32 class=NonRecursive
-    effects: {kVecDrain(%table:17, kNetAddition), kCounter(%table:32, +, NonRecursive),
-              kInIReadFrozen(%table:32, InI, seed), kVecAppend(%table:32, kAddQueue)}
+op.13 kSeedFold sign=+ ctx=seed stratum=10 src=%table:17 tgt=%table:32 class=NonRecursive
+    effects: {kVecDrain(%table:17, kNetAddition), kCounter(%table:32, +, NonRecursive), kInIReadFrozen(%table:32, InI, seed), kVecAppend(%table:32, kAddQueue)}
     spine: kFold(%table:32, +, NonRecursive)
     args: src=%table:17 tgt=%table:32
-op.40 kClaimDrain sign=- ctx=seed  stratum=10  form=single-pass gate=kDelGateCnrNonPositive
-    effects: {kVecDrain(%table:32, kDeleteQueue), kFlagWrite(%table:32, -),
-              kVecAppend(%table:32, kOverdeleteSet)}
+op.40 kClaimDrain sign=- ctx=seed stratum=10 form=single-pass gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:32, kDeleteQueue), kFlagWrite(%table:32, -), kVecAppend(%table:32, kOverdeleteSet)}
     args: table=%table:32
-op.41 kClaimDrain sign=+ ctx=seed  stratum=10  form=single-pass gate=kAddGateTotalPositive
-    effects: {kVecDrain(%table:32, kAddQueue), kFlagWrite(%table:32, +),
-              kVecAppend(%table:32, kAdditionSet)}
+op.41 kClaimDrain sign=+ ctx=seed stratum=10 form=single-pass gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:32, kAddQueue), kFlagWrite(%table:32, +), kVecAppend(%table:32, kAdditionSet)}
     args: table=%table:32
-op.42 kFrontierFilter sign=- ctx=seed  stratum=10  deferral=immediate
+op.42 kFrontierFilter sign=- ctx=seed stratum=10 deferral=immediate
     reads: NetDeleted(%table:32)
     effects: {kVecDrain(%table:32, kOverdeleteSet), kVecAppend(%table:32, kNetRemoval)}
     args: table=%table:32
-op.43 kFrontierFilter sign=+ ctx=seed  stratum=10  deferral=immediate
+op.43 kFrontierFilter sign=+ ctx=seed stratum=10 deferral=immediate
     reads: NetAdded(%table:32)
     effects: {kVecDrain(%table:32, kAdditionSet), kVecAppend(%table:32, kNetAddition)}
     args: table=%table:32
-op.44 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
+op.44 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:4, InI, seed), kFlagWrite(%table:4)}
     args: table=%table:4
-op.45 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
+op.45 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:8, InI, seed), kFlagWrite(%table:8)}
     args: table=%table:8
-op.46 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
+op.46 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:12, InI, seed), kFlagWrite(%table:12)}
     args: table=%table:12
-op.47 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
+op.47 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:17, InI, seed), kFlagWrite(%table:17)}
     args: table=%table:17
-op.48 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
+op.48 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:23, InI, seed), kFlagWrite(%table:23)}
     args: table=%table:23
-op.49 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
+op.49 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:28, InI, seed), kFlagWrite(%table:28)}
     args: table=%table:28
-op.50 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
+op.50 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:32, InI, seed), kFlagWrite(%table:32)}
     args: table=%table:32
-op.51 kCommitSweep sign=· ctx=seed  band=9  flavor=monotone publish_target=false
+op.51 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
     effects: {kFlagWrite(%table:36)}
     args: table=%table:36
-op.1  kStateSeal sign=· ctx=seed  band=10  sc#0
+op.1 kStateSeal sign=· ctx=seed band=10 sc#0
     effects: {kStateFold(%table:4, sign=0)}
     args: agg_table=%table:4 statecell=sc#0
-op.3  kStateSeal sign=· ctx=seed  band=10  sc#1
+op.3 kStateSeal sign=· ctx=seed band=10 sc#1
     effects: {kStateFold(%table:8, sign=0)}
     args: agg_table=%table:8 statecell=sc#1
-op.5  kStateSeal sign=· ctx=seed  band=10  sc#2
+op.5 kStateSeal sign=· ctx=seed band=10 sc#2
     effects: {kStateFold(%table:12, sign=0)}
     args: agg_table=%table:12 statecell=sc#2
 
 rounds:
 
 deps:
-  op.0  -> op.16 RAW epoch
-  op.0  -> op.17 RAW epoch
-  op.2  -> op.20 RAW epoch
-  op.2  -> op.21 RAW epoch
-  op.4  -> op.24 RAW epoch
-  op.4  -> op.25 RAW epoch
-  op.6  -> op.36 RAW epoch
-  op.7  -> op.37 RAW epoch
-  op.8  -> op.28 RAW epoch
-  op.9  -> op.29 RAW epoch
-  op.10 -> op.40 RAW epoch
-  op.11 -> op.41 RAW epoch
+  op.0 -> op.1 WAR epoch
+  op.0 -> op.1 WAW epoch
+  op.0 -> op.16 RAW epoch
+  op.0 -> op.16 WAR epoch
+  op.0 -> op.16 WAW epoch
+  op.0 -> op.17 RAW epoch
+  op.0 -> op.17 WAR epoch
+  op.0 -> op.17 WAW epoch
+  op.0 -> op.18 RAW epoch
+  op.0 -> op.19 RAW epoch
+  op.0 -> op.44 WAR epoch
+  op.0 -> op.44 WAW epoch
+  op.2 -> op.3 WAR epoch
+  op.2 -> op.3 WAW epoch
+  op.2 -> op.20 RAW epoch
+  op.2 -> op.20 WAR epoch
+  op.2 -> op.20 WAW epoch
+  op.2 -> op.21 RAW epoch
+  op.2 -> op.21 WAR epoch
+  op.2 -> op.21 WAW epoch
+  op.2 -> op.22 RAW epoch
+  op.2 -> op.23 RAW epoch
+  op.2 -> op.45 WAR epoch
+  op.2 -> op.45 WAW epoch
+  op.4 -> op.5 WAR epoch
+  op.4 -> op.5 WAW epoch
+  op.4 -> op.24 RAW epoch
+  op.4 -> op.24 WAR epoch
+  op.4 -> op.24 WAW epoch
+  op.4 -> op.25 RAW epoch
+  op.4 -> op.25 WAR epoch
+  op.4 -> op.25 WAW epoch
+  op.4 -> op.26 RAW epoch
+  op.4 -> op.27 RAW epoch
+  op.4 -> op.46 WAR epoch
+  op.4 -> op.46 WAW epoch
+  op.6 -> op.7 WAW epoch
+  op.6 -> op.8 WAW epoch
+  op.6 -> op.9 WAW epoch
+  op.7 -> op.8 WAW epoch
+  op.7 -> op.9 WAW epoch
+  op.8 -> op.9 WAW epoch
+  op.10 -> op.11 WAW epoch
+  op.10 -> op.36 RAW epoch
+  op.10 -> op.36 WAW epoch
+  op.10 -> op.37 WAW epoch
+  op.10 -> op.38 RAW epoch
+  op.10 -> op.39 RAW epoch
+  op.10 -> op.49 WAW epoch
+  op.11 -> op.36 WAW epoch
+  op.11 -> op.37 RAW epoch
+  op.11 -> op.37 WAW epoch
+  op.11 -> op.38 RAW epoch
+  op.11 -> op.39 RAW epoch
+  op.11 -> op.49 WAW epoch
+  op.12 -> op.13 WAW epoch
+  op.12 -> op.40 RAW epoch
+  op.12 -> op.40 WAW epoch
+  op.12 -> op.41 WAW epoch
+  op.12 -> op.42 RAW epoch
+  op.12 -> op.43 RAW epoch
+  op.12 -> op.50 WAW epoch
+  op.13 -> op.40 WAW epoch
+  op.13 -> op.41 RAW epoch
+  op.13 -> op.41 WAW epoch
+  op.13 -> op.42 RAW epoch
+  op.13 -> op.43 RAW epoch
+  op.13 -> op.50 WAW epoch
+  op.14 -> op.15 WAW epoch
+  op.14 -> op.28 RAW epoch
+  op.14 -> op.28 WAW epoch
+  op.14 -> op.29 WAW epoch
+  op.14 -> op.30 RAW epoch
+  op.14 -> op.31 RAW epoch
+  op.14 -> op.47 WAW epoch
+  op.15 -> op.28 WAW epoch
+  op.15 -> op.29 RAW epoch
+  op.15 -> op.29 WAW epoch
+  op.15 -> op.30 RAW epoch
+  op.15 -> op.31 RAW epoch
+  op.15 -> op.47 WAW epoch
+  op.16 -> op.1 WAW epoch
+  op.16 -> op.17 WAW epoch
   op.16 -> op.18 RAW epoch
+  op.16 -> op.19 RAW epoch
+  op.16 -> op.44 WAW epoch
+  op.17 -> op.1 WAW epoch
+  op.17 -> op.18 RAW epoch
   op.17 -> op.19 RAW epoch
-  op.18 -> op.12 RAW epoch
-  op.19 -> op.13 RAW epoch
-  op.20 -> op.22 RAW epoch
-  op.21 -> op.23 RAW epoch
-  op.22 -> op.14 RAW epoch
-  op.23 -> op.15 RAW epoch
-  op.24 -> op.26 RAW epoch
-  op.25 -> op.27 RAW epoch
-  op.26 -> op.6  RAW epoch
-  op.27 -> op.7  RAW epoch
-  op.28 -> op.30 RAW epoch
-  op.29 -> op.31 RAW epoch
-  op.30 -> op.10 RAW epoch
-  op.31 -> op.11 RAW epoch
-  op.32 -> op.34 RAW epoch
-  op.33 -> op.35 RAW epoch
-  op.34 -> op.8  RAW epoch
-  op.35 -> op.9  RAW epoch
-  op.36 -> op.38 RAW epoch
-  op.37 -> op.39 RAW epoch
-  op.38 -> op.0  RAW epoch
-  op.38 -> op.2  RAW epoch
-  op.39 -> op.0  RAW epoch
-  op.39 -> op.2  RAW epoch
-  op.40 -> op.42 RAW epoch
-  op.41 -> op.43 RAW epoch
-  op.52 -> op.4  RAW epoch
+  op.17 -> op.44 WAW epoch
+  op.18 -> op.1 WAR epoch
+  op.18 -> op.6 RAW epoch
   op.18 -> op.44 WAR epoch
+  op.19 -> op.1 WAR epoch
+  op.19 -> op.7 RAW epoch
   op.19 -> op.44 WAR epoch
+  op.20 -> op.3 WAW epoch
+  op.20 -> op.21 WAW epoch
+  op.20 -> op.22 RAW epoch
+  op.20 -> op.23 RAW epoch
+  op.20 -> op.45 WAW epoch
+  op.21 -> op.3 WAW epoch
+  op.21 -> op.22 RAW epoch
+  op.21 -> op.23 RAW epoch
+  op.21 -> op.45 WAW epoch
+  op.22 -> op.3 WAR epoch
+  op.22 -> op.8 RAW epoch
   op.22 -> op.45 WAR epoch
+  op.23 -> op.3 WAR epoch
+  op.23 -> op.9 RAW epoch
   op.23 -> op.45 WAR epoch
+  op.24 -> op.5 WAW epoch
+  op.24 -> op.25 WAW epoch
+  op.24 -> op.26 RAW epoch
+  op.24 -> op.27 RAW epoch
+  op.24 -> op.46 WAW epoch
+  op.25 -> op.5 WAW epoch
+  op.25 -> op.26 RAW epoch
+  op.25 -> op.27 RAW epoch
+  op.25 -> op.46 WAW epoch
+  op.26 -> op.5 WAR epoch
+  op.26 -> op.10 RAW epoch
   op.26 -> op.46 WAR epoch
+  op.27 -> op.5 WAR epoch
+  op.27 -> op.11 RAW epoch
   op.27 -> op.46 WAR epoch
+  op.28 -> op.29 WAW epoch
+  op.28 -> op.30 RAW epoch
+  op.28 -> op.31 RAW epoch
+  op.28 -> op.47 WAW epoch
+  op.29 -> op.30 RAW epoch
+  op.29 -> op.31 RAW epoch
+  op.29 -> op.47 WAW epoch
+  op.30 -> op.12 RAW epoch
   op.30 -> op.47 WAR epoch
+  op.31 -> op.13 RAW epoch
   op.31 -> op.47 WAR epoch
+  op.32 -> op.33 WAW epoch
+  op.32 -> op.34 RAW epoch
+  op.32 -> op.35 RAW epoch
+  op.32 -> op.48 WAW epoch
+  op.33 -> op.34 RAW epoch
+  op.33 -> op.35 RAW epoch
+  op.33 -> op.48 WAW epoch
+  op.34 -> op.14 RAW epoch
   op.34 -> op.48 WAR epoch
+  op.35 -> op.15 RAW epoch
   op.35 -> op.48 WAR epoch
+  op.36 -> op.37 WAW epoch
+  op.36 -> op.38 RAW epoch
+  op.36 -> op.39 RAW epoch
+  op.36 -> op.49 WAW epoch
+  op.37 -> op.38 RAW epoch
+  op.37 -> op.39 RAW epoch
+  op.37 -> op.49 WAW epoch
+  op.38 -> op.0 RAW epoch
+  op.38 -> op.2 RAW epoch
   op.38 -> op.49 WAR epoch
+  op.39 -> op.0 RAW epoch
+  op.39 -> op.2 RAW epoch
   op.39 -> op.49 WAR epoch
+  op.40 -> op.41 WAW epoch
+  op.40 -> op.42 RAW epoch
+  op.40 -> op.43 RAW epoch
+  op.40 -> op.50 WAW epoch
+  op.41 -> op.42 RAW epoch
+  op.41 -> op.43 RAW epoch
+  op.41 -> op.50 WAW epoch
   op.42 -> op.50 WAR epoch
   op.43 -> op.50 WAR epoch
+  op.44 -> op.1 WAW epoch
+  op.45 -> op.3 WAW epoch
+  op.46 -> op.5 WAW epoch
+  op.52 -> op.51 WAW epoch
 
 census: kCrossover=0 kProductArm=0 kSeedFold=10 kFixpointFire=0 kChainFold=0 kClaimDrain=14 kRetire=0 kRederive=0 kFrontierFilter=14 kCommitSweep=8 kNegateGate=0 kPivotAssemble=0 kIngestFold=1 kGroupUpdate=3 kStateSeal=3
 ```

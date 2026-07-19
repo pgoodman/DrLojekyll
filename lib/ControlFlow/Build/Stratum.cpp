@@ -2166,6 +2166,12 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   context.dr_flow = std::make_shared<DRFlowGraph>(std::move(dr_flow));
   const DRFlowGraph &flow = *context.dr_flow;
 
+  // T2b — the `-deltarel-out` dump. PRE-guarded (no-op when no stream is set);
+  // drains here (past LinearizeAndValidateDRFlow + the V-PRED-XCHECK/Site-5
+  // block) reading the stashed `flow` ref, BEFORE the no-phase early return
+  // below so no-phase programs still emit a dump (spec §2.1-2.2).
+  DumpDeltaRelIfEnabled(flow);
+
   // R3: publish one StateCell store descriptor per GROUP_UPDATE for codegen
   // (the `statecell_<id>` member + Key/Reduce types + commit-tail Seal). The
   // key/summary column types come from the DR statecell's projection columns

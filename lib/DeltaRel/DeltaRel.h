@@ -34,6 +34,7 @@
 namespace hyde {
 
 class Context;
+class OutputStream;
 
 // ---------------------------------------------------------------------------
 // §7.1 ENUM VOCABULARY (copied verbatim from the spec; the R3 tails exist so
@@ -828,5 +829,20 @@ DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
 // cursor (E-34 (iii): the caller threads it as `next_parent`).
 OP *LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
                     PARALLEL *parent, VECTOR *loop_vec);
+
+// T2b — the `-deltarel-out` sink. `SetDeltaRelDumpStream` (also declared on the
+// public ControlFlow/Format.h surface so Main.cpp can wire it) installs the
+// dump stream; `DumpDeltaRelIfEnabled` is the PRE-guarded drain called from
+// Stratum.cpp right after the flow-graph stash (spec §2.1-2.2). A null stream
+// is a pure no-op (the guard fires on every Program::Build).
+// The linearizer's per-op STRATUM key, hoisted as a shared free helper so the
+// -deltarel-out emitter renders the SAME value key_of() keys on — one
+// authority, no hand-mirrored copy (the T2b Fable review's divergence hazard;
+// the band values the emitter renders are key_of's kind CONSTANTS and need no
+// helper).
+unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op);
+
+void SetDeltaRelDumpStream(OutputStream *stream);
+void DumpDeltaRelIfEnabled(const DRFlowGraph &flow);
 
 }  // namespace hyde

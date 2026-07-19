@@ -236,6 +236,26 @@ emission commit.
       (G-2). `mutable(new_weight_i32)` is the live .ir spelling of
       the KV summary type (G-1). Config-invariance pre-audit of
       every rendered field: CLEAN (zero NDEBUG-gated members).
+  - v3.4 SESSION-PINNED RULINGS (2026-07-19, the T2b first-emission
+    adjudication — ledger §15):
+      (p13) MECHANICAL WHITESPACE on the deltarel surface:
+           single-space field separators, no column padding,
+           effects on ONE line. (The p9 no-alignment precedent;
+           the artifacts' hand alignment was unpinned and
+           internally inconsistent.)
+      (p14) DEPS = sorted by (from, to, kind, scope, carried) AND
+           exact-duplicate rows DEDUPED (the flag-enrollment walk
+           mints one row per access pair; the section renders the
+           dependence RELATION — dedup elides no edge).
+      Rulings: agg= renders the DERIVABLE functor name (kOver: the
+      aggregate functor; kKv: the merge functor) — no relation-name
+      model field; vec def=[] is the faithful render where the
+      model registers no defs (overdelete/addition/net/join-pivot
+      classes — def enrollment is a recorded model-fidelity
+      improvement, surfaced via re-bless when added); spine `—`
+      uniform on all join-pivot seeds. CONFIG-INVARIANCE PROVEN
+      DIRECTLY at first emission: debug and release binaries
+      produce byte-identical dumps.
   - PRODUCER TAG — v1's conditional producer= is WITHDRAWN
     (spec-critic 4.1 HIGH): `producer` is #ifndef NDEBUG-only
     (Query.h:531-535; every write NDEBUG-guarded), which would make

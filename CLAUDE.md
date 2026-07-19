@@ -180,9 +180,12 @@ exact signatures before writing a driver.
   — no deaths, and `sealed` is an id-order watermark); join/scan body
   membership gates read predicates on the scan cursor id (the emitter's
   row-binding scope stack — the value-keyed re-Find is gone).
-- Delta-relational IR (`lib/DeltaRel/DeltaRel.{h,cpp}` — its own
-  compiler-internal static-library target, still no
-  `include/drlojekyll/` surface; renamed from lib/DR at the
+- Delta-relational IR (`lib/DeltaRel/DeltaRel.{h,cpp}` + the T2b
+  `Format.cpp` dump emitter — its own compiler-internal
+  static-library target with no `include/drlojekyll/DeltaRel/`
+  surface; the one public seam is the `-deltarel-out` sink
+  `SetDeltaRelDumpStream`, DECLARED on ControlFlow's public
+  Format.h and forwarded to the lib; renamed from lib/DR at the
   keyed-instances epoch open to mirror DataFlow/ControlFlow): a
   typed-value flow
   graph between Query and Program that is now
