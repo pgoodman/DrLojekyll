@@ -956,6 +956,21 @@ H10 op_sign FOR THE TWO BAND-(a) ARMS (§2.4): I assumed op_sign splits the
     rebuild before the plus rebuild within band 0 is inherited-assumed, not
     read from code.
 
+H11 BINDING-SOURCE RESOLUTION FOR INSTANCE-OWNED COLUMNS (owner directive,
+    2026-07-19 — ledger §12): every consumer inside a nested instance that
+    reads an α-column (functor bound args FIRST AMONG THEM, but also join
+    keys, negate gate keys, insert projections) must resolve it to a MODELED
+    binding source — `row-slot | instance-key-slot | config-slot` — carried
+    as a DR-IR op attribute (access-plan-spine extension), never decided
+    inside codegen. The functor ABI stays closed (plain values, the
+    config-column mold — free functions gain leading key args exactly as
+    config_agg_1/2 added config params; no Database/instance handle ever
+    flows in). The ELISION decision and the WIRING decision are ONE
+    decision: α-columns resolve to the instance key, never to row storage,
+    for ALL consumers — and a validator aborts on any row-slot resolution
+    of an α-column (the wrong answer silently duplicates α per row and
+    forfeits the nested lowering's storage win).
+
 ======================================================================
 §5. PROVENANCE
 ======================================================================

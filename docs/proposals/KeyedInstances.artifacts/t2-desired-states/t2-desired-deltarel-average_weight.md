@@ -1,5 +1,31 @@
 # T2 desired-state — `-deltarel-out` dump of average_weight.dr
 
+RE-RENDERED 2026-07-19 (round-3 grammar adjudication, ledger §11;
+pinned grammar = scratchpad t2b-grammar.md R-1..R-10, verifier SOUND):
+§1 re-rendered under the pinned T2b emitter grammar. ALL `;;` banners
+and `;` comments STRIPPED — the deltarel byte-block carries ZERO
+comments (pin p10, the p8 analogue; every stripped annotation
+survives in §2's derivation prose). join.0's section-walk subline
+DROPPED (J-2: %index ids are ControlFlow DataIndex ids, absent from
+the DR-IR at the emit point — UNRENDERABLE). op.51 gains
+publish_target=false (uniform render of the real bool). op.52's
+args drop receive=<recv %table:36> (no such primitive; = table=)
+and its spine is — (INGEST_FOLD has no PlanTree). op.8/9 spine
+functor gloss stripped (SP-1: PlanNode carries no functor name;
+the true spine shape is pinned at first emission). branch=<...>
+composites dropped from all seed args (AR-1; redundant with
+src=/tgt=). census FLATTENED to the 15-kind DROpKind enum-order
+one-liner. Section layout pinned: single blank line between
+sections, none within (pin p11). Op/vec/branch ids remain
+ILLUSTRATIVE (pinned at first emission — the symrec precedent).
+deps remains the F-9 canonical-(from,to,kind)-sort floor (F-10
+flag-class completeness open — first emission supersedes the
+floor). GU-3 (verifier G-1): `mutable(new_weight_i32)` IS the live
+.ir spelling — the byte stands, the earlier "renders as mut" claim
+is struck. Multibyte-glyph note (G-2): `·` (sign) and `—` (spine)
+are the corpus's first multibyte golden bytes — byte-verify both
+at bless.
+
 AMENDED 2026-07-19 (round-2 adjudication, ledger §10 — C-AW-1/C-AW-2,
 the consolidator-CONFIRMED p4 nonconformance this artifact's own F-5
 flagged as a known unfixed defect): the NINE `reads: InI(%table:N)`
@@ -117,20 +143,6 @@ v1 draft's `deltarel average_weight` is retired — see §3 F-4).
 ```
 deltarel
 
-;; ============================ VECS (mint order) ============================
-;; vecs-vector (mint) order = `impl->tables` id-ascending (DeltaRel.cpp:878,
-;; `for (TABLE *table : impl->tables)`), six per differential non-induction
-;; table: delQ, addQ, overdel, addSet, netRem, netAdd (:882-893). So the block
-;; is 4, 8, 12, 17, 23, 28, 32 (36 monotone → NO phase vec, §2.2), then the ONE
-;; join-pivots vec minted last in the branches/joins loop (:1166-1173).
-;; 7 differential tables × 6 phase vecs + 1 join-pivots vec = 43.
-;; shape `<ids %table:N>`=ElementShape::kIds (row ids into table N, debug_table
-;; cross-ref), `<id-cols>`=kIdCols; uniq=UniqueContract spelling.
-;; op-index cross-refs use the id-ascending MINT scheme (Option A): claims/
-;; filters mint `for (TABLE *table : impl->tables)` (:1594), four per acyclic
-;; table (claim− claim+ filter− filter+) → t4=op.16-19, t8=op.20-23, t12=op.24-27,
-;; t17=op.28-31, t23=op.32-35, t28=op.36-39, t32=op.40-43. Integers are
-;; ILLUSTRATIVE (F-7) but INTERNALLY CONSISTENT across vec/op/deps.
 vec $delete-queue.0  <ids %table:4> uniq=sort-unique-at-drain def=[op.0] use=[op.16]
 vec $add-queue.1     <ids %table:4> uniq=sort-unique-at-drain def=[op.0] use=[op.17]
 vec $overdelete-set.2 <ids %table:4> uniq=multiset def=[op.16] use=[op.18]
@@ -175,45 +187,22 @@ vec $net-removal.40  <ids %table:32> uniq=multiset def=[op.42] use=[]
 vec $net-addition.41 <ids %table:32> uniq=multiset def=[op.43] use=[]
 vec $join-pivots.42  <id-cols> uniq=sort-unique-at-drain def=[op.12,op.13,op.14,op.15] use=[join]
 
-;; ==================== BRANCHES (flow.branches vector order) ================
-;; First-class per spec §2.3. A DRBranch is one rule chain from a source-table
-;; member view to its terminal (head-chain fold target, or a pivot-JOIN).
-;; flow.branches is derived by the §1.4 memoized worklist (DeltaRel.cpp:1108ff);
-;; the SEED_FOLDs (op.6..15) reference these by seed_branch index. INDICES are
-;; ILLUSTRATIVE-PREDICTED (mint order = impl->tables source × SuffixesOf member
-;; views); STRUCTURE (source, terminal, ends_at_join) is what this pins.
-branch.0 src=%table:12 -> tgt=%table:28  ends_at_join=false   ; edge_weight KV -> agg input TUPLE
-branch.1 src=%table:23 -> tgt=%table:17  ends_at_join=false   ; JOIN out -> div_i32 MAP
-branch.2 src=%table:17 -> tgt=%table:32  ends_at_join=false   ; MAP -> materialize
-branch.3 src=%table:4  -> join.0         ends_at_join=true    ; sum feeds the pivot join
-branch.4 src=%table:8  -> join.0         ends_at_join=true    ; count feeds the pivot join
+branch.0 src=%table:12 -> tgt=%table:28  ends_at_join=false
+branch.1 src=%table:23 -> tgt=%table:17  ends_at_join=false
+branch.2 src=%table:17 -> tgt=%table:32  ends_at_join=false
+branch.3 src=%table:4  -> join.0         ends_at_join=true
+branch.4 src=%table:8  -> join.0         ends_at_join=true
 
-;; ====================== JOINS (flow.joins vector order) ====================
-;; First-class per spec §2.3. ONE DRJoin (the sum ⋈ count pivot join on X);
-;; NOT a DROp — lowered by LowerSectionWalk (Stratum.cpp:1512-1554). It owns the
-;; shared pivot vec $join-pivots.42; branch.3/branch.4's SEED_FOLDs (op.12..15)
-;; append into it, the section walk drains it (.ir:244-255).
 join.0 view=<X,Sum,Count> pivot_vec=$join-pivots.42 targets=[%table:23]
-    section-walk: drain $join-pivots.42; point-test %table:4 via %index:149 [X,_],
-                  %table:8 via %index:150 [X,_]; fold ± into %table:23
 
-;; ====================== OPS (pinned_order = emission) ======================
-
-;; --- lead 0: ingest folds (lowered in ^entry, off the ^flow lattice) ---
 op.52 kIngestFold sign=+ ctx=eager  stratum=0
-    ; lowered in ^entry:41 (ingest-cursor hole; .ir:75). role=kNetAddition
     effects: {kCounter(%table:36, +, NonRecursive),
               kVecAppend(%table:36, kNetAddition)}
-    spine: kFold(%table:36, +, NonRecursive)
-    args: table=%table:36 message=add_edge/3 receive=<recv %table:36>
-
-;; --- stratum 1: the KV index edge_weight (@recompute GROUP_UPDATE sc#2) ---
+    spine: —
+    args: table=%table:36 message=add_edge/3
 op.4  kGroupUpdate sign=· ctx=seed  stratum=1  sc#2
     agg=edge_weight prov=kKv algebra=kRecompute agg_table=%table:12
     group@{From:i32,To:i32} summary@{Weight:mutable(new_weight_i32)} config=0 input=%table:36
-    ; column tokens <var-or-cN>:<type> per spec v3 (From/To/Weight are the INPUT
-    ; %table:36 col names, %col:37/38/39); KV group/summary cols are in the INPUT
-    ; space (InputKeyColumns/InputValueColumns, 1086-1092)
     effects: {kVecDrain(%table:36, kNetRemoval), kStateFold(%table:12, -),
               kVecDrain(%table:36, kNetAddition), kStateFold(%table:12, +),
               kStateEmit(%table:12), kStateOld(%table:12),
@@ -221,10 +210,9 @@ op.4  kGroupUpdate sign=· ctx=seed  stratum=1  sc#2
               kVecAppend(%table:12, kDeleteQueue),
               kCounter(%table:12, +, NonRecursive), kInIReadFrozen(%table:12, InI, seed),
               kVecAppend(%table:12, kAddQueue)}
-    spine: —   ; @recompute rescan is a store-internal reduce, no PlanTree
+    spine: —
     args: agg_table=%table:12 input=%table:36 statecell=sc#2
 op.24 kClaimDrain sign=- ctx=seed  stratum=1  form=single-pass gate=kDelGateCnrNonPositive
-    ; TryClaimDel re-tests C_nr<=0 at dequeue
     effects: {kVecDrain(%table:12, kDeleteQueue), kFlagWrite(%table:12, -),
               kVecAppend(%table:12, kOverdeleteSet)}
     args: table=%table:12
@@ -240,18 +228,16 @@ op.27 kFrontierFilter sign=+ ctx=seed  stratum=1  deferral=immediate
     reads: NetAdded(%table:12)
     effects: {kVecDrain(%table:12, kAdditionSet), kVecAppend(%table:12, kNetAddition)}
     args: table=%table:12
-
-;; --- stratum 2: TUPLE %table:28 (edge_weight KV -> summarized agg input) ---
 op.6  kSeedFold sign=- ctx=seed  stratum=2  src=%table:12 tgt=%table:28 class=NonRecursive
     effects: {kVecDrain(%table:12, kNetRemoval), kCounter(%table:28, -, NonRecursive),
               kInIReadFrozen(%table:28, InI, seed), kVecAppend(%table:28, kDeleteQueue)}
     spine: kFold(%table:28, -, NonRecursive)
-    args: branch=<%table:12..%table:28> src=%table:12 tgt=%table:28
+    args: src=%table:12 tgt=%table:28
 op.7  kSeedFold sign=+ ctx=seed  stratum=2  src=%table:12 tgt=%table:28 class=NonRecursive
     effects: {kVecDrain(%table:12, kNetAddition), kCounter(%table:28, +, NonRecursive),
               kInIReadFrozen(%table:28, InI, seed), kVecAppend(%table:28, kAddQueue)}
     spine: kFold(%table:28, +, NonRecursive)
-    args: branch=<%table:12..%table:28> src=%table:12 tgt=%table:28
+    args: src=%table:12 tgt=%table:28
 op.36 kClaimDrain sign=- ctx=seed  stratum=2  form=single-pass gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:28, kDeleteQueue), kFlagWrite(%table:28, -),
               kVecAppend(%table:28, kOverdeleteSet)}
@@ -268,17 +254,9 @@ op.39 kFrontierFilter sign=+ ctx=seed  stratum=2  deferral=immediate
     reads: NetAdded(%table:28)
     effects: {kVecDrain(%table:28, kAdditionSet), kVecAppend(%table:28, kNetAddition)}
     args: table=%table:28
-
-;; --- stratum 3: sum_i32 (@invertible GROUP_UPDATE sc#0), input %table:28 ---
-;; (op.0 keys on group_update_stratum=3; its own table's claim-drains/filters
-;; below key on drain_stratum=owner_stratum(t4)=4 — the shared monotone
-;; TUPLE-alias view sits one stratum above the AGG view on the same table.)
 op.0  kGroupUpdate sign=· ctx=seed  stratum=3  sc#0
     agg=sum_i32 prov=kOver algebra=kInvertible agg_table=%table:4
     group@{X:i32} summary@{BX_Weight:i32} config=0  input=%table:28
-    ; column tokens <var>:<type> per spec v3 (X/BX_Weight are the shared INPUT
-    ; %table:28 col names %col:29/30); cols are in the INPUT space
-    ; (BuildGroupUpdateOps 1058-1073 uses InputGroupColumns/InputAggregatedColumns)
     effects: {kVecDrain(%table:28, kNetRemoval), kStateFold(%table:4, -),
               kVecDrain(%table:28, kNetAddition), kStateFold(%table:4, +),
               kStateEmit(%table:4), kStateOld(%table:4),
@@ -286,7 +264,7 @@ op.0  kGroupUpdate sign=· ctx=seed  stratum=3  sc#0
               kVecAppend(%table:4, kDeleteQueue),
               kCounter(%table:4, +, NonRecursive), kInIReadFrozen(%table:4, InI, seed),
               kVecAppend(%table:4, kAddQueue)}
-    spine: —   ; @invertible fold/unfold is the sum_i32_combine/uncombine reduction
+    spine: —
     args: agg_table=%table:4 input=%table:28 statecell=sc#0
 op.16 kClaimDrain sign=- ctx=seed  stratum=4  form=single-pass gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:4, kDeleteQueue), kFlagWrite(%table:4, -),
@@ -304,15 +282,9 @@ op.19 kFrontierFilter sign=+ ctx=seed  stratum=4  deferral=immediate
     reads: NetAdded(%table:4)
     effects: {kVecDrain(%table:4, kAdditionSet), kVecAppend(%table:4, kNetAddition)}
     args: table=%table:4
-
-;; --- stratum 5: count_i32 (@invertible GROUP_UPDATE sc#1), input %table:28 ---
-;; (op.2 keys on group_update_stratum=5; its own table's claim-drains/filters
-;; below key on drain_stratum=owner_stratum(t8)=6 — same TUPLE-alias split.)
 op.2  kGroupUpdate sign=· ctx=seed  stratum=5  sc#1
     agg=count_i32 prov=kOver algebra=kInvertible agg_table=%table:8
     group@{X:i32} summary@{BX_Weight:i32} config=0  input=%table:28
-    ; column tokens <var>:<type> per spec v3; SAME input space as sum
-    ; (both aggregate over %table:28's net frontiers, %col:29 X / %col:30 BX_Weight)
     effects: {kVecDrain(%table:28, kNetRemoval), kStateFold(%table:8, -),
               kVecDrain(%table:28, kNetAddition), kStateFold(%table:8, +),
               kStateEmit(%table:8), kStateOld(%table:8),
@@ -320,7 +292,7 @@ op.2  kGroupUpdate sign=· ctx=seed  stratum=5  sc#1
               kVecAppend(%table:8, kDeleteQueue),
               kCounter(%table:8, +, NonRecursive), kInIReadFrozen(%table:8, InI, seed),
               kVecAppend(%table:8, kAddQueue)}
-    spine: —   ; @invertible count_i32_combine/uncombine
+    spine: —
     args: agg_table=%table:8 input=%table:28 statecell=sc#1
 op.20 kClaimDrain sign=- ctx=seed  stratum=6  form=single-pass gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:8, kDeleteQueue), kFlagWrite(%table:8, -),
@@ -338,25 +310,19 @@ op.23 kFrontierFilter sign=+ ctx=seed  stratum=6  deferral=immediate
     reads: NetAdded(%table:8)
     effects: {kVecDrain(%table:8, kAdditionSet), kVecAppend(%table:8, kNetAddition)}
     args: table=%table:8
-
-;; --- stratum 7: the JOIN (%table:4 ⋈ %table:8 on X) -> %table:23 ---
-;; The 4 join-terminal SEED_FOLDs build the shared $join-pivots.42; the join
-;; itself is a DRJoin (substrate, no op.<idx>) lowered by LowerSectionWalk.
 op.12 kSeedFold sign=- ctx=seed  stratum=7  src=%table:4 join_pivot
     effects: {kVecDrain(%table:4, kNetRemoval), kVecAppend($join-pivots.42)}
-    spine: —   ; join-pivot seed: no fold leaf, no target queue
-    args: branch=<%table:4..join> src=%table:4 pivots=$join-pivots.42
+    spine: —
+    args: src=%table:4 pivots=$join-pivots.42
 op.13 kSeedFold sign=+ ctx=seed  stratum=7  src=%table:4 join_pivot
     effects: {kVecDrain(%table:4, kNetAddition), kVecAppend($join-pivots.42)}
-    args: branch=<%table:4..join> src=%table:4 pivots=$join-pivots.42
+    args: src=%table:4 pivots=$join-pivots.42
 op.14 kSeedFold sign=- ctx=seed  stratum=7  src=%table:8 join_pivot
     effects: {kVecDrain(%table:8, kNetRemoval), kVecAppend($join-pivots.42)}
-    args: branch=<%table:8..join> src=%table:8 pivots=$join-pivots.42
+    args: src=%table:8 pivots=$join-pivots.42
 op.15 kSeedFold sign=+ ctx=seed  stratum=7  src=%table:8 join_pivot
     effects: {kVecDrain(%table:8, kNetAddition), kVecAppend($join-pivots.42)}
-    args: branch=<%table:8..join> src=%table:8 pivots=$join-pivots.42
-;; join.0 (the DRJoin, rendered first-class above) lowers here — its section
-;; walk builds %table:23 from $join-pivots.42 before %table:23's own drains.
+    args: src=%table:8 pivots=$join-pivots.42
 op.32 kClaimDrain sign=- ctx=seed  stratum=7  form=single-pass gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:23, kDeleteQueue), kFlagWrite(%table:23, -),
               kVecAppend(%table:23, kOverdeleteSet)}
@@ -373,18 +339,16 @@ op.35 kFrontierFilter sign=+ ctx=seed  stratum=7  deferral=immediate
     reads: NetAdded(%table:23)
     effects: {kVecDrain(%table:23, kAdditionSet), kVecAppend(%table:23, kNetAddition)}
     args: table=%table:23
-
-;; --- stratum 8: MAP div_i32 -> %table:17 (div on the %table:23 branch) ---
 op.8  kSeedFold sign=- ctx=seed  stratum=8  src=%table:23 tgt=%table:17 class=NonRecursive
     effects: {kVecDrain(%table:23, kNetRemoval), kCounter(%table:17, -, NonRecursive),
               kInIReadFrozen(%table:17, InI, seed), kVecAppend(%table:17, kDeleteQueue)}
-    spine: kAccess(div_i32 MAP, bbf) -> kFold(%table:17, -, NonRecursive)
-    args: branch=<%table:23..%table:17 via div_i32> src=%table:23 tgt=%table:17
+    spine: kFold(%table:17, -, NonRecursive)
+    args: src=%table:23 tgt=%table:17
 op.9  kSeedFold sign=+ ctx=seed  stratum=8  src=%table:23 tgt=%table:17 class=NonRecursive
     effects: {kVecDrain(%table:23, kNetAddition), kCounter(%table:17, +, NonRecursive),
               kInIReadFrozen(%table:17, InI, seed), kVecAppend(%table:17, kAddQueue)}
-    spine: kAccess(div_i32 MAP, bbf) -> kFold(%table:17, +, NonRecursive)
-    args: branch=<%table:23..%table:17 via div_i32> src=%table:23 tgt=%table:17
+    spine: kFold(%table:17, +, NonRecursive)
+    args: src=%table:23 tgt=%table:17
 op.28 kClaimDrain sign=- ctx=seed  stratum=8  form=single-pass gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:17, kDeleteQueue), kFlagWrite(%table:17, -),
               kVecAppend(%table:17, kOverdeleteSet)}
@@ -401,21 +365,16 @@ op.31 kFrontierFilter sign=+ ctx=seed  stratum=8  deferral=immediate
     reads: NetAdded(%table:17)
     effects: {kVecDrain(%table:17, kAdditionSet), kVecAppend(%table:17, kNetAddition)}
     args: table=%table:17
-
-;; --- stratum 10: MATERIALIZE average_incoming_weight -> %table:32 ---
-;; (branch_stratum lifts to owner_stratum(t32)=10 via ready_after(t17)=9;
-;; drain_stratum[t32]=10 — the shared monotone TUPLE-alias sits one stratum
-;; above the MAT view on the same table, same split as t4/t8 above.)
 op.10 kSeedFold sign=- ctx=seed  stratum=10  src=%table:17 tgt=%table:32 class=NonRecursive
     effects: {kVecDrain(%table:17, kNetRemoval), kCounter(%table:32, -, NonRecursive),
               kInIReadFrozen(%table:32, InI, seed), kVecAppend(%table:32, kDeleteQueue)}
     spine: kFold(%table:32, -, NonRecursive)
-    args: branch=<%table:17..%table:32> src=%table:17 tgt=%table:32
+    args: src=%table:17 tgt=%table:32
 op.11 kSeedFold sign=+ ctx=seed  stratum=10  src=%table:17 tgt=%table:32 class=NonRecursive
     effects: {kVecDrain(%table:17, kNetAddition), kCounter(%table:32, +, NonRecursive),
               kInIReadFrozen(%table:32, InI, seed), kVecAppend(%table:32, kAddQueue)}
     spine: kFold(%table:32, +, NonRecursive)
-    args: branch=<%table:17..%table:32> src=%table:17 tgt=%table:32
+    args: src=%table:17 tgt=%table:32
 op.40 kClaimDrain sign=- ctx=seed  stratum=10  form=single-pass gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:32, kDeleteQueue), kFlagWrite(%table:32, -),
               kVecAppend(%table:32, kOverdeleteSet)}
@@ -432,13 +391,6 @@ op.43 kFrontierFilter sign=+ ctx=seed  stratum=10  deferral=immediate
     reads: NetAdded(%table:32)
     effects: {kVecDrain(%table:32, kAdditionSet), kVecAppend(%table:32, kNetAddition)}
     args: table=%table:32
-
-;; --- lead 2: commit band (sentinel stratum max+1, band 9) then seals (band 10) ---
-;; POST-T2b.0 (spec §2.0 / decision (b2)): op_table_id is hardened to the table's
-;; deterministic id (`t ? t->id : 0u`), so the band-9 tie-break is table-id
-;; ASCENDING — 4,8,12,17,23,28,32,36. This COINCIDES with the mint order
-;; (impl->tables id-ascending), so the op indices run op.44..51 monotone. NO
-;; pointer order here (the C-1 defect is closed); the golden is allocation-stable.
 op.44 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:4, InI, seed), kFlagWrite(%table:4)}
     args: table=%table:4
@@ -460,13 +412,11 @@ op.49 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=
 op.50 kCommitSweep sign=· ctx=seed  band=9  flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:32, InI, seed), kFlagWrite(%table:32)}
     args: table=%table:32
-op.51 kCommitSweep sign=· ctx=seed  band=9  flavor=monotone
+op.51 kCommitSweep sign=· ctx=seed  band=9  flavor=monotone publish_target=false
     effects: {kFlagWrite(%table:36)}
     args: table=%table:36
-;; STATE_SEALs trail at band 10, same table-id-ascending tie-break: sc#0 (t4),
-;; sc#1 (t8), sc#2 (t12) — op.1, op.3, op.5 in that order.
 op.1  kStateSeal sign=· ctx=seed  band=10  sc#0
-    effects: {kStateFold(%table:4, sign=0)}      ; sealed:=working swap (global:rmw)
+    effects: {kStateFold(%table:4, sign=0)}
     args: agg_table=%table:4 statecell=sc#0
 op.3  kStateSeal sign=· ctx=seed  band=10  sc#1
     effects: {kStateFold(%table:8, sign=0)}
@@ -475,107 +425,66 @@ op.5  kStateSeal sign=· ctx=seed  band=10  sc#2
     effects: {kStateFold(%table:12, sign=0)}
     args: agg_table=%table:12 statecell=sc#2
 
-;; ============== ROUNDS (; substrate (unread by lowering)) ============
-;; ZERO rounds — average_weight is fully ACYCLIC (no SCC, no FIXPOINT_ROUND).
-;; flow.rounds is empty, so the `; substrate (unread by lowering)` banner has no
-;; body here. (This surface — DRRound.body_ops/output_ops under the banner — is
-;; UNTESTED by this witness; a recursive carrier exercises it.)
-rounds:   ; (none)
+rounds:
 
-;; ================================ DEPS ================================
-;; DRDep RAW/WAR/WAW edges, derived by the linearizer (DeltaRel.cpp:3532-3679).
-;; EXHAUSTIVE, one edge per line — a byte-golden cannot elide (C-3). Every edge
-;; is scope=epoch: this program is fully ACYCLIC (no round vecs), so NO edge is
-;; loop_carried (spec §2.3; is_epoch_carried_role fires only for R-before-W, and
-;; every RAW here is W-before-R in band order). Column-1 sort is (from, to).
-;;
-;; LOUD (F-9, determinism): the emitter builds dep_edges by iterating TWO
-;; `std::unordered_map`s — `by_vec` (:3628) keyed on vec index and `by_flag`
-;; (:3656) keyed on TABLE*. Their traversal order is HASH order, so the RAW
-;; chain below is the derivable-truth SET but its VECTOR ORDER as `dep_edges`
-;; is NOT byte-stable (a second determinism hole beyond op_table_id — T2b.0 does
-;; NOT fix it). A deps byte-golden therefore REQUIRES the dump to SORT dep_edges
-;; canonically by (from, to, kind) before rendering; the order below IS that
-;; canonical sort (the desired post-sort bytes). This must be pinned in the spec
-;; and implemented in the emitter (see §3 F-9) or the deps section is unblessable.
 deps:
-  op.0  -> op.16 RAW epoch    ; sum delQ (band-b) -> %table:4 claim drain
-  op.0  -> op.17 RAW epoch    ; sum addQ (band-b) -> %table:4 claim drain
-  op.2  -> op.20 RAW epoch    ; count delQ -> %table:8 claim drain
-  op.2  -> op.21 RAW epoch    ; count addQ -> %table:8 claim drain
-  op.4  -> op.24 RAW epoch    ; KV emit_touched delQ -> %table:12 claim drain
-  op.4  -> op.25 RAW epoch    ; KV emit_touched addQ -> %table:12 claim drain
-  op.6  -> op.36 RAW epoch    ; %table:28 delQ (seed-) -> claim drain
-  op.7  -> op.37 RAW epoch    ; %table:28 addQ (seed+) -> claim drain
-  op.8  -> op.28 RAW epoch    ; %table:17 delQ (seed-) -> claim drain
-  op.9  -> op.29 RAW epoch    ; %table:17 addQ (seed+) -> claim drain
-  op.10 -> op.40 RAW epoch    ; %table:32 delQ (seed-) -> claim drain
-  op.11 -> op.41 RAW epoch    ; %table:32 addQ (seed+) -> claim drain
-  op.16 -> op.18 RAW epoch    ; %table:4 overdelete-set -> filter
-  op.17 -> op.19 RAW epoch    ; %table:4 addition-set  -> filter
-  op.18 -> op.12 RAW epoch    ; %table:4 net-removal   -> join-pivot seed (sum)
-  op.19 -> op.13 RAW epoch    ; %table:4 net-addition  -> join-pivot seed (sum)
-  op.20 -> op.22 RAW epoch    ; %table:8 overdelete-set -> filter
-  op.21 -> op.23 RAW epoch    ; %table:8 addition-set  -> filter
-  op.22 -> op.14 RAW epoch    ; %table:8 net-removal   -> join-pivot seed (count)
-  op.23 -> op.15 RAW epoch    ; %table:8 net-addition  -> join-pivot seed (count)
-  op.24 -> op.26 RAW epoch    ; %table:12 overdelete-set -> filter
-  op.25 -> op.27 RAW epoch    ; %table:12 addition-set  -> filter
-  op.26 -> op.6  RAW epoch    ; %table:12 net-removal  -> seed fold into %table:28
-  op.27 -> op.7  RAW epoch    ; %table:12 net-addition -> seed fold into %table:28
-  op.28 -> op.30 RAW epoch    ; %table:17 overdelete-set -> filter
-  op.29 -> op.31 RAW epoch    ; %table:17 addition-set  -> filter
-  op.30 -> op.10 RAW epoch    ; %table:17 net-removal  -> seed fold into %table:32
-  op.31 -> op.11 RAW epoch    ; %table:17 net-addition -> seed fold into %table:32
-  op.32 -> op.34 RAW epoch    ; %table:23 overdelete-set -> filter
-  op.33 -> op.35 RAW epoch    ; %table:23 addition-set  -> filter
-  op.34 -> op.8  RAW epoch    ; %table:23 net-removal  -> seed fold into %table:17
-  op.35 -> op.9  RAW epoch    ; %table:23 net-addition -> seed fold into %table:17
-  op.36 -> op.38 RAW epoch    ; %table:28 overdelete-set -> filter
-  op.37 -> op.39 RAW epoch    ; %table:28 addition-set  -> filter
-  op.38 -> op.0  RAW epoch    ; %table:28 net-removal  -> sum group-update band(a)
-  op.38 -> op.2  RAW epoch    ; %table:28 net-removal  -> count group-update band(a)
-  op.39 -> op.0  RAW epoch    ; %table:28 net-addition -> sum group-update band(a)
-  op.39 -> op.2  RAW epoch    ; %table:28 net-addition -> count group-update band(a)
-  op.40 -> op.42 RAW epoch    ; %table:32 overdelete-set -> filter
-  op.41 -> op.43 RAW epoch    ; %table:32 addition-set  -> filter
-  op.52 -> op.4  RAW epoch    ; ingest net-addition (%table:36) -> KV band(a)
-  ;; --- flag-class WAR edges (by_flag, :3656): each COMMIT_SWEEP's kInI flag
-  ;;     write over table T runs AFTER that table's frontier-filter net-*
-  ;;     membership reads (NetDeleted/NetAdded) in band order — reader-before-
-  ;;     writer ⇒ WAR (from=reader filter, to=writer sweep), scope=epoch,
-  ;;     non-carried (flag classes carry no loop-carried role, :3673). Sweeps
-  ;;     are op.44(t4) op.45(t8) op.46(t12) op.47(t17) op.48(t23) op.49(t28)
-  ;;     op.50(t32); each table's two filters precede its sweep:
-  op.18 -> op.44 WAR epoch    ; %table:4 filter- -> commit sweep
-  op.19 -> op.44 WAR epoch    ; %table:4 filter+ -> commit sweep
-  op.22 -> op.45 WAR epoch    ; %table:8 filter- -> commit sweep
-  op.23 -> op.45 WAR epoch    ; %table:8 filter+ -> commit sweep
-  op.26 -> op.46 WAR epoch    ; %table:12 filter- -> commit sweep
-  op.27 -> op.46 WAR epoch    ; %table:12 filter+ -> commit sweep
-  op.30 -> op.47 WAR epoch    ; %table:17 filter- -> commit sweep
-  op.31 -> op.47 WAR epoch    ; %table:17 filter+ -> commit sweep
-  op.34 -> op.48 WAR epoch    ; %table:23 filter- -> commit sweep
-  op.35 -> op.48 WAR epoch    ; %table:23 filter+ -> commit sweep
-  op.38 -> op.49 WAR epoch    ; %table:28 filter- -> commit sweep
-  op.39 -> op.49 WAR epoch    ; %table:28 filter+ -> commit sweep
-  op.42 -> op.50 WAR epoch    ; %table:32 filter- -> commit sweep
-  op.43 -> op.50 WAR epoch    ; %table:32 filter+ -> commit sweep
-  ;; NOTE (F-10): the exact flag-class edge SET (which claim/filter/sweep/group-
-  ;; update pairs share a flag class, and any WAW among same-table writers) is
-  ;; derived from FlagAccess enrollment I could not fully enumerate by hand from
-  ;; the .ir; the WAR block above is the STRUCTURALLY-certain filter->sweep
-  ;; subset. The group-update counter writes + claim FlagWrites also enroll flag
-  ;; accesses, so additional WAW/WAR edges over each table's flag class exist.
-  ;; This block is the confirmed floor, NOT the certified-complete flag set —
-  ;; see §3 F-10. There are NO join/%table:23-queue op->op edges: the join is a
-  ;; DRJoin (not a DROp), so its pivot drain / queue fill record no op access.
+  op.0  -> op.16 RAW epoch
+  op.0  -> op.17 RAW epoch
+  op.2  -> op.20 RAW epoch
+  op.2  -> op.21 RAW epoch
+  op.4  -> op.24 RAW epoch
+  op.4  -> op.25 RAW epoch
+  op.6  -> op.36 RAW epoch
+  op.7  -> op.37 RAW epoch
+  op.8  -> op.28 RAW epoch
+  op.9  -> op.29 RAW epoch
+  op.10 -> op.40 RAW epoch
+  op.11 -> op.41 RAW epoch
+  op.16 -> op.18 RAW epoch
+  op.17 -> op.19 RAW epoch
+  op.18 -> op.12 RAW epoch
+  op.19 -> op.13 RAW epoch
+  op.20 -> op.22 RAW epoch
+  op.21 -> op.23 RAW epoch
+  op.22 -> op.14 RAW epoch
+  op.23 -> op.15 RAW epoch
+  op.24 -> op.26 RAW epoch
+  op.25 -> op.27 RAW epoch
+  op.26 -> op.6  RAW epoch
+  op.27 -> op.7  RAW epoch
+  op.28 -> op.30 RAW epoch
+  op.29 -> op.31 RAW epoch
+  op.30 -> op.10 RAW epoch
+  op.31 -> op.11 RAW epoch
+  op.32 -> op.34 RAW epoch
+  op.33 -> op.35 RAW epoch
+  op.34 -> op.8  RAW epoch
+  op.35 -> op.9  RAW epoch
+  op.36 -> op.38 RAW epoch
+  op.37 -> op.39 RAW epoch
+  op.38 -> op.0  RAW epoch
+  op.38 -> op.2  RAW epoch
+  op.39 -> op.0  RAW epoch
+  op.39 -> op.2  RAW epoch
+  op.40 -> op.42 RAW epoch
+  op.41 -> op.43 RAW epoch
+  op.52 -> op.4  RAW epoch
+  op.18 -> op.44 WAR epoch
+  op.19 -> op.44 WAR epoch
+  op.22 -> op.45 WAR epoch
+  op.23 -> op.45 WAR epoch
+  op.26 -> op.46 WAR epoch
+  op.27 -> op.46 WAR epoch
+  op.30 -> op.47 WAR epoch
+  op.31 -> op.47 WAR epoch
+  op.34 -> op.48 WAR epoch
+  op.35 -> op.48 WAR epoch
+  op.38 -> op.49 WAR epoch
+  op.39 -> op.49 WAR epoch
+  op.42 -> op.50 WAR epoch
+  op.43 -> op.50 WAR epoch
 
-;; =============================== CENSUS ===============================
-census: kGroupUpdate=3 kStateSeal=3 kSeedFold=10 kClaimDrain=14
-        kFrontierFilter=14 kCommitSweep=8 kIngestFold=1
-        (kCrossover=0 kProductArm=0 kFixpointFire=0 kChainFold=0 kRetire=0
-         kRederive=0 kNegateGate=0 kPivotAssemble=0)
+census: kCrossover=0 kProductArm=0 kSeedFold=10 kFixpointFire=0 kChainFold=0 kClaimDrain=14 kRetire=0 kRederive=0 kFrontierFilter=14 kCommitSweep=8 kNegateGate=0 kPivotAssemble=0 kIngestFold=1 kGroupUpdate=3 kStateSeal=3
 ```
 
 ## §2 Derivation notes (every op traced to its minting code path + .ir line)

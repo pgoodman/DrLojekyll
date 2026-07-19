@@ -1256,7 +1256,87 @@ NEXT: implement T2a (emitter per the amended pseudocode + v3.2
 pins), gates: byte-diff vs the three re-rendered contracts, full
 suite 169, corpus flag-off A/B vs the frozen 35b89aab baseline,
 ctest, Q5 ABABAB, %table eyeball in all three carriers; then the
-Fable review -> owner brief (PIN-1/PIN-2 attached) -> commit. (owner-directed, recorded 2026-07-19):
+Fable review -> owner brief (PIN-1/PIN-2 attached) -> commit.
+[T2a LANDED e6264b54 — §2 record.]
+
+## 11. T2b round-3 record (2026-07-19, tip e6264b54; the pre-code
+## grammar adjudication the E-71 rule mandates — 1 opus adjudicator
+## + 1 adversarial verifier, 2 agents ~259k tokens; pinned grammar =
+## session scratchpad t2b-grammar.md, 806 lines; verifier verdict
+## SOUND with two LOW corrections, both folded)
+
+E-62 tripwire re-grepped at T2b implementation time by the
+orchestrator: CLEAN (zero readers of pinned_order/body_ops/
+output_ops outside lib/DeltaRel; the one Stratum.cpp hit is a
+comment). The dump becomes pinned_order's FIRST legitimate reader.
+
+FINDINGS (all code-verified):
+- PINNED COMMENT SET = ∅ (pin p10): the deltarel surface has NO
+  derivable comment class; every §1 `;;`/`;` line was decorative or
+  prose. Spec v3.3 pins p10 (zero comments) + p11 (section layout)
+  + p12 (no-source fields never render).
+- LOUD no-source flags, all confirmed by the verifier at code: J-2
+  (%index ids in the join section-walk are ControlFlow DataIndex
+  ids — NOT in the DR-IR at the emit point; subline UNRENDERABLE),
+  SP-1/AR-1 (functor-name glosses — PlanNode carries no functor
+  field), IG-1 (receive=<recv ...> — no primitive), B-1 (DRBranch
+  has no join index — emitter matches path.back()==join_view), S-1
+  (`·` has no glyph map — implementer hardcode, multibyte), ST-1/
+  BD-1 (stratum/band are recomputed lambdas DeltaRel.cpp:3276/3354,
+  not DROp fields — hoist), EF-1 (no statecell field on DREffect —
+  confirm backing at bless).
+- F-9 CONFIRMED AT CODE (the second determinism hole): dep_edges
+  is appended from TWO unordered_map traversals (by_vec :3634,
+  by_flag :3662) — hash-order, unstable, NOT fixed by T2b.0. The
+  emitter MUST canonically sort by (from,to,kind); spec §2.3's
+  "VECTOR ORDER" corrected in v3.3.
+- CONFIG-INVARIANCE PRE-AUDIT: CLEAN — zero NDEBUG-gated members
+  render (the .df producer= trap does not recur).
+- Verifier corrections: G-1 — the lane's "mutable renders as mut"
+  rationale was BACKWARDS (the live .ir renders
+  `mutable(new_weight_i32)` verbatim; the contract byte was
+  CORRECT — struck before it caused a wrong fix); G-2 — the
+  multibyte byte-verify note extends to the `—` spine glyph.
+
+RE-RENDER R-1..R-10 APPLIED to the contract §1 this session
+(banner on the artifact): comments stripped (bulk), section-walk
+subline dropped, op.51 publish_target=false added, op.52
+args/spine corrected, op.8/9 spine gloss stripped (true shape
+pinned at first emission), branch= composites dropped, census
+flattened to enum order, p11 layout applied. Ids stay ILLUSTRATIVE
+(first-emission pinning, the symrec precedent); deps stays the
+F-9/F-10 canonical-sort floor.
+
+## 12. OWNER DIRECTIVES (2026-07-19, the subgraph-functor
+## discussion) — D1 design constraints, recorded as H11 in
+## witness-deltarel-target.md
+
+Context: functors have NO Database access and never will — every
+functor body is a pure driver-supplied free function receiving
+bound values (the ADL/functor-surface contract; purity is
+load-bearing for call placement, the differential machinery, and
+the WASM ABI direction). For keyed instances, an instance owns its
+key α; nested tables ELIDE α from row storage; so consumers inside
+the instance (functor bound args, join keys, negate gates, insert
+projections) must load α from the instance key, not the row.
+
+DIRECTIVE 1 — "the binding source is a MODELED ATTRIBUTE, not
+codegen cleverness": D1's op family carries, per bound argument
+slot, a binding source `row-slot | instance-key-slot | config-slot`
+as a DR-IR attribute (access-plan-spine extension). The wiring is
+model-carried (censusable, dumpable in -deltarel-out,
+validator-checkable), consistent with the §0.6.6 "no hand-coded
+web" ruling. The functor ABI stays closed: instance-key args
+arrive as leading plain values, the config-column mold
+(config_agg_1/2 precedent).
+
+DIRECTIVE 2 — "the elision decision and the wiring decision are
+the SAME decision": one rule for ALL consumers — α-columns resolve
+to the instance key, never to row storage. A validator aborts on
+any row-slot resolution of an α-column (a row-slot resolution
+silently duplicates α per row and forfeits the nested lowering's
+storage win). Functors are just the consumer where the wrong
+answer is least visible. (owner-directed, recorded 2026-07-19):
 ## eager-web DR-lowering — NOT this epoch's scope
 
 CANDIDATE: model the eager descent as DR-IR ops and lower it from

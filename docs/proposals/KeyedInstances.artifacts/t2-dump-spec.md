@@ -211,6 +211,31 @@ emission commit.
            INSERT input tokens), ref names bare and untyped,
            single-space separators, NO alignment padding; closing
            `}` at column 0.
+  - v3.3 SESSION-PINNED RULINGS (2026-07-19, the round-3 T2b grammar
+    adjudication — 1 opus lane + 1 adversarial verifier, verdict
+    SOUND; ledger §11):
+      (p10) THE DELTAREL BYTE-BLOCK CARRIES ZERO COMMENTS (the p8
+           analogue): no `;;` banners, no `;` annotations — the
+           section leads are the bare keywords (vec/branch./join./
+           op./rounds:/deps:/census:). Unlike .df, no derivable
+           comment class is defined for this surface.
+      (p11) SECTION LAYOUT: single blank line between sections,
+           none within a section.
+      (p12) NO-SOURCE FIELDS NEVER RENDER: the join section-walk
+           subline (%index ids are ControlFlow-only), the
+           `receive=<recv ...>` wrapper, functor-name glosses in
+           spine/args (PlanNode has no functor field), and the
+           `branch=<..>` composite (redundant with src=/tgt=) are
+           all STRUCK; commit sweeps render publish_target
+           uniformly (a real stored bool); INGEST_FOLD spine = `—`;
+           census = the 15 DROpKind counts in ENUM order, one line.
+           A field with no stored DR-IR source is dropped or the
+           field is ADDED to the model — never guessed at emission.
+      Notes: sign glyph `·` and spine `—` are the corpus's first
+      multibyte golden bytes — byte-verify both at first bless
+      (G-2). `mutable(new_weight_i32)` is the live .ir spelling of
+      the KV summary type (G-1). Config-invariance pre-audit of
+      every rendered field: CLEAN (zero NDEBUG-gated members).
   - PRODUCER TAG — v1's conditional producer= is WITHDRAWN
     (spec-critic 4.1 HIGH): `producer` is #ifndef NDEBUG-only
     (Query.h:531-535; every write NDEBUG-guarded), which would make
@@ -346,8 +371,12 @@ always fires on a fully-validated graph.
      ...ops in pinned_order (post-T2b.0: fully id-deterministic)...
   rounds: ...DRRound body_ops/output_ops rendered under a
      `; substrate (unread by lowering)` banner...
-  deps: one line per DRDep, flow.dep_edges VECTOR ORDER, EXHAUSTIVE —
-     no elision (deltarel-critic C-3: a byte-golden cannot elide);
+  deps: one line per DRDep, CANONICALLY SORTED by (from, to, kind)
+     BY THE EMITTER (v3.3/F-9, round-3 CONFIRMED at code: dep_edges
+     is appended from TWO std::unordered_map traversals — by_vec +
+     by_flag — so its vector order is hash-order, NOT byte-stable;
+     T2b.0 did not fix this second hole; an unsorted deps golden is
+     unblessable), EXHAUSTIVE — no elision (deltarel-critic C-3);
      loop_carried rendered here (not on vec lines)
   census: <per-kind counts re-derived via the count_kind mold,
      DeltaRel.cpp:2854-2879; keys stay out (E-28)>
