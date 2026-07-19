@@ -1336,7 +1336,56 @@ to the instance key, never to row storage. A validator aborts on
 any row-slot resolution of an α-column (a row-slot resolution
 silently duplicates α per row and forfeits the nested lowering's
 storage win). Functors are just the consumer where the wrong
-answer is least visible. (owner-directed, recorded 2026-07-19):
+answer is least visible.
+
+## 13. FUTURE CANDIDATES + a STANDING FENCE PRINCIPLE (owner-
+## directed 2026-07-19, the lattice-recursion discussion)
+
+STANDING PRINCIPLE — "condition fences on deletion-capability":
+feature fences must be scoped to the DIFFERENTIAL case when the
+hazard is differential, never class-wide. The two existing fences
+are drawn INCONSISTENTLY: the on-cycle product fence is CORRECT
+(keys on CanReceiveDeletions() AND ViewSelfReachable — monotone
+on-cycle products compile); C-4 is OVER-BROAD (aggregates over
+induction-owned inputs rejected regardless of deletability). The
+differential machinery is the expensive semantics; the monotone
+fragment must not inherit its restrictions.
+
+CANDIDATE A (near-term liftable gap) — THE C-4 MONOTONE SLICE:
+count-over-completed-tc (a stratified, terminating, insert-only
+aggregate over a recursion's OUTPUT) is semantically trivial yet
+rejected today. The C-2 pre-pass comment states the true reason:
+no frontier provisioning exists off an induction's output — a
+PLUMBING absence stated as a feature gap. The monotone lift is
+small: drain the induction's output into the band-(a) net-addition
+frontier AFTER the SCC closes (no counters, no claim gates, the
+existing GROUP_UPDATE machinery unchanged). The differential case
+(aggregate over a DELETABLE recursion) stays fenced. Gate shape:
+new corpus case (count-over-tc) + oracle golden; C-4's reject
+narrows to CanReceiveDeletions inputs only.
+
+CANDIDATE B (future-epoch, beside §9) — REFINEMENT-MONOTONE
+LATTICE RECURSION (the Ascent-lattice gap, the one comparative
+expressiveness loss with real workloads: shortest path, dataflow/
+abstract-interpretation lattices): insert-only lattice recursion
+with IDEMPOTENT ACC merges is sound Kleene iteration in a product
+order — every deep hazard (retraction under absorption, inverses,
+rescan-per-round) is differential-only. NOT free even so: value
+refinement = row REPLACEMENT at the relational level, which the
+current monotone fragment (insert-only, sealed watermarks) cannot
+express — it is a THIRD propagation class between monotone and
+differential: overwrite-and-refire, no counters/claims/rederive
+(an upward refinement never needs un-refining), the StateCell
+sealed/working pair already the right cell. Requires: (1) a NEW
+algebra pragma for idempotent merges (@invertible/@recompute
+classify invertibility, NOT idempotence — sum must stay excluded
+from recursion even monotone: re-derivation double-counts); (2)
+the ACC/termination obligation carried by the pragma; (3) the
+Flix-style downstream type discipline (a lattice column infects
+its consumers — else (X,5) and (X,3) coexist as rows); (4) the
+unstratified-aggregation reject relaxes ONLY for the new pragma
+class, never independently. Competes at the next epoch-open
+re-rank with §9 and pass-harness P2-P5. (owner-directed, recorded 2026-07-19):
 ## eager-web DR-lowering — NOT this epoch's scope
 
 CANDIDATE: model the eager descent as DR-IR ops and lower it from
