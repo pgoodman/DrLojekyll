@@ -1,5 +1,15 @@
 # IR dump formats — DRAFT (2026-07-18, pre-fleet; critique before code)
 
+> **[SUPERSEDED IN PART — 2026-07-18, the T2 checkpoint fleet (ledger
+> §4).]** The §2 DeltaRel inventory here was memory-sourced and is
+> superseded by the code-verified reconciliation in
+> **t2-dump-spec.md §2.3** (real DROpKind/Pred/EffKind spellings,
+> index-identity ids, pinned_order, no stored band key, carriage on
+> dep edges). §2.5's harness placement ("diffrun.sh additionally
+> runs...") is WRONG — erratum **E-59**: the compare arm lives in
+> runall.sh's `--one` worker only (t2-dump-spec.md §3.1). The §1
+> BB-form design SURVIVES and is refined by t2-dump-spec.md §1.3.
+
 Owner directives (KeyedInstances.md §0.5): the delta-relational IR
 gets an id-ordered textual dump; the dataflow IR gets a non-DOT
 textual form for model consumption, in a "basic block with arguments"

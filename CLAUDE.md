@@ -48,8 +48,9 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 168 corner-case programs as of the
-demand-seeds epoch) has one committed expected output in
+(`<name>.dr` + `<name>.main.cpp`, 169 corner-case programs as of the
+keyed-instances (F) landing — symrec_tie_1 is the standing determinism
+witness) has one committed expected output in
 `tests/OptDiff/goldens/<name>.stdout`, and the 4 optimization modes are
 just execution variants — EVERY mode's stdout is byte-compared against the
 same golden (cross-mode agreement is implied). A case with a

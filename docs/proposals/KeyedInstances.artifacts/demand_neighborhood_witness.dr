@@ -1,0 +1,28 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; demand_neighborhood_witness -- the PICK-A D1 witness (KeyedInstances.md
+; sec 0.6.2): the NON-RECURSIVE directed witness that carries the NESTED
+; (demand-keyed-instance) lowering. This is the d3 sec 4.1 neighborhood
+; shape verbatim (witness-deltarel-target.md sec 1): one bound query, one
+; monotone hop, non-recursive body, add-only input -- inside every
+; stage-(b) R-A fence (A5 monotone input, acyclic demand, single
+; adornment). demand_tc_witness stays the RECURSIVE flat witness; the
+; nested lowering fences it out (its demanded body is recursive, so its
+; summarized input is an induction-owned differential table).
+;
+; Batches (the .batches sidecar) exercise BIRTH / REBUILD / DEATH per
+; witness-deltarel-target.md sec 3 (option-2: the rebuild batch is a
+; demand flap -- edge added, then demand re-asserted -- because stage-(b)
+; rebuild is DEMAND-triggered, not input-triggered).
+;
+; Under flat -demand this compiles and answers today (the landed D4
+; lowering); the nested lowering (D2) must be ANSWER-IDENTICAL on the
+; same batches -- the two-lowerings equivalence gate (sec 0.6.3), both
+; refereed by the same oracle golden.
+
+#message add_edge(u64 From, u64 To).
+
+#local edge(u64 From, u64 To).
+edge(From, To) : add_edge(From, To).
+
+#query neighborhood(bound u64 Start, free u64 Node) : edge(Start, Node).

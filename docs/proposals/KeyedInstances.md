@@ -450,3 +450,286 @@ all-4-mode golden blessed from hand-verified closure truth. SUITE
 
     ORDER (ratified §0.6.1): T2 → T3 → P1 (non-blocking) → D1 →
     D2 → D3 → D4-design. The next session starts at T2.
+
+## 4. §3 re-verification record (2026-07-18, tip b577735e; the T2
+## checkpoint fleet — 3 seed-unread derivation lanes (2 opus + 1
+## sonnet) + 3 adversarial verifiers + xhigh consolidator, 7 agents
+## ~647k tokens; record COMMITTED as
+## KeyedInstances.artifacts/ckpt-fleet-consolidated.md — the raw lane/
+## verify reports stayed in the session scratchpad and are
+## loss-tolerant, the consolidated record adjudicates them)
+
+Baseline re-confirmed this session: SUITE PASS (169), binaries frozen
+to scratchpad baseline-bin/ at b577735e.
+
+THE §3 SEED SUBSTANTIALLY HELD — the first seed since E-1 whose core
+pseudocode blocks ((A) substrate, (B)/(C) dump surfaces) verified
+CLEAN (see the consolidated appendix's claim table). The re-check
+still paid: six adjudicated errata, dominated by artifact/lane/doc
+defects rather than seed defects — two of them (E-58/E-59) would have
+misdirected the T3 implementer.
+
+### Errata E-55..E-60 (final, consolidator-adjudicated)
+
+- E-55 (LANE overcount, not seed): det_seq has exactly TWO stamp
+  sites (Induction.cpp:144, Optimize.cpp:287); the derivation lane's
+  "three" counted IdentifyInductions' re-entrant self-call (:455,
+  re-runs :144) as a third site. §3(A)'s "TWO entries" is CORRECT.
+- E-56 (stale-anchor roll-up, cosmetic): color field Query.h:529 not
+  268 (lane); OrderQueryViews/OrderedViewMap at Program.h:48/:55
+  (seed's "~46"); FinalizeDepths(2602) runs BEFORE
+  FinalizeColumnIDs(2603).
+- E-57 (design tension, RESOLVED as a ruling): -df-out block ids —
+  raw UniqueId() is POINTER-derived (Node.h:31; what -dot-out names
+  nodes with today, which is why the DOT dump is nondeterministic in
+  node naming) and is REJECTED; det_seq (or a fresh renumber, which
+  by construction reproduces det_seq's numbering) is the key. There
+  is NO FinalizeViewIDs pass and no integer view-id field — det_seq
+  is the ONLY pointer-free total per-view id space.
+- E-58 (SEED imprecision, load-bearing for T3): §3(D) "runall.sh/
+  diffrun.sh grow the compare arms" — WRONG on the diffrun.sh half.
+  The .batches precedent lives ENTIRELY in runall.sh's --one worker
+  (run_oracle, :180-248); diffrun.sh is a pure 4-mode primitive whose
+  only sidecar awareness is the .drflags flag-APPEND (:57-59). The
+  T3 arm goes in --one ONLY.
+- E-59 (cross-artifact, same surface): ir-dump-formats.md §2.5's
+  "diffrun.sh additionally runs the compiler with -df-out" is the
+  outlier contradicting the code precedent — corrected before T3
+  (t2-dump-spec.md §3.1 is the binding placement).
+- E-60 (stale doc, gate-adjacent): CLAUDE.md said "168 corner-case
+  programs"; live count is 169 (symrec_tie_1, §2 gate 1b). Fixed in
+  the same session.
+
+Non-errata nuances recorded in the consolidated report: HashInit
+also folds the two deletion flags + column count (pointer-free claim
+stands); the DOT dump's column PORTS are deterministic (col.Id()),
+only node NAMES are pointer-derived.
+
+RESIDUAL-RISK CENSUS (adjudicated): NO unprotected pointer-order
+iteration reaches emission-visible state beyond what (F) covers. One
+future-facing hazard: ProgramImpl::Analyze() is DEAD (sole call site
+commented out, Build/Build.cpp:1399) and contains a pointer-bucket
+next_id++ DATARECORD id assignment (Analyze.cpp:1195) — any revival
+of record-caching must sort unique_table_sources first.
+
+DECISION-FEEDING FACTS (consolidated §4): the -deltarel-out hook is
+inside BuildStratumPhases only (context.dr_flow, Build.h:198; the
+DRFlowGraph never surfaces on Program) — validate-exit =
+Stratum.cpp:2097 (post-linearize) or :2166 (post-stash, past the
+ingest cross-check); pinned_order (DeltaRel.h:658) survives to both.
+The DeltaRel inventory (15 DROpKinds, 10 Preds, 10 EffKinds, 14
+VecRoles, no id fields — identity is vector index) is recorded
+verbatim in consolidated §1.B and reconciled against the
+ir-dump-formats §2 draft in t2-dump-spec.md.
+
+### The T2/T3/P1 binding spec + the desired-states critique round
+
+docs/proposals/KeyedInstances.artifacts/t2-dump-spec.md — the
+formulated diffs with pre-registered predictions (zero golden churn,
+suite stays 169, Q5 neutral for all three), carrying the owner
+decisions with recommendations. v1 was adversarially critiqued by the
+desired-states fleet (4 opus writers hand-writing the exact dump
+texts for transitive_closure / symrec_tie_1 / demand-ON
+demand_tc_witness / average_weight + 4 per-artifact critics + an
+xhigh spec critic; 9 agents ~1.03M tokens; artifacts + critiques
+COMMITTED under KeyedInstances.artifacts/t2-desired-states/, the
+PICK-A witness draft as
+KeyedInstances.artifacts/demand_neighborhood_witness.dr — it enters
+tests/OptDiff/cases/ only at D2, with batches + oracle goldens, so
+the suite discovery never sees an unblessed case). Verdicts: 2
+artifacts
+SOUND-WITH-AMENDMENTS, 2 UNSOUND (fixable — wrong rename-rule
+application; wrong ordering rules); spec SOUND-WITH-AMENDMENTS. v2
+folds every amendment; the artifacts get one revision pass against
+the ratified spec before commit.
+
+THE CRITIQUE ROUND'S REAL CATCHES (design-time, pre-code — the house
+method paying again):
+
+- (C-1, CONFIRMED at source by the orchestrator): the DeltaRel
+  band-key comparator's op_table_id tie-break is
+  reinterpret_cast<uintptr_t>(TABLE*) (DeltaRel.cpp:3387-3394,
+  key_less :3461) — pinned_order's within-band order (8 commit
+  sweeps on average_weight; the seals) is POINTER-ordered, the exact
+  (F) anti-pattern, latent-only because pinned_order's sole consumers
+  are the validators (grep :3804-3981; emission never reads it — the
+  corpus byte-stability is real). The dump would surface it as bytes,
+  and dep-edge orientation for same-key pairs is in principle
+  allocation-dependent (a latent flaky-validator class, F20's
+  sibling). T2b.0 (spec §2.0) hardens the tie-break to the table id
+  BEFORE the dump lands; predicted zero emission change, gated by
+  full-suite byte-identity.
+- (spec-critic 4.1): v1's producer= line would have made .df the
+  ONLY config-VARIANT golden surface (producer is #ifndef
+  NDEBUG-only; every sibling surface is config-invariant) — a
+  release-preset run would spuriously fail every producer-tagged
+  golden. v2 drops producer from the default dump.
+- (demand-critic F0): v1's `; back-edge` rule (user det_seq <= def
+  det_seq) is UNSOUND — over-fires on non-cycle lower-id targets AND
+  misses det_seq-forward cycle edges; the writer's own analysis of it
+  was backwards (both writer and rule wrong, caught by recompute).
+  v2 replaces it with reachability-exact `; cycle` (decision a2).
+- (spec-critic 1.1): det_seq density at the drain rests on every
+  pass between the last stamp (Build.cpp:2597) and the drain being
+  VIEW-NEUTRAL (six passes enumerated + verified); the emitter now
+  asserts DENSITY, not just stamped-ness.
+- Plus the pinned grammar rulings (block params = own finalized
+  columns; JOIN .inK/pivot/out grammar; INSERT form; MERGE-only
+  sorted callers; class= accessor semantics — recursion does not
+  imply differential; no _MissingVar; exhaustive deps; first-class
+  join/branch sections; IRGOLD-* verdict tokens; pinned bless
+  paths).
+
+## 5. Whole-program checkpoint (2026-07-18, end of the T2-formulation
+## session): the ARCHITECTURE AS PSEUDOCODE (fleet-VERIFIED, §4 —
+## unlike §3 this is not single-pass; the §4 fleet + consolidator
+## adjudicated every block against code) and the PATH FORWARD AS
+## DIFFS against it. A new session starts HERE; re-verify per the
+## house precedent (continue errata at E-61) but note §4's appendix
+## already carries the per-claim verdict table.
+
+    (A) THE COMPILE PIPELINE, whole-program (anchors verified §4):
+
+      main(argv):                                # bin/drlojekyll/Main.cpp
+        parse flags -> gCxxOutDir(:52), gDOTStream/gDRStream/
+          gIRStream(:54-56), gOptimizeDataFlow/gOptimizeControlFlow
+          (:46-52, set :333-346), gDemand, gFirstId
+        module = Parse(...)                      # lib/Lex, lib/Parse
+        gDRStream? << module (:125-129)          # parse-level amalgam
+        CompileModule:
+          query = Query::Build(module, log, gOptimizeDataFlow,
+                               gDemand)          # lib/DataFlow/Build.cpp
+          program = Program::Build(query, log, gFirstId,
+                               gOptimizeControlFlow)  # lib/ControlFlow
+          gIRStream?  << program (:74-77)        # the .ir dump
+          emit C++ into gCxxOutDir               # lib/CodeGen
+          gDOTStream? << query (:106-109)        # LAST: TableId() is
+                                                 # annotated by
+                                                 # Program::Build
+
+      Query::Build tail (Build.cpp, the load-bearing order):
+        BuildClause* -> ConnectInsertsToSelects(2564)
+        ApplyDemandTransform(module, log, demand_mode) (2576)
+                                                 # -demand magic-sets;
+                                                 # total no-op flag-off
+        optimize? impl->Optimize(log) (2585)     # Simplify -> Canon
+                                                 # fixpoint -> CSE
+        LinkViews(2595)                          # may ADD views
+        IdentifyInductions(2597)                 # det_seq stamp; sorted
+                                                 # merge-set labeling
+        FinalizeDepths(2602); FinalizeColumnIDs(2603)  # col ids final
+        TrackDifferentialUpdates(2604); TrackConstAfterInit(2608)
+        BuildEquivalenceSets(2626); Stratify(2627)
+        # 2598-2627 are ALL view-neutral (verified §4) -> det_seq
+        # stays dense 0..N-1 over live views through Program::Build
+
+      THE DETERMINISM SUBSTRATE (the (F) landing, §2-§3(A), §4 CLEAN):
+        det_seq: Query.h:472, stamped ForEachView-order at EXACTLY TWO
+          sites (CSE head Optimize.cpp:285-287; IdentifyInductions
+          head Induction.cpp:142-144; re-entrant self-call re-runs the
+          same site — E-55). Accessor DeterministicOrder() asserts
+          stamped. ForEachView SKIPS dead views (Query.h:1176-1214) —
+          the density mechanism.
+        OrderViewsDeterministically (Induction.cpp:112-126): Sort()==
+          Hash() (HashInit = FNV-1a over KindName + 2 deletion flags +
+          col count, View.cpp:417-427) -> first-col-id (pre-finalize,
+          pass-order contract) -> det_seq. TOTAL. Drives the sorted
+          merge-set labeling loop (:578-604) + injection-sites loop
+          (:404-440).
+        OrderedViewMap (ControlFlow Program.h:48/:55) under
+          DeterministicOrder — the five INDUCTION maps (:1832-1853).
+        CSE: candidates/to_replace/FillViews all det_seq-tied
+          (Optimize.cpp:320-379,409-422). Join::Depth walks columns
+          (Join.cpp:74-110); FinalizeDepths resets dead views too
+          (Link.cpp:437-472).
+        RESIDUAL (§4 census): nothing pointer-ordered reaches emission.
+        View identity beyond det_seq is the IMPL POINTER (UniqueId,
+          Node.h:31) — why -dot-out node names are nondeterministic.
+
+      THE DELTAREL LAYER (lib/DeltaRel, inside Program::Build's
+      BuildStratumPhases, Stratum.cpp:2049):
+        BuildDRInventory(2081) -> DeriveDRStrata(2088) ->
+        ValidateDRInventory(2095) -> ValidateDROps(2096, the census)
+        -> LinearizeAndValidateDRFlow(2097):
+             key_of(op) = {lead, stratum, band, op_table_id, sign,
+                           ctor}                 # DeltaRel.cpp:3432
+             op_table_id = reinterpret_cast<uintptr_t>(TABLE*)
+                           (:3387-3394)          # <-- THE C-1 LATENT:
+                           # pointer tie-break; pinned_order consumers
+                           # are VALIDATORS ONLY (:3804-3981), so
+                           # emission is unaffected today
+             pinned_order = stable-sort by key   # the checked
+                                                 # linearization
+        -> V-PRED-XCHECK / INGEST Site 5 (2099ff)
+        -> context.dr_flow = move (2166)         # the ONLY handle that
+                                                 # survives; Program
+                                                 # never exposes it
+        -> LowerDRFlow / LowerDRRounds / LowerCommitSweeps /
+           LowerGroupUpdate (~2298ff)            # emission reads mint
+                                                 # order, NOT pinned
+        Inventory (verified §4/§1.B of the fleet record): 15 DROpKinds,
+        10 Preds, 10 EffKinds, 14 VecRoles, no id fields (identity =
+        vector index), DRFlowGraph ordered vectors + unordered
+        lookup-only maps.
+
+      THE HARNESS (tests/OptDiff, verified §4):
+        diffrun.sh = PURE 4-mode primitive (opt/nodf/nocf/none);
+          .drflags = flag-append only. runall.sh --one = ALL golden
+          policy: 11 always-diagnostic names (:231), kvindex_1
+          mode-split, run_oracle guarded by .batches; summary grep
+          FAIL|DIVERGE|EXPECT-ERROR|MISSING (:284); --bless = sole
+          goldens/ write path. 169 cases; 158 stdout + 52 oracle + 52
+          monotone goldens.
+
+    (B) THE PATH FORWARD AS DIFFS against (A) (spec:
+    t2-dump-spec.md v2 — the BINDING formulation; per-diff gates and
+    pre-registered predictions live there):
+
+      T2a  + gDFStream/-df-out: BB-with-arguments DataFlow dump,
+           blocks ^kind.<det_seq> ascending, DENSITY-asserted;
+           drained beside -dot-out. Grammar pinned (spec §1.3):
+           own-finalized-column params, dst=src edge maps,
+           reachability-exact `; cycle`, JOIN .inK/pivot/out in
+           accessor order, INSERT into-form, MERGE-only sorted
+           callers, class= from deletion-capability, NO producer= in
+           default output (config-invariance). Zero-churn predicted.
+      T2b.0 ~ harden op_table_id pointer tie-break -> table id
+           (spec §2.0; the C-1 catch). Emission-neutral predicted
+           (validator-only consumers, grep-verified); full-suite
+           byte-identity gate; any churn = an unknown consumer, STOP.
+      T2b  + SetDeltaRelDumpStream/-deltarel-out at the post-stash
+           validate-exit (Stratum.cpp:2166, reads *context.dr_flow):
+           vecs (index order) + joins/branches + ops (pinned_order)
+           + rounds (substrate-bannered) + exhaustive deps + census;
+           Pred/EffKind spellings verbatim. Zero-churn predicted.
+      T3   + cases/<name>.irgold sidecar (surface+mode lines) +
+           goldens/<name>.<surface>.<mode>.golden, strict cmp; arm in
+           runall.sh --one ONLY (E-58/E-59), reusing flags_of;
+           IRGOLD-FAIL/-MISSING/-DIVERGE tokens; pinned nested
+           workdir/bless paths. First carriers: demand_tc_witness
+           (h+ir+df+deltarel, demand-ON = the permanent (F) gate),
+           symrec_tie_1 (ir+df). Suite stays 169; the scripted 8-run
+           sweep retires after bless.
+      P1   + PassPolicy at the two Build call sites; legacy flags as
+           exact aliases; byte-identity at default config. Slot:
+           after T3, before D1 design (reseed-if-tight).
+      D1   design+judge (per §3(F')/epoch-diffs §D1, E-46/E-52/E-53
+           folded): release-surviving per-guard-site annotation,
+           BuildSubgraphOps in the BuildGroupUpdateOps mold, census
+           from the query-side count, dual-lowering equivalence gate,
+           acyclic-DEMAND fence, demand-retract=death. Witness:
+           PICK-A demand_neighborhood_witness.dr (artifact-committed,
+           compiles both ways at b577735e). Then D2 emission ->
+           D3 multi-adornment -> D4-design (§0.6.1).
+
+    (C) STATUS at session end: T1 + (F) LANDED (§2). The T2/T3/P1
+    formulation + desired-state artifacts are COMMITTED but the four
+    t2-desired-states artifacts are DRAFT-PENDING-REVISION (their
+    critiques enumerate the amendments; 2 verdicts UNSOUND are
+    fixable rename/ordering-rule errors). OWNER DECISIONS PENDING:
+    spec §5 (a), (a2), (a3), (b), (b2), (c), (d), (e) — brought to
+    the owner at session end, NOT yet ratified. NO emission-changing
+    code has been written this session (docs/artifacts only). The
+    implementation order on ratification: revise the four artifacts
+    -> T2a -> T2b.0 -> T2b -> T3 -> P1, one diff at a time, standing
+    gates between, Fable review before each emission commit.
