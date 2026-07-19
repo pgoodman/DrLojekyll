@@ -16,11 +16,18 @@ consolidated.md; ledger §4 errata E-55..E-60). SUPERSEDES
 ir-dump-formats.md §2 (memory-sourced) and its §2.5 placement (E-59);
 refines epoch-diffs.md §T2/§T3.
 
-STATUS: awaiting owner ratification of decisions (a)-(e) + the v2
-sub-decisions (§5). The desired-output-state artifacts
-(t2-desired-*.md) get one revision pass against the ratified spec,
-then commit; implementation = "make the compiler print exactly this",
-gated by diff.
+STATUS: RATIFIED 2026-07-18 (owner, at the §6 brief): ALL EIGHT
+decisions (a), (a2), (a3), (b), (b2), (c), (d), (e) ratified as
+recommended/v3-amended — det_seq ids + bijection witness +
+reachability-exact `; cycle` + no producer=; post-Program /
+post-stash drain points + the lib-owned pre-guarded sink; T2b.0
+before T2b with the E-64 null-guard as hard precondition; the
+E-65-corrected `$NAME.irgold/` sidecar machinery with the retained
+sweep; P1 after T3; PICK-A witness. The desired-output-state
+artifacts (t2-desired-*.md) get one revision pass against THIS
+ratified spec, then commit; implementation = "make the compiler
+print exactly this", gated by diff; Fable review before each
+emission commit.
 
 --------------------------------------------------------------------
 ## 1. T2a — `-df-out <PATH>`: the DataFlow BB-with-arguments dump

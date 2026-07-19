@@ -850,3 +850,18 @@ config-invariance audit extends to the deltarel surface before any
 deltarel bless. The four DRAFT-PENDING-REVISION artifacts were
 grep-checked for the E-61 transposition: all four already carry the
 correct order (their revision pass re-confirms).
+
+### RATIFICATION (2026-07-18, same session, owner at the §6 brief)
+
+ALL EIGHT decisions RATIFIED as recommended/v3-amended: (a) det_seq
+block ids + the seen-bitset bijection witness; (a2) reachability-
+exact `; cycle`; (a3) no producer= in the default dump, the
+config-invariance audit extended to deltarel; (b) post-Program
+-df-out drain + the lib-owned pre-guarded -deltarel-out sink at the
+:2167 validate-exit; (b2) T2b.0 before T2b with the E-64 null-guard
+precondition; (c) the E-65-corrected `$NAME.irgold/` sidecar
+machinery, retained sweep, diagnostic-set guard; (d) P1 after T3;
+(e) PICK-A witness + artifact revision before T2a. The path is
+UNBLOCKED: revise the four artifacts → T2a → T2b.0 → T2b → T3 → P1,
+one diff at a time, standing gates between, Fable review brought to
+the owner before each emission commit.
