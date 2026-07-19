@@ -884,6 +884,8 @@ grep-checked for the E-61 transposition: all four already carry the
 correct order (their revision pass re-confirms).
 
 ### RATIFICATION (2026-07-18, same session, owner at the §6 brief)
+### [→ §7 is the post-landing whole-program checkpoint; §5's DeltaRel
+### op_table_id lines describe the PRE-T2b.0 pointer form]
 
 ALL EIGHT decisions RATIFIED as recommended/v3-amended: (a) det_seq
 block ids + the seen-bitset bijection witness; (a2) reachability-
@@ -897,3 +899,148 @@ machinery, retained sweep, diagnostic-set guard; (d) P1 after T3;
 UNBLOCKED: revise the four artifacts → T2a → T2b.0 → T2b → T3 → P1,
 one diff at a time, standing gates between, Fable review brought to
 the owner before each emission commit.
+
+## 7. Whole-program checkpoint (2026-07-19, end of the T2b.0 session;
+## tip fa2bc7c5 + this ledger commit): the ARCHITECTURE AS PSEUDOCODE
+## with T2b.0 AS-LANDED, and the PATH FORWARD AS DIFFS. SINGLE-PASS
+## record by this session (the §5 blocks it incorporates were fleet-
+## verified TWICE, §4 + §6; the NEW blocks below — the linearizer
+## post-T2b.0, the T2a emitter contract — are this session's writing).
+## A new session starts HERE; re-verify per the house precedent
+## (continue errata at E-67), leaning on §6's verdicts + the v3.1
+## pins so only the DELTA needs fresh lanes.
+
+    (A) AS-LANDED SURFACES:
+
+      A.1 COMPILE PIPELINE + DETERMINISM SUBSTRATE: §5(A) blocks
+          "main(argv)" / "Query::Build tail" / "THE DETERMINISM
+          SUBSTRATE" stand VERBATIM (fleet-verified twice; E-61's
+          kind-order note: ForEachView pushes selects, tuples,
+          kv_indices, joins, maps, aggregates, merges, NEGATIONS,
+          COMPARES, inserts — Query.h:1176-1214/:1248-1258; E-63's
+          const_to_vc dormant gap recorded in place).
+
+      A.2 THE DELTAREL LINEARIZER, post-T2b.0 (LANDED 97d02111,
+          §2 record; supersedes §5's pointer-form lines):
+            key_of(op) = {lead, stratum, band, op_table_id, sign,
+                          ctor}                # DeltaRel.cpp:~3437
+            op_table_id = t ? uintptr_t(t->id) + 1u : 0u
+                          # t = first non-null of six DROp table
+                          # fields else fire_table; +1 shift into the
+                          # 64-bit key space -> null sentinel 0 is
+                          # disjoint BY CONSTRUCTION (survives even
+                          # -first-id wraparound minting table id 0
+                          # — the Fable review's CONFIRMED catch);
+                          # t->id == the .ir's %table:<id>
+            pinned_order = Kahn topo sort over non-loop-carried dep
+                          edges, ready-set tie-broken by key_less
+                          (:~3702-3739)
+            consumers   = validators (:~3817-3981) + the NEVER-READ
+                          body_ops/output_ops substrate loop
+                          (:~3804-3815); EMISSION READS NEITHER
+                          (Lower* walk construction order) — the
+                          E-62 tripwire: re-grep body_ops/output_ops
+                          readers before trusting this at any future
+                          diff
+          The whole key is now pointer-free: pinned_order is fit to
+          become golden bytes (T2b's precondition, satisfied).
+          Gate record: 676-row corpus A/B byte-identity held.
+
+      A.3 THE FOUR BYTE-EXACT DUMP CONTRACTS (fa2bc7c5, t2-desired-
+          states/): tc + symrec_tie_1 + demand_tc_witness (-df-out,
+          demand-ON for the third) and average_weight
+          (-deltarel-out). Each = provenance header + THE EXACT
+          INTENDED DUMP BYTES + derivation sections + LOUD residuals.
+          Written/critiqued/fixed against the frozen 63c8443c binary
+          + spec v3 + the v3.1 pins (p1) uniform block headers
+          `<kind> ^<kind>.<det_seq> (<own finalized cols>)`, (p2)
+          bare-token identity in => maps, (p3) producer-side
+          => .in<K> lines present with join-owned role mapping —
+          .in<K> ASSIGNMENT IS PREDICTED (joined_views UseList
+          order, code-read at first bless), (p4) reads: renders
+          Preds only, kInIReadFrozen under effects:.
+          RESIDUALS an implementer must adjudicate (never silently):
+          tc R1 INSERT det_seq ids unwitnessed (predicted from
+          clause order); .in<K> assignments; deltarel op.4
+          never-minted-vec note + the kInIReadFrozen/reads: tension
+          note on GU/SEED_FOLD lines.
+
+      A.4 HARNESS: §5(A) harness block stands (169 cases; 158
+          stdout + 52 oracle + 52 monotone goldens; --one owns all
+          golden policy; :231 diagnostic names; :284 summary grep).
+
+    (B) THE PATH FORWARD AS DIFFS (spec v3 + v3.1 = BINDING, ALL
+    EIGHT owner decisions RATIFIED 2026-07-18):
+
+      T2a  + gDFStream/-df-out (NEXT DIFF). The emitter as
+           pseudocode (make the compiler print EXACTLY A.3's three
+           df artifacts):
+             emit_df(query):        # lib/DataFlow/Format.cpp, new
+                                    # QueryDF tag operator<<; decl in
+                                    # include/.../DataFlow/Format.h
+               print "dataflow"
+               # PASS 1 (bijection witness, always-on fprintf+abort):
+               N = count via ForEachView; seen = bitset(N)
+               ForEachView v: s = v.det_seq_raw
+                 if s >= N or seen[s]: ABORT (unstamped ~0u caught
+                                       by range; dup by bitset)
+                 seen[s] = true
+               # PASS 2 (emission, SHARING the ForEachView
+               # traversal -- blocks ascending det_seq by
+               # construction since the stamp IS traversal order):
+               ForEachView v:
+                 header: <kind> ^<kind>.<det_seq> (own finalized
+                         col tokens)            # pin p1
+                 ATTRIBUTES: table=%table:<TableId()> (table-backed),
+                         class=<differential|monotone|table-less>
+                         (CanReceiveDeletions-derived), stratum=,
+                         set=/depth= (induction members only)
+                 body:   JOIN pivot/out lines in accessor order;
+                         MERGE `; callers:` ascending det_seq;
+                         INSERT into-form terminal
+                 edges:  one => per user column-edge, (user det_seq,
+                         port) order, dst=src only on rename (p2),
+                         producer-side .in<K> lines (p3),
+                         `; cycle` iff def REACHABLE from user
+                         (memoized reachability, decision a2-i)
+             drain: Main.cpp beside -dot-out (:106-109), AFTER
+             Program::Build (TableId populated). NO producer= ever.
+           GATES: byte-diff vs the three artifacts (mismatch =
+           fleet-adjudicate artifact-vs-compiler, amend the wrong
+           one LOUDLY); zero golden churn; suite 169; flag-off
+           byte-identity (dump is off-path); Q5 ABABAB; A1 rider
+           (eyeball %table:<id>); Fable review -> owner -> commit.
+      T2b  + SetDeltaRelDumpStream/-deltarel-out per spec §2.1-2.3:
+           pre-guarded sink, drain via the :2167 flow ref in the
+           :2167-:2199 window; vecs mint order / joins+branches /
+           ops in pinned_order (now deterministic) / rounds
+           bannered / deps exhaustive / census; Pred+EffKind
+           spellings verbatim; validator tokens from ValidatorFail
+           literals; CONFIG-INVARIANCE AUDIT (no NDEBUG-gated field)
+           before any bless. Contract: A.3's average_weight
+           artifact. Same gate shape as T2a.
+      T3   + .irgold sidecars per spec §3 (E-65 layout
+           $NAME.irgold/; IRGOLD-* tokens; all-4-modes-clean cases
+           only; sidecar+goldens same commit). First carriers:
+           demand_tc_witness (h+ir+df+deltarel, demand-ON = the
+           permanent (F) gate), symrec_tie_1 (ir+df). The 8-run
+           sweep retires as ROUTINE step only; RETAINED as the
+           substrate-change acceptance gate.
+      P1   PassPolicy at the two Build sites; legacy flags exact
+           aliases; byte-identity across ALL FOUR modes (A8).
+      D1   design+judge fleet after T3 (witness-deltarel-target.md +
+           tc-four-adornment-target.md targets, H1-H10 holes;
+           per-guard-site release-surviving annotation, PICK-A
+           witness demand_neighborhood_witness.dr, dual-lowering
+           equivalence gate — the minus-before-plus band-(a)
+           ordering must be PINNED by an explicit DR-IR edge before
+           the equivalence gate counts). Then D2 -> D3 -> D4-design
+           (§0.6.1).
+
+    (C) STATUS at session end (2026-07-19): T1 + (F) + T2b.0 LANDED
+    (§2); all eight owner decisions RATIFIED; the four dump
+    contracts committed (DRAFT-PENDING-REVISION retired); spec at
+    v3 + v3.1 pins. NO T2a/T2b/T3/P1 code exists. Standing gates
+    unchanged; the scripted 8-run sweep is still the (F) regression
+    instrument until T3 blesses. Next session: re-verify §7
+    (E-67+), then T2a.
