@@ -65,106 +65,123 @@ supersede several critique recommendations. Amendments applied (see §4):
     joins 14/15/16 the demand relation is `.in0`, the read is `.in1`.
 
 --------------------------------------------------------------------
+AMENDED 2026-07-19 (round-2 adjudication + v3.2 grammar unification,
+ledger §10, errata E-70/E-71): §1 re-rendered under the session-pinned
+emitter rulings (p5)-(p9) with the RATIFIED (p2)/(p3) pins
+back-applied (E-70 — this artifact's §2.3 "all edges dst=src" rule
+predated them): `ATTRIBUTES` keyword restored on every attributes
+line (p5); identity `=>` entries now BARE (p2); producer-side
+`.in<K>` maps render pure producer tokens in join-port order (p3:
+`.in0(F=c11)` -> `.in0(c11)`, `.in0(M=To, F=From)` -> `.in0(To,
+From)`); `; terminal` stripped (p8); JOIN bodies to the p9 form;
+comments re-padded to the p6 column; insert.19 GAINS its ATTRIBUTES
+line `class=monotone stratum=9` (derived from this artifact's own
+§2.1 table row det_seq=19 — the committed block omitted it, an E-70
+axis). GRAPH FACTS UNCHANGED (20 blocks, 24 `=>` edges, 13 cycle
+marks, demand__ numbering). Pre-amendment renderings in derivation
+prose (incl. §2.3's dst=src rule statement) are HISTORICAL.
+
 ## §1 THE DESIRED `-df-out` TEXT
 
 ```
 dataflow
 
 select ^select.0 (M:u64, T:u64)                    ; recv #message edge_2/2
-  class=table-less stratum=0
-  => ^tuple.2 (F=M, T=T)
-  => ^tuple.10 (M=M, T=T)
+  ATTRIBUTES class=table-less stratum=0
+  => ^tuple.2 (F=M, T)
+  => ^tuple.10 (M, T)
 
 select ^select.1 (c3:u64)                          ; recv #message demand__reachable_from_bf/1
-  class=table-less stratum=1
+  ATTRIBUTES class=table-less stratum=1
   => ^tuple.8 (c14=c3)
   => ^tuple.12 (c21=c3)
 
 tuple ^tuple.2 (F:u64, T:u64)
-  table=%table:19 class=monotone stratum=2
-  => ^join.14 .in1(F=F, T=T)
+  ATTRIBUTES table=%table:19 class=monotone stratum=2
+  => ^join.14 .in1(F, T)
 
 tuple ^tuple.3 (F:u64, T:u64)
-  class=table-less stratum=5
-  => ^merge.17 (F=F, T=T)                          ; cycle
+  ATTRIBUTES class=table-less stratum=5
+  => ^merge.17 (F, T)                              ; cycle
 
 tuple ^tuple.4 (From:u64, To:u64)
-  table=%table:8 class=monotone stratum=5
-  => ^join.15 .in1(From=From, To=To)               ; cycle
-  => ^join.16 .in1(From=From, To=To)
+  ATTRIBUTES table=%table:8 class=monotone stratum=5
+  => ^join.15 .in1(From, To)                       ; cycle
+  => ^join.16 .in1(From, To)
 
 tuple ^tuple.5 (From:u64)
-  class=table-less stratum=5
+  ATTRIBUTES class=table-less stratum=5
   => ^merge.18 (c33=From)                          ; cycle
 
 tuple ^tuple.6 (c11:u64)
-  table=%table:12 class=monotone stratum=5
-  => ^join.14 .in0(F=c11)                          ; cycle
-  => ^join.15 .in0(From=c11)                        ; cycle
+  ATTRIBUTES table=%table:12 class=monotone stratum=5
+  => ^join.14 .in0(c11)                            ; cycle
+  => ^join.15 .in0(c11)                            ; cycle
 
 tuple ^tuple.7 (From:u64, To:u64)
-  table=%table:15 class=monotone stratum=5
-  => ^join.13 .in0(M=To, F=From)                    ; cycle
+  ATTRIBUTES table=%table:15 class=monotone stratum=5
+  => ^join.13 .in0(To, From)                       ; cycle
 
 tuple ^tuple.8 (c14:u64)
-  table=%table:23 class=monotone stratum=6
-  => ^join.16 .in0(From=c14)
+  ATTRIBUTES table=%table:23 class=monotone stratum=6
+  => ^join.16 .in0(c14)
 
 tuple ^tuple.9 (From:u64, To:u64)
-  class=table-less stratum=8
-  => ^insert.19 (From=From, To=To)
+  ATTRIBUTES class=table-less stratum=8
+  => ^insert.19 (From, To)
 
 tuple ^tuple.10 (M:u64, T:u64)
-  table=%table:19 class=monotone stratum=4
-  => ^join.13 .in1(M=M, T=T)
+  ATTRIBUTES table=%table:19 class=monotone stratum=4
+  => ^join.13 .in1(M, T)
 
 tuple ^tuple.11 (F:u64, T:u64)
-  class=table-less stratum=5
-  => ^merge.17 (F=F, T=T)                          ; cycle
+  ATTRIBUTES class=table-less stratum=5
+  => ^merge.17 (F, T)                              ; cycle
 
 tuple ^tuple.12 (c21:u64)
-  class=table-less stratum=3
+  ATTRIBUTES class=table-less stratum=3
   => ^merge.18 (c33=c21)
 
 join ^join.13 (M:u64, F:u64, T:u64) {
-    pivot M:u64 <- .in0.To, .in1.M
-    out F:u64   <- .in0.From
-    out T:u64   <- .in1.T
-  }
-  class=table-less stratum=5 set=0 depth=1
-  => ^tuple.3 (F=F, T=T)                            ; cycle
+  pivot M:u64 <- .in0.To, .in1.M
+  out F:u64 <- .in0.From
+  out T:u64 <- .in1.T
+}
+  ATTRIBUTES class=table-less stratum=5 set=0 depth=1
+  => ^tuple.3 (F, T)                               ; cycle
 
 join ^join.14 (F:u64, T:u64) {
-    pivot F:u64 <- .in0.c11, .in1.F
-    out T:u64   <- .in1.T
-  }
-  class=table-less stratum=5 set=0 depth=1
-  => ^tuple.11 (F=F, T=T)                           ; cycle
+  pivot F:u64 <- .in0.c11, .in1.F
+  out T:u64 <- .in1.T
+}
+  ATTRIBUTES class=table-less stratum=5 set=0 depth=1
+  => ^tuple.11 (F, T)                              ; cycle
 
 join ^join.15 (From:u64, To:u64) {
-    pivot From:u64 <- .in0.c11, .in1.From
-    out To:u64     <- .in1.To
-  }
-  class=table-less stratum=5
-  => ^tuple.7 (From=From, To=To)                    ; cycle
+  pivot From:u64 <- .in0.c11, .in1.From
+  out To:u64 <- .in1.To
+}
+  ATTRIBUTES class=table-less stratum=5
+  => ^tuple.7 (From, To)                           ; cycle
 
 join ^join.16 (From:u64, To:u64) {
-    pivot From:u64 <- .in0.c14, .in1.From
-    out To:u64     <- .in1.To
-  }
-  class=table-less stratum=7
-  => ^tuple.9 (From=From, To=To)
+  pivot From:u64 <- .in0.c14, .in1.From
+  out To:u64 <- .in1.To
+}
+  ATTRIBUTES class=table-less stratum=7
+  => ^tuple.9 (From, To)
 
 merge ^merge.17 (F:u64, T:u64)                     ; callers: ^tuple.3, ^tuple.11
-  table=%table:8 class=monotone stratum=5 set=0 depth=1
-  => ^tuple.4 (From=F, To=T)                        ; cycle
-  => ^tuple.5 (From=F)                              ; cycle
+  ATTRIBUTES table=%table:8 class=monotone stratum=5 set=0 depth=1
+  => ^tuple.4 (From=F, To=T)                       ; cycle
+  => ^tuple.5 (From=F)                             ; cycle
 
 merge ^merge.18 (c33:u64)                          ; callers: ^tuple.5, ^tuple.12
-  table=%table:12 class=monotone stratum=5 set=0 depth=1
-  => ^tuple.6 (c11=c33)                             ; cycle
+  ATTRIBUTES table=%table:12 class=monotone stratum=5 set=0 depth=1
+  => ^tuple.6 (c11=c33)                            ; cycle
 
-insert ^insert.19 (From:u64, To:u64) into %table:4 ; terminal
+insert ^insert.19 (From:u64, To:u64) into %table:4
+  ATTRIBUTES class=monotone stratum=9
 ```
 
 --------------------------------------------------------------------

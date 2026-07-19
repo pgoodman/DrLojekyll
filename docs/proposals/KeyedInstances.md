@@ -1101,7 +1101,98 @@ comment appears at BOTH :584-586 (body_ops) AND :592 (output_ops);
 the lane's cite was correct. Two further lane nits logged as
 non-issues in the consolidated record.
 
-## 9. FUTURE-EPOCH CANDIDATE (owner-directed, recorded 2026-07-19):
+## 10. T2a round-2 record (2026-07-19, tip 6c833fe7; emitter
+## pseudocode build-out + 4 adversarial critics + 4 fresh contract
+## re-verifiers + xhigh consolidator, 10 agents ~932k tokens, 320
+## tool uses; consolidated record committed as
+## KeyedInstances.artifacts/t2a-round2-consolidated.md, emitter
+## pseudocode stays session-scratch — the CODE is its artifact)
+
+VERDICT: GO for T2a. The pseudocode spine is code-correct (raw
+det_seq access via public Node::impl + lib-private Query.h include;
+blocks ascend det_seq by traversal-sharing; QueryDF tag-struct
+coexists with the DOT operator<<; T2b.0 confirmed landed). FIVE
+mandatory emitter amendments adjudicated (fold at implementation):
+
+- A1: the emitter's ForEachDFView walk must explicitly skip
+  `v.impl->is_dead` — the PUBLIC DefinedNodeIterator does NOT skip
+  dead views (DefUse.h:1055-1058) while the impl stamp walk does;
+  comment states the true mechanism (RemoveUnusedViews leaves the
+  public lists dead-free today; Pass 1's s>=N is the tripwire).
+- A2: column tokens render via `os << *c.Variable()` (the
+  ParsedVariable operator<< maps unnamed vars to AutoVar_<n>,
+  Parse/Format.cpp:14-22) — never var->Name() (drops AutoVar_N),
+  never the optional operator (prints _MissingVar).
+- A3: `; cycle` SCC/reachability runs over the emitter's OWN `=>`
+  edge map, NEVER QueryView::Successors() — Link.cpp:343-346 wires
+  INSERT→SELECT materialization edges into successors that the `=>`
+  grammar never renders; Successors would over-mark
+  materialization-closed recursion.
+- A4: the iterative Tarjan body is pinned concretely (resume-frame
+  child-cursor form), seeded in ForEachDFView order.
+- A5: two anchor fixes (HasNeverHint Query.h:800; MergedViews :736).
+
+Contract re-verification: every PREDICTED residual adjudicated —
+tc R1 insert ids + R2 .in<K> stay CONFIRMED-AS-PREDICTED (code-read
+at first bless, with the F3 falsifiability caveat: .in<K> must be
+cross-checked as a FUNCTION of joined_views order at bless, not
+matched-to-output); symrec arm assignment + det_seq tie-break
+CONFIRMED; demand 20 blocks / 24 edges / 13 cycle marks CONFIRMED
+(valid only under A3's edge set); average_weight within-band order
+under the +1 key CONFIRMED (monotone shift), never-minted-t36-vec
+note CONFIRMED, deps section stays PREDICTED/floor. REJECTED loudly:
+two critics' claim that runall.sh:248/:284 anchors had drifted
+(both read a stale tip; :248/:284 are CORRECT at head).
+
+### Errata E-70/E-71 (orchestrator-caught AFTER the fleet — the
+### cross-contract grammar audit the fleet lacked)
+
+- E-70 (ARTIFACT defect, LOAD-BEARING, T2a-blocking): the four
+  committed byte-exact contracts rendered FOUR DIFFERENT GRAMMARS —
+  identity `=>` maps dst=src (symrec/demand) vs bare (tc, the
+  ratified p2); producer-side .in<K> as dst=src role maps (demand)
+  vs producer tokens (tc), with symrec's tuple.2 edge in producer-
+  column order vs tc/demand's join-port order; ATTRIBUTES keyword
+  omitted (demand) vs present; hand-written prose annotation
+  comments (symrec ~12, demand `; terminal`) vs none; comment
+  columns 38..52; join bodies 4-space/aligned/`  }` vs
+  2-space/plain/`}`; INSERT tokens untyped + attributes present
+  (tc) vs typed + attributes MISSING (demand insert.19). Root
+  cause: the fa2bc7c5 revision applied each critique's fixes
+  per-artifact; the v3.1 pins were minted from the tc critique and
+  never back-applied. One emitter cannot match four grammars —
+  gate 8 was UNSATISFIABLE as committed. RESOLUTION: spec v3.2
+  session pins (p3-order, p5-p9) + all four §1 blocks re-rendered
+  under them in this commit (banners on each artifact; graph facts
+  untouched; C-TC-1 and C-AW-1/2 folded into the same re-render;
+  demand insert.19 gains its ATTRIBUTES line from the artifact's
+  own §2.1 table).
+- E-71 (FLEET-METHOD): the round-2 contract critics verified graph
+  facts IN ISOLATION and issued CONTRACT-HOLDS verdicts blind to
+  grammar nonconformance (demand's "all 24 => lines byte-exact"
+  while every identity map violated ratified p2). Standing method
+  note: a byte-contract verification fleet needs an explicit
+  GRAMMAR-CONFORMANCE lane that diffs the artifacts against the
+  PINS and against EACH OTHER, not only against the graph.
+
+### Owner items for the T2a pre-commit brief
+
+- PIN-1 (constant-column token): DOT renders a constant column's
+  literal value (do_const, Format.cpp:60-71); the pseudocode
+  renders c<id>:<type>. No contract witnesses a constant column.
+  Owner rules (value vs c<id>) + a constant-column contract case
+  before any such bless. Does NOT block T2a wiring (tc/symrec/
+  demand carry none).
+- PIN-2 (T3 h-surface plumbing): `h` has no named-path stream
+  (-cpp-out writes <dbname>.h into a dir; #database renames it) —
+  run_irgold special-cases h via a post-copy from a cpp.<mode>/
+  dir. T3 item, logged so T3 does not stall.
+
+NEXT: implement T2a (emitter per the amended pseudocode + v3.2
+pins), gates: byte-diff vs the three re-rendered contracts, full
+suite 169, corpus flag-off A/B vs the frozen 35b89aab baseline,
+ctest, Q5 ABABAB, %table eyeball in all three carriers; then the
+Fable review -> owner brief (PIN-1/PIN-2 attached) -> commit. (owner-directed, recorded 2026-07-19):
 ## eager-web DR-lowering — NOT this epoch's scope
 
 CANDIDATE: model the eager descent as DR-IR ops and lower it from

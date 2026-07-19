@@ -1,5 +1,20 @@
 # T2 desired-state — `-deltarel-out` dump of average_weight.dr
 
+AMENDED 2026-07-19 (round-2 adjudication, ledger §10 — C-AW-1/C-AW-2,
+the consolidator-CONFIRMED p4 nonconformance this artifact's own F-5
+flagged as a known unfixed defect): the NINE `reads: InI(%table:N)`
+lines DELETED (ops 4, 6, 7, 0, 2, 8, 9, 10, 11 — the frozen-InI
+crossing is the kInIReadFrozen EffKind, already present under each
+op's `effects:`; pin p4 restricts `reads:` to Pred spellings from
+kFlagRead, so those ops now carry NO reads: line) and the TWO
+`reads: —` placeholders removed (op.52's line deleted; op.24's
+TryClaimDel note kept as a standalone `;` annotation line, the op.52
+idiom) to match the thirteen claim drains that omit the line
+entirely. FRONTIER_FILTER `reads: NetDeleted/NetAdded` lines are
+kFlagRead-backed and KEPT. Within-band op order re-CONFIRMED under
+the as-landed +1 band key (monotone shift; round-2 contract-deltarel
+critic). All other bytes UNCHANGED.
+
 ## §0 Provenance
 
 DESIRED-STATE WRITER deliverable, KeyedInstances epoch, branch `keyed-instances`.
@@ -187,7 +202,6 @@ join.0 view=<X,Sum,Count> pivot_vec=$join-pivots.42 targets=[%table:23]
 ;; --- lead 0: ingest folds (lowered in ^entry, off the ^flow lattice) ---
 op.52 kIngestFold sign=+ ctx=eager  stratum=0
     ; lowered in ^entry:41 (ingest-cursor hole; .ir:75). role=kNetAddition
-    reads: —
     effects: {kCounter(%table:36, +, NonRecursive),
               kVecAppend(%table:36, kNetAddition)}
     spine: kFold(%table:36, +, NonRecursive)
@@ -200,7 +214,6 @@ op.4  kGroupUpdate sign=· ctx=seed  stratum=1  sc#2
     ; column tokens <var-or-cN>:<type> per spec v3 (From/To/Weight are the INPUT
     ; %table:36 col names, %col:37/38/39); KV group/summary cols are in the INPUT
     ; space (InputKeyColumns/InputValueColumns, 1086-1092)
-    reads: InI(%table:12)               ; the emit_touched crossings
     effects: {kVecDrain(%table:36, kNetRemoval), kStateFold(%table:12, -),
               kVecDrain(%table:36, kNetAddition), kStateFold(%table:12, +),
               kStateEmit(%table:12), kStateOld(%table:12),
@@ -211,7 +224,7 @@ op.4  kGroupUpdate sign=· ctx=seed  stratum=1  sc#2
     spine: —   ; @recompute rescan is a store-internal reduce, no PlanTree
     args: agg_table=%table:12 input=%table:36 statecell=sc#2
 op.24 kClaimDrain sign=- ctx=seed  stratum=1  form=single-pass gate=kDelGateCnrNonPositive
-    reads: — ; TryClaimDel re-tests C_nr<=0 at dequeue
+    ; TryClaimDel re-tests C_nr<=0 at dequeue
     effects: {kVecDrain(%table:12, kDeleteQueue), kFlagWrite(%table:12, -),
               kVecAppend(%table:12, kOverdeleteSet)}
     args: table=%table:12
@@ -230,13 +243,11 @@ op.27 kFrontierFilter sign=+ ctx=seed  stratum=1  deferral=immediate
 
 ;; --- stratum 2: TUPLE %table:28 (edge_weight KV -> summarized agg input) ---
 op.6  kSeedFold sign=- ctx=seed  stratum=2  src=%table:12 tgt=%table:28 class=NonRecursive
-    reads: InI(%table:28)
     effects: {kVecDrain(%table:12, kNetRemoval), kCounter(%table:28, -, NonRecursive),
               kInIReadFrozen(%table:28, InI, seed), kVecAppend(%table:28, kDeleteQueue)}
     spine: kFold(%table:28, -, NonRecursive)
     args: branch=<%table:12..%table:28> src=%table:12 tgt=%table:28
 op.7  kSeedFold sign=+ ctx=seed  stratum=2  src=%table:12 tgt=%table:28 class=NonRecursive
-    reads: InI(%table:28)
     effects: {kVecDrain(%table:12, kNetAddition), kCounter(%table:28, +, NonRecursive),
               kInIReadFrozen(%table:28, InI, seed), kVecAppend(%table:28, kAddQueue)}
     spine: kFold(%table:28, +, NonRecursive)
@@ -268,7 +279,6 @@ op.0  kGroupUpdate sign=· ctx=seed  stratum=3  sc#0
     ; column tokens <var>:<type> per spec v3 (X/BX_Weight are the shared INPUT
     ; %table:28 col names %col:29/30); cols are in the INPUT space
     ; (BuildGroupUpdateOps 1058-1073 uses InputGroupColumns/InputAggregatedColumns)
-    reads: InI(%table:4)
     effects: {kVecDrain(%table:28, kNetRemoval), kStateFold(%table:4, -),
               kVecDrain(%table:28, kNetAddition), kStateFold(%table:4, +),
               kStateEmit(%table:4), kStateOld(%table:4),
@@ -303,7 +313,6 @@ op.2  kGroupUpdate sign=· ctx=seed  stratum=5  sc#1
     group@{X:i32} summary@{BX_Weight:i32} config=0  input=%table:28
     ; column tokens <var>:<type> per spec v3; SAME input space as sum
     ; (both aggregate over %table:28's net frontiers, %col:29 X / %col:30 BX_Weight)
-    reads: InI(%table:8)
     effects: {kVecDrain(%table:28, kNetRemoval), kStateFold(%table:8, -),
               kVecDrain(%table:28, kNetAddition), kStateFold(%table:8, +),
               kStateEmit(%table:8), kStateOld(%table:8),
@@ -367,13 +376,11 @@ op.35 kFrontierFilter sign=+ ctx=seed  stratum=7  deferral=immediate
 
 ;; --- stratum 8: MAP div_i32 -> %table:17 (div on the %table:23 branch) ---
 op.8  kSeedFold sign=- ctx=seed  stratum=8  src=%table:23 tgt=%table:17 class=NonRecursive
-    reads: InI(%table:17)
     effects: {kVecDrain(%table:23, kNetRemoval), kCounter(%table:17, -, NonRecursive),
               kInIReadFrozen(%table:17, InI, seed), kVecAppend(%table:17, kDeleteQueue)}
     spine: kAccess(div_i32 MAP, bbf) -> kFold(%table:17, -, NonRecursive)
     args: branch=<%table:23..%table:17 via div_i32> src=%table:23 tgt=%table:17
 op.9  kSeedFold sign=+ ctx=seed  stratum=8  src=%table:23 tgt=%table:17 class=NonRecursive
-    reads: InI(%table:17)
     effects: {kVecDrain(%table:23, kNetAddition), kCounter(%table:17, +, NonRecursive),
               kInIReadFrozen(%table:17, InI, seed), kVecAppend(%table:17, kAddQueue)}
     spine: kAccess(div_i32 MAP, bbf) -> kFold(%table:17, +, NonRecursive)
@@ -400,13 +407,11 @@ op.31 kFrontierFilter sign=+ ctx=seed  stratum=8  deferral=immediate
 ;; drain_stratum[t32]=10 — the shared monotone TUPLE-alias sits one stratum
 ;; above the MAT view on the same table, same split as t4/t8 above.)
 op.10 kSeedFold sign=- ctx=seed  stratum=10  src=%table:17 tgt=%table:32 class=NonRecursive
-    reads: InI(%table:32)
     effects: {kVecDrain(%table:17, kNetRemoval), kCounter(%table:32, -, NonRecursive),
               kInIReadFrozen(%table:32, InI, seed), kVecAppend(%table:32, kDeleteQueue)}
     spine: kFold(%table:32, -, NonRecursive)
     args: branch=<%table:17..%table:32> src=%table:17 tgt=%table:32
 op.11 kSeedFold sign=+ ctx=seed  stratum=10  src=%table:17 tgt=%table:32 class=NonRecursive
-    reads: InI(%table:32)
     effects: {kVecDrain(%table:17, kNetAddition), kCounter(%table:32, +, NonRecursive),
               kInIReadFrozen(%table:32, InI, seed), kVecAppend(%table:32, kAddQueue)}
     spine: kFold(%table:32, +, NonRecursive)

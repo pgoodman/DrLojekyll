@@ -175,6 +175,42 @@ emission commit.
       (p4) `reads:` renders Pred spellings ONLY; a frozen-InI read
            is the kInIReadFrozen EffKind and renders under
            `effects:`, never on `reads:` (deltarel surface).
+  - v3.2 SESSION-PINNED EMITTER RULINGS (2026-07-19, the round-2
+    grammar unification — E-70: the four committed byte-exact
+    contracts each rendered a DIFFERENT grammar (identity maps,
+    .in<K> arg form/order, ATTRIBUTES keyword, prose comments,
+    comment columns, join-body form, INSERT typing/attributes)
+    because the v3.1 pins were applied only to the artifact whose
+    critique minted them; one emitter cannot match four grammars, so
+    the T2a byte-gate was unsatisfiable as committed. These pins
+    close every divergence axis; all §1 blocks were re-rendered
+    under them in the same commit, graph facts untouched):
+      (p3-order) a producer-side `.in<K>` line's entries are the
+           producer's OWN tokens in the JOIN's output-column-
+           position order RESTRICTED to refs into `.in<K>` (the
+           same port order the join body renders) — never the
+           producer's own column order, never dst=src role maps
+           (the join block owns the role mapping).
+      (p5) the attributes line ALWAYS carries the leading
+           `ATTRIBUTES` keyword, on every block including INSERT.
+      (p6) TRAILING-COMMENT COLUMN: every emitter comment
+           (provenance, `; cycle`, `; callers:`) starts at byte 52
+           — content padded with spaces through byte 51; content
+           ≥ 51 bytes gets exactly one space before the `;`.
+      (p7) SELECT provenance spelling: `; recv #message
+           <name>/<arity>` for message receives; `; relation
+           <name>/<arity>` for relation selects.
+      (p8) NO PROSE: a .df byte-block contains ONLY emitter-
+           derivable comments — p7 provenance, `; cycle`,
+           `; callers:`. Hand annotations live in derivation prose,
+           never in the block. INSERT lines carry no comment.
+      (p9) JOIN body: 2-space body indent; `pivot <col-token> <-
+           .in<J>.<name>[, ...]` then `out <col-token> <-
+           .in<J>.<name>` lines; lhs col-tokens TYPED (the §1.3
+           column-token definition applies everywhere, including
+           INSERT input tokens), ref names bare and untyped,
+           single-space separators, NO alignment padding; closing
+           `}` at column 0.
   - PRODUCER TAG — v1's conditional producer= is WITHDRAWN
     (spec-critic 4.1 HIGH): `producer` is #ifndef NDEBUG-only
     (Query.h:531-535; every write NDEBUG-guarded), which would make

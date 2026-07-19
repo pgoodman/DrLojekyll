@@ -76,18 +76,30 @@ populated); §1.3 column naming `<var-or-cN>:<type>` with N = finalized column i
 JOIN grammar `.in<K>`/pivot/out; INSERT terminal header.
 
 --------------------------------------------------------------------
+AMENDED 2026-07-19 (round-2 adjudication + v3.2 grammar unification,
+ledger §10, errata E-70/E-71): §1 re-rendered under the session-pinned
+emitter rulings (p5)-(p9) and the round-2 consolidator's C-TC-1 —
+line 1 of the block: `recv ... () -> (...)` header re-rendered to the
+(p1) form (`select`, no arrow, provenance in the trailing comment, p7
+spelling `; recv #message add_edge/2`); JOIN-body/INSERT lhs column
+tokens now TYPED (p9/spec col-token definition); every trailing
+comment re-padded to the p6 column (`;` at byte 52). GRAPH FACTS
+(det_seq ids, strata, classes, tables, edge structure, cycle set)
+UNCHANGED. Pre-amendment renderings quoted in derivation prose below
+are HISTORICAL.
+
 ## §1 THE DESIRED `-df-out` TEXT (complete — nothing elided)
 
 ```
 dataflow
 
-recv ^select.0 () -> (From:u64, To:u64)
+select ^select.0 (From:u64, To:u64)                ; recv #message add_edge/2
   ATTRIBUTES class=table-less stratum=0
   => ^tuple.9 (From, To)
 
 tuple ^tuple.1 (From:u64, To:u64)
   ATTRIBUTES class=table-less stratum=2
-  => ^merge.11 (From, To)                         ; cycle
+  => ^merge.11 (From, To)                          ; cycle
 
 tuple ^tuple.2 (AutoVar_2:u64, Node:u64)
   ATTRIBUTES table=%table:4 class=monotone stratum=2
@@ -122,33 +134,33 @@ tuple ^tuple.9 (From:u64, To:u64)
   => ^merge.11 (From, To)
 
 join ^join.10 (X:u64, From:u64, To:u64) {
-  pivot X <- .in0.X, .in1.AutoVar_2
-  out From <- .in0.From
-  out To <- .in1.Node
+  pivot X:u64 <- .in0.X, .in1.AutoVar_2
+  out From:u64 <- .in0.From
+  out To:u64 <- .in1.Node
 }
   ATTRIBUTES class=table-less stratum=2
-  => ^tuple.1 (From, To)                          ; cycle
+  => ^tuple.1 (From, To)                           ; cycle
 
-merge ^merge.11 (From:u64, To:u64)               ; callers: ^tuple.1, ^tuple.9
+merge ^merge.11 (From:u64, To:u64)                 ; callers: ^tuple.1, ^tuple.9
   ATTRIBUTES table=%table:4 class=monotone stratum=2 set=0 depth=1
-  => ^tuple.2 (AutoVar_2=From, Node=To)           ; cycle
+  => ^tuple.2 (AutoVar_2=From, Node=To)            ; cycle
   => ^tuple.3 (From, X=To)                         ; cycle
   => ^tuple.4 (Node=From)
   => ^tuple.5 (Node=To)
   => ^tuple.6 (From, To)
   => ^tuple.7 (From, To)
 
-merge ^merge.12 (Node:u64)                        ; callers: ^tuple.4, ^tuple.5
+merge ^merge.12 (Node:u64)                         ; callers: ^tuple.4, ^tuple.5
   ATTRIBUTES class=table-less stratum=7
   => ^tuple.8 (Node)
 
-insert ^insert.13 (From, To) into %table:4
+insert ^insert.13 (From:u64, To:u64) into %table:4
   ATTRIBUTES class=monotone stratum=9
 
-insert ^insert.14 (From, To) into %table:4
+insert ^insert.14 (From:u64, To:u64) into %table:4
   ATTRIBUTES class=monotone stratum=10
 
-insert ^insert.15 (Node) into %table:8
+insert ^insert.15 (Node:u64) into %table:8
   ATTRIBUTES class=monotone stratum=11
 ```
 

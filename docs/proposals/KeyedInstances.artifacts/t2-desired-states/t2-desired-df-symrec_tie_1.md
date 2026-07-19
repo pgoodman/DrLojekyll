@@ -51,6 +51,24 @@ binary, NOT the older b577735e dumps):
 Spec version: t2-dump-spec.md v3 (RATIFIED 2026-07-18). All eight owner
 decisions (a),(a2),(a3),(b),(b2),(c),(d),(e) ratified.
 
+AMENDED 2026-07-19 (round-2 adjudication + v3.2 grammar unification,
+ledger §10, errata E-70/E-71): §1 re-rendered under the session-pinned
+emitter rulings (p5)-(p9) with the RATIFIED (p2)/(p3) pins
+back-applied (E-70 — this artifact predated their cross-artifact
+application): identity `=>` entries now BARE tokens (p2: `(A=A, B=B)`
+-> `(A, B)`); producer-side `.in<K>` maps render pure producer tokens
+in JOIN-PORT order (p3-order: tuple.2's edge is now `.in0(X, A)`,
+tuple.6's arm2 edge `.in0(B, A)`); ALL hand-written prose annotation
+comments STRIPPED from the byte-block (p8 — only `; cycle`,
+`; callers:`, and select provenance are emitter-derivable; the
+stripped annotations survive in §2's derivation prose); provenance
+re-spelled per p7 (`; recv #message edge/2`); JOIN bodies to the p9
+form (2-space body indent, single-space separators, `}` at column 0);
+comments re-padded to the p6 column. GRAPH FACTS UNCHANGED (ids,
+strata, classes, tables, arm assignments, cycle set — incl. the §2
+det_seq tie-break determinism claim). Pre-amendment renderings in
+derivation prose are HISTORICAL.
+
 ## §1 — THE DESIRED `-df-out` TEXT
 
 Rendered per t2-dump-spec.md v3 §1.2/§1.3:
@@ -98,63 +116,63 @@ tc-readback/merge/insert — critique F-D, corrected below).
 ```
 dataflow
 
-select ^select.0 (A:u64, X:u64)               ; #message edge/2
+select ^select.0 (A:u64, X:u64)                    ; recv #message edge/2
   ATTRIBUTES class=table-less stratum=0
-  => ^tuple.1 (A=A, X=X)
-  => ^tuple.2 (A=A, X=X)
-  => ^tuple.3 (A=A, X=X)
+  => ^tuple.1 (A, X)
+  => ^tuple.2 (A, X)
+  => ^tuple.3 (A, X)
 
 tuple ^tuple.1 (A:u64, X:u64)
   ATTRIBUTES class=table-less stratum=1
-  => ^merge.10 (A=A, B=X)                      ; base-case row into tc
+  => ^merge.10 (A, B=X)
 
 tuple ^tuple.2 (A:u64, X:u64)
   ATTRIBUTES table=%table:8 class=monotone stratum=2
-  => ^join.9 .in0(A=A, X=X)                    ; edge side of arm3 (edge-first)
+  => ^join.9 .in0(X, A)
 
 tuple ^tuple.3 (A:u64, X:u64)
   ATTRIBUTES table=%table:8 class=monotone stratum=3
-  => ^join.8 .in1(A=A, X=X)                    ; edge side of arm2 (tc-first)
+  => ^join.8 .in1(A, X)
 
 tuple ^tuple.4 (A:u64, B:u64)
   ATTRIBUTES class=table-less stratum=4
-  => ^merge.10 (A=A, B=B)             ; cycle    ; arm2 result into tc
+  => ^merge.10 (A, B)                              ; cycle
 
 tuple ^tuple.5 (A:u64, B:u64)
   ATTRIBUTES class=table-less stratum=4
-  => ^merge.10 (A=A, B=B)             ; cycle    ; arm3 result into tc
+  => ^merge.10 (A, B)                              ; cycle
 
 tuple ^tuple.6 (A:u64, B:u64)
   ATTRIBUTES table=%table:4 class=monotone stratum=4
-  => ^join.8 .in0(A=A, B=B)           ; cycle    ; tc side of arm2, pivot on B
-  => ^join.9 .in1(A=A, B=B)           ; cycle    ; tc side of arm3, pivot on A
+  => ^join.8 .in0(B, A)                            ; cycle
+  => ^join.9 .in1(A, B)                            ; cycle
 
 tuple ^tuple.7 (A:u64, B:u64)
   ATTRIBUTES class=table-less stratum=5
-  => ^insert.11 (A=A, B=B)
+  => ^insert.11 (A, B)
 
-join ^join.8 (X:u64, A:u64, B:u64) {          ; arm2: tc(A,X),edge(X,B)
-    pivot X:u64 <- .in0.B, .in1.A              ; tc.B == edge.A   [.in0=tc, .in1=edge]
-    out   A:u64 <- .in0.A                      ; tc keyed on B (=X)
-    out   B:u64 <- .in1.X                      ; edge keyed on A (=X)
-  }
+join ^join.8 (X:u64, A:u64, B:u64) {
+  pivot X:u64 <- .in0.B, .in1.A
+  out A:u64 <- .in0.A
+  out B:u64 <- .in1.X
+}
   ATTRIBUTES class=table-less stratum=4 set=0 depth=1
-  => ^tuple.4 (A=A, B=B)             ; cycle
+  => ^tuple.4 (A, B)                               ; cycle
 
-join ^join.9 (X:u64, A:u64, B:u64) {          ; arm3: edge(A,X),tc(X,B)
-    pivot X:u64 <- .in0.X, .in1.A              ; edge.X == tc.A   [.in0=edge, .in1=tc]
-    out   A:u64 <- .in0.A                      ; edge keyed on X (=X)
-    out   B:u64 <- .in1.B                      ; tc keyed on A (=X)
-  }
+join ^join.9 (X:u64, A:u64, B:u64) {
+  pivot X:u64 <- .in0.X, .in1.A
+  out A:u64 <- .in0.A
+  out B:u64 <- .in1.B
+}
   ATTRIBUTES class=table-less stratum=4 set=0 depth=1
-  => ^tuple.5 (A=A, B=B)             ; cycle
+  => ^tuple.5 (A, B)                               ; cycle
 
-merge ^merge.10 (A:u64, B:u64)                ; callers: ^tuple.1, ^tuple.4, ^tuple.5
+merge ^merge.10 (A:u64, B:u64)                     ; callers: ^tuple.1, ^tuple.4, ^tuple.5
   ATTRIBUTES table=%table:4 class=monotone stratum=4 set=0 depth=1
-  => ^tuple.6 (A=A, B=B)             ; cycle    ; tc read-back into joins
-  => ^tuple.7 (A=A, B=B)                        ; into out path
+  => ^tuple.6 (A, B)                               ; cycle
+  => ^tuple.7 (A, B)
 
-insert ^insert.11 (A:u64, B:u64) into %table:4  ; terminal (query out)
+insert ^insert.11 (A:u64, B:u64) into %table:4
   ATTRIBUTES class=monotone stratum=6
 ```
 
