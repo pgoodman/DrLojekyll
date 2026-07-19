@@ -642,7 +642,12 @@ method paying again):
           (Optimize.cpp:320-379,409-422). Join::Depth walks columns
           (Join.cpp:74-110); FinalizeDepths resets dead views too
           (Link.cpp:437-472).
-        RESIDUAL (§4 census): nothing pointer-ordered reaches emission.
+        RESIDUAL (§4 census; E-63-scoped): nothing pointer-ordered
+          reaches emission ON THE CURRENT CORPUS — one dormant gap:
+          Build.cpp:501 iterates const_to_vc (unordered_map) into
+          ALL-CONSTS tuple column layout unsorted; fires only on an
+          all-constants clause body with ≥2 distinct constant
+          columns, nil today. Future hardening: col->id sort first.
         View identity beyond det_seq is the IMPL POINTER (UniqueId,
           Node.h:31) — why -dot-out node names are nondeterministic.
 
@@ -655,11 +660,17 @@ method paying again):
                            ctor}                 # DeltaRel.cpp:3432
              op_table_id = reinterpret_cast<uintptr_t>(TABLE*)
                            (:3387-3394)          # <-- THE C-1 LATENT:
-                           # pointer tie-break; pinned_order consumers
-                           # are VALIDATORS ONLY (:3804-3981), so
-                           # emission is unaffected today
-             pinned_order = stable-sort by key   # the checked
-                                                 # linearization
+                           # pointer tie-break; consumers (E-62) =
+                           # the validators (:3817-3981) + the
+                           # NEVER-READ body_ops/output_ops
+                           # substrate loop (:3804-3815) — none
+                           # emission-reaching; NULL t maps to 0
+                           # today (E-64: the hardened form MUST be
+                           # `t ? t->id : 0u`)
+             pinned_order = Kahn linearization,  # the checked
+                           ready-set tie-broken  # linearization
+                           by key_less (:3702-3739; E-62 — not a
+                           flat stable_sort)
         -> V-PRED-XCHECK / INGEST Site 5 (2099ff)
         -> context.dr_flow = move (2166)         # the ONLY handle that
                                                  # survives; Program
@@ -733,3 +744,109 @@ method paying again):
     implementation order on ratification: revise the four artifacts
     -> T2a -> T2b.0 -> T2b -> T3 -> P1, one diff at a time, standing
     gates between, Fable review before each emission commit.
+
+## 6. §5 re-verification record (2026-07-18, tip 63c8443c; the tenth
+## fleet run — 4 seed-unread derivation lanes (3 opus + 1 sonnet
+## harness) + 4 seed-read adversarial verifiers + 4 diff critics
+## (density / t2b0 / irgold / predictions, run concurrently) + xhigh
+## consolidator; 13 agents ~1.07M tokens, 379 tool uses; record
+## COMMITTED as KeyedInstances.artifacts/s5-fleet-consolidated.md —
+## raw lane/verify/critic reports stayed in the session scratchpad)
+
+Baseline re-confirmed this session before the fleet: both presets
+green (incremental), SUITE PASS (169), binaries frozen to session
+scratchpad baseline-bin/ at 63c8443c.
+
+THE §5 SEED SUBSTANTIALLY HELD (second consecutive clean core): all
+four lanes CLEAN; §5(A)/(B) code-accurate except the errata below.
+The (F) and T2b.0 emission-neutrality arguments SURVIVE. The critics
+paid: two HIGH-severity implementation traps (E-61, E-64) caught
+pre-code.
+
+### Errata E-61..E-66 (consolidator-adjudicated; one attribution
+### corrected by the orchestrator's own grep)
+
+- E-61 (SPEC defect, LOAD-BEARING, misdirects T2a): the ForEachView
+  kind order in t2-dump-spec §1.2 v2 was transposed — the code
+  pushes NEGATIONS before COMPARES (Query.h:1196-1204/:1248-1258).
+  ORCHESTRATOR ADJUDICATION: the consolidator attributed this to
+  "seed §5(A) AND spec §1.2", but §5 never spells the kind list
+  (grep) and all four t2-desired-*.md artifacts already have the
+  CORRECT order — the defect was spec-only. det_seq numbering is
+  unaffected (stamped in true code order), so the density witness
+  can NOT catch a golden hand-blessed from transposed prose: any
+  .df golden diffs against a code-derived traversal, never prose.
+  Fixed in spec v3.
+- E-62 (SEED precision, conclusion holds): "pinned_order consumers
+  VALIDATORS ONLY (:3804-3981)" over-narrowed — :3804-3815 is the
+  never-read body_ops/output_ops substrate-fill loop (validators
+  proper :3817-3981); and pinned_order is a Kahn linearization
+  tie-broken by key_less, not a flat stable-sort. Emission-
+  neutrality HOLDS (zero body_ops/output_ops readers repo-wide) —
+  with the standing TRIPWIRE: re-grep those readers at T2b.0
+  implementation time and at any R2+ lowering; a reader voids the
+  argument. §5 fixed in place.
+- E-63 (SEED scope over-statement, latent): "nothing pointer-ordered
+  reaches emission" is unconditionally false — Build.cpp:501
+  iterates const_to_vc (unordered_map<QueryColumnImpl*,VarColumn*>,
+  decl :83) into ALL-CONSTS tuple column layout unsorted. Fires only
+  on an all-constants clause body with ≥2 distinct constant columns
+  — nil on the current corpus, (F) byte-stability unthreatened.
+  Future hardening (not T2-path): col->id sort first. §5 fixed.
+- E-64 (SEED elision, LOAD-BEARING, misdirects T2b.0 — CRASHES): the
+  T2b.0 one-liner "harden op_table_id to the table id" elides the
+  NULL path — t is the first non-null of six DROp table fields else
+  op.fire_table, itself NULL for kNegateGate(eager)/kSeedFold/
+  kChainFold/kPivotAssemble; a bare t->id null-derefs (exit 139) on
+  nearly every corpus case. MANDATORY form `t ? t->id : 0u`;
+  collision-free because real table ids ≥ 3. Spec v3 §2.0 carries
+  it as a hard precondition of (b2).
+- E-65 (SPEC defect, LOAD-BEARING, misdirects T3): v2's
+  `$WORKROOT/$NAME/irgold/` layout claimed to "match run_oracle" —
+  run_oracle actually writes `$NAME.oracle`/`$NAME.monotone`
+  SIBLING dirs (runall.sh:190,210); v2's shape was a third layout
+  matching nothing. v3 pins `$NAME.irgold/` (true symmetry) + a
+  `[ -d ]` bless guard.
+- E-66 (cosmetic roll-up): flags_of body is runall.sh:122-134 (not
+  -140); DataTable::Id() defined at ControlFlow/Program.cpp:877
+  (lane cite slip); Node.h = include/drlojekyll/Util/Node.h,
+  OrderedViewMap = lib/ControlFlow/Program.h (path qualifications);
+  injection-sites loop tail ends :450 not :440.
+  REJECTED candidate recorded: verify-pipeline's ":246 not :231"
+  correction of the diagnostic-names line was FALSE (:231 is the
+  11-name pattern; :246 is diffrun.sh's default dispatch arm) — a
+  verifier self-error, caught by the consolidator.
+
+Non-erratum drift recorded: the final monotonicity validator EMITS
+`V-OLD-EQUIV(order)` (DeltaRel.cpp:3982) under a comment titled
+V-ORDER-CONSISTENT — any dumped/censused validator token is
+harvested from the ValidatorFail string literal, never comments.
+
+### Critique adjudication → spec v3
+
+All four critic reports adjudicated; the nine resulting amendments
+are FOLDED into t2-dump-spec.md v3 this session: (1) E-61 kind-order
+fix; (2) the density assert replaced by a two-pass SEEN-BITSET
+bijection witness (max==count-1 is not sufficient — duplicate-with-
+gap passes it; the accessor assert compiles out under NDEBUG; N==0
+underflow); (3) §2.0 E-64 null-guard + precise verdict-neutrality
+rationale + id≥3 invariant + the stale :3971 comment fix; (4) E-62
+consumer restatement + tripwire; (5) validator-token literal harvest
++ deltarel config-invariance audit before any deltarel bless (the
+(a3) discipline extended); (6) drain via the :2167 flow ref in the
+:2167-:2199 window (before the no-phase early return) + PRE-guard
+null sink; (7) E-65 layout + sweep-retirement rewrite (retained as
+substrate-change acceptance gate) + diagnostic-set guard + sidecar/
+golden same-commit atomicity; (8) flags_of cite; (9) P1 prediction
+widened to all-4-modes byte-identity.
+
+### Decision-feeding delta
+
+ALL owner recommendations (a), (a2), (a3), (b), (b2), (c), (d), (e)
+STAND — two sharpenings, no reversals: (b2) gains the E-64
+null-guard as a hard precondition; (c) gains the E-65 layout, the
+diagnostic-set guard, and the retained-sweep ruling; (a3)'s
+config-invariance audit extends to the deltarel surface before any
+deltarel bless. The four DRAFT-PENDING-REVISION artifacts were
+grep-checked for the E-61 transposition: all four already carry the
+correct order (their revision pass re-confirms).
