@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "Program.h"  // TABLE (DataTableImpl), ->id
@@ -109,6 +110,9 @@ static const char *DROpKindName(DROpKind k) {
     case DROpKind::kIngestFold: return "kIngestFold";
     case DROpKind::kGroupUpdate: return "kGroupUpdate";
     case DROpKind::kStateSeal: return "kStateSeal";
+    case DROpKind::kSubgraphInstantiate: return "kSubgraphInstantiate";
+    case DROpKind::kInstanceDeath: return "kInstanceDeath";
+    case DROpKind::kInstanceSeal: return "kInstanceSeal";
   }
   fprintf(stderr, "DELTAREL-DUMP: unhandled enum value in a spelling table\n");
   abort();
@@ -126,6 +130,8 @@ static const char *EffKindName(EffKind k) {
     case EffKind::kStateFold: return "kStateFold";
     case EffKind::kStateEmit: return "kStateEmit";
     case EffKind::kStateOld: return "kStateOld";
+    case EffKind::kInstanceRebuild: return "kInstanceRebuild";
+    case EffKind::kInstanceDemand: return "kInstanceDemand";
   }
   fprintf(stderr, "DELTAREL-DUMP: unhandled enum value in a spelling table\n");
   abort();
@@ -456,6 +462,12 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       case EffKind::kStateOld:
         os << "(" << tid(e.read_table) << ")";
         break;
+      case EffKind::kInstanceRebuild:  // WRITE current, signed
+        os << "(" << tid(e.value_table) << ", " << effect_sign(e.sign) << ")";
+        break;
+      case EffKind::kInstanceDemand:  // frozen demand-key read
+        os << "(" << tid(e.read_table) << ")";
+        break;
     }
   };
 
@@ -569,6 +581,67 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     fprintf(stderr,
             "DELTAREL-DUMP: kGroupUpdate agg functor unresolvable\n");
     abort();
+  };
+
+  // Render a published-position column NAME via the DRInstance's pub_view
+  // (crit-grammar-1: positions decide ik-vs-row, but a NAME needs the view).
+  // fprintf+abort on an out-of-range position (crit-pins-3 / t2-dump-spec p12).
+  const auto pub_col_name = [&](const DRInstance &in, unsigned pos) -> std::string {
+    if (pos >= in.pub_view.Columns().size()) {
+      fprintf(stderr, "DELTAREL-DUMP: instance pub-row position out of range\n");
+      abort();
+    }
+    return col.Name(in.pub_view.Columns()[pos]);
+  };
+
+  // ---- instances (D1.b; after joins:, before ops:; p11 empty-section law —
+  // render NOTHING when there are no instances, exactly like vecs/branches/
+  // joins). ALWAYS empty at D1.b (the mint is gated off) ⇒ zero bytes. ----
+  if (!flow.instances.empty()) {
+    os << "\n";
+    os << "instances:\n";
+    for (unsigned i = 0u; i < flow.instances.size(); ++i) {
+      const DRInstance &in = flow.instances[i];
+      os << "  DRInstance i#" << i << " forcing=" << in.forcing_name
+         << " key=" << tid(in.demand_table) << " pub=" << tid(in.pub_table)
+         << " input=" << tid(in.input_table) << " store=I#" << i
+         << " key_cols=[";
+      for (unsigned k = 0u; k < in.key_cols.size(); ++k) {
+        if (k) os << ",";
+        os << pub_col_name(in, in.key_cols[k]);
+      }
+      os << "] row_cols=[";
+      for (unsigned r = 0u; r < in.row_cols.size(); ++r) {
+        if (r) os << ",";
+        os << pub_col_name(in, in.row_cols[r]);
+      }
+      os << "]\n";
+    }
+  }
+
+  // Render an instance op's `pub_row=[ik:.. | row:..]` partition + `nested=<>`
+  // (HP-6 contract). Sourced from the op's DRInstance (via instance_store_id) —
+  // NOT from context_col_sources (D2.b). Dead at D1.b (no instance op minted).
+  const auto emit_pub_row = [&](const DROp &op) {
+    if (op.instance_store_id >= flow.instances.size()) {
+      fprintf(stderr, "DELTAREL-DUMP: instance op store id out of range\n");
+      abort();
+    }
+    const DRInstance &in = flow.instances[op.instance_store_id];
+    std::unordered_set<unsigned> keyset(in.key_cols.begin(), in.key_cols.end());
+    const unsigned npub =
+        static_cast<unsigned>(in.pub_view.Columns().size());
+    os << " pub_row=[";
+    for (unsigned p = 0u; p < npub; ++p) {
+      if (p) os << ",";
+      os << (keyset.count(p) ? "ik:" : "row:") << pub_col_name(in, p);
+    }
+    os << "] nested=<";
+    for (unsigned r = 0u; r < in.row_cols.size(); ++r) {
+      if (r) os << ",";
+      os << pub_col_name(in, in.row_cols[r]);
+    }
+    os << ">";
   };
 
   // ---- ops (pinned_order; p11 empty-section guard as above) ----
@@ -704,6 +777,49 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         break;
       }
 
+      // Keyed-instance op p-rules (D1.b). NEVER reached at D1.b (no instance op
+      // in pinned_order); compile-covered + `-Wswitch`-total. [ADJ:crit-grammar-2]
+      // header renders `i#` only; full `store=I#` on args.
+      case DROpKind::kSubgraphInstantiate: {
+        os << " sign=" << SignGlyph(op.table_op_sign) << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op) << " i#"
+           << op.instance_store_id << "\n";
+        os << "    demand=" << tid(op.demand_table)
+           << " pub=" << tid(op.table_op_table)
+           << " input=" << tid(op.input_table);
+        emit_pub_row(op);  // pub_row=[ik:..,row:..] nested=<...> (HP-6)
+        os << "\n";
+        emit_reads(op);
+        emit_effects(op);
+        emit_spine(op);
+        os << "    args: demand=" << tid(op.demand_table)
+           << " pub=" << tid(op.table_op_table)
+           << " input=" << tid(op.input_table) << " store=I#"
+           << op.instance_store_id << "\n";
+        break;
+      }
+
+      case DROpKind::kInstanceDeath: {  // R-DIFF only; never rendered at D1.b/D2.b
+        os << " sign=" << SignGlyph(op.table_op_sign) << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op) << " i#"
+           << op.instance_store_id << "\n";
+        emit_reads(op);
+        emit_effects(op);
+        os << "    args: demand=" << tid(op.demand_table)
+           << " pub=" << tid(op.table_op_table) << " store=I#"
+           << op.instance_store_id << "\n";
+        break;
+      }
+
+      case DROpKind::kInstanceSeal: {
+        os << " sign=" << SignGlyph(0) << " ctx=" << CtxName(op.ctx)
+           << " band=11 i#" << op.instance_store_id << "\n";
+        emit_effects(op);
+        os << "    args: pub=" << tid(op.table_op_table) << " store=I#"
+           << op.instance_store_id << "\n";
+        break;
+      }
+
       default: {
         // Generic fallback (crossover, product-arm, fixpoint-fire, chain-fold,
         // retire, rederive, negate-gate, pivot-assemble). Renders the common
@@ -767,7 +883,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << "\n";
   }
 
-  // ---- census (15 DROpKind counts, enum order, one line; grammar R-10) ----
+  // ---- census (18 DROpKind counts, enum order, one line; grammar R-10) ----
   os << "\n";
   const auto count_kind = [&](DROpKind k) -> unsigned {
     unsigned n = 0u;
@@ -784,7 +900,9 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       DROpKind::kFrontierFilter, DROpKind::kCommitSweep,
       DROpKind::kNegateGate,  DROpKind::kPivotAssemble,
       DROpKind::kIngestFold,  DROpKind::kGroupUpdate,
-      DROpKind::kStateSeal};
+      DROpKind::kStateSeal,
+      DROpKind::kSubgraphInstantiate, DROpKind::kInstanceDeath,
+      DROpKind::kInstanceSeal};
   os << "census:";
   unsigned census_total = 0u;
   for (DROpKind k : kAllKinds) {
@@ -793,7 +911,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << " " << DROpKindName(k) << "=" << n;
   }
   os << "\n";
-  if (census_total != flow.ops.size()) {  // a 16th DROpKind not in kAllKinds
+  if (census_total != flow.ops.size()) {  // a 19th DROpKind not in kAllKinds
     fprintf(stderr,
             "DELTAREL-DUMP: census covers %u of %zu ops (kAllKinds is "
             "missing a DROpKind)\n",

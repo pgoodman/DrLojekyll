@@ -760,6 +760,256 @@ static void BuildGroupUpdateOps(
   flow.ops.push_back(std::move(seal));
 }
 
+// ---------------------------------------------------------------------------
+// Keyed-instance D1.b effect-set builders (the §3.3 regime-split multisets,
+// realized to the §1 HP-11 collapse — emit/old/sealswap ride the LANDED
+// kStateEmit / kStateOld / kStateFold; only kInstanceRebuild / kInstanceDemand
+// are new). SINGLE SOURCE of the mint's effect sets; V-INST-EFFECT
+// independently hand-counts the same totality (the V-AGG-EFFECT mold), so a
+// drift between mint and validator aborts.
+// ---------------------------------------------------------------------------
+static std::vector<DREffect> InstantiateEffects(bool diff, TABLE *pub,
+                                                TABLE *demand, TABLE *input) {
+  std::vector<DREffect> fx;
+  DREffect drain;  // OD-7 frontier drain (a LOWER-time TableDeltaVector, OD-R7)
+  drain.kind = EffKind::kVecDrain;
+  drain.value_table = demand;
+  drain.vec_role = VecRole::kNetAddition;
+  fx.push_back(drain);
+
+  DREffect demand_read;  // NEW: frozen read of the demand key, no hazard (HP-8)
+  demand_read.kind = EffKind::kInstanceDemand;
+  demand_read.read_table = demand;
+  fx.push_back(demand_read);
+
+  DREffect leaf;  // rederive leaf (renders on `reads:`, not `effects:`)
+  leaf.kind = EffKind::kFlagRead;
+  leaf.read_table = input;
+  leaf.pred = Pred::kPresent;
+  leaf.ctx = Ctx::kSeed;
+  fx.push_back(leaf);
+
+  DREffect rebuild;  // NEW: WRITE of the store `current` word, structural +1
+  rebuild.kind = EffKind::kInstanceRebuild;
+  rebuild.value_table = pub;
+  rebuild.sign = +1;
+  fx.push_back(rebuild);
+
+  DREffect emit;  // COLLAPSED emit (kStateEmit) — read current (F,T publish)
+  emit.kind = EffKind::kStateEmit;
+  emit.read_table = pub;
+  fx.push_back(emit);
+
+  DREffect old;  // COLLAPSED old (kStateOld) — read frozen (T,F retract)
+  old.kind = EffKind::kStateOld;
+  old.read_table = pub;
+  fx.push_back(old);
+
+  if (diff) {
+    for (int sign : {+1, -1}) {
+      DREffect counter;
+      counter.kind = EffKind::kCounter;
+      counter.counter_table = pub;
+      counter.sign = sign;
+      counter.klass = DerivClass::kNonRecursive;
+      fx.push_back(counter);
+      DREffect crossing;
+      crossing.kind = EffKind::kInIReadFrozen;
+      crossing.read_table = pub;
+      crossing.pred = Pred::kInI;
+      crossing.ctx = Ctx::kSeed;
+      fx.push_back(crossing);
+      DREffect append;
+      append.kind = EffKind::kVecAppend;
+      append.value_table = pub;
+      append.vec_role = (sign < 0) ? VecRole::kDeleteQueue : VecRole::kAddQueue;
+      fx.push_back(append);
+    }
+  } else {
+    // R-MONO: ONE counter; ZERO appends; NO TableVec on the pub queues.
+    DREffect counter;
+    counter.kind = EffKind::kCounter;
+    counter.counter_table = pub;
+    counter.sign = +1;
+    counter.klass = DerivClass::kNonRecursive;
+    fx.push_back(counter);
+  }
+  return fx;
+}
+
+static std::vector<DREffect> DeathEffects(TABLE *pub, TABLE *demand) {
+  // The zero-counter death signature (§18(B) teeth): EXACTLY ZERO
+  // {kStateEmit, kCounter, kInIReadFrozen, kVecAppend}.
+  std::vector<DREffect> fx;
+  DREffect drain;
+  drain.kind = EffKind::kVecDrain;
+  drain.value_table = demand;
+  drain.vec_role = VecRole::kNetRemoval;
+  fx.push_back(drain);
+  DREffect demand_read;
+  demand_read.kind = EffKind::kInstanceDemand;
+  demand_read.read_table = demand;
+  fx.push_back(demand_read);
+  DREffect old;
+  old.kind = EffKind::kStateOld;
+  old.read_table = pub;
+  fx.push_back(old);
+  DREffect rebuild;
+  rebuild.kind = EffKind::kInstanceRebuild;
+  rebuild.value_table = pub;
+  rebuild.sign = -1;
+  fx.push_back(rebuild);
+  return fx;
+}
+
+static DREffect SealEffect(TABLE *pub) {
+  DREffect fx;  // sealed := current — the kStateSeal peer's sign-0 fold (§1.4)
+  fx.kind = EffKind::kStateFold;
+  fx.value_table = pub;
+  fx.sign = 0;
+  return fx;
+}
+
+// ---------------------------------------------------------------------------
+// The keyed-instance mint (§3), GATED OFF at D1.b. The caller guards on
+// `context.demand_instance_enabled`, unconditionally false at D1.b (no
+// `-demand-instance` flag until D2.b), AND `query.RecognizedSubgraphs()` is
+// empty absent that flag — so this body is DEAD on every corpus flow and every
+// mode (P-D1b.1). It is fully written and compiled so D2.b flips one bool; the
+// α-consumer wiring (context_col_sources, the PlanTree body) and the ABA-safe
+// mint identity scheme (crit-correctness-1) land at D2.b. Because the gate is
+// false here, the stored RecognizedSubgraph QueryView handles are NEVER
+// dereferenced at D1.b (the §19(K) dangling-handle hazard is sidestepped).
+// ---------------------------------------------------------------------------
+static void BuildSubgraphInstanceOps(
+    DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
+    const std::unordered_map<TABLE *, unsigned> &scc_map) {
+  (void) context;
+  (void) scc_map;
+
+  // §3.6 dangling-handle pre-filter: a pointer-identity set of LIVE views (the
+  // UniqueId reads the QueryView's OWN by-value pointer, never derefs the
+  // possibly-freed pointee). crit-correctness-1: this is NOT ABA-safe and must
+  // be replaced by a stable deref-free identity scheme at D2.b — DEAD here.
+  std::unordered_set<uint64_t> live;
+  for (const auto &entry : impl->view_to_model) {
+    live.insert(entry.first.UniqueId());
+  }
+  const auto model_table = [&](QueryView v) -> TABLE * {
+    auto it = impl->view_to_model.find(v);
+    if (it == impl->view_to_model.end()) {
+      return nullptr;
+    }
+    return it->second->FindAs<DataModel>()->table;
+  };
+
+  for (const RecognizedSubgraph &rs : query.RecognizedSubgraphs()) {
+    if (!live.count(rs.pub_view.UniqueId()) ||
+        !live.count(rs.demanded_view.UniqueId())) {
+      continue;  // §3.6 dangling-handle pre-filter
+    }
+    TABLE *const pub_table = model_table(rs.pub_view);
+    TABLE *const demand_table = model_table(rs.demanded_view);
+    // The summarized monotone input: walk the demanded view's single-predecessor
+    // plumbing to the first table-bearing view (mirrors BuildGroupUpdateOps).
+    // The true summarized-input resolution lands with the D2.b α wiring.
+    TABLE *input_table = nullptr;
+    {
+      QueryView v = rs.demanded_view;
+      input_table = model_table(v);
+      while (input_table == nullptr) {
+        auto preds = v.Predecessors();
+        if (preds.begin() == preds.end()) {
+          break;
+        }
+        v = *preds.begin();
+        input_table = model_table(v);
+      }
+    }
+    const bool diff = TableIsDifferential(pub_table);
+    const unsigned sid = static_cast<unsigned>(flow.instances.size());
+
+    DRInstance inst_desc(rs.demanded_view, rs.pub_view);
+    inst_desc.forcing_index = rs.forcing_index;
+    // crit-pins-3: resolve the forcing name at mint (Format has no `query`),
+    // fprintf+abort on an out-of-range forcing index — never a silent guess.
+    {
+      const auto &forcings = query.DemandForcings();
+      if (rs.forcing_index >= forcings.size()) {
+        ValidatorFail("BuildSubgraphInstanceOps: forcing_index out of range");
+      }
+      inst_desc.forcing_name =
+          std::string(forcings[rs.forcing_index].query.NameAsString());
+    }
+    inst_desc.pub_table = pub_table;
+    inst_desc.demand_table = demand_table;
+    inst_desc.input_table = input_table;
+    inst_desc.key_cols = rs.key_cols;
+    {  // row_cols = the published positions not in key_cols.
+      std::unordered_set<unsigned> keyset(rs.key_cols.begin(),
+                                          rs.key_cols.end());
+      const unsigned npub =
+          static_cast<unsigned>(rs.pub_view.Columns().size());
+      for (unsigned p = 0u; p < npub; ++p) {
+        if (!keyset.count(p)) {
+          inst_desc.row_cols.push_back(p);
+        }
+      }
+    }
+    flow.instances.push_back(std::move(inst_desc));
+
+    // ---- kSubgraphInstantiate (birth/rebuild + band-(b) publish) ----
+    DROp inst(DROpKind::kSubgraphInstantiate);
+    inst.ctx = Ctx::kSeed;
+    inst.table_op_table = pub_table;  // HP-3: rides the existing op_table_id arm
+    inst.table_op_sign = +1;
+    inst.demand_table = demand_table;
+    inst.input_table = input_table;
+    inst.demanded_view = rs.demanded_view;
+    inst.instance_store_id = sid;
+    inst.forcing_index = rs.forcing_index;
+    inst.effects =
+        InstantiateEffects(diff, pub_table, demand_table, input_table);
+    flow.ops.push_back(std::move(inst));
+
+    // ---- kInstanceDeath (R-DIFF ONLY; ships INERT — HP-17) ----
+    if (demand_table && TableIsDifferential(demand_table)) {
+      DROp death(DROpKind::kInstanceDeath);
+      death.ctx = Ctx::kSeed;
+      death.table_op_table = pub_table;
+      death.table_op_sign = -1;  // OD-2: shares table_id ⇒ sorts before +1
+      death.demand_table = demand_table;
+      death.demanded_view = rs.demanded_view;
+      death.instance_store_id = sid;
+      death.forcing_index = rs.forcing_index;
+      death.effects = DeathEffects(pub_table, demand_table);
+      flow.ops.push_back(std::move(death));
+    }
+
+    // ---- kInstanceSeal (always; self-lowered, HP-1) ----
+    DROp seal(DROpKind::kInstanceSeal);
+    seal.ctx = Ctx::kSeed;
+    seal.table_op_table = pub_table;
+    seal.instance_store_id = sid;
+    seal.forcing_index = rs.forcing_index;
+    seal.effects.push_back(SealEffect(pub_table));
+    flow.ops.push_back(std::move(seal));
+
+    // ---- stratum seed (A.2.4): lift above the demand + input drains ----
+    const auto ready_after = [&](TABLE *t) -> unsigned {
+      if (t) {
+        if (auto it = flow.drain_stratum.find(t);
+            it != flow.drain_stratum.end()) {
+          return it->second;
+        }
+      }
+      return 0u;
+    };
+    flow.instance_stratum[sid] =
+        1u + std::max(ready_after(demand_table), ready_after(input_table));
+  }
+}
+
 // P2 CUTOVER: the single authority for a deletion-capable receive's two
 // stage-1 ingest-fold ops (+1 before -1). Both the flow enrollment
 // (BuildDRInventory's INGEST_FOLD block) and the walk-position lowering
@@ -1095,6 +1345,15 @@ DRFlowGraph BuildDRInventory(
     BuildGroupUpdateOps(flow, impl, context, scc_map, QueryView(kv),
                         AggProvenance::kKv, std::move(group), std::move(summary),
                         input, kv.NthValueMergeFunctor(0), /*num_config=*/0u);
+  }
+
+  // ------------------------------------------------------- keyed instances (D1.b)
+  // GATED OFF: the guard is unconditionally false at D1.b (no `-demand-instance`
+  // flag), so the mint is dead on every corpus flow — zero instance ops minted
+  // (P-D1b.1), and RecognizedSubgraphs()' handles are never dereferenced. D2.b
+  // flips the bit.
+  if (context.demand_instance_enabled) {
+    BuildSubgraphInstanceOps(flow, impl, context, query, scc_map);
   }
 
   // ------------------------------------------------------------- branches/joins
@@ -2881,6 +3140,39 @@ void ValidateDROps(
   expect(DROpKind::kGroupUpdate, exp_group_update, "group updates");
   expect(DROpKind::kStateSeal, exp_group_update, "state seals");
 
+  // Keyed-instance census recount (D1.b), GATED OFF: `demand_instance_enabled`
+  // is unconditionally false at D1.b, so this block is NEVER entered and
+  // `RecognizedSubgraphs()` is never iterated/dereferenced (the §19(K)
+  // dangling-handle sidestep — the recount is exactly "such a consumer"). With
+  // 0 minted instance ops, the three expect(...) below demand 0 of each, which
+  // holds. The full order-free key-multiset compare (the :2911-2935 mold) lands
+  // with the D2.b mint; at D1.b the count contract is the byte-visible census.
+  unsigned exp_instance = 0u, exp_death = 0u;
+  if (context.demand_instance_enabled) {
+    std::unordered_set<uint64_t> live;
+    for (const auto &entry : impl->view_to_model) {
+      live.insert(entry.first.UniqueId());
+    }
+    for (const RecognizedSubgraph &rs : query.RecognizedSubgraphs()) {
+      if (!live.count(rs.pub_view.UniqueId()) ||
+          !live.count(rs.demanded_view.UniqueId())) {
+        continue;
+      }
+      ++exp_instance;
+      TABLE *demand_table = nullptr;
+      if (auto it = impl->view_to_model.find(rs.demanded_view);
+          it != impl->view_to_model.end()) {
+        demand_table = it->second->FindAs<DataModel>()->table;
+      }
+      if (demand_table && TableIsDifferential(demand_table)) {
+        ++exp_death;
+      }
+    }
+  }
+  expect(DROpKind::kSubgraphInstantiate, exp_instance, "subgraph instantiates");
+  expect(DROpKind::kInstanceDeath, exp_death, "instance deaths");
+  expect(DROpKind::kInstanceSeal, exp_instance, "instance seals");  // 1:1 w/ inst
+
   // The INGEST_FOLD per-op key multiset (order-free; artifact §7): the
   // recomputed (table, sign, is_explicit, role, message) keys must equal the
   // multiset read off `flow`'s ops. This is the E-22 completeness half of the
@@ -3009,6 +3301,142 @@ void ValidateDROps(
          gu_cells.back() != static_cast<unsigned>(gu_cells.size() - 1u))) {
       ValidatorFail("V-AGG-PAIR: statecell ids are not a GROUP_UPDATE ↔ "
                     "STATE_SEAL bijection onto [0, |statecells|)");
+    }
+  }
+
+  // V-INST-EFFECT / V-INST-SOLE / V-INST-PAIR (D1.b keyed instances). VACUOUS
+  // at D1.b (0 instance ops minted); always-on so the D2.b mint is covered the
+  // instant it fires. V-INST-EFFECT is the V-AGG-EFFECT mold (per-op effect-
+  // multiset totality, regime-split per §3.3); V-INST-PAIR is the V-AGG-PAIR
+  // mold (the per-store op-set shape). The 3-way (R-DIFF) arm ships INERT
+  // (HP-17).
+  {
+    std::unordered_map<unsigned, unsigned> inst_per_store, death_per_store,
+        seal_per_store;
+    std::unordered_map<uintptr_t, unsigned> inst_per_pub;
+    for (const DROp &op : flow.ops) {
+      switch (op.kind) {
+        case DROpKind::kSubgraphInstantiate: {
+          const bool diff = TableIsDifferential(op.table_op_table);
+          unsigned drains = 0u, demands = 0u, leaves = 0u, rebuilds = 0u,
+                   emits = 0u, olds = 0u, counters = 0u, crossings = 0u,
+                   appends = 0u;
+          int rebuild_sign = 0, counter_signs = 0;
+          for (const DREffect &fx : op.effects) {
+            switch (fx.kind) {
+              case EffKind::kVecDrain: ++drains; break;
+              case EffKind::kInstanceDemand: ++demands; break;
+              case EffKind::kFlagRead: ++leaves; break;
+              case EffKind::kInstanceRebuild:
+                ++rebuilds;
+                rebuild_sign += fx.sign;
+                break;
+              case EffKind::kStateEmit: ++emits; break;
+              case EffKind::kStateOld: ++olds; break;
+              case EffKind::kCounter:
+                ++counters;
+                counter_signs += fx.sign;
+                if (fx.klass != DerivClass::kNonRecursive) {
+                  ValidatorFail("V-INST-EFFECT: an instantiate counter is not "
+                                "NonRecursive (the acyclic fence)");
+                }
+                break;
+              case EffKind::kInIReadFrozen: ++crossings; break;
+              case EffKind::kVecAppend: ++appends; break;
+              default:
+                ValidatorFail("V-INST-EFFECT: a SUBGRAPH_INSTANTIATE carries an "
+                              "effect kind outside the §3.3 set");
+            }
+          }
+          const bool ok =
+              drains == 1u && demands == 1u && leaves == 1u && rebuilds == 1u &&
+              rebuild_sign == 1 && emits == 1u && olds == 1u &&
+              (diff ? (counters == 2u && counter_signs == 0 &&
+                       crossings == 2u && appends == 2u)
+                    : (counters == 1u && counter_signs == 1 &&
+                       crossings == 0u && appends == 0u));
+          if (!ok) {
+            ValidatorFail("V-INST-EFFECT: a SUBGRAPH_INSTANTIATE effect set is "
+                          "not the §3.3 regime-split totality");
+          }
+          if (op.input_table != nullptr &&
+              (TableIsDifferential(op.input_table) ||
+               op.input_table == op.table_op_table)) {
+            ValidatorFail("V-INST-SOLE: an instantiate's summarized input is "
+                          "differential or aliases the published table");
+          }
+          ++inst_per_store[op.instance_store_id];
+          if (op.table_op_table) {
+            ++inst_per_pub[reinterpret_cast<uintptr_t>(op.table_op_table)];
+          }
+          break;
+        }
+        case DROpKind::kInstanceDeath: {
+          unsigned drains = 0u, demands = 0u, olds = 0u, rebuilds = 0u;
+          int rebuild_sign = 0;
+          bool forbidden = false;
+          for (const DREffect &fx : op.effects) {
+            switch (fx.kind) {
+              case EffKind::kVecDrain: ++drains; break;
+              case EffKind::kInstanceDemand: ++demands; break;
+              case EffKind::kStateOld: ++olds; break;
+              case EffKind::kInstanceRebuild:
+                ++rebuilds;
+                rebuild_sign += fx.sign;
+                break;
+              default: forbidden = true; break;  // emit/counter/crossing/append
+            }
+          }
+          if (forbidden || drains != 1u || demands != 1u || olds != 1u ||
+              rebuilds != 1u || rebuild_sign != -1) {
+            ValidatorFail("V-INST-EFFECT: an INSTANCE_DEATH effect set is not "
+                          "the zero-counter death signature");
+          }
+          ++death_per_store[op.instance_store_id];
+          break;
+        }
+        case DROpKind::kInstanceSeal: {
+          if (op.effects.size() != 1u ||
+              op.effects[0].kind != EffKind::kStateFold ||
+              op.effects[0].sign != 0) {
+            ValidatorFail("V-INST-EFFECT: an INSTANCE_SEAL effect set is not "
+                          "the single sign-0 sealed:=current fold");
+          }
+          ++seal_per_store[op.instance_store_id];
+          break;
+        }
+        default: break;
+      }
+    }
+    for (const auto &kv : inst_per_pub) {
+      if (kv.second != 1u) {
+        ValidatorFail("V-INST-SOLE: a published table has more than one "
+                      "SUBGRAPH_INSTANTIATE deriver");
+      }
+    }
+    for (const auto &kv : inst_per_store) {
+      const unsigned sid = kv.first;
+      const unsigned n_inst = kv.second;
+      const unsigned n_seal =
+          seal_per_store.count(sid) ? seal_per_store[sid] : 0u;
+      const unsigned n_death =
+          death_per_store.count(sid) ? death_per_store[sid] : 0u;
+      if (n_inst != 1u || n_seal != 1u || n_death > 1u) {
+        ValidatorFail("V-INST-PAIR: a store id's op set is not {instantiate, "
+                      "seal} (R-MONO) or {death, instantiate, seal} (R-DIFF)");
+      }
+    }
+    for (const auto &kv : death_per_store) {
+      if (!inst_per_store.count(kv.first)) {
+        ValidatorFail("V-INST-PAIR: an INSTANCE_DEATH has no matching "
+                      "SUBGRAPH_INSTANTIATE for its store id");
+      }
+    }
+    for (const auto &kv : seal_per_store) {
+      if (!inst_per_store.count(kv.first)) {
+        ValidatorFail("V-INST-PAIR: an INSTANCE_SEAL has no matching "
+                      "SUBGRAPH_INSTANTIATE for its store id");
+      }
     }
   }
 
@@ -3197,8 +3625,57 @@ unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op) {
       return 0u;
     case DROpKind::kStateSeal:
       return 0u;  // trailing commit band (V-READY skip, below)
+    case DROpKind::kSubgraphInstantiate:
+    case DROpKind::kInstanceDeath:
+      // D1.b (A.2.4 / F-OPS-7): the two LIVE instance kinds resolve their
+      // seeded `instance_stratum[store_id]`. A missing entry is a MINT BUG (the
+      // mint always writes it, §3.2), so we FAIL LOUD rather than silently
+      // `return 0u` — a deliberate STRENGTHENING beyond the kGroupUpdate shape
+      // (crit-pins-1: that case returns 0u on a map miss). VACUOUS at D1.b (no
+      // instance op minted). The seal trails (below), like kStateSeal.
+      if (auto it = flow.instance_stratum.find(op.instance_store_id);
+          it != flow.instance_stratum.end()) {
+        return it->second;
+      }
+      ValidatorFail("DROpStratum: instance op has no instance_stratum entry");
+    case DROpKind::kInstanceSeal:
+      return 0u;  // trailing commit band (band 11 via key_of; V-READY skip)
     default:
       return 0u;  // negate gates (eager, pre-phase), commit sweeps (trailing)
+  }
+}
+
+// V-INST-ORDER core (see DeltaRel.h) — the OD-2 enforcement, factored PURE so
+// it is callable in isolation (the negative-space death test). Grouped by
+// `instance_store_id` (NEVER table_id, NEVER forcing_index — HP-3). Vacuous
+// under R-MONO (no death op). Reads only pinned_order + op kind/store id.
+void CheckInstanceOrder(const DRFlowGraph &flow) {
+  std::unordered_map<unsigned, unsigned> pinned_pos;
+  for (unsigned i = 0u; i < flow.pinned_order.size(); ++i) {
+    pinned_pos[flow.pinned_order[i]] = i;
+  }
+  const auto pos_of = [&](unsigned oi) -> unsigned {
+    if (auto it = pinned_pos.find(oi); it != pinned_pos.end()) {
+      return it->second;
+    }
+    return oi;  // unpinned (a hand-built flow): fall back to op index
+  };
+  std::unordered_map<unsigned, unsigned> death_pos, inst_pos;
+  for (unsigned oi = 0u; oi < flow.ops.size(); ++oi) {
+    const DROp &op = flow.ops[oi];
+    if (op.kind == DROpKind::kInstanceDeath) {
+      death_pos[op.instance_store_id] = pos_of(oi);
+    } else if (op.kind == DROpKind::kSubgraphInstantiate) {
+      inst_pos[op.instance_store_id] = pos_of(oi);
+    }
+  }
+  for (const auto &kv : death_pos) {
+    if (auto it = inst_pos.find(kv.first); it != inst_pos.end()) {
+      if (!(kv.second < it->second)) {
+        ValidatorFail("V-INST-ORDER: death must precede instantiate for a "
+                      "store id");
+      }
+    }
   }
 }
 
@@ -3315,8 +3792,21 @@ void LinearizeAndValidateDRFlow(
           break;
         case EffKind::kStateOld:
           break;  // frozen sealed read: no within-band hazard (C-0b).
-        default:
+        case EffKind::kInstanceRebuild:
+          // D1.b (HP-11 KEEP): a WRITE of the store `current` word, hazard
+          // keyed on the pub table (reuses `value_table`). Same shape as
+          // kStateFold's write — the instantiate/seal WAW belt is forward by
+          // construction (band 0 instantiate → band 11 seal).
+          flag_accesses.push_back(FlagAccess{oi, e.value_table, true});
           break;
+        case EffKind::kInstanceDemand:
+          break;  // frozen read of the demand key: NO hazard (HP-8).
+        default:
+          // F-OPS-5: all 12 EffKinds are now explicitly cased. This is a
+          // runtime backstop only — unreachable on every corpus flow
+          // (P-D1b.3). The EffKindName spelling table keeps compile-time
+          // `-Wswitch` exhaustiveness for any future EffKind.
+          ValidatorFail("linearizer: unhandled EffKind in the hazard switch");
       }
     }
 
@@ -3464,6 +3954,18 @@ void LinearizeAndValidateDRFlow(
       // 9+1 so it sorts strictly after commit sweeps for determinism.
       return Key{2u, max_stratum + 1u, 10u, op_table_id(op), 0, oi};
     }
+    if (op.kind == DROpKind::kInstanceSeal) {
+      // D1.b (HP-1/OD-5): the self-lowered instance seal trails all strata,
+      // band 11 — strictly after kStateSeal (10) and commit sweeps (9) for a
+      // deterministic commit-band order. Its band is a key_of-local constant,
+      // never from op_band (an InstanceSeal is never a lead==1 phase op).
+      return Key{2u, max_stratum + 1u, 11u, op_table_id(op), 0, oi};
+    }
+    // kSubgraphInstantiate (sign +1) / kInstanceDeath (sign -1) fall through to
+    // the DEFAULT phase key: they share `table_op_table = pub_table` ⇒ equal
+    // table_id ⇒ key_less reaches the sign compare (− before +) ⇒ death sorts
+    // BEFORE instantiate (OD-2, the minus-before-plus mechanism; V-INST-ORDER
+    // is the always-on guarantor). op_band returns 0 for both (default arm).
     return Key{1u, op_stratum(op), op_band(op), op_table_id(op), op_sign(op),
                oi};
   };
@@ -4004,6 +4506,11 @@ void LinearizeAndValidateDRFlow(
                     "edge derivation, not Stratum.cpp emission)");
     }
   }
+
+  // V-INST-ORDER (D1.b, OD-2 / HP-3): always-on, runs on EVERY flow now that
+  // pinned_order is built. VACUOUS at D1.b (0 death ops ⇒ 0 inner checks), but
+  // it RUNS — the vacuous-green corpus observability HP-17 asks for.
+  CheckInstanceOrder(flow);
 }
 
 }  // namespace hyde

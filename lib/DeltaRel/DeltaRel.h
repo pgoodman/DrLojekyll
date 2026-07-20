@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -82,6 +83,14 @@ enum class EffKind : uint8_t {
   kStateFold,      // LIVE since the R3 stage-C flip (BuildGroupUpdateOps)
   kStateEmit,      // LIVE since the R3 stage-C flip (BuildGroupUpdateOps)
   kStateOld,       // LIVE since the R3 stage-C flip (BuildGroupUpdateOps)
+  kInstanceRebuild,  // keyed-instance D1.b (HP-11 KEEP): a WRITE of the
+                     //   InstanceStore `current` word, hazard keyed on the
+                     //   pub table (reuses `value_table`), carrying a STRUCTURAL
+                     //   sign ±1 (birth +1 / death -1 → TryAdd vs Recycle).
+  kInstanceDemand,   // keyed-instance D1.b (HP-11 KEEP): a frozen READ of the
+                     //   drained demand KEY (reuses `read_table`); NO hazard
+                     //   (HP-8, the kInIReadFrozen precedent). Census-distinct
+                     //   (the F1 silent-drop). NOT folded into kInIReadFrozen.
 };
 
 // The membership/scan context that flavors a context-sensitive predicate.
@@ -136,6 +145,20 @@ enum class DROpKind : uint8_t {
   kStateSeal,      // R3 STATE_SEAL: per statecell, commit-sweep tail — sealed :=
                    //   Emit(working) for touched groups (spec §2.3). Mirror of
                    //   kCommitSweep's trailing-band placement.
+  kSubgraphInstantiate,  // (15) keyed-instance BIRTH/REBUILD + band-(b)
+                         //   publish_touched (OD-6, A.2.1). Sole deriver of the
+                         //   published pub_table; `table_op_table = pub_table`,
+                         //   `table_op_sign = +1` (HP-3 — reuses the existing
+                         //   op_table_id arm, no new pub_table field).
+  kInstanceDeath,        // (16) whole-instance DEATH, its OWN op (§18(B)
+                         //   mandate). NO fold/counter — the zero-counter death
+                         //   signature is the teeth. `table_op_table = pub_table`,
+                         //   `table_op_sign = -1`. MINTED ONLY when the demand
+                         //   table is differential (R-DIFF); ships INERT at
+                         //   D1.b/D2.b (HP-17).
+  kInstanceSeal,         // (17) trailing pointer swap (kStateSeal peer, band 11
+                         //   via key_of). Self-lowered from its own dispatch
+                         //   (HP-1/OD-5); carries the sign-0 kStateFold seal.
 };
 
 // R3 aggregate provenance (spec §2.2): whether a GROUP_UPDATE came from an
@@ -544,6 +567,18 @@ class DROp {
   // config leading args to Fold (@invertible) / ReduceLive (@recompute).
   unsigned num_config_cols{0u};
 
+  // ---- SUBGRAPH_INSTANTIATE / INSTANCE_DEATH / INSTANCE_SEAL data ----------
+  // (kind == kSubgraphInstantiate | kInstanceDeath | kInstanceSeal). Per HP-3
+  // the published relation rides `table_op_table = pub_table` with
+  // `table_op_sign = ∓1` (REUSED — no new pub_table field). The genuinely new
+  // members back the effect args, the DRInstance descriptor render, and
+  // V-INST-ORDER (which groups by `instance_store_id`, never table/forcing).
+  std::optional<QueryView> demanded_view;  // the recognized subgraph's MERGE
+  TABLE *demand_table{nullptr};            // the demand relation's model table
+  TABLE *input_table{nullptr};             // the summarized monotone input
+  unsigned instance_store_id{~0u};         // dense per-forcing store id
+  unsigned forcing_index{~0u};             // -> query.RecognizedSubgraphs()[i]
+
   // The per-arm structure (A-3). A FIXPOINT_FIRE has one arm per same-SCC delta
   // position; a SEED_FOLD/CHAIN_FOLD has exactly one. Empty for the per-table
   // families (claim/retire/rederive/filter/sweep) and the negate gate.
@@ -642,10 +677,41 @@ class DRStateCell {
   explicit DRStateCell(QueryView agg_view_) : agg_view(agg_view_) {}
 };
 
+// Keyed-instance descriptor (D1.b). One per `RecognizedSubgraph` (the mint's
+// subject; the DR-IR peer of `DRStateCell`). Codegen (D2.b) instantiates an
+// `InstanceStore<Key, Row>` member from it. [ADJ:crit-grammar-1] carries
+// `pub_view` so the `ik:`/`row:` column tags can render published-column NAMES
+// (`ColRender::Name` takes a `QueryColumn`, not an `unsigned` position —
+// positions decide ik-vs-row, but they are not names without the view).
+class DRInstance {
+ public:
+  QueryView demanded_view;         // the forcing's demanded MERGE
+  QueryView pub_view;              // the answer INSERT target VIEW (name source
+                                   //   for the ik:/row: column tags)
+  unsigned forcing_index{~0u};     // -> query.RecognizedSubgraphs()[i]
+  std::string forcing_name;        // precomputed forcing name/adornment (the
+                                   //   crit-grammar-1 no-query-handle render:
+                                   //   Format has no `query`, so the name is
+                                   //   resolved at mint, abort-on-unresolvable)
+  TABLE *pub_table{nullptr};       // answer INSERT target (the published rel)
+  TABLE *demand_table{nullptr};    // demand relation model table
+  TABLE *input_table{nullptr};     // summarized monotone input
+  std::vector<unsigned> key_cols;  // α positions in the published row (ik: set)
+  std::vector<unsigned> row_cols;  // the remaining published positions (row:)
+
+  DRInstance(QueryView demanded_view_, QueryView pub_view_)
+      : demanded_view(demanded_view_), pub_view(pub_view_) {}
+};
+
 class DRFlowGraph {
  public:
   std::vector<DRVec> vecs;      // R1b: per-table queues/sets/frontiers + pivots
   std::vector<DRStateCell> statecells;  // R3: one per GROUP_UPDATE
+  // D1.b keyed instances: one DRInstance per RecognizedSubgraph (empty unless
+  // built under the D2.b `-demand-instance` gate — at D1.b always empty) and
+  // the per-store-id derived stratum (V-INST-ORDER / DROpStratum key).
+  std::vector<DRInstance> instances;
+  std::unordered_map<unsigned, unsigned> instance_stratum;  // store_id -> stratum
   // R2+ SUBSTRATE (dead-but-alive): populated (BuildDRInventory), never read —
   // the debug-labelled table models an R2+ lowering will resolve ops through.
   std::vector<DRTable> tables;
@@ -841,6 +907,17 @@ OP *LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
 // the band values the emitter renders are key_of's kind CONSTANTS and need no
 // helper).
 unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op);
+
+// V-INST-ORDER core (D1.b, OD-2 / HP-3), factored as a PURE helper so it is
+// callable in isolation (the permanent negative-space death test hand-builds a
+// 2-op flow and asserts this aborts on a plus-before-minus). Grouped by
+// `instance_store_id`: for each store id present in `flow.ops`, if a
+// kInstanceDeath and a kSubgraphInstantiate share it, the death MUST precede
+// the instantiate in `flow.pinned_order` — else fprintf+abort (survives NDEBUG,
+// always-on). Vacuous when no death op is present (R-MONO). Reads only
+// `op.kind` / `op.instance_store_id` / `flow.pinned_order`, so a hand-built
+// flow needs no real TABLE/Context.
+void CheckInstanceOrder(const DRFlowGraph &flow);
 
 void SetDeltaRelDumpStream(OutputStream *stream);
 void DumpDeltaRelIfEnabled(const DRFlowGraph &flow);

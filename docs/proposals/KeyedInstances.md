@@ -2316,3 +2316,84 @@ this section before building on it; errata continue at E-81.
     134} vs B {134,132,134} ms (0.0% median, noise; round-0 cold
     outlier discarded); PassPolicy untouched; no Runtime edit; G6
     N/A (no DeltaRel touch). NEXT: D1.b.
+
+(L) D1.b LANDED (2026-07-20; the DR-IR instance op family + validators
+    + dump grammar, MINT GATED OFF — record written pre-commit).
+    Design ritual: adjudicated contract in session scratchpad
+    d1b/d1b-design.md (designer xhigh + 3 critics + xhigh adjudicator;
+    GO-WITH-AMENDMENTS, 9 amendments folded, 0 rejected; the designer
+    agent died emitting its structured return AFTER completing the
+    894-line doc — recovered by stubbing the stage and resuming the
+    workflow, no work lost). THE HP-11 DECISION (owner nudge honored,
+    adjudicator-upheld): kInstanceEmit → kStateEmit(read_table=
+    pub_table), kInstanceOld → kStateOld(pub_table), kInstanceSealSwap
+    → kStateFold(pub_table, sign=0) — all three COLLAPSE (no distinct
+    hazard target or census freight; semantically exact for the
+    InstanceStore transpose: current==working, frozen==sealed; the
+    kStateSeal peer already realizes its swap as kStateFold(0)).
+    KEPT: kInstanceRebuild (±1 structural regime discriminant +
+    TryAdd/Recycle selector) and kInstanceDemand (census-load-bearing
+    frozen key read, HP-8 no-hazard). NET NEW EffKinds = 2.
+    CONSEQUENCE flagged for the D2.b desired-state refresh: the
+    collapsed seal's kStateFold ENROLLS a write hazard on pub_table —
+    d1-desired-states §B.4's "no seal edge" is WRONG (stale), corrected
+    at the mandatory D2.b re-derivation alongside its OD-4 amendments.
+    OWNER RULING obtained this round (RAT-3): HP-3's "ships a
+    negative-space test" = the PERMANENT death test at D1.b —
+    V-INST-ORDER's core factored as pure CheckInstanceOrder(const
+    DRFlowGraph&), NEW ctest target tests/DeltaRelValidators (DrTest +
+    fork/waitpid; death arm asserts WIFSIGNALED && WTERMSIG==SIGABRT
+    specifically; fflush-before-fork; fork-failure loud; ctest 3→4) —
+    not the run-once probe the design first proposed.
+    AS LANDED (+716 lines, 5 files + the new test dir): 3 DROpKinds
+    after kStateSeal (kSubgraphInstantiate / kInstanceDeath /
+    kInstanceSeal, band 11 for the seal); DROp instance payload riding
+    table_op_table=pub_table + table_op_sign ∓1 (HP-3/OD-2 — the sign
+    tie-break fires on equal table_id); DRInstance descriptor (incl.
+    pub_view + precomputed forcing_name per the render amendments);
+    BuildSubgraphInstanceOps gated on Context::demand_instance_enabled
+    {false} (structurally unreachable — no flag exists until D2.b);
+    effect builders regime-split per §A.2.3 as HP-11-collapsed;
+    DROpStratum instance cases ValidatorFail-on-miss (a deliberate
+    strengthening over kGroupUpdate's return-0u); the effect-hazard
+    switch gains kInstanceRebuild(write)/kInstanceDemand(no-hazard)
+    cases AND default → ValidatorFail("unhandled EffKind");
+    V-INST-EFFECT/SOLE/PAIR (3-way arm inert per HP-17) +
+    V-INST-ORDER always-on in LinearizeAndValidateDRFlow; Format.cpp
+    spelling rows (loud-abort idiom), 3 census counters via kAllKinds,
+    instances: section (p11 empty-guard), 3 op p-rules (i# in header,
+    store=I# in args; ik:/row: tags via pub_view.Columns(); abort on
+    unresolvable). Census recount knob-gated — RecognizedSubgraphs()
+    handles NEVER dereferenced at D1.b (the §19(K) caveat); the
+    adjudicator's ABA warning is BINDING ON D2.b: the mint's identity
+    scheme must be deref-free and ABA-safe (re-resolve by forcing/
+    message identity, never raw pointer) — carried LOUD.
+    HP-17 DISCHARGED OBSERVABLY: temporary probe (deleted before
+    commit) showed V-INST-ORDER RAN on every probed flow
+    (average_weight ops=53, fixpoint_stress_1 ops=40, tc ops=2,
+    symrec ops=1; 0 instance ops, 0 aborts) — the vacuous-green line.
+    THE ONE CHURN, blessed per HP-14's three-point DIRECT-DIFF
+    referee (executed: (i) exactly one changed line — census line 16;
+    (ii) delta exactly " kSubgraphInstantiate=0 kInstanceDeath=0
+    kInstanceSeal=0" appended in kAllKinds order; (iii) census-sum
+    abort green); the --bless re-wrote 7 goldens, git shows exactly
+    ONE file one line changed (the other 6 byte-identical — zero
+    stray churn, P-D1b.2 exact).
+    FABLE REVIEW (workflow, 9 agents ~638k tokens): 3 CONFIRMED, ALL
+    in the NEW TEST FILE (none in the compiler diff), all fixed +
+    re-verified — fflush-before-fork (buffered-stdout duplication
+    under ctest pipes, empirically reproduced then gone),
+    SIGABRT-specific death assert, loud fork-failure arm.
+    GATES ALL GREEN (re-run/re-verified post-fix): SUITE PASS (169)
+    with the blessed line; single pre-registered IRGOLD-DIVERGE
+    before bless, nothing else; 676-row corpus A/B + data/ A/B
+    BYTE-IDENTICAL vs frozen 99f211f5 (P-D1b.1 — emission untouched);
+    ctest 4/4 debug + DeltaRelValidators green under ASAN; G5 3-run
+    1-hash + debug==release on BOTH irgold carriers (tc 4 surfaces,
+    symrec 2); G6 E-62 tripwire re-grepped CLEAN (sole external hit
+    the Stratum.cpp:1073 comment; the one new pinned_order reader is
+    V-INST-ORDER itself — a validator, the sanctioned class); ASAN
+    both surfaces SUITE PASS zero reports; P-D1b.3 held (default-
+    abort trips nothing corpus-wide); Q5 ABABAB A {148,148,145} vs
+    B {144,147,146} ms (−1.4% median, noise); golden re-verified
+    byte-exact post-rebuild. NEXT: D2.a.

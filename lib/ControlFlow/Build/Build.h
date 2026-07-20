@@ -197,6 +197,15 @@ class Context {
   // scope). Null when no stratum phases ran (no differential tables).
   std::shared_ptr<DRFlowGraph> dr_flow;
 
+  // Keyed-instance D1.b gate (HP-17 semantic-predicate staging). The keyed-
+  // instance mint (`BuildSubgraphInstanceOps`) and its census recount are
+  // guarded on this bit. It is DEFAULT-FALSE and set true by NO code path at
+  // D1.b (no `-demand-instance` flag exists yet — it arrives at D2.b), so the
+  // mint is structurally unreachable and every RecognizedSubgraphs() handle is
+  // never dereferenced (the §19(K) dangling-handle hazard is sidestepped). Not
+  // a debug toggle: it is a real mode bit on default-off production code.
+  bool demand_instance_enabled{false};
+
   // §6 V-INGEST-XCHECK Site 5 (subgraphs/demand P1): the PAYLOAD each
   // `LowerIngestFold` emission actually produced, recorded at emission time
   // (the eager walk runs BEFORE the flow is built at BuildStratumPhases, so

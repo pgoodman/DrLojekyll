@@ -11,6 +11,7 @@ include("${PROJECT_SOURCE_DIR}/cmake/Compiler.cmake")
 add_library(drtest STATIC DrTest/DrTest.cpp)
 target_include_directories(drtest PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/DrTest")
 
+add_subdirectory(DeltaRelValidators)
 add_subdirectory(MiniDisassembler)
 add_subdirectory(PointsTo)
 add_subdirectory(Runtime)
