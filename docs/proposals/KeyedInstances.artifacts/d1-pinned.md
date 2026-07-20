@@ -6,6 +6,12 @@ it contradicts d1-design-consolidated.md or d1-desired-states.md, THIS
 FILE WINS. Implementation starts ONLY after the owner rules on §4's
 OD-1..OD-10. Sibling references resolve as in d1-design-consolidated.md's
 banner.
+*** RATIFIED 2026-07-20 (KeyedInstances.md §19(I) is the binding ruling
+*** record): ALL owner decisions ruled per the recommendations, with the
+*** §19(H) Rel-direction deltas — notably OD-4 = MECHANISM-NATURAL
+*** provisioning (this file's §4 REC of demand-only is SUPERSEDED; the
+*** nested census becomes kCommitSweep=2 per d1-desired-states §C-2) and
+*** the new OD-11 = §9-Rel epoch BEFORE D3.a. IMPLEMENTATION UNBLOCKED.
 ======================================================================
 
 # D1 PINNED DESIGN CONTRACT — keyed-instances nested lowering, stage D1/D2

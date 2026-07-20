@@ -7,6 +7,13 @@ closing paragraph (census shape contingent on OD-4; kInstanceEmit/Old
 spellings contingent on HP-11; p-rules gain HP-6's partition pin); its
 §C residuals C-1..C-12 are dispositioned in d1-pinned.md §4. The real
 dumps it byte-pins live in d1-ground-truth-nbhd.md.
+*** OD-4 RULED MECHANISM-NATURAL (2026-07-20, KeyedInstances.md §19(I)):
+*** the §B.4 nested block AMENDS per this file's own §C-2 enumeration —
+*** census kCommitSweep=2, the edge ingest fold gains
+*** kVecAppend(%table:11, kNetAddition), a second monotone sweep op
+*** mints, +1 WAW edge. The kCommitSweep=1 census pin in §B.4 is
+*** SUPERSEDED; the D2.b desired-state refresh re-derives the exact
+*** block before any nested bless (HP-13(b) duty unchanged).
 ======================================================================
 
 # DESIRED-STATES — CONSOLIDATED RECORD (fleet-ds, binding)

@@ -2061,7 +2061,7 @@ this section before building on it; errata continue at E-81.
          pending owner SUBSTITUTION (OD-2): the mandated edge is provably
          circular (emit_waw key-forces edge direction, DeltaRel.cpp:
          3540-3556; V-LINEAR checks against the same key that oriented
-         it). Record the ratification outcome here when ruled.
+         it). RULED 2026-07-20: substitution RATIFIED — see (I).
     E-80 witness-deltarel-target.md superseded-in-part (banner applied
          this checkpoint; see (B)).
 
@@ -2141,3 +2141,58 @@ this section before building on it; errata continue at E-81.
     executing-coverage residual (HP-17) extends one more epoch;
     mitigations: the D2.a DrTest covers the store's death half, and the
     vacuous-green V-INST-ORDER corpus line stays standing.
+
+(I) RATIFICATION RECORD (owner, 2026-07-20): "I ratify all the ODs per
+    your recommendations, including OD-11." IMPLEMENTATION IS UNBLOCKED.
+    The rulings, binding:
+    OD-1  STAGED retraction: D2 = R-MONO-a (birth + demand-flap rebuild;
+          death op designed, minted-off); R-DIFF via opt-in
+          -demand-retract (@differential fabrication + suppression-
+          preserving unask ABI) at D3.a — whose epoch slot follows OD-11.
+    OD-2  §18(B)(4) mechanism SUBSTITUTED: same-table_id band key
+          (death table_op_sign=-1 / instantiate +1, op_table_id=
+          pub_table for both) + always-on V-INST-ORDER + the D1.b
+          negative-space test REPLACE the mandated explicit DR-IR edge
+          (circular per E-79). The mandate's INTENT (minus-before-plus,
+          phantom pairs impossible) is unchanged and now checkably so.
+    OD-3  FENCE-NOW-PLUMB-LATER: fence (ii) ships at D2.b as a clean
+          diagnostic EXPLICITLY LABELED a feature gap; witness
+          demand_midstream_edge_1 lands at D2.c; the plumbing
+          (input-triggered rebuild via input frontiers) lands with/after
+          Rel, and the witness then flips diagnostic→golden
+          (aggregate_1 precedent).
+    OD-4  MECHANISM-NATURAL provisioning (the (H) flip): the landed
+          cut-successor test provisions ALL monotone boundary inputs —
+          the edge table too. CONSEQUENCE, binding on D2.b + the
+          desired states: d1-desired-states §B.4 amends per its §C-2
+          enumeration — census kCommitSweep=2, the edge ingest fold
+          gains kVecAppend(edge, kNetAddition), a second monotone
+          sweep op, +1 WAW edge; the demand-only census pin
+          (kCommitSweep=1) is SUPERSEDED. One epoch of dead
+          per-edge-add frontier appends is the accepted cost; consumers
+          arrive with Rel.
+    OD-5  Seal carrier = option (iii) self-lowered from kInstanceSeal's
+          own dispatch; V-INST-EMITTED enrolls all three kinds (HP-1).
+    OD-6  Three-op family CONFIRMED (kSubgraphInstantiate /
+          kInstanceDeath / kInstanceSeal, publish-on-instantiate);
+          kInstanceEmit/kInstanceOld membership decided by the HP-11
+          gate at D1.b (owner nudge on record: lean collapse into
+          kStateEmit/kStateOld unless a distinct hazard/census earns
+          the new members).
+    OD-8  Fence witnesses land WITH D2.c: suite 169→170 (witness)
+          →173 (three fence diagnostics, fence-ii included per OD-3);
+          runall.sh alternation + CLAUDE.md updated same commit.
+    OD-10 Witness .irgold DEFERRED past BOTH scheduled substrate
+          churns (D3.a differential flip AND §9-Rel dump reshape);
+          correctness at D2.c is carried by .stdout + oracle + eqgate.
+    OD-11 REL FIRST: the next epoch after D2 is §9 "DeltaRel → Rel"
+          per (H); D3.a (R-DIFF + multi-adornment) follows it. HP-17's
+          executing-coverage residual extends accordingly — carried
+          LOUD in the ledger until D3.a retires it.
+    OD-R1..R9 stand un-vetoed (ratified as consolidated). OD-I1..I4
+    remain implementer pins at D1.b, sequenced by HP-11. PIN-1/PIN-3
+    remain open (unrelated; no carriers).
+    Blocking map now: NOTHING blocks D1.a/D1.b/D2.a/D2.b/D2.c. The
+    per-diff design ritual ((3) in (G), i.e. pseudocode → diff-on-
+    pseudocode → critique → desired IR states vs real dumps → implement
+    → Fable review → owner brief) still gates each landing.
