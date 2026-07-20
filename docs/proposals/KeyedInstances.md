@@ -2196,3 +2196,56 @@ this section before building on it; errata continue at E-81.
     per-diff design ritual ((3) in (G), i.e. pseudocode → diff-on-
     pseudocode → critique → desired IR states vs real dumps → implement
     → Fable review → owner brief) still gates each landing.
+
+(J) §19 RE-VERIFICATION RECORD + THE (F) ASAN SWEEP (2026-07-20, tip
+    99f211f5 — the fourteenth run of the precedent): SEED-HOLDS-WITH-
+    ERRATA, GO. Fleet: 4 seed-unread derivation lanes (demand /
+    deltarel / cfbuild opus + harness sonnet) + 4 seed-read adversarial
+    verifiers (incl. a GROUND-TRUTH REPRODUCTION lane) + xhigh
+    consolidator; 9 agents ~722k tokens, 221 tool uses; consolidated
+    record in session scratchpad fleet-s19/ (disposable; this entry is
+    the record). Orchestrator personal duties per the E-77 house rule:
+    E-62 tripwire re-grepped CLEAN (sole hit = Stratum.cpp:1073, a
+    comment); the HP-14 referee EXECUTED — permcheck on the exact
+    three-counter census append FAILS ("segment 3: boundary line
+    differs", exit=1) exactly as pinned, so the D1.b census bless
+    stays a DIRECT-DIFF bless. GROUND TRUTH RE-PROVEN AT TIP: every
+    d1-ground-truth-nbhd.md appendix (A-G) reproduces BYTE-FOR-BYTE
+    with the tip binary; 3-run determinism 1 hash; debug==release on
+    the demand-ON surfaces. Zero load-bearing defects; five errata,
+    all cosmetic/stale-anchor:
+    E-81 d1-design-consolidated §0.1-F2/§A.1.3 enumerate 11 hand call
+         sites of CopyDifferentialAndGroupIdsTo; a 12th exists
+         (lib/DataFlow/Merge.cpp:924). The "~12" hedge was right; the
+         enumeration was short one. Harmless — the D1.a hook lives at
+         the View.cpp:557 choke point, covering :924 automatically.
+    E-82 d1-design-consolidated F-OPS-4 files demand_forcings storage
+         ":1133" under the PUBLIC DataFlow/Query.h (1107 lines); the
+         member is lib/DataFlow/Query.h:1133 (internal). §A.1.2 and
+         §19 are correct; file misattribution only.
+    E-83 d1-pinned HP-4's body-walk reject cite "Demand.cpp:601-604"
+         is :602-605 at tip (AsNegate||AsAggregate :602, reject
+         :603-605, else-reject :606-607). Mechanism intact.
+    E-84 d1-ground-truth-nbhd Appendix G header mislabeled the donor
+         dump "demand-ON"; it is the FLAG-OFF dump (the donor's
+         differential tail comes from @differential, and the donor
+         REJECTS under -demand). Header corrected in place this
+         commit; bytes were and are exact.
+    E-85 runall.sh:32-33 comment ("inert .main.cpp (never compiled)")
+         over-claims: nonascii_1/truncated_decl_1 have no .main.cpp
+         at all (169 .dr / 167 .main.cpp). Harmless; recorded.
+    THE (F) ASAN SWEEP EXECUTED (both surfaces), ZERO FINDINGS:
+    build/asan (Debug + -fsanitize=address -fno-omit-frame-pointer,
+    tests ON) — ctest 3/3 PASS under ASAN (108s; the e2e test programs
+    themselves are ASAN-compiled); FULL SUITE PASS (169) with
+    DR=build/asan (2m03s wall, 8 jobs); SECOND SURFACE priced and RUN:
+    full suite with the tip debug compiler + an env-selected CXX
+    wrapper (clang++ -fsanitize=address ... "$@" — no harness change,
+    never a fifth mode) so generated code + drivers +
+    Runtime/Allocator.cpp are sanitized — SUITE PASS (169), zero
+    reports, 2m16s wall. CADENCE RECOMMENDATION brought to the owner:
+    PER-DIFF for both surfaces (~4.5 min combined — surface 1 on every
+    diff, surface 2 at least on every emission/Runtime-touching diff);
+    proceeding on that recommendation pending the brief. ASAN runs are
+    never timed as benchmarks; nothing enters FINDINGS.md (no
+    findings).

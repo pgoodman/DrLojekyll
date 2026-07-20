@@ -327,7 +327,9 @@ answer(Start, Node) : want(Start), edge(Start, Node).
 #query neighborhood(bound u64 Start, free u64 Node) : answer(Start, Node).
 ```
 
-## APPENDIX G — da.deltarel (the probe's REAL demand-ON dump)
+## APPENDIX G — da.deltarel (the probe's REAL FLAG-OFF dump; corrected
+## per E-84 — the donor's differential tail comes from its @differential
+## message, not the demand transform, and the donor REJECTS under -demand)
 
 ```
 deltarel
