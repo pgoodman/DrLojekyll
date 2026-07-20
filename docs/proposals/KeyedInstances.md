@@ -2091,3 +2091,53 @@ this section before building on it; errata continue at E-81.
     D2.c ONE DIFF AT A TIME under the standing gates (G1-G7 of
     d1-design-consolidated §B, as amended by d1-pinned §3), Fable review
     + owner brief before every emission commit.
+
+(H) OWNER DIRECTION (2026-07-20, post-checkpoint): §9 EAGER-WEB
+    DR-LOWERING IS PROMOTED to the top next-epoch candidate, REFRAMED as
+    "DeltaRel → Rel" — completing the IR into the single relational
+    authority for ALL flow, with differentialness an op ATTRIBUTE/regime
+    (the direction D1's regime-split op family already takes), not the
+    IR's identity. Motivating facts (owner-observed, measured at tip):
+    .deltarel is 12-16 lines on monotone programs vs 419-427 on
+    differential ones (symrec_tie_1 12 / demand_tc_witness 16 vs
+    fixpoint_stress_1 419 / average_weight 427) because the monotone
+    interior — the ORIGINAL Push-method eager web — has no op kinds and
+    is invisible to the model (GT-5). ACCEPTANCE CRITERION for §9 = the
+    TWO-AUTHORITY SEAM IS DELETED: the ingest-fold hole contract, the
+    replicated cut-successor predicates + the §7d role/walk
+    divergence-abort, V-INGEST-XCHECK, and the E-42 hand-minted
+    VECTORLOOP shim all become internal invariants of one mint+lower
+    path; every program gets a proportional dump and a whole-program
+    census; eager-per-row vs frontier-batch becomes a LOWERING CHOICE
+    on modeled monotone ops (opens the access-plan/WCOJ consumer).
+    NOT folded into D2 — the D1 contract is judged against the current
+    boundary; §9 runs at next epoch-open under the migration ritual
+    (byte-identity A/B per step; structural gates for any one-time
+    emission-shape change; the DeltaRel→Rel rename follows the lib/DR→
+    lib/DeltaRel ritual). RECOMMENDATION DELTAS this direction induces
+    on (D) — the decisions themselves still await the owner:
+    - OD-4 REC FLIPS to MECHANISM-NATURAL provisioning: the coherent
+      stop-vs-provision split is scaffolding §9 tears down, and the edge
+      frontier gains consumers post-Rel; cost = one epoch of dead
+      per-edge-add frontier work. Consequence if taken: the pinned
+      nested .deltarel block amends by d1-desired-states §C-2's
+      enumerated deltas (census kCommitSweep=2, edge ingest gains
+      kVecAppend, +1 WAW edge).
+    - OD-10 defer-REC STRENGTHENED: §9 schedules a SECOND wholesale
+      .deltarel churn (monotone ops appear corpus-wide) — pin no new
+      deltarel/irgold surfaces on the witness until the substrate
+      stabilizes.
+    - OD-3 retirement path RE-HOMED: fence (ii) still ships at D2 as a
+      labeled feature gap; its plumbing (input-triggered rebuild via
+      input frontiers) lands with/after Rel, where it is the natural
+      generalization; the witness flips diagnostic→golden then
+      (aggregate_1 precedent).
+    - OD-R7 (effect-only frontier, no first-class DRVec) STANDS for D2;
+      §9 revisits when monotone frontiers get modeled consumers.
+    NEW OWNER FORK OD-11 — NEXT-EPOCH ORDERING: §9-Rel BEFORE D3.a
+    (R-DIFF/multi-adornment) or after. REC: Rel first — D3's plumbing
+    (fence-ii retirement, input frontiers, R-DIFF lowering) all get
+    cheaper on the unified substrate. COST: the death op / V-INST-ORDER
+    executing-coverage residual (HP-17) extends one more epoch;
+    mitigations: the D2.a DrTest covers the store's death half, and the
+    vacuous-green V-INST-ORDER corpus line stays standing.
