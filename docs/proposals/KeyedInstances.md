@@ -1706,3 +1706,170 @@ witness-deltarel-target.md + tc-four-adornment-target.md, holes
 H1-H11; the §12 binding-source directives; the minus-before-plus
 band-(a) DR-IR edge pin; instance death as its OWN op). P2-P5 of
 the pass harness remain next-epoch candidates per §0.6.1.
+
+## 18. Whole-program checkpoint (2026-07-19, end of the T2/T3/P1
+## session; tip 0af322a2 + this ledger commit): the ARCHITECTURE AS
+## PSEUDOCODE with T2a/T2b/T3/P1 AS-LANDED, and the PATH FORWARD AS
+## DIFFS. SINGLE-PASS record by this session (the §5/§7 blocks it
+## incorporates were fleet-verified THREE times — §4, §6, §8; the
+## NEW blocks are this session's writing, backed by the §10/§11/§15/
+## §16/§17 per-diff records). A new session starts HERE; re-verify
+## per the house precedent (continue errata at E-73), leaning on the
+## committed fleet records so only the DELTA needs fresh lanes.
+
+    (A) AS-LANDED SURFACES:
+
+      A.1 COMPILE PIPELINE (post-P1; §5(A)'s "main(argv)"/"Query::
+          Build tail"/"DETERMINISM SUBSTRATE" blocks stand with
+          these deltas):
+            main(argv):                    # bin/drlojekyll/Main.cpp
+              parse flags -> streams (gDOTStream/gDFStream/
+                gDeltaRelStream/gDRStream/gIRStream), gDemand,
+                gFirstId, gPassPolicy (-opt-disable=/-opt-only=/
+                -opt-bisect-limit= + the legacy flags as
+                factory-EXACT aliases; empty values, malformed
+                globs, and REGISTRY-unmatchable globs are colored
+                diagnostics — never silent)
+              CompileModule:
+                gPassPolicy.bisect_counter = 0        # per-module
+                query = Query::Build(module, log, gPassPolicy,
+                                     gDemand)
+                SetDeltaRelDumpStream(gDeltaRelStream) # BEFORE
+                                                       # Program::Build
+                program = Program::Build(query, log, gFirstId,
+                                         gPassPolicy)
+                gIRStream? << program; emit C++; gDOTStream? <<
+                query; gDFStream? << QueryDF{query}   # both
+                                                      # post-Build
+            Query::Build tail (lib/DataFlow/Build.cpp):
+              ... -> if policy.Gate("df.simplify") Simplify
+              -> ConnectInsertsToSelects
+              -> ApplyDemandTransform(module, log, demand_mode)
+                 # df.demand UN-GATED: -demand is SEMANTICS (§17)
+              -> if policy.AnyBodyOptionalEnabled(kDataFlow)
+                   Optimize(log, policy)   # wholesale-skip
+                                           # PRESERVED (§17 pin 1)
+              -> LinkViews -> IdentifyInductions (det_seq last
+                 stamp) -> FinalizeDepths/FinalizeColumnIDs/... ->
+                 Stratify   # view-neutral tail, thrice-verified
+            QueryImpl::Optimize(log, policy): do_cse gated df.cse
+              (3 calls); Canonicalize gated df.canon PER ROUND;
+              EliminateDeadFlows gated df.dfe (RemoveUnusedViews
+              NEVER gated); do_sink gated df.sink (dormant body).
+            ProgramImpl::Optimize(policy): sweep loop gated
+              cf.regionopt PER SWEEP (the emission-visible
+              .Sort(depth_cmp) region reorders live INSIDE it —
+              why enter-and-gate-all is not byte-equal);
+              cf.procdedup gates the dedup tail. BOTH Program::Build
+              call sites guarded by AnyBodyOptionalEnabled(kCF).
+            PassPolicy (include/drlojekyll/Util/PassPolicy.h,
+              lib/Util/PassPolicy.cpp): prefix-star+exact glob
+              matcher; Enabled = only-select then disable-subtract;
+              Gate = Enabled -> tick -> bisect-limit check (allow
+              path PURE, no NDEBUG logic — the E-72 law); the
+              7-name registry {df.simplify, df.cse, df.canon,
+              df.dfe, df.sink, cf.regionopt, cf.procdedup} is the
+              parse-time reachability authority.
+
+      A.2 THE DUMP SURFACES (the T2 instruments — D1's designers
+          hand-author desired states against REAL output now):
+            -df-out (lib/DataFlow/Format.cpp, QueryDF tag):
+              PASS-1 seen-bitset bijection witness (always-on,
+              raw impl->det_seq); kind-tagged det_seq-order
+              traversal (impl kind order, is_dead-skipped; NEVER
+              the joins-first public ForEachView); `=>` edge model
+              (p2 bare identity, p3 producer-token .in<K> in
+              join-port order); iterative Tarjan over the
+              emitter's OWN =>-edge set for `; cycle`; grammar
+              pins p1-p9 (spec v3.4 §1.3).
+            -deltarel-out (lib/DeltaRel/Format.cpp): 18 enum
+              spelling tables (sole authority); vecs mint order /
+              branches+joins / ops labeled MINT INDEX in
+              pinned_order / bare rounds: / deps sorted+deduped on
+              (from,to,kind,scope,carried) / census in enum order
+              with the sum==ops.size() abort; DROpStratum is the
+              ONE stratum authority (key_of + emitter share it);
+              pre-guarded SetDeltaRelDumpStream sink declared on
+              ControlFlow/Format.h; pins p10-p14. CONFIG-
+              INVARIANCE PROVEN debug==release (E-72 fixed: the
+              Induction.cpp comment mint is unconditional).
+
+      A.3 THE GOLDEN MACHINERY (T3): run_irgold in runall.sh
+          --one (one compile per pinned mode emits all four
+          surfaces; h via the cpp.<mode>/ post-copy; strict cmp;
+          IRGOLD-FAIL/-MISSING/-DIVERGE); sidecar-driven
+          hard-error bless. BLESSED: demand_tc_witness
+          h+ir+df+deltarel @opt demand-ON (THE permanent (F)
+          gate) + symrec_tie_1 ir+df @opt. The 8-run sweep is
+          RETIRED to substrate-change acceptance duty.
+
+      A.4 STANDING GATES (every future diff): SUITE PASS (169,
+          irgold live); 676-row corpus A/B vs a frozen baseline;
+          data/ A/B; ctest 3/3; Q5 SAME-SESSION INTERLEAVED
+          ABABAB; config-invariance (debug==release dumps) on any
+          dump-touching diff; the E-62 tripwire re-grep at any
+          DeltaRel diff; deltarel config-invariance audit before
+          any deltarel bless; Fable review -> owner brief before
+          every emission commit.
+
+    (B) THE PATH FORWARD AS DIFFS:
+
+      D1   DESIGN+JUDGE FLEET (no code; the ratified §0.6
+           decisions 2/3/5/6 + §12 + §17-era rulings bind it).
+           INPUTS: witness-deltarel-target.md (H1-H11; H11 = the
+           §12 binding-source directive) + tc-four-adornment-
+           target.md + demand_neighborhood_witness.dr (PICK-A,
+           compiles both ways) + epoch-diffs.md §D1 + §3(F') with
+           E-46/E-52/E-53 folded. DELIVERABLES: (1) the
+           SUBGRAPH_INSTANTIATE DR-IR op family in the
+           BuildGroupUpdateOps mold (fully DR-lowered, no
+           hand-coded web) incl. INSTANCE-DEATH AS ITS OWN OP
+           (demand-retract = whole-instance death, never per-row
+           counters); (2) the release-surviving per-guard-site
+           annotation (three GuardSite kinds, two demand sides —
+           E-46/E-52); (3) the binding-source attribute
+           (row-slot | instance-key-slot | config-slot) on the
+           access-plan spine, α resolves to the instance key for
+           ALL consumers, validator-enforced (§12); (4) the
+           minus-before-plus band-(a) ordering PINNED by an
+           explicit DR-IR edge (H9/H10 — precondition of the
+           equivalence gate); (5) the R-A frozen-pair store
+           surface vs Runtime reality; (6) the dual-lowering
+           equivalence gate design (§0.6.3: one .dr + one
+           .batches under both knobs vs the SAME oracle golden);
+           (7) the D2 fence list (acyclic-DEMAND fence,
+           mid-stream monotone-edge-add fenced, differential
+           inputs fenced). METHOD: desired-output-state artifacts
+           for the PICK-A witness under BOTH lowerings, authored
+           against REAL -df-out/-deltarel-out dumps of the flat
+           lowering (the T2 instruments as ground truth — new
+           since the R-A paper); byte-contract fleets carry an
+           explicit GRAMMAR-CONFORMANCE lane (the E-71 rule).
+           Judge rounds before any ratification; owner brief with
+           the open decisions at the end.
+      D2   EMISSION: the nested lowering behind a knob (flat stays
+           default, §0.6.2); demand_neighborhood_witness enters
+           the suite WITH batches + oracle goldens at D2 (never
+           unblessed); census from the query-side annotation
+           count; the equivalence gate + standing gates.
+      D3   MULTI-ADORNMENT LIFT design (>1 binding pattern per
+           name; REJECT-18 scope; demand_multi_adorn_1
+           disposition — §0.6.6).
+      D4   SEAMS DESIGN-ONLY (implicit asynchrony; emission gated
+           on the termination judge + a measured-profitable
+           witness; E-50: VecRole + kVecAppend/kVecDrain, B-10
+           precedent).
+      NEXT-EPOCH CANDIDATES (compete at epoch-open re-rank):
+           pass-harness P2-P5 (P2 print-after now has all three
+           dumps to wire), §9 eager-web DR-lowering, §13 lattice
+           candidates A/B, §14 CodeQL-target items.
+
+    (C) STATUS at session end (2026-07-19): T1 + (F) + T2b.0 +
+    T2a + T2b + T3 + P1 LANDED (tip 0af322a2, pushed); ledger
+    §8-§17 this session; errata through E-72; spec v3.4 (pins
+    p1-p14); all four dump contracts pinned to live emissions;
+    owner pins OPEN: PIN-1 (constant-column token — blocks only
+    constant-carrying bless), PIN-3 (negate class refinement —
+    blocks only negate-carrying bless). NO D1/D2 code exists.
+    Next session: re-verify §18 (E-73+), then the D1 design
+    fleet.

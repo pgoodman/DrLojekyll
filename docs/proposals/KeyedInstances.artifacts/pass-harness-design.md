@@ -1,3 +1,16 @@
+SUPERSEDED IN PART (2026-07-19, the P1 judge round — ledger §17,
+binding record p1-pinned.md): P1 LANDED at 0af322a2. THREE §2/§4
+claims below are WRONG and corrected in p1-pinned.md — (1) the
+-disable-dataflow-opt alias is the ENUMERATED
+{df.cse,df.canon,df.dfe,df.sink}, NEVER df.* (df.simplify and
+df.demand run OUTSIDE the optimize guard in all four golden modes);
+(2) "~10 driver call sites" is actually 3 outer wholesale-skip
+guards + 8 library-internal gate names + 2 Main.cpp consumption
+sites; (3) df.demand is UN-GATED (reserved, unregistered) — -demand
+is SEMANTICS and is never silently neuterable by a pass policy or
+bisect limit (the P1 Fable review). §1's df.dfe = EliminateDeadFlows
+ONLY (RemoveUnusedViews is REQUIRED hygiene). P2-P5 remain DRAFT.
+
 # The cross-IR pass harness — DRAFT (2026-07-18; judge before code)
 
 Owner directives: (i) EVERY optimization gatable from the command
