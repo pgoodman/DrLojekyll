@@ -968,6 +968,60 @@ struct QueryDemandForcing {
   std::vector<unsigned> bound_params;
 };
 
+// COMPILER-INTERNAL (the live demand transform, `-demand`): one per-guard-site
+// record, stamped by `ApplyDemandTransform` at guard-mint time — PRE-CSE, so
+// `demand_side` is a recorded fact (on non-recursive witnesses CSE folds the
+// raw-seed TUPLE into the d-reader and the graph alone can no longer tell the
+// two sides apart) — and release-surviving (the debug-only `producer` string
+// is NOT the carrier). Keyed on the guard JOIN via
+// `QueryViewImpl::guard_annotation_index`. Consumed by the keyed-instance
+// recognizer (D1/D2) and the D3 multi-adornment lift.
+struct GuardAnnotation {
+  // Mirrors the pass-internal `GuardSite::Kind` by VALUE (a static_assert
+  // beside the stamp in Demand.cpp couples them). The query-projection guard
+  // has no GuardSite record; it is stamped `kReadAtTuple` — the direct-read
+  // shape — and distinguished from body sites by `role`/`demand_side`.
+  enum Kind : uint8_t { kReadAtTuple, kPushDown, kBaseAtom };
+
+  // Which demand-side child the guard JOIN was minted against.
+  enum DemandSide : uint8_t { kDReader, kRawSeed };
+
+  enum Role : uint8_t { kBody, kQueryProjection };
+
+  Kind kind;
+  DemandSide demand_side;
+  Role role;
+
+  // Marks RECURSIVE-subgoal sites (a D3 boundary), NOT the top-level
+  // instance; always `false` in the single-adornment slice.
+  bool is_instance_key;
+
+  // Pivot positions within the guarded read, one per bound column of the
+  // adornment, in adornment order.
+  std::vector<unsigned> instance_key;
+
+  // Opaque handles: equality/lookup ONLY — never enter any order (their
+  // UniqueId is pointer-derived).
+  QueryView guarded_read;
+  QueryView demanded_view;
+
+  // Index into `Query::DemandForcings()`.
+  unsigned forcing_index;
+};
+
+// COMPILER-INTERNAL: one recognized demand subgraph per DemandForcing entry
+// (the recognition unit is the FORCING, regardless of whether the demanded
+// body is recursive). Populated by `ApplyDemandTransform`, append order =
+// forcing order. This is the keyed-instance census recount source: populated
+// by the DataFlow demand pass, only READ by the DR mint loop.
+struct RecognizedSubgraph {
+  unsigned forcing_index;               // -> Query::DemandForcings()[i]
+  QueryView demanded_view;              // p's post-Connect MERGE
+  std::vector<unsigned> key_cols;       // the forcing's bound α positions
+  QueryView pub_view;                   // the answer INSERT target
+  std::vector<unsigned> guard_annotation_indices;  // its guards
+};
+
 // A query.
 class Query {
  public:
@@ -993,6 +1047,16 @@ class Query {
   // registry — empty unless the module was built under `-demand` and a bound
   // query was transformed.
   const std::vector<QueryDemandForcing> &DemandForcings(void) const noexcept;
+
+  // COMPILER-INTERNAL (the live demand transform): the per-guard-site
+  // annotations and the per-forcing recognized-subgraph registry — both
+  // empty unless the module was built under `-demand` and a bound query was
+  // transformed. Append order is the pass's own deterministic stamp order;
+  // any ordered consumption must come from a deterministic view walk, never
+  // from these vectors' opaque view handles (HP-9).
+  const std::vector<GuardAnnotation> &GuardAnnotations(void) const noexcept;
+  const std::vector<RecognizedSubgraph> &RecognizedSubgraphs(
+      void) const noexcept;
 
   // COMPILER-INTERNAL: is `m` a fabricated demand-seed message? Consulted by
   // codegen to SUPPRESS the public message entry point (the F2-B(ii)

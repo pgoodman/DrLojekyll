@@ -568,6 +568,27 @@ void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
   if (can_produce_deletions) {
     that->can_produce_deletions = true;
   }
+
+  // Guard-annotation transfer (rides this choke point exactly as group_ids
+  // do): `this` = loser (being replaced), `that` = survivor. Unlike the
+  // group_ids monotone set-union above, the annotation index is a UNIQUE
+  // scalar the demand census counts once, so it CLEARS on move — a
+  // surviving-`this` funnel (SubstituteAllUsesWith keeps `this` valid, and
+  // the JOIN dup-output self-canon routes through it) would otherwise leave
+  // one index live on two views and double-count downstream.
+  if (guard_annotation_index != ~0u) {
+    if (that->guard_annotation_index == ~0u) {
+      that->guard_annotation_index = guard_annotation_index;
+    } else {
+      // Two annotated guards folded into one survivor: dormant in the D1/D2
+      // slice (guard JOINs are structurally distinct and CSE-stable). A
+      // genuine two-distinct-guard fold trips this loudly in debug; the
+      // record-comparing incompatible-fold diagnostic (and the fold count)
+      // land at D3 when multi-guard folds first go live.
+      assert(that->guard_annotation_index == guard_annotation_index);
+    }
+    guard_annotation_index = ~0u;
+  }
 }
 
 // Replace all uses of `this` with `that`. The semantic here is that `this`

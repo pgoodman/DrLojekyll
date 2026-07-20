@@ -2249,3 +2249,70 @@ this section before building on it; errata continue at E-81.
     proceeding on that recommendation pending the brief. ASAN runs are
     never timed as benchmarks; nothing enters FINDINGS.md (no
     findings).
+
+(K) D1.a LANDED (2026-07-20; the annotation + recognition registry,
+    DataFlow-side, INERT — record written pre-commit). Design ritual
+    per (I): the binding adjudicated contract is COMMITTED as
+    KeyedInstances.artifacts/d1a-design.md (designer + 3 fresh critics
+    + xhigh adjudicator, 5 agents ~538k tokens; verdict
+    GO-WITH-AMENDMENTS, 8 amendments folded, 0 rejected). TWO OWNER
+    RATIFICATIONS obtained at the pre-implementation brief (recorded
+    in the artifact's §2.3/§2.4 banners):
+    RAT-1 the per-view-field mechanism swap — d1-design-consolidated
+          §A.1.2's guard_annotation_of map + §A.1.3's
+          impl->TransferGuardAnnotation is UN-IMPLEMENTABLE at the
+          choke point (View.cpp:557/575/602 take only `that`;
+          QueryViewImpl has no QueryImpl back-pointer — orchestrator-
+          verified). RATIFIED: per-view
+          QueryViewImpl::guard_annotation_index{~0u} (the group_ids/
+          det_seq precedent), CLEAR-ON-MOVE in the transfer, NO map
+          at all (removes HP-9's only map-iteration hazard by
+          construction).
+    RAT-2 the STEP-8 kind — the query-projection guard has no
+          GuardSite record; RATIFIED: stamped kReadAtTuple (the
+          direct-read shape), disambiguated by role=kQueryProjection
+          + demand_side=kRawSeed; a static_assert couples
+          GuardAnnotation::Kind to GuardSite::Kind by value.
+    E-86 (erratum, from the ritual's FLAG-2): d1-design-consolidated
+          §0.1 F6-annot mis-attributes demand_tc_witness's
+          kReadAtTuple to the RECURSIVE BODY; empirically (tc.df +
+          classifier + the witness's own comment) the recursive body
+          is kPushDown, the base body kBaseAtom, and the sole
+          kReadAtTuple is the query-projection stamp (per RAT-2).
+    AS LANDED (+205 lines, 4 files): GuardAnnotation +
+    RecognizedSubgraph public structs + GuardAnnotations()/
+    RecognizedSubgraphs() accessors (include/.../DataFlow/Query.h,
+    bodies in Demand.cpp beside DemandForcings()); QueryImpl storage
+    (guard_annotations / recognized_subgraphs /
+    guard_annotation_folded_count — the counter dormant until D3);
+    the two stamps (STEP 7 per GuardSite pre-rewire, STEP 8) keyed on
+    the GUARD JOIN (the guarded read is shared and the demand-side
+    child CSE-folds — GT-3, so neither can carry the record; verified
+    live: the nbhd raw_seed fold runs the loser-unannotated no-op
+    case); the per-forcing registry push (X-9); the pre-Optimize-ONLY
+    debug census (dead-flow elimination deletes annotated views
+    outright with no orphan bucket — the census never re-runs
+    post-Optimize); the choke-point transfer with CLEAR-ON-MOVE.
+    PREDICTIONS ALL HELD LIVE: P-D1a.1 flag-off mints nothing (G2
+    proof); P-D1a.2 tc = 3 stamps {kBaseAtom, kPushDown,
+    kReadAtTuple}, 1 subgraph == 1 forcing, census green; P-D1a.3
+    nbhd = 2 stamps {kBaseAtom, kReadAtTuple}, 1 subgraph, key
+    {Start}; P-D1a.4 zero dump churn. FABLE REVIEW (workflow, 7
+    agents ~384k tokens): 3 candidates, ALL REFUTED, 0 confirmed —
+    the one real-mechanism note carried LOUD for D1.b/D2.b: the
+    stored QueryView handles DANGLE after dead-flow elimination
+    erases a view from its DefList; any post-Optimize consumer of
+    guarded_read/demanded_view/pub_view must tolerate or pre-filter
+    dead/erased views (the census is pre-Optimize by design for this
+    reason; first consumer lands D1.b — re-examine there).
+    GATES ALL GREEN: SUITE PASS (169, irgold live); 676-row corpus
+    A/B + data/ 36-row A/B BYTE-IDENTICAL vs the frozen 99f211f5
+    baseline; ctest 3/3; G5 4-surface 3-run 1-hash AND debug==release
+    on demand_tc_witness demand-ON; HP-9 re-grep clean (zero sorts,
+    no map exists); ASAN BOTH surfaces (ctest 3/3 + suite PASS under
+    DR=asan; suite PASS with ASAN-compiled generated code+drivers+
+    Runtime) zero reports — the per-diff cadence executed; Q5
+    progsize@128 release SAME-SESSION INTERLEAVED ABABAB A {133,135,
+    134} vs B {134,132,134} ms (0.0% median, noise; round-0 cold
+    outlier discarded); PassPolicy untouched; no Runtime edit; G6
+    N/A (no DeltaRel touch). NEXT: D1.b.

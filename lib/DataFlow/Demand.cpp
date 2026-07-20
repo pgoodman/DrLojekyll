@@ -139,6 +139,18 @@ struct GuardSite {
   std::vector<unsigned> pivot_pos;
 };
 
+// The public GuardAnnotation::Kind mirrors GuardSite::Kind by VALUE (the
+// STEP-7 stamp static_casts between them); a reorder/insert on either enum
+// would silently mis-kind every body stamp with no diagnostic.
+static_assert(
+    static_cast<int>(GuardAnnotation::kReadAtTuple) ==
+            static_cast<int>(GuardSite::kReadAtTuple) &&
+        static_cast<int>(GuardAnnotation::kPushDown) ==
+            static_cast<int>(GuardSite::kPushDown) &&
+        static_cast<int>(GuardAnnotation::kBaseAtom) ==
+            static_cast<int>(GuardSite::kBaseAtom),
+    "GuardAnnotation::Kind must stay value-aligned with GuardSite::Kind");
+
 // Mint the E-32 guard JOIN: `demand_side ⋈ read` pivoting `read`'s
 // `pivot_pos` columns against `demand_side`'s columns 0..k-1. Fills
 // `out_for_read_pos[j]` = the JOIN output column carrying `read`'s column j
@@ -283,6 +295,16 @@ static void RewireConsumer(VIEW *consumer, TUPLE *read,
 const std::vector<QueryDemandForcing> &Query::DemandForcings(
     void) const noexcept {
   return impl->demand_forcings;
+}
+
+const std::vector<GuardAnnotation> &Query::GuardAnnotations(
+    void) const noexcept {
+  return impl->guard_annotations;
+}
+
+const std::vector<RecognizedSubgraph> &Query::RecognizedSubgraphs(
+    void) const noexcept {
+  return impl->recognized_subgraphs;
 }
 
 bool Query::IsDemandMessage(ParsedMessage m) const noexcept {
@@ -951,6 +973,15 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     (void) d_reader->columns.Create(dc->var, dc->type, d_reader, dc->id, i);
   }
 
+  // The forcing this pass registers at STEP 10. Exactly one in the
+  // single-adornment slice (the >1-bound-query reject and the single-shot
+  // re-entry guard above enforce it); recorded on every stamp so the census
+  // identity `recognized_subgraphs.size() == demand_forcings.size()` is
+  // grounded.
+  const unsigned forcing_index = static_cast<unsigned>(demand_forcings.size());
+  const unsigned first_annotation =
+      static_cast<unsigned>(guard_annotations.size());
+
   // ---------------------------------------------------------------------
   // 7. GUARD each rule body at its located site (recipe N3).
   // ---------------------------------------------------------------------
@@ -958,6 +989,18 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     std::vector<COL *> out_for_pos;
     JOIN *const guard =
         MintGuardJoin(this, site.read, d_reader, site.pivot_pos, out_for_pos);
+
+    // D1.a stamp (pre-CSE; release-surviving): keyed on the guard JOIN —
+    // the guarded read is SHARED across sites and the demand-side child may
+    // CSE-fold, so neither can carry the record.
+    guard->guard_annotation_index =
+        static_cast<unsigned>(guard_annotations.size());
+    guard_annotations.push_back(GuardAnnotation{
+        static_cast<GuardAnnotation::Kind>(site.kind),
+        GuardAnnotation::kDReader, GuardAnnotation::kBody,
+        false /* is_instance_key: D3 recursive-subgoal marker only */,
+        site.pivot_pos, QueryView(site.read), QueryView(d_reader),
+        forcing_index});
 
     if (site.kind == GuardSite::kReadAtTuple) {
 
@@ -1000,7 +1043,39 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     std::vector<COL *> out_for_pos;
     JOIN *const guard =
         MintGuardJoin(this, q_read, raw_seed, p_bound, out_for_pos);
+
+    // D1.a stamp: the query-projection guard has NO GuardSite (no
+    // classifier reaches it); it is stamped kReadAtTuple — the direct-read
+    // shape (q_consumer reads q_read directly) — distinguished from body
+    // sites by role/demand_side. demand_side is recorded PRE-CSE: on
+    // non-recursive witnesses CSE folds raw_seed into d_reader (GT-3) and
+    // the graph alone can no longer tell the two sides apart.
+    guard->guard_annotation_index =
+        static_cast<unsigned>(guard_annotations.size());
+    guard_annotations.push_back(GuardAnnotation{
+        GuardAnnotation::kReadAtTuple, GuardAnnotation::kRawSeed,
+        GuardAnnotation::kQueryProjection,
+        false /* is_instance_key */, p_bound, QueryView(q_read),
+        QueryView(raw_seed), forcing_index});
+
     RewireConsumer(q_consumer, q_read, out_for_pos, guard);
+  }
+
+  // ---------------------------------------------------------------------
+  // 8b. REGISTER the recognized subgraph (X-9: the recognition unit is the
+  //     FORCING — one entry per DemandForcings() entry, regardless of
+  //     whether the demanded body is recursive). The keyed-instance census
+  //     recount reads this registry, never the DR mint loop's own output.
+  // ---------------------------------------------------------------------
+  {
+    std::vector<unsigned> guard_indices;
+    for (auto i = first_annotation;
+         i < static_cast<unsigned>(guard_annotations.size()); ++i) {
+      guard_indices.push_back(i);
+    }
+    recognized_subgraphs.push_back(
+        RecognizedSubgraph{forcing_index, QueryView(p_merge), p_bound,
+                           QueryView(q_insert), std::move(guard_indices)});
   }
 
   // ---------------------------------------------------------------------
@@ -1049,6 +1124,27 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
   // ---------------------------------------------------------------------
   QueryDemandForcing forcing{ParsedQuery::From(q_decl), d_msg, bound_indices};
   demand_forcings.emplace_back(std::move(forcing));
+
+  // ---------------------------------------------------------------------
+  // 11. ANNOTATION CENSUS (order-free counts; PRE-Optimize ONLY — dead-flow
+  //     elimination deletes annotated views outright with no orphan bucket,
+  //     so this equation is sound only on the freshly-stamped graph; it
+  //     runs exactly once, here). Debug severity: no reader consumes the
+  //     annotation under flat `-demand`; the always-on abort arm arrives
+  //     with the `-demand-instance` reader (D2.b).
+  // ---------------------------------------------------------------------
+#ifndef NDEBUG
+  {
+    auto n_stamped = 0u;
+    ForEachView([&n_stamped](VIEW *v) {
+      if (v->guard_annotation_index != ~0u) {
+        ++n_stamped;
+      }
+    });
+    assert(n_stamped + guard_annotation_folded_count ==
+           guard_annotations.size());
+    assert(recognized_subgraphs.size() == demand_forcings.size());  }
+#endif
 
   module.MarkDemandFabricated();
   return true;

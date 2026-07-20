@@ -471,6 +471,13 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // (two same-shape recursive arms tie on both). `~0u` means unstamped.
   unsigned det_seq{~0u};
 
+  // Index into `QueryImpl::guard_annotations`, or `~0u` for "not a guard
+  // view". Set only by `ApplyDemandTransform` (on the guard JOIN), migrated
+  // through `CopyDifferentialAndGroupIdsTo` with CLEAR-ON-MOVE — unlike
+  // `group_ids`' monotone union, this is a UNIQUE scalar the census counts
+  // once. Never sorted, never iterated into emission-visible order (HP-9).
+  unsigned guard_annotation_index{~0u};
+
   // The group ID of this node that it will push forward to its dependencies.
   unsigned group_id{0u};
 
@@ -1131,6 +1138,23 @@ class QueryImpl {
   // registry, populated by `ApplyDemandTransform` — one entry per
   // demand-transformed bound `#query`. Empty unless built under `-demand`.
   std::vector<QueryDemandForcing> demand_forcings;
+
+  // Per-guard-site annotations, stamped by `ApplyDemandTransform` at
+  // guard-mint time. Append order = the deterministic stamp-loop order (the
+  // STEP-3 merged_views walk, then the single query-projection stamp) and is
+  // NEVER re-sorted (HP-9); views point in via
+  // `QueryViewImpl::guard_annotation_index`. Empty flag-off.
+  std::vector<GuardAnnotation> guard_annotations;
+
+  // One recognized subgraph per DemandForcing (the recognition unit is the
+  // FORCING); append order = forcing order. The keyed-instance census
+  // recount source.
+  std::vector<RecognizedSubgraph> recognized_subgraphs;
+
+  // Count of both-annotated guard folds (survivor's entry kept). Dormant in
+  // the D1/D2 slice — first incremented when D3 multi-guard folds go live;
+  // until then the choke-point transfer's equality assert is the guard.
+  unsigned guard_annotation_folded_count{0u};
 
   // Number of strata (SCCs of the condensation) assigned by `Stratify`;
   // view/model stratum ids range over `[0, num_strata)`.
