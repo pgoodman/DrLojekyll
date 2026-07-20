@@ -1028,7 +1028,8 @@ class QueryImpl {
   // Canonicalize the dataflow. This tries to put each node into its current
   // "most optimal" form. Previously it was more about re-arranging columns
   // to encourange better CSE results.
-  void Canonicalize(const OptimizationContext &opt, const ErrorLog &);
+  void Canonicalize(const OptimizationContext &opt, const ErrorLog &,
+                    const PassPolicy *policy = nullptr);
 
   // Eliminate dead flows. This uses a taint-based approach and identifies a
   // VIEW as dead if it is not derived directly or indirectly from input
@@ -1037,7 +1038,7 @@ class QueryImpl {
 
   // Apply common subexpression elimination (CSE) to the dataflow, canonicalize
   // the dataflow, and eliminate dead flows.
-  void Optimize(const ErrorLog &);
+  void Optimize(const ErrorLog &, const PassPolicy &policy);
 
   // Convert all views having constant inputs to depend upon tuple nodes, so
   // that we have the invariant that the only type of view that can take all

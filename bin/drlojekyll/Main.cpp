@@ -10,6 +10,7 @@
 #include <drlojekyll/Display/DisplayManager.h>
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Util/PassPolicy.h>
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parser.h>
@@ -44,9 +45,8 @@ struct FileStream {
 namespace {
 
 static unsigned gFirstId = 0u;
-static bool gOptimizeDataFlow = true;
-static bool gOptimizeControlFlow = true;
 static bool gDemand = false;
+static PassPolicy gPassPolicy;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
 static const char *gCxxOutDir = nullptr;
@@ -59,8 +59,13 @@ static OutputStream *gIRStream = nullptr;
 
 static int CompileModule(const Parser &parser, DisplayManager display_manager,
                          ErrorLog error_log, ParsedModule module) {
+  // One policy serves both Build calls (the bisect counter is the single
+  // cross-level index); reset per module so multi-module invocations never
+  // carry indices over.
+  gPassPolicy.bisect_counter = 0u;
+
   auto query_opt =
-      Query::Build(module, error_log, gOptimizeDataFlow, gDemand);
+      Query::Build(module, error_log, gPassPolicy, gDemand);
   if (!query_opt) {
     return EXIT_FAILURE;
   }
@@ -72,7 +77,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   SetDeltaRelDumpStream(gDeltaRelStream);
 
   auto program_opt =
-      Program::Build(*query_opt, error_log, gFirstId, gOptimizeControlFlow);
+      Program::Build(*query_opt, error_log, gFirstId, gPassPolicy);
   if (!program_opt) {
     return EXIT_FAILURE;
   }
@@ -210,6 +215,9 @@ static int HelpMessage(const char *argv[]) {
       << "  -disable-controlflow-opt  Skip control-flow IR optimization (region flattening, no-op removal," << std::endl
       << "                            procedure deduplication)." << std::endl
       << "  -demand                   Enable the live demand transform (magic-sets) for bound queries." << std::endl
+      << "  -opt-disable=<glob>[,..]  Skip optional passes by name (e.g. df.cse, cf.*)." << std::endl
+      << "  -opt-only=<glob>[,..]     Run only the matched optional passes." << std::endl
+      << "  -opt-bisect-limit=<N>     Skip optional pass applications with index > N (-1 prints indices)." << std::endl
       << std::endl
       << "OTHER OPTIONS:" << std::endl
       << "  -help, -h                 Show help and exit." << std::endl
@@ -382,15 +390,76 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gFirstId = static_cast<unsigned>(strtoul(argv[i], nullptr, 10));
       }
 
-    // Disable the aggressive data flow optimization pass.
+    // Disable the aggressive data flow optimization pass. EXACT alias of
+    // -opt-disable=df.cse,df.canon,df.dfe,df.sink (NOT df.* — df.simplify
+    // and df.demand run outside the optimize guard in all 4 golden modes).
     } else if (!strcmp(argv[i], "-disable-dataflow-opt") ||
                !strcmp(argv[i], "--disable-dataflow-opt")) {
-      hyde::gOptimizeDataFlow = false;
+      for (auto &glob : hyde::PassPolicy::DisableDataFlowOpt().disabled_globs) {
+        hyde::gPassPolicy.disabled_globs.emplace_back(std::move(glob));
+      }
 
-    // Disable control-flow IR optimization.
+    // Disable control-flow IR optimization. EXACT alias of -opt-disable=cf.*.
     } else if (!strcmp(argv[i], "-disable-controlflow-opt") ||
                !strcmp(argv[i], "--disable-controlflow-opt")) {
-      hyde::gOptimizeControlFlow = false;
+      for (auto &glob :
+           hyde::PassPolicy::DisableControlFlowOpt().disabled_globs) {
+        hyde::gPassPolicy.disabled_globs.emplace_back(std::move(glob));
+      }
+
+    // The pass-harness policy flags (P1): skip / select optional passes by
+    // namespaced name, and the cross-level bisect counter.
+    } else if (!strncmp(argv[i], "-opt-disable=", 13) ||
+               !strncmp(argv[i], "--opt-disable=", 14)) {
+      const char *globs = strchr(argv[i], '=') + 1;
+      if (!*globs) {  // '-opt-disable=' with nothing after: never silent.
+        error_log.Append() << "Command-line argument '" << argv[i]
+                           << "' carries no pass globs";
+      }
+      std::stringstream ss(globs);
+      for (std::string glob; std::getline(ss, glob, ',');) {
+        if (!hyde::PassPolicy::IsValidGlob(glob)) {
+          error_log.Append() << "Malformed pass glob '" << glob
+                             << "' in '" << argv[i]
+                             << "' (prefix-star and exact names only)";
+        } else if (!hyde::PassPolicy::MatchesAnyKnownPass(glob)) {
+          error_log.Append() << "Pass glob '" << glob << "' in '" << argv[i]
+                             << "' matches no registered pass";
+        } else {
+          hyde::gPassPolicy.disabled_globs.emplace_back(std::move(glob));
+        }
+      }
+    } else if (!strncmp(argv[i], "-opt-only=", 10) ||
+               !strncmp(argv[i], "--opt-only=", 11)) {
+      const char *globs = strchr(argv[i], '=') + 1;
+      if (!*globs) {  // An empty -opt-only would INVERT to run-everything.
+        error_log.Append() << "Command-line argument '" << argv[i]
+                           << "' carries no pass globs";
+      }
+      std::stringstream ss(globs);
+      for (std::string glob; std::getline(ss, glob, ',');) {
+        if (!hyde::PassPolicy::IsValidGlob(glob)) {
+          error_log.Append() << "Malformed pass glob '" << glob
+                             << "' in '" << argv[i]
+                             << "' (prefix-star and exact names only)";
+        } else if (!hyde::PassPolicy::MatchesAnyKnownPass(glob)) {
+          error_log.Append() << "Pass glob '" << glob << "' in '" << argv[i]
+                             << "' matches no registered pass";
+        } else {
+          hyde::gPassPolicy.only_globs.emplace_back(std::move(glob));
+        }
+      }
+    } else if (!strncmp(argv[i], "-opt-bisect-limit=", 18) ||
+               !strncmp(argv[i], "--opt-bisect-limit=", 19)) {
+      const char *num = strchr(argv[i], '=') + 1;
+      char *end = nullptr;
+      const auto limit = strtoll(num, &end, 10);
+      if (!end || end == num || *end || limit < -1) {
+        error_log.Append() << "Command-line argument '" << argv[i]
+                           << "' must carry an integer >= -1";
+      } else {
+        hyde::gPassPolicy.bisect_limit = limit;
+      }
 
     // Enable the live demand transform (magic-sets / SLDMagic). Default-off,
     // orthogonal to the dataflow/controlflow optimization toggles.

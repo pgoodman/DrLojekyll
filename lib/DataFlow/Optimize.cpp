@@ -641,7 +641,8 @@ void QueryImpl::Simplify(const ErrorLog &log) {
 //         |                                   |
 //       INSERT                             INSERT
 void QueryImpl::Canonicalize(const OptimizationContext &opt,
-                             const ErrorLog &log) {
+                             const ErrorLog &log,
+                             const PassPolicy *policy) {
   uint64_t num_views = 0u;
   const_cast<const QueryImpl *>(this)->ForEachView([&num_views](VIEW *view) {
     view->is_canonical = false;
@@ -693,6 +694,12 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
   };
 
   for (; non_local_changes && iter < max_iters; ++iter) {
+
+    // df.canon gates PER ROUND (the bisect counter's finest DataFlow grain);
+    // a monotone limit makes break equivalent to skipping the remainder.
+    if (policy && !policy->Gate("df.canon")) {
+      break;
+    }
 
     non_local_changes = false;
     hash = 0u;
@@ -774,10 +781,13 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
 //       UNION(MERGE)                       TUPLE
 //            |                               |
 //         INSERT                          INSERT
-void QueryImpl::Optimize(const ErrorLog &log) {
+void QueryImpl::Optimize(const ErrorLog &log, const PassPolicy &policy) {
   CandidateList views;
 
   auto do_cse = [&](void) {
+    if (!policy.Gate("df.cse")) {
+      return;
+    }
     views.clear();
     const_cast<const QueryImpl *>(this)->ForEachView(
         [&views](VIEW *view) { views.push_back(view); });
@@ -792,6 +802,9 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   };
 
   auto do_sink = [&](void) {
+    if (!policy.Gate("df.sink")) {
+      return;
+    }
 //    OptimizationContext opt;
 //    for (auto i = 0u; i < merges.Size(); ++i) {
 //      MERGE *const merge = merges[i];
@@ -814,7 +827,7 @@ void QueryImpl::Optimize(const ErrorLog &log) {
   do_cse();  // Apply CSE to all views before most canonicalization.
 
   OptimizationContext opt;
-  Canonicalize(opt, log);
+  Canonicalize(opt, log, &policy);
 
   do_sink();
   do_cse();  // Apply CSE to all canonical views.
@@ -832,11 +845,13 @@ void QueryImpl::Optimize(const ErrorLog &log) {
     opt.can_replace_inputs_with_constants = true;
     opt.can_sink_unions = false;
     opt.bottom_up = false;
-    Canonicalize(opt, log);
+    Canonicalize(opt, log, &policy);
     do_sink();
 
     RemoveUnusedViews();
-    changed = EliminateDeadFlows();
+    // df.dfe gates EliminateDeadFlows ONLY; RemoveUnusedViews is REQUIRED
+    // graph hygiene and never consults the policy (P1 pinned contract §2b).
+    changed = policy.Gate("df.dfe") ? EliminateDeadFlows() : false;
   }
 
   do_cse();  // Apply CSE to all canonical views.

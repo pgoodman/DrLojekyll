@@ -1163,7 +1163,7 @@ WorkItem::~WorkItem(void) {}
 // Build a program from a query.
 std::optional<Program> Program::Build(const ::hyde::Query &query,
                                       const ErrorLog &log, unsigned first_id,
-                                      bool optimize) {
+                                      const PassPolicy &policy) {
 
   // Reject data-flow view kinds that the control-flow builder does not yet
   // support. Each region-dispatch switch below asserts on these kinds; this
@@ -1367,15 +1367,19 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   }
 
   FixupContainingProcedure(impl.get());
-  if (optimize) {
-    impl->Optimize();
+  // Wholesale-skip preserved; BOTH Optimize() calls use the same predicate
+  // (the cf alias must reach both — P1 pinned contract §1).
+  if (policy.AnyBodyOptionalEnabled(PassLevel::kControlFlow)) {
+    impl->Optimize(policy);
   }
 
   ExtractPrimaryProcedure(impl.get(), entry_proc, context);
 
   FixupContainingProcedure(impl.get());
-  if (optimize) {
-    impl->Optimize();
+  // Wholesale-skip preserved; BOTH Optimize() calls use the same predicate
+  // (the cf alias must reach both — P1 pinned contract §1).
+  if (policy.AnyBodyOptionalEnabled(PassLevel::kControlFlow)) {
+    impl->Optimize(policy);
   }
 
   // Assign defining regions to each variable.

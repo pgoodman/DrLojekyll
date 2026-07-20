@@ -17,6 +17,7 @@ set(Util_SRCS
     "DisjointSet.cpp"
     "EqualitySet.cpp"
     "Node.cpp"
+    "PassPolicy.cpp"
 )
 
 set(Util_PRIV_DEPS

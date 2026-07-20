@@ -1250,7 +1250,7 @@ static void CheckProcedures(ProgramImpl *impl) {
 //
 //   PROC $p1 { X }   CALL $p1        PROC $p1 { X }   CALL $p1
 //   PROC $p2 { X }   CALL $p2   =>   (removed)        CALL $p1
-void ProgramImpl::Optimize(void) {
+void ProgramImpl::Optimize(const PassPolicy &policy) {
 
   // A bunch of the optimizations check `region->IsNoOp()`, which looks down
   // to their children, or move children nodes into parent nodes. Thus, we want
@@ -1281,6 +1281,11 @@ void ProgramImpl::Optimize(void) {
   };
 
   for (auto changed = true; changed;) {
+    // cf.regionopt gates PER SWEEP; the sweep loop's interior (incl. the
+    // emission-visible region-list sorts) never runs when gated off.
+    if (!policy.Gate("cf.regionopt")) {
+      break;
+    }
     changed = false;
 
     CheckProcedures(this);
@@ -1384,6 +1389,11 @@ void ProgramImpl::Optimize(void) {
     }
 
     remove_unused();
+  }
+
+  // cf.procdedup: everything below is the procedure-deduplication pass.
+  if (!policy.Gate("cf.procdedup")) {
+    return;
   }
 
   // Go find possibly similar procedures.

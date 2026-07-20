@@ -5,6 +5,7 @@
 
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Util/DefUse.h>
+#include <drlojekyll/Util/PassPolicy.h>
 #include <drlojekyll/Util/Node.h>
 
 #include <cstdint>
@@ -982,7 +983,8 @@ class Query {
   // optimization modes (never a fifth mode); it is exercised only under the
   // `-demand` CLI flag.
   static std::optional<Query> Build(const ParsedModule &module,
-                                    const ErrorLog &log, bool optimize = true,
+                                    const ErrorLog &log,
+                                    const PassPolicy &policy,
                                     bool demand_mode = false);
 
   ~Query(void);

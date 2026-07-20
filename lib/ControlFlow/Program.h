@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <drlojekyll/Util/PassPolicy.h>
 #include <drlojekyll/ControlFlow/Program.h>
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Lex/Token.h>
@@ -1893,7 +1894,7 @@ class ProgramImpl : public User {
 
   explicit ProgramImpl(Query query_, unsigned next_id_);
 
-  void Optimize(void);
+  void Optimize(const PassPolicy &policy);
 
   // Analyze the control-flow IR and table usage, looking for strategies that
   // can be used to eliminate redundancies in the data storage model. We do this

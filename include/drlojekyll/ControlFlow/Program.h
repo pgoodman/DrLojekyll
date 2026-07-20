@@ -6,6 +6,7 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Util/DefUse.h>
+#include <drlojekyll/Util/PassPolicy.h>
 #include <drlojekyll/Util/Node.h>
 
 #include <functional>
@@ -1357,7 +1358,8 @@ class Program {
   // but region-level optimization (flattening, no-op removal, procedure
   // deduplication) is skipped.
   static std::optional<Program> Build(const Query &query, const ErrorLog &log,
-                                      unsigned first_id=0, bool optimize=true);
+                                      unsigned first_id,
+                                      const PassPolicy &policy);
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;

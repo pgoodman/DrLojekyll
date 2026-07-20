@@ -1636,3 +1636,73 @@ demand_tc_witness + symrec_tie_1 sidecars blessed and green, the
 scripted 8-run -ir-out sweep RETIRES as the routine per-commit
 step; it is RETAINED as the acceptance gate for any
 determinism-substrate-touching change.
+
+## 17. P1 landing record (2026-07-19; record written pre-commit, at
+## the owner brief — the pass-harness slice, judged before code)
+
+JUDGE ROUND (3 judges + xhigh consolidator, ~261k tokens; pinned
+contract = scratchpad p1/p1-pinned.md; verdict GO-WITH-AMENDMENTS):
+three DRAFT errors corrected as hard pins — (1) the df alias is the
+ENUMERATED {df.cse,df.canon,df.dfe,df.sink}, NEVER df.* (df.simplify
++ df.demand run OUTSIDE the optimize guard in all 4 golden modes);
+(2) the wholesale-skip branches are PRESERVED via
+AnyBodyOptionalEnabled (enter-and-gate-all is NOT byte-equal — the
+region-list .Sort(depth_cmp) calls inside the cf sweep are
+emission-visible; and the cf alias must reach BOTH Optimize call
+sites); (3) "~10 driver sites" corrected to 3 outer guards + interior
+gate names, library-internal, with the interior gates DEFAULT-ALLOW
+(inert at default config) and -opt-counter/-passes deferred to P3/P4.
+
+IMPLEMENTATION: include/drlojekyll/Util/PassPolicy.h + lib/Util/
+PassPolicy.cpp (glob matcher: prefix-star + exact only; the single
+cross-level monotone bisect counter; allow-path PURE — no NDEBUG
+logic, the E-72 lesson); PassPolicy REPLACES the optimize bool in
+both public Build signatures (callers: Main.cpp ×2 + the Oracle,
+which passes DisableDataFlowOpt()); the 3 outer guards; interior
+gates df.simplify, df.cse (per do_cse), df.canon (PER ROUND inside
+the Canonicalize fixpoint), df.dfe (EliminateDeadFlows ONLY —
+RemoveUnusedViews is REQUIRED hygiene, never gated), df.sink,
+cf.regionopt (per sweep), cf.procdedup; Main.cpp arms -opt-disable=/
+-opt-only=/-opt-bisect-limit= with the legacy flags as factory-exact
+aliases; per-module bisect reset.
+
+FABLE REVIEW (20 agents ~841k tokens): four CONFIRMED
+silent-acceptance gaps, all fixed + probed loud — (1)
+-opt-bisect-limit= with an empty value silently installed limit 0
+(strtoll no-conversion now rejected); (2) THE BIG ONE: the gated
+df.demand silently NEUTERED an explicit -demand under -opt-only/
+-opt-disable/bisect, dropping its clean diagnostics (the
+demand_multi_adorn_1 reject class would have vanished) — RULING:
+-demand is SEMANTICS, not an optimization; df.demand is UN-GATED in
+P1 (name RESERVED, absent from the registry; a future stage defines
+LOUD composition semantics); (3) shape-valid but unmatchable globs
+(df., bare df, typos) were silent no-ops — and under -opt-only a
+typo silently inverted to disable-everything — fixed with the
+MatchesAnyKnownPass parse-time registry check; (4) an empty
+-opt-only= inverted to run-everything — empty glob lists now
+diagnose. Cleanups: PassPolicy.cpp moved to its lib/Util home;
+public Program.h made self-contained. Probes: the multi-adornment
+reject diagnostic now SURVIVES -opt-only (the fix's witness);
+-opt-disable=df.ces and -opt-bisect-limit= and -opt-only= all emit
+colored diagnostics.
+
+GATES (all green, re-run in full post-fix): [G1] SUITE PASS (169)
+with the irgold arms live; [G2] 676-row corpus A/B BYTE-IDENTICAL
+vs the frozen e6264b54 baseline (default config = the exact current
+pipeline); [G6a] 676-row legacy-vs-new-vocabulary A/B
+BYTE-IDENTICAL; [G6b] the FULL suite (stdout + all 6 irgold
+surfaces) PASSES under the new-vocabulary flags_of (temporarily
+patched, restored — flags_of("opt") stays ""); [G7] demand
+orthogonality (legacy==new under -demand on all 4 surfaces; the df
+alias preserves the demand pass); [G3] ctest 3/3; [G5] data/ 36-row
+A/B clean; [G4] Q5 progsize@128 release ABABAB A {151.5,151.1,
+150.1} vs B {147.1,147.0,150.2} ms (−2.0% median, inside the noise
+band); bisect -1 prints its index stream to stderr only. The
+all-4-modes byte-identity prediction (spec §4/A8) HELD.
+
+STATUS: T1 + (F) + T2b.0 + T2a + T2b + T3 + P1 landed — the T2/T3/
+P1 program is COMPLETE. Next: the D1 design fleet (§7(B); targets
+witness-deltarel-target.md + tc-four-adornment-target.md, holes
+H1-H11; the §12 binding-source directives; the minus-before-plus
+band-(a) DR-IR edge pin; instance death as its OWN op). P2-P5 of
+the pass harness remain next-epoch candidates per §0.6.1.

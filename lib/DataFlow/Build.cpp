@@ -2516,7 +2516,8 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 }  // namespace
 
 std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
-                                  const ErrorLog &log, bool optimize,
+                                  const ErrorLog &log,
+                                  const PassPolicy &policy,
                                   bool demand_mode) {
 
   std::shared_ptr<QueryImpl> impl(new QueryImpl(module));
@@ -2556,9 +2557,14 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
-  impl->Simplify(log);
-  if (num_errors != log.Size()) {
-    return std::nullopt;
+  // df.simplify: nameable but NOT body-resident — it runs in all 4 golden
+  // modes (outside the optimize guard), so the legacy df alias never
+  // disables it (P1 pinned contract §1).
+  if (policy.Gate("df.simplify")) {
+    impl->Simplify(log);
+    if (num_errors != log.Size()) {
+      return std::nullopt;
+    }
   }
 
   if (!impl->ConnectInsertsToSelects(log)) {
@@ -2573,6 +2579,11 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   // the induction cross-check validates the demand edges). Mode-gated: with
   // `demand_mode == false` the pass returns at its head before minting any
   // node, so the graph is byte-identical to today.
+  // df.demand is RESERVED but deliberately UN-GATED in P1 (the Fable
+  // review's catch): -demand is a SEMANTIC flag — a pass policy or bisect
+  // limit silently neutering it would also silently drop its clean
+  // diagnostics (the demand_multi_adorn_1 reject class). A future stage may
+  // define LOUD composition semantics; until then -demand alone decides.
   if (!impl->ApplyDemandTransform(module, log, demand_mode)) {
     return std::nullopt;
   }
@@ -2581,8 +2592,11 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   }
 
   try {
-    if (optimize) {
-      impl->Optimize(log);
+    // The wholesale-skip guard is PRESERVED (P1 pinned contract §1):
+    // entering Optimize() with every pass gated is NOT byte-equivalent to
+    // never entering it (driver bookkeeping between passes is structural).
+    if (policy.AnyBodyOptionalEnabled(PassLevel::kDataFlow)) {
+      impl->Optimize(log, policy);
       if (num_errors != log.Size()) {
         return std::nullopt;
       }

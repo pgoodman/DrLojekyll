@@ -93,6 +93,7 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Display/DisplayConfiguration.h>
 #include <drlojekyll/Display/DisplayManager.h>
+#include <drlojekyll/Util/PassPolicy.h>
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parse.h>
 #include <drlojekyll/Parse/Parser.h>
@@ -736,7 +737,8 @@ class Oracle {
     }
     // Unoptimized dataflow: the oracle interprets the graph the aggressive
     // optimization pass never touched.
-    query = hyde::Query::Build(*module_opt, error_log, /*optimize=*/false);
+    query = hyde::Query::Build(*module_opt, error_log,
+                               hyde::PassPolicy::DisableDataFlowOpt());
     if (!query) {
       error_log.Render(std::cerr);
       return EXIT_FAILURE;
