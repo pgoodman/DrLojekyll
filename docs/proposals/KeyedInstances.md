@@ -2397,3 +2397,61 @@ this section before building on it; errata continue at E-81.
     abort trips nothing corpus-wide); Q5 ABABAB A {148,148,145} vs
     B {144,147,146} ms (−1.4% median, noise); golden re-verified
     byte-exact post-rebuild. NEXT: D2.a.
+
+(M) D2.a LANDED (2026-07-20; the Runtime InstanceStore + RowStore::
+    Reset + the DrTest unit, INERT — record written pre-commit).
+    Design ritual: adjudicated contract in session scratchpad
+    d2a/d2a-design.md (designer xhigh + 2 critics + xhigh adjudicator;
+    GO-WITH-AMENDMENTS, 4 folded — the consequential one:
+    hand-rolled configure lines need -DDRLOJEKYLL_ENABLE_TESTS=ON or
+    the HP-16 gate passes VACUOUSLY [tests/ default-OFF outside the
+    presets]). OWNER RATIFICATIONS this round:
+    RAT-4 the `monotone` ctor bool (default true) gates the HP-7
+          frozen⊆current seal belt — the belt CANNOT be unconditional
+          (the death-half unit and D3.a R-DIFF legitimately shrink
+          current); one bool beyond §A.3.1's literal surface.
+    RAT-5 the belt-fires NEGATIVE ships NOW (overriding the design's
+          defer-to-D3.a): a fork/waitpid death arm in the unit (the
+          RAT-3 mold verbatim — fflush-before-fork, loud fork-fail,
+          SIGABRT-specific), #ifndef NDEBUG'd so release SKIPS it.
+    AS LANDED: include/drlojekyll/Runtime/InstanceStore.h (NEW, 333
+    lines) — the StateCellStore transpose: dense-iid monotone-forever
+    namespace, Vec<Table*> frozen/current pairs, FindOrAddInstance
+    (open-addressing mold), TouchCurrent/Touched (sort-unique),
+    KeyAt, WorkingOccupied==NumRows>0 (the N-1 working_count drop
+    recorded in the header — revisit at R-DIFF), Seal (.Set-triple
+    pointer swap — Vec::operator[] is const, std::swap ill-formed;
+    Reset on the new current; sealed_occupied snapshot; the RAT-4
+    belt), RecycleCurrent unconditional-idempotent, DebugValidate;
+    bench-counter seam reuses ONLY enumerated
+    HYDE_RT_BENCH_COUNTER_FIELDS names (zero new). Table.h +27:
+    protected RowStore::Reset (Truncate + in-place slot loop, NO
+    allocator entry point — the H6 Arena discharge) chained by public
+    Table::Reset (sealed=0). tests/InstanceStore/ (NEW, 5th ctest
+    target per P-D2a.2): 8 arms — mint/find/collision-growth,
+    Touch/Touched, KeyAt, Seal semantics, Recycle idempotence
+    (twice==once), H6 quantitative Arena regression, the death half
+    (Recycle→re-add — the store's only pre-D3 execution), the RAT-5
+    belt-fires fork negative. Intent-communicating asserts
+    throughout. FABLE REVIEW (workflow, 4+ agents ~341k tokens): 1
+    CONFIRMED (MED — the fork helper compiled-but-unused under
+    NDEBUG: -Wunused-function in release; fixed by moving helper+enum
+    inside the #ifndef NDEBUG; NDEBUG syntax-only re-check clean),
+    rest refuted. HP-16 GATE EXECUTED with teeth: build/benchcount
+    (Debug + -DDRLOJEKYLL_BENCH_COUNTERS + ENABLE_TESTS=ON) full
+    build green, instance_store_test COMPILES under the ON define
+    (proves every counter name enumerated), ctest 5/5, FULL SUITE
+    PASS (169) with the counters-ON compiler AND counters-ON drivers
+    (via the env CXX wrapper — the harness's quoted "$CXX" cannot
+    take a multi-word value; the wrapper is the established seam).
+    GATES ALL GREEN: SUITE PASS (169) with drivers compiled against
+    the new Table.h; 676-row + data A/B BYTE-IDENTICAL vs frozen
+    99f211f5 (P-D2a.1); ctest 5/5 debug + 5/5 under ASAN (both fork
+    death arms green under ASAN); release unit 7/7 (death arm
+    NDEBUG-skipped by design); ASAN both surfaces SUITE PASS zero
+    reports; no DeltaRel touch (E-62 N/A); PassPolicy untouched; Q5
+    ABABAB A {139,139,141} vs B {140,139,141} ms (0.0% median,
+    noise). NEXT: D2.b — carrying LOUD: the ABA-safe deref-free mint
+    identity, the §B.4 desired-state re-derivation (OD-4
+    mechanism-natural + the collapsed-seal kStateFold WAW edge), and
+    HP-13(b)'s end-to-end real-dump review before any nested bless.

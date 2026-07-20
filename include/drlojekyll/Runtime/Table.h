@@ -148,6 +148,25 @@ class RowStore {
     return w;
   }
 
+  // Reset the log to empty, retaining all backing storage. The slot loop is
+  // CompactRowsInPlace's tail (Table.h:135-137); the two Truncate(0)s drop the
+  // row/hash logs (Vec::Truncate retains capacity, Vec.h:96-99). Calls NO
+  // allocator entry point — Arena-safe: no Free (a no-op under Arena anyway,
+  // Allocator.h:22/:42) and no Allocate, so repeated reset/refill cycles never
+  // grow the footprint. DISCHARGES H6. A reused RowStore is byte-fresh: an
+  // append after Reset re-mints ids from 0.
+  //
+  // `protected`, not `public`: the only legitimate caller is a derived table
+  // (Table::Reset), never external code that could desync a Table's `sealed`
+  // watermark or a DiffTable's counters/flags from a half-reset log.
+  void Reset(void) noexcept {
+    rows.Truncate(0u);
+    hashes.Truncate(0u);
+    for (size_t i = 0u; i < slot_capacity; ++i) {
+      slots[i] = kNoRow;
+    }
+  }
+
   // Finds `row`, storing it as a fresh log entry if it was never seen.
   // Returns the row id and whether a fresh entry was created.
   std::pair<uint32_t, bool> FindOrAdd(const Row &row) {
@@ -277,6 +296,14 @@ class Table : public RowStore<Row> {
   // End-of-epoch: advance the batch-start watermark over every stored row.
   void Seal(void) noexcept {
     sealed = this->NumRows();
+  }
+
+  // Reset to empty for reuse (the InstanceStore double-buffer, A.3.2). Chains
+  // the RowStore log/slot reset, then dissolves the batch-start watermark. NO
+  // allocation (RowStore::Reset is allocation-free) — Arena-safe.
+  void Reset(void) noexcept {
+    this->RowStore<Row>::Reset();
+    sealed = 0u;
   }
 
  private:
