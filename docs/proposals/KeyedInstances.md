@@ -1873,3 +1873,221 @@ the pass harness remain next-epoch candidates per §0.6.1.
     blocks only negate-carrying bless). NO D1/D2 code exists.
     Next session: re-verify §18 (E-73+), then the D1 design
     fleet.
+
+## §19. D1 DESIGN PINNED — whole-program checkpoint (2026-07-20, tip 1aaca896)
+
+THE ENTRY POINT for the next session. Status: the D1 design is COMPLETE,
+JUDGED (unanimous GO-WITH-AMENDMENTS), and PINNED — implementation is
+BLOCKED ON OWNER RATIFICATION of the decision list in d1-pinned.md §4.
+NO D1/D2 code exists; the tree at this checkpoint is docs-only ahead of
+1aaca896. SINGLE-PASS (the house precedent): the next session re-verifies
+this section before building on it; errata continue at E-81.
+
+(A) §18 RE-VERIFIED (the thirteenth run of the precedent): SEED-HOLDS,
+    GO. Four seed-unread derivation lanes + four seed-read adversarial
+    verifiers + an xhigh consolidator; orchestrator personally re-grepped
+    the E-62 tripwire (sole hit = Stratum.cpp:1073, a comment) and the
+    bisect-counter readers (PassPolicy.cpp:85 tick, Main.cpp:65 reset,
+    :452-461 parse). Zero load-bearing defects; four COSMETIC errata:
+    E-73 §18:1763-4 "BOTH Program::Build call sites guarded" — the two
+         guarded calls are the ProgramImpl::Optimize invocations INSIDE
+         lib/ControlFlow/Build/Build.cpp (:1372-3, :1381-2), not two
+         public Program::Build calls (there is one, Main.cpp:79-80).
+         Mechanism pinned is correct; phrase loose.
+    E-74 §16:1606's E-72 anchor is stale: the mint is at
+         lib/ControlFlow/Build/Induction.cpp:671 (post-fix banner starts
+         :661), and bare "Induction.cpp" is ambiguous across three files
+         (lib/ControlFlow/Build/ is authoritative — the ambiguity induced
+         a lane's wrong-file grep).
+    E-75 §18 A.2 folds "E-72 fixed" under the -deltarel-out bullet; E-72
+         was an .ir/datalog.h defect — deltarel bytes were always
+         config-invariant (§16 scopes it correctly).
+    E-76 §15:1509 "~860 lines" for lib/DeltaRel/Format.cpp; true figure
+         at tip = 821.
+    Coverage gaps carried for the NEXT re-verify: the view-neutral tail
+    order was leaned on (thrice-verified, not re-derived); process-history
+    gates not statically checkable; -dr-out surface existence-checked only.
+
+(B) GROUND TRUTH — the real flat dumps (artifact d1-ground-truth-nbhd.md,
+    GT-1..GT-6, dump bytes embedded). The two load-bearing divergences
+    from the paper-era target: GT-1 the fabricated demand table lowers
+    MONOTONE (no frontier/claim/commit machinery; instance death's
+    trigger is UNREACHABLE as landed — the retraction surface became
+    owner decision OD-1); GT-2 the ENTIRE witness is monotone (two
+    kIngestFolds + empty rounds/deps — there is no differential tail to
+    ride). Also: GT-3 the raw_seed/d_reader CSE fold is LIVE (demand_side
+    must be stamped pre-CSE); GT-4 the real %table map (8=demand,
+    11=edge, 15=guarded copy, 4=answer); GT-5 the flat demand flow is
+    carried ENTIRELY by the hand-coded eager web — SUBGRAPH_INSTANTIATE
+    replaces EAGER-WEB emission, not DR ops. witness-deltarel-target.md
+    carries its SUPERSEDED-IN-PART banner accordingly (E-80).
+
+(C) THE D1 DESIGN (artifacts, precedence stack top-down):
+    d1-pinned.md (the judge contract: HP-1..HP-18 hard pins, the owner
+    list, overruled findings) WINS over d1-design-consolidated.md (the
+    adjudicated architecture §A + diff sequence §B + 27 critique findings
+    dispositioned at code) WINS over d1-desired-states.md (the four
+    adjudicated dump blocks + C-1..C-12 residuals). The architecture as
+    pseudocode DIFFS against the §18(A) as-landed pipeline:
+
+      Query::Build tail (D1.a — DataFlow-side, inert):
+        ApplyDemandTransform(...)        // landed, un-gated (df.demand=semantics)
+       +  at the two stamp sites (Demand.cpp step-7 :960 body/d_reader,
+       +  step-8 :1002 query-projection/raw_seed):
+       +    guard_annotations.push({kind, demand_side, role,
+       +        is_instance_key /*D3 recursive-subgoal marker ONLY*/,
+       +        instance_key, guarded_read, demanded_view, forcing_index})
+       +    guard_annotation_of[view]=idx  // lookup-ONLY map; ordered
+       +        // consumption ALWAYS from the DefList/det_seq walk (HP-9)
+       +  per forcing in query.DemandForcings():   // recognition unit =
+       +    recognized_subgraphs.push({...})       //   the FORCING (X-9)
+        CopyDifferentialAndGroupIdsTo(that)  // View.cpp:557 — the choke pt
+       +  TransferGuardAnnotation(loser, survivor)  // migrates exactly
+       +      // where group_ids migrate (covers RAUW, both Join
+       +      // self-canon sites, CSE, the ~12 hand call sites);
+       +      // incompatible fold = LOUD abort
+
+      BuildDRInventory (D1.b — enums/validators/grammar land, mint OFF):
+       +  3 DROpKinds after kStateSeal: kSubgraphInstantiate (BIRTH/
+       +      REBUILD + band-(b) publish; SOLE pub deriver), kInstanceDeath
+       +      (OWN op, §18(B); ZERO-COUNTER signature: drain kNetRemoval +
+       +      kInstanceDemand + kInstanceOld + kInstanceRebuild(-1), NO
+       +      fold/counter/append; minted ONLY when
+       +      TableIsDifferential(demand) — mint-predicate-false at D2,
+       +      HP-17), kInstanceSeal (band 11, self-lowered carrier HP-1)
+       +  5 EffKinds: kInstanceRebuild/kInstanceEmit/kInstanceOld/
+       +      kInstanceDemand(frozen,NO-hazard HP-8)/kInstanceSealSwap —
+       +      kInstanceEmit/Old justify-or-collapse vs kStateEmit/Old
+       +      BEFORE spelling rows (HP-11)
+       +  effect multisets REGIME-SPLIT on DIFF:=TableIsDifferential(pub):
+       +      always {drain(demand,kNetAddition), kInstanceDemand,
+       +      kFlagRead(input,Present,kSeed), kInstanceRebuild(+),
+       +      kInstanceEmit, kInstanceOld}; DIFF adds 2×kCounter(±)+
+       +      2×kInIReadFrozen+2×kVecAppend; !DIFF adds 1×kCounter(+)
+       +  minus-before-plus: BOTH ops op_table_id=pub_table, death
+       +      sign=-1/inst sign=+1 → the band key's sign tie-break fires
+       +      (HP-3); NO mint-time DRDep (the mandated explicit edge is
+       +      provably CIRCULAR under emit_waw key-forcing — OD-2);
+       +      V-INST-ORDER (always-on) is the enforcement
+       +  validators: V-INST-EFFECT/-SOLE/-PAIR(2-way R-MONO, 3-way
+       +      R-DIFF)/-ORDER/-DRAIN(HP-2)/-EMITTED(all THREE kinds, HP-1);
+       +      V-ALPHA arms A/B (α-elision = wiring; MAP/NEGATE/AGG in a
+       +      demanded body → recognizer REFUSAL until extended, HP-4);
+       +      linearizer default: → ValidatorFail
+       +  dump grammar: kInstance* spelling rows (loud-abort fallback),
+       +      3 census counters, instances:/DRInstance section, ik:/row:
+       +      binding-source tags; THE ONE CHURN = demand_tc_witness
+       +      census line +3 counters — DIRECT DIFF bless (one line, enum
+       +      order, census-abort green) — NOT permcheck (HP-14: permcheck
+       +      EXECUTED, FAILS on census-line change; boundary_re)
+
+      Lowering (D2.b — the knob goes live):
+       +  eager walk: recognized boundary = chain-breaker (GROUP_UPDATE
+       +      precedent); flat guard-join eager web NOT emitted under
+       +      -demand-instance (GT-5); OD-7 provisioning gives the
+       +      monotone demand table its net-additions frontier — which
+       +      FORCES a monotone kCommitSweep on it (X-DS-2; census
+       +      kCommitSweep=1 under demand-only provisioning, OD-4)
+       +  LowerSubgraphInstance (Stratum.cpp GroupUpdates-loop mold):
+       +      drain demand frontier → FindOrAddInstance → V-INST-FRESH
+       +      (current empty, fprintf+abort, survives NDEBUG) →
+       +      [R-DIFF: death arm FIRST] → Rederive rescan of the monotone
+       +      input from the op-BODY PlanTree → TryAdd into current →
+       +      band-(b) two-scan publish: born=(F,T)→+pub_row,
+       +      dropped=(T,F)→-pub_row (provably EMPTY under R-MONO, HP-7;
+       +      partition semantics pinned in the p-rule, HP-6);
+       +      pub_row = concat(KeyAt(iid) at ik: slots, r at row: slots)
+       +      — V-ALPHA arm B: the α value is NEVER row-projected
+       +  V-INST-EMITTED multiset-compares emitted regions vs enrollment
+
+      Runtime (D2.a — inert): InstanceStore<Key,RowT> = the StateCellStore
+        transpose (dense iid monotone-forever; frozen/current TABLE PAIR
+        per instance; nested tables INDEX-FREE — flat's idx_38 disappears;
+        Seal = per-touched pointer swap + Reset + occupancy snapshot);
+        RowStore::Reset() (Arena-safe: no allocator entry point — H6).
+        DrTest unit ships with the header. HP-16: one-shot
+        -DDRLOJEKYLL_BENCH_COUNTERS ON-build compile+suite gate.
+
+      Retraction (STAGED, OD-1): D2 = R-MONO-a (birth + demand-flap
+        rebuild only); D3.a = R-DIFF via NEW opt-in -demand-retract
+        (@differential fabrication at the Parse mint + suppressed-
+        message-preserving unask ABI), carried by witness .drflags.
+        Knobs -demand-instance/-demand-retract are OFF the PassPolicy
+        registry (the P1 "demand is semantics" ruling).
+
+      Equivalence gate (D2.c): run_eqgate in runall.sh --one — flat
+        stdout == nested stdout == blessed golden (ANSWER identity,
+        never generated bytes). The oracle is the orthogonal closure
+        check on the FLAT arm only; demand-SCOPING correctness rests on
+        the blessed .stdout + .ir structural gate (HP-5 — the witness
+        graph MUST contain out-of-neighborhood edges); DEATH is
+        oracle-blind forever (eqgate-F2). Three per-forcing fences:
+        (i) cyclic-demand, (ii) mid-stream monotone-input-add [scope =
+        OD-3], (iii) differential-summarized-input; witnesses land with
+        D2.c per OD-8 (suite 169→170→173).
+
+    DIFF SEQUENCE (d1-pinned §3, amendments folded): D1.a annotation+
+    registry → D1.b op family+validators+grammar → D2.a runtime store →
+    D2.b excision+lowering+codegen → D2.c witness+eqgate → D3.a R-DIFF
+    (next epoch; HP-15's surface×mode re-bless matrix pre-registered).
+    Every diff under the standing gates G1-G7 + Fable review + owner
+    brief before emission commits.
+
+(D) OWNER DECISIONS PENDING (full statements in d1-pinned.md §4; blocking
+    map): OD-1 retraction staging (REC staged; dissent recorded; blocks
+    D3.a only) · OD-2 §18(B)(4) mechanism substitution (REC ratify;
+    blocks D1.b) · OD-3 fence-(ii) scope — the §13 judgment call (blocks
+    fence-ii code + its witness only) · OD-4 OD-7 provisioning blast
+    radius (REC demand-only; blocks D2.b provisioning + nested census
+    bless) · OD-5 seal carrier = self-lowered (veto point; blocks D2.b
+    wiring) · OD-6 three-op family conditioned on HP-11 (blocks D1.b) ·
+    OD-8 fence witnesses with D2.c (REC yes) · OD-10 witness .irgold
+    timing (REC defer to post-D3.a; dissent recorded). Veto-only:
+    OD-R1..R9. Implementer-at-D1.b: OD-I1..I4. PIN-1/PIN-3 remain open
+    (no carriers arose).
+
+(E) ERRATA E-77..E-80 (the judge round's candidates, adopted):
+    E-77 the permcheck mis-citation — design decision #9 named a referee
+         that categorically REJECTS the change it was pinned to referee
+         (census line = structural boundary under permcheck.py:62's
+         boundary_re; executed twice, exit=1). Two critique rounds
+         rubber-stamped it; caught only when EXECUTED. Corrected in
+         HP-14. HOUSE RULE minted: a referee named in a binding pin must
+         be RUN against the exact change it is pinned to referee.
+    E-78 design §A.3.4's three-exit emit_inst_seal wiring SUPERSEDED by
+         HP-1/OD-5 (seal self-lowered from kInstanceSeal's dispatch;
+         V-INST-EMITTED enrolls the seal).
+    E-79 §18(B)(4)'s "explicit DR-IR edge" minus-before-plus mechanism is
+         pending owner SUBSTITUTION (OD-2): the mandated edge is provably
+         circular (emit_waw key-forces edge direction, DeltaRel.cpp:
+         3540-3556; V-LINEAR checks against the same key that oriented
+         it). Record the ratification outcome here when ruled.
+    E-80 witness-deltarel-target.md superseded-in-part (banner applied
+         this checkpoint; see (B)).
+
+(F) ASAN — OWNER DIRECTIVE (2026-07-20, STANDING): "you should be
+    compiling and running the code with asan." Adopt from the next
+    session on, BEFORE D1.a lands: (1) a build/asan tree (Debug +
+    -fsanitize=address -fno-omit-frame-pointer, linker
+    -fsanitize=address — the CLAUDE.md coverage-build pattern); (2)
+    ctest under it; (3) an OptDiff suite run with DR=build/asan/bin/
+    drlojekyll — this exercises the COMPILER under ASAN on all 169
+    cases; (4) price and decide the second surface: compiling the
+    GENERATED code + drivers with ASAN inside diffrun (exercises the
+    Runtime/Allocator) — likely via an env-selected CXXFLAGS arm, never
+    a fifth golden mode. First sweep's findings go to FINDINGS.md/errata
+    LOUDLY. ASAN builds are never timed (no Q5/bench); never rebuild
+    mid-suite applies unchanged. Whether ASAN-suite becomes a standing
+    per-diff gate or a per-epoch sweep is decided from the first run's
+    cost — bring the number to the owner.
+
+(G) STATUS at session end (2026-07-20): tip 1aaca896 + this docs-only
+    checkpoint; suite 169 irgold-live; ~3.2M subagent tokens across 4
+    workflows (29 agents) this session; fleet reports live only in the
+    session scratchpad — the four committed artifacts above are the
+    binding record (scratchpad is disposable). NEXT SESSION: (0) ASAN
+    sweep per (F); (1) re-verify THIS section (errata E-81+); (2) obtain
+    the owner rulings on (D); (3) implement D1.a → D1.b → D2.a → D2.b →
+    D2.c ONE DIFF AT A TIME under the standing gates (G1-G7 of
+    d1-design-consolidated §B, as amended by d1-pinned §3), Fable review
+    + owner brief before every emission commit.

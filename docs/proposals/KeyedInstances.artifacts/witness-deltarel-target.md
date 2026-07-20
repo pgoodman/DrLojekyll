@@ -2,6 +2,28 @@
 witness-deltarel-target.md — THE HAND-WRITTEN DeltaRel-IR TARGET FOR ONE
 DEMAND-KEYED-INSTANCE WITNESS (nested lowering)
 ======================================================================
+*** SUPERSEDED-IN-PART (§19 checkpoint, 2026-07-20; erratum E-80). This
+*** PAPER-ERA target predates the REAL flat dumps and the D1 pinned
+*** design. Corrected claims — read d1-ground-truth-nbhd.md (GT-1..GT-6),
+*** d1-design-consolidated.md, d1-desired-states.md, d1-pinned.md first:
+***  (1) %table NUMBERING is the borrowed d3 map; the REAL demand-ON flat
+***      map is GT-4 (%table:8=demand, %table:11=edge, %table:15=guarded
+***      copy, %table:4=answer — pub/answer is 15+4, not 4).
+***  (2) The fabricated demand table lowers MONOTONE as landed (GT-1);
+***      the ENTIRE witness is monotone — there IS no acyclic claim/
+***      frontier/commit tail to ride (GT-2), and the band-(a) minus arm's
+***      $net-removal vec is never minted. Death's trigger is UNREACHABLE
+***      until the staged D3.a retraction surface (-demand-retract) lands
+***      (d1-pinned.md OD-1).
+***  (3) Death-as-minus-arm is superseded by the §18(B) OWN-OP split as
+***      pinned: kSubgraphInstantiate / kInstanceDeath / kInstanceSeal
+***      with the zero-counter death signature (d1-pinned.md HP-3).
+***  (4) §2.6's draft nested dump block is STALE; the amended nested
+***      block is d1-desired-states.md §B.4 (no DRVec line, monotone
+***      kCommitSweep on the demand table, re-derived labels/deps).
+*** The H1-H11 hole list REMAINS the live index of design questions; each
+*** is dispositioned in d1-design-consolidated.md §0/§A and d1-pinned.md.
+======================================================================
 Target-artifact lane, demand-keyed-instances / implicit-asynchrony epoch.
 Branch `keyed-instances`, tip fa9a8cc2 (D0 fleet @60821adf substrate).
 Written 2026-07-18, checkpoint step 3, artifact 1. PAPER-FIRST: this hand-
