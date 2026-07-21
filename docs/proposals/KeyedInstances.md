@@ -2853,3 +2853,18 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         ADJ-C1 framing matches d2b-design. Full adjudication record:
         session scratchpad e87-errata.md (disposable; THIS entry is the
         binding record). Errata continue at E-98.
+
+(F) OD-12 — THE EPOCH-OPEN RE-RANK RULING (owner, 2026-07-21): the §9
+    "DeltaRel → Rel" epoch OPENS with R-a2 FIRST — the input-frontier
+    drain for SUBGRAPH_INSTANTIATE (band-(a2) full-rescan keyed on the
+    edge frontier, the ADJ-C1 collapsed mechanism) — then the witness's
+    two-join monotone web step kinds (TUPLE/INSERT before JOIN, per
+    brief §5 as amended by E-95). Alternatives (step-kinds-first,
+    pass-harness P2-P5, §13/§14) were tabled and declined. LINEAGE:
+    this is the sanctioned reversal path RAT-6/OD-3 pre-registered —
+    the a1-only birth-only enforcement was the D2.b slice's ruling
+    WITH the provision that the rebuild plumbing lands with Rel; the
+    witness's REBUILD batch un-retires under the golden-bless ritual,
+    and the edge-after-demand gap labels (CLAUDE.md + the Build.cpp
+    comment) retire WITH the landing, not before. R-a2 proceeds under
+    the full per-slice design ritual.
