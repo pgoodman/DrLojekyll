@@ -1,0 +1,16 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; demand_cyclic_1 -- fence-(i) witness: a bound #query whose demanded body is
+; the recursive transitive-closure shape, so the fabricated demand relation is
+; self-reachable (cyclic demand). Rejected under -demand-instance by the
+; Program::Build pre-pass (Build.cpp:1338); ALL FOUR modes diagnostic. Under
+; plain -demand this same program COMPILES (recursive demand is the flat
+; demand_tc_witness feature) -- the fence is nested-lowering-specific.
+
+#message link(u64 From, u64 To).
+
+#local conn(u64 From, u64 To).
+conn(F, T) : link(F, T).
+conn(F, T) : conn(F, M), link(M, T).
+
+#query connected(bound u64 From, free u64 To) : conn(From, To).

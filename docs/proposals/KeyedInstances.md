@@ -2550,3 +2550,74 @@ this section before building on it; errata continue at E-81.
     cold outlier discarded); post-fix SUITE PASS (169) + ctest 5/5
     re-run. NEXT: D2.c (witness + eqgate + the recomposed
     fence-witness set enter the suite).
+
+(O) D2.c LANDED (2026-07-21; the witness + equivalence gate + fence
+    witnesses enter the suite, 169→173 — record written pre-commit).
+    ZERO compiler change (tests/docs only; the drlojekyll binary is
+    byte-unchanged, so the 676-row A/B and Q5 are unchanged BY
+    CONSTRUCTION — verified via zero lib/bin/include churn + no
+    recompile). Design ritual: designer + 2 critics (who EMPIRICALLY
+    ran both arms ×4 modes, the oracle/monotone arms, an
+    intentionally over-materializing "bad" driver proving HP-5's
+    discrimination has teeth, and all three fence probes) + xhigh
+    adjudicator; GO-WITH-AMENDMENTS, 5 folded, 1 rejected. OWNER
+    RULINGS:
+    RAT-8  the BLESS-BOOTSTRAP house rule (E-77 family, STANDING):
+           "never bless a red case green" means never bless a case
+           that DIVERGED from an EXISTING golden; seeding a
+           first-ever golden from a REVIEWED run (outputs checked
+           against the design contract before --bless, then re-run
+           to SUITE PASS) is the sanctioned exception.
+    RAT-9  the eqgate's nested arm runs ALL FOUR optimization modes
+           (the [ADJ:H1] catch: opt-only left nested nodf/nocf/none
+           unchecked while -demand-instance drives cf lowering the
+           cf-opt modes reshape); each mode byte-compared to the
+           .stdout golden; flat==nested follows transitively via
+           diffrun's standing flat==golden; FLAT-NESTED-DIVERGE
+           retired for NESTED-GOLDEN-DIVERGE.
+    RAT-10 demand_recursive_content_1's .drflags is BARE -demand
+           (the [ADJ:H3] de-lump: it rejects UPSTREAM in the
+           plain-demand body-walk — the Build.cpp recursive-content
+           fence is SHADOWED at tip, documented; the case is the
+           body-walk witness, not a nested fence).
+    NOTABLE DESIGNER EMPIRICAL CORRECTIONS: demand_diff_input_1's
+    minimal shape PASSES the demand transform and reaches the REAL
+    fence-iii (its own diagnostic — a stronger witness than the
+    predicted upstream-reject); the witness driver carries EXPLICIT
+    HP-5 asserts (the tc mold had only golden-compare; note driver
+    asserts are live — diffrun compiles drivers -g without -DNDEBUG).
+    AS LANDED: cases/demand_neighborhood_witness.{dr (RAT-6
+    birth-only header), drflags(-demand), batches (add_edge only,
+    two edge batches BEFORE all probes — both seal surfaces
+    exercised per [ADJ:W2]), eqgate, main.cpp (HP-5 asserts; sorted
+    keyed drains)} + demand_cyclic_1 + demand_recursive_content_1 +
+    demand_diff_input_1 (each .dr/.drflags/.main.cpp; diagnostics:
+    "Recursive demand relations are not yet supported under
+    -demand-instance" / "Unsupported rule-body shape under -demand"
+    / "Demanded subgraphs over deletable (differential) inputs are
+    not yet supported under -demand-instance"); goldens +3
+    (.stdout "nbhd 1: 2 3 4 / nbhd 3: 5 6 / nbhd 9: 9 / nbhd 5:" +
+    .oracle.stdout + .monotone.stdout — each REVIEWED byte-exact vs
+    the design contract before bless per RAT-8; ZERO existing-golden
+    churn, git-verified); runall.sh run_eqgate (sidecar-guarded in
+    --one between run_oracle and run_irgold; $NAME.eqgate.<mode>
+    layout; NESTED-GOLDEN-DIVERGE / EQGATE-*-FAIL /
+    EQGATE-GOLDEN-MISSING all summary-grep-visible) + the
+    three-name alternation edit; CLAUDE.md (173, the corrected
+    diagnostic attributions, the eqgate arm, the edge-after-demand
+    feature gap named, the witness described birth-only).
+    FABLE REVIEW (5 agents ~300k tokens): 1 CONFIRMED (LOW — a
+    stale driver comment contradicting the RAT-10 bare sidecar;
+    fixed), 1 refuted; orchestrator's own sweep additionally caught
+    4 MISSING copyright headers on the new drivers (added; the
+    review's copyright lens had passed them — recorded as a
+    review-lens miss). GATES: SUITE PASS (173) with the eqgate arm
+    live (all four nested modes OK) — ×3 runs (implementer, ASAN,
+    final post-fix); ASAN BOTH surfaces PASS at 173 zero reports
+    (the nested eqgate drivers ran ASAN-compiled); ctest 5/5;
+    bash-3.2 compat scan of the runall diff clean; the witness's
+    four golden modes byte-agree; binary byte-unchanged (A/B + Q5
+    N/A by construction). THE D1→D2 IMPLEMENTATION CHARTER IS
+    COMPLETE: D1.a → D1.b → D2.a → D2.b → D2.c all landed under the
+    ritual. NEXT: the §20 epoch-close checkpoint + the §9
+    "DeltaRel → Rel" epoch-open brief (OD-11: Rel precedes D3.a).

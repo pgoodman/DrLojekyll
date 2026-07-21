@@ -1,0 +1,10 @@
+# Equivalence-gate marker (KeyedInstances.md sec 19; d1-design-consolidated
+# A.6.2). Presence of THIS FILE turns on run_eqgate in runall.sh --one:
+# the nested arm (.drflags + -demand-instance) is built+run with the SAME driver
+# in ALL FOUR optimization modes ([ADJ:H1]), and each mode's stdout is
+# byte-compared against goldens/demand_neighborhood_witness.stdout. diffrun
+# already proves flat == golden per mode, so nested == golden per mode gives
+# flat == nested transitively across all four modes. No golden of its own -- the
+# nested stdout is refereed LIVE, never blessed (OD-10/OWN-5). Tokens
+# NESTED-GOLDEN-DIVERGE / EQGATE-*-FAIL / EQGATE-GOLDEN-MISSING surface at the
+# summary grep.

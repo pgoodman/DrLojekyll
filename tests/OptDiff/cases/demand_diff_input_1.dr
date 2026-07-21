@@ -1,0 +1,16 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; demand_diff_input_1 -- fence-(iii) witness: a bound #query whose demanded
+; body summarizes a @differential (deletable) message input. Rejected under
+; -demand-instance by the Program::Build pre-pass CanReceiveDeletions() check
+; (Build.cpp:1344); ALL FOUR modes diagnostic. This single-hop non-recursive
+; body passes the flat demand transform, so it REACHES the control-flow fence
+; (unlike the recursive-content shape). Stands as the D3.a belt: when the
+; retraction surface lands, deletable demanded inputs become supported.
+
+#message pt(u64 Key, u64 Val) @differential.
+
+#local ans(u64 Key, u64 Val).
+ans(K, V) : pt(K, V).
+
+#query getpt(bound u64 Key, free u64 Val) : ans(Key, Val).

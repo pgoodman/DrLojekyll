@@ -17,6 +17,12 @@
 # Case expectations:
 #   kvindex_2/3/4, agg_in_scc_1, kv_in_scc_1, algebra_dup_1,
 #   algebra_conflict_1, evm_func_parse, nonascii_1, truncated_decl_1,
+#   demand_cyclic_1, demand_recursive_content_1, demand_diff_input_1 (the D2.c
+#     nested-lowering fences: recursive demand / recursive-content demanded body
+#     / a @differential summarized input — each rejects in all 4 modes via its
+#     -demand[-instance] .drflags; cyclic + diff_input compile under plain
+#     -demand and reject only under -demand-instance, recursive_content is the
+#     upstream plain-demand body-walk reject),
 #   demand_multi_adorn_1 (via its -demand .drflags sidecar: a demanded query
 #     name with two binding patterns — the adornment cross-wire reject)
 #     — the compiler must exit 1 with a rendered diagnostic (no assert/crash)
@@ -50,6 +56,11 @@
 #     these flags: it referees ANSWER-identity from the plain program
 #     (demand must change materialization, never answers). Cases without a
 #     sidecar are untouched.
+#   any case with a cases/<name>.eqgate sidecar additionally runs run_eqgate:
+#     the case is re-driven under the nested lowering (its .drflags plus the
+#     -demand-instance selector) with the SAME driver, in all 4 optimization
+#     modes, and each mode's stdout is byte-compared against the case's
+#     committed golden (flat==nested==golden, refereed LIVE, never blessed).
 #
 # Blessing: goldens are updated ONLY by an explicit --bless invocation, after
 # reviewing the outputs of a run — never automatically on failure. --bless
@@ -291,9 +302,60 @@ if [ "${1:-}" = "--one" ]; then
     return $irc
   }
 
+  run_eqgate() {  # equivalence gate (D2.c): a case with a .eqgate sidecar is
+                  # re-driven under the nested lowering (.drflags + the
+                  # -demand-instance selector) with the SAME driver, in ALL FOUR
+                  # optimization modes, and each mode's stdout is byte-compared
+                  # against the case's committed golden. diffrun already proved
+                  # flat==golden per mode, so nested==golden per mode gives
+                  # flat==nested transitively across all four modes. No nested
+                  # golden is ever blessed -- the two-lowerings answer-identity
+                  # gate is refereed live (OD-10/OWN-5).
+    sidecar="$HERE/cases/$NAME.eqgate"
+    if [ ! -f "$sidecar" ]; then
+      return 0
+    fi
+    golden="$HERE/goldens/$NAME.stdout"
+    if [ ! -f "$golden" ]; then
+      echo "$NAME eqgate EQGATE-GOLDEN-MISSING"
+      return 1
+    fi
+    eqrc=0
+    for mode in opt nodf nocf none; do
+      out="$WORKROOT/$NAME/$NAME.eqgate.$mode"
+      mkdir -p "$out"
+      # shellcheck disable=SC2046  # flags_of emits zero or more separate words
+      if ! timeout "$TIMEOUT" "$DR" "$DRC" $(flags_of "$mode") -demand-instance \
+          -cpp-out "$out" >"$out/dr.log" 2>&1; then
+        echo "$NAME eqgate $mode EQGATE-DR-FAIL"
+        eqrc=1
+        continue
+      fi
+      if ! "$CXX" -std=c++23 -g -I "$REPO_ROOT/include" -I "$out" \
+          "$DRV" "$out/datalog.cpp" "$REPO_ROOT/lib/Runtime/Allocator.cpp" \
+          -o "$out/case" >"$out/cxx.log" 2>&1; then
+        echo "$NAME eqgate $mode EQGATE-CXX-FAIL"
+        eqrc=1
+        continue
+      fi
+      if ! timeout "$TIMEOUT" "$out/case" >"$out/stdout" 2>"$out/stderr"; then
+        echo "$NAME eqgate $mode EQGATE-RUN-FAIL"
+        eqrc=1
+        continue
+      fi
+      if ! cmp -s "$golden" "$out/stdout"; then
+        echo "$NAME eqgate $mode NESTED-GOLDEN-DIVERGE"
+        eqrc=1
+        continue
+      fi
+      echo "$NAME eqgate $mode OK"
+    done
+    return $eqrc
+  }
+
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|nonascii_1|truncated_decl_1|demand_multi_adorn_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_cyclic_1|demand_recursive_content_1|demand_diff_input_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done
@@ -311,6 +373,7 @@ if [ "${1:-}" = "--one" ]; then
       ;;
   esac
   run_oracle || st=1
+  run_eqgate || st=1
   run_irgold || st=1
   exit $st
 fi

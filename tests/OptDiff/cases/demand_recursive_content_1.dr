@@ -1,0 +1,23 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; demand_recursive_content_1 -- fence-(i)/recursive-CONTENT witness
+; (OWN-4/ADJ-C2): a bound #query over a NON-recursive wrapper (`demanded` ->
+; `wrap`) whose body reads a separate induction-owned (recursively derived)
+; relation (`conn`). Distinct in shape from demand_cyclic_1 (which queries the
+; recursive relation directly). Under -demand-instance it rejects in ALL FOUR
+; modes; at tip the reject fires UPSTREAM in the DataFlow demand body-walk
+; ("Unsupported rule-body shape under -demand") -- the Build.cpp:1340
+; recursive-content branch is a shadowed belt (see D2.c design sec 3). Also
+; diagnostic under plain -demand: multi-relation recursive-content demand
+; pushdown is outside the single-adornment slice.
+
+#message link(u64 From, u64 To).
+
+#local conn(u64 From, u64 To).
+conn(F, T) : link(F, T).
+conn(F, T) : conn(F, M), link(M, T).
+
+#local wrap(u64 From, u64 To).
+wrap(F, T) : conn(F, T).
+
+#query demanded(bound u64 From, free u64 To) : wrap(From, To).

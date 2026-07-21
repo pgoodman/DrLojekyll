@@ -1,0 +1,34 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; demand_neighborhood_witness -- the D2.c NESTED-lowering witness and the
+; -demand-instance equivalence-gate carrier (KeyedInstances.md sec 19; the
+; .eqgate sidecar re-drives it under `-demand -demand-instance`). The
+; NON-RECURSIVE directed neighborhood shape (witness-deltarel-target.md sec 1):
+; one bound query, one monotone hop, add-only input -- inside every stage-(b)
+; R-MONO fence (A5 monotone input, acyclic demand, single adornment).
+; demand_tc_witness stays the RECURSIVE flat witness; the nested lowering
+; fences it out (its demanded body is recursive -> cyclic-demand reject).
+;
+; RAT-6 BIRTH-ONLY (KeyedInstances.md sec 19(N)): under R-MONO the "demand
+; flap" rebuild is an if-crossed NO-OP (a re-asserted demand never re-seeds),
+; so the witness is ENFORCED birth-only -- the .batches/.main.cpp land ALL
+; edges (in two epochs) BEFORE any demand probe; there is NO edge-after-demand
+; batch. Edge-after-demand is the LOUD labeled feature gap (plumbing arrives
+; with the DeltaRel->Rel epoch), NOT exercised here.
+;
+; HP-5: the graph carries edges OUTSIDE each probed key's neighborhood, and
+; the driver asserts each probe's answer is EXACTLY neighborhood(Start), so an
+; over-materialized nested arm both aborts the driver AND diverges from the
+; golden. The demand-ON answer for a key is a STRICT SUBSET of all edges;
+; the closure oracle (never demand) referees that subset's ground truth.
+;
+; Under flat `-demand` this compiles and answers; the nested `-demand-instance`
+; lowering must be ANSWER-IDENTICAL on the same batches -- the two-lowerings
+; equivalence gate (run_eqgate), refereed live: flat == nested == golden.
+
+#message add_edge(u64 From, u64 To).
+
+#local edge(u64 From, u64 To).
+edge(From, To) : add_edge(From, To).
+
+#query neighborhood(bound u64 Start, free u64 Node) : edge(Start, Node).

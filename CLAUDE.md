@@ -48,8 +48,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 169 corner-case programs as of the
-keyed-instances (F) landing — symrec_tie_1 is the standing determinism
+(`<name>.dr` + `<name>.main.cpp`, 173 corner-case programs as of the
+keyed-instances D2.c landing — symrec_tie_1 is the standing determinism
 witness) has one committed expected output in
 `tests/OptDiff/goldens/<name>.stdout`, and the 4 optimization modes are
 just execution variants — EVERY mode's stdout is byte-compared against the
@@ -86,7 +86,13 @@ delta-relational-IR golden policy.
   @invertible+@recompute pair, rejected in Functor.cpp), `evm_func_parse`,
   `nonascii_1`, `truncated_decl_1`, `demand_multi_adorn_1` (a `-demand` query
   name carrying >1 binding pattern — the demand pass's clean per-name reject,
-  via its `.drflags` sidecar); `kvindex_1` is MODE-SPLIT (compiles
+  via its `.drflags` sidecar), `demand_cyclic_1`/`demand_diff_input_1` (two
+  `-demand-instance` nested-lowering feature-gap fences — recursive demand and
+  a @differential summarized input; both COMPILE under plain `-demand` and
+  reject only under `-demand-instance`) and `demand_recursive_content_1` (a
+  recursive-content demanded body — rejected UPSTREAM by the plain-`-demand`
+  body-walk, so its `.drflags` is a bare `-demand`; it pins the shadowed
+  Build.cpp recursive-content belt); `kvindex_1` is MODE-SPLIT (compiles
   under opt/nocf where KVINDEX→TUPLE elimination fires, V-ALGEBRA-rejects
   under nodf/none). `aggregate_1` FLIPPED from diagnostic to a 4-mode
   golden at the R3 stage-C flip.
@@ -345,6 +351,36 @@ multi-clause queries are all clean diagnostics (never miscompiles). ~23% of
 corpus cases carry bound queries (38/165 at the demand-seeds seed sweep; the
 3 new cases added more) — an unconditional transform would rewrite ~a quarter
 of the goldens, so mode-gating is mandatory.
+
+## The keyed-instance nested lowering (`-demand-instance` — LANDED, birth-only)
+
+`-demand-instance` (Main.cpp `gDemandInstance`; implies `-demand`; OFF the
+PassPolicy registry — a lowering selector, not a pass) lowers a recognized
+demanded subgraph to a keyed InstanceStore instead of the flat guard web (the
+D2.b nested lowering). It is ANSWER-IDENTICAL to flat `-demand`: the
+`demand_neighborhood_witness` case is the two-lowerings equivalence witness —
+its `.eqgate` sidecar drives run_eqgate (runall.sh --one), which re-compiles the
+nested arm (`.drflags` + `-demand-instance`) with the SAME driver in all four
+optimization modes and byte-compares each mode's stdout against
+`goldens/demand_neighborhood_witness.stdout` LIVE (no nested golden is blessed;
+flat==nested==golden falls out transitively from the flat diffrun check). The
+witness graph carries out-of-neighborhood edges and the driver asserts each
+probe's answer is EXACTLY neighborhood(Start) — an over-materialized nested arm
+both aborts and diverges (HP-5).
+
+The witness is ENFORCED BIRTH-ONLY (RAT-6): all edges land before any demand
+probe. EDGE-AFTER-DEMAND — adding a monotone input edge while a demand is
+already standing and expecting the standing instance to rebuild — is a LABELED
+FEATURE GAP, NOT a compile diagnostic (it is a batch-ordering property,
+indistinguishable at compile time from a legal program; the demand-triggered
+rebuild plumbing arrives with the DeltaRel->Rel epoch). Three all-4-modes
+compile fences: recursive demand (`demand_cyclic_1`) and a @differential
+summarized input (`demand_diff_input_1`) reject at the Program::Build nested
+pre-pass (Build.cpp:1337-1347) only under `-demand-instance` (both compile
+under plain `-demand`); a recursive-content demanded body
+(`demand_recursive_content_1`) is caught UPSTREAM by the plain-`-demand`
+body-walk (its `.drflags` is a bare `-demand`; it pins the shadowed Build.cpp
+recursive-content belt).
 
 ## Other known feature gaps (clean diagnostics)
 

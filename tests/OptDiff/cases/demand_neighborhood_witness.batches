@@ -1,0 +1,19 @@
+# demand_neighborhood_witness -- oracle input batches (the SAME add_edge stream
+# the driver sends, BIRTH-ONLY: two edge epochs, NO post-demand edge). The
+# oracle evaluates the plain (undemanded) program, so its neighborhood rows are
+# the FULL single-hop relation -- the answer-identity referee for the demand-ON
+# driver's per-key answers.
+#
+# Batch 1: 1's first two out-edges, the 9->9 self-loop, the detached 7->8.
+batch
++ add_edge 1 2
++ add_edge 1 3
++ add_edge 9 9
++ add_edge 7 8
+end
+# Batch 2: 1's third out-edge and 3's out-edges (out-of-neighborhood for key 1).
+batch
++ add_edge 1 4
++ add_edge 3 5
++ add_edge 3 6
+end
