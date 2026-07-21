@@ -138,6 +138,26 @@ insert), earning the census/dump/gate machinery on a trivial shape,
 before the JOIN index-probe loop (the shape where the F17/F18 class of
 defect historically lived — §9:1187-1188).
 
+CANDIDATE PRE-REGISTERED FOR THE JOIN STEP KIND (owner-raised 2026-07-21,
+NOT RULED): fold the join's pivot-equality belt into the probe. The
+monotone TABLEJOIN body TUPLECMP (BuildJoin, Join.cpp:316-320; pairs
+added per side at :247/:266-268) and the delta sections' conjoined
+side_key_eqs (Database.cpp:2740-2744, "the index scans are approximate")
+re-check key equality the runtime probe now GUARANTEES: Index::First
+open-addresses on full slot.key == key equality (Table.h:801) and Next
+walks a per-key chain (:765-772, :807-810) — the "approximate" premise
+is a holdover from the pre-data-structures index. Folding = the emitter
+stops minting the belt (it creates probe and compare from the same
+pivot_vars, so it knows), with two mechanical cautions: the TUPLECMP is
+the parent for post-scan emission ({let, parent} chain) and its
+col_id_to_var bindings re-home to the scan out_vars. Membership gates
+(InNew/InI/... on the cursor) are separate and stay. Emission-shape
+change: stdout goldens untouched, .ir/.h churn corpus-wide → structural
+gates + irgold re-bless + bench A/B. Belongs WITH the JOIN step-kind
+migration (one bless cycle, and "probe-exact" becomes a modeled
+access-plan attribute); pin Index::First/Next exactness as a documented
+runtime contract when adopted.
+
 STANDING GATES THAT CARRY INTO THE EPOCH (unchanged):
   - ASAN both surfaces, per-diff cadence (§19(F)/(J): ~4.5 min combined;
     build/asan ctest + suite under DR=asan + the env-CXX-wrapper second
