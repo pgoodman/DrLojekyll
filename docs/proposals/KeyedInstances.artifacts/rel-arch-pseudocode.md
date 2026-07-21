@@ -1,0 +1,162 @@
+======================================================================
+COMMITTED AT THE §20 EPOCH-CLOSE (2026-07-21, tip 64bcbd16+). The
+whole-program architecture of THE TWO-AUTHORITY SEAM as pseudocode,
+derived from the REAL code at tip by the closing session's orchestrator
+(key anchors personally read: Build.cpp:841-1010 BuildEagerInsertionRegionsImpl,
+:1084-1170 BuildEagerRegion dispatch, Procedure.cpp:14-60
+ExtendEagerProcedure, Stratum.cpp:1909 LowerIngestFold), with the Rel
+path expressed as DIFFS on it. SINGLE-PASS: the §9-Rel epoch's opening
+fleet re-verifies this against code (per the house precedent) before
+building on it — it is the epoch's seed, not its ground truth.
+======================================================================
+
+# The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
+
+## §1. The compile pipeline (context; thrice-fleet-verified in §18(A),
+##     amended by this epoch's landings)
+
+    main(argv):                                # bin/drlojekyll/Main.cpp
+      flags -> streams, gDemand, gDemandInstance (D2.b), gFirstId,
+        gPassPolicy
+      query   = Query::Build(module, log, policy, demand_mode)
+                # ... ApplyDemandTransform (stamps GuardAnnotations +
+                #     RecognizedSubgraphs pre-CSE — D1.a) -> Optimize ->
+                #     IdentifyInductions (det_seq) -> ... -> Stratify
+      program = Program::Build(query, log, first_id, policy)
+                # fences pre-pass (cyclic/recursive-content/diff-input
+                #     under -demand-instance — D2.b)
+                # BuildStratumPhases:                    AUTHORITY A
+                #   BuildDRInventory -> DeriveDRStrata -> validators ->
+                #   LinearizeAndValidateDRFlow (band key; V-INST-ORDER)
+                #   -> V-PRED-XCHECK / V-INGEST-XCHECK    <- seam check
+                #   -> Lower{DRFlow,DRRounds,CommitSweeps,GroupUpdate,
+                #      SubgraphInstance}                 # emission
+                # BuildEagerProcedures:                  AUTHORITY B
+                #   per IO: ExtendEagerProcedure -> the eager descent
+      dumps; codegen.
+
+## §2. AUTHORITY B — the hand-coded eager web (what Rel dissolves)
+
+    ExtendEagerProcedure(impl, io, context, proc, par):   # Procedure.cpp:14
+      vec = param vector for io's receives (added_message)
+      if any receive CanReceiveDeletions: removal_vec (removed_message)
+      for receive in io.Receives():
+        if receive.CanReceiveDeletions():
+          # THE HOLE CONTRACT, deletion side: the fold ops ARE DR-IR
+          # (MakeStageOneIngestFolds' kIngestFold pair — enrolled in the
+          # flow, censused, V-INGEST-XCHECK'd), but they are LOWERED HERE,
+          # at the original walk position, for id-stream identity.
+          for op in MakeStageOneIngestFolds(message, receive, table):
+            LowerIngestFold(...)     # Stratum.cpp:1909 — RETURNS the
+                                     # UPDATECOUNT cursor with an EMPTY
+                                     # body; INGEST-CURSOR-SHAPE guards it
+          continue                   # consumers run in stratum phases (A)
+        if receive is table-backed monotone:
+          op = MakeMonotoneIngestFold(...)   # single payload authority
+          cursor = LowerIngestFold(op, vec)
+          BuildEagerInsertionRegions(..., cursor)   # THE HOLE FILLED by B
+        else:  # table-less monotone receive
+          # E-42: a VECTORLOOP shim minted from NO DR-IR op — the one
+          # emission surface with zero model representation.
+          loop = hand-mint VECTORLOOP over vec
+          BuildEagerInsertionRegions(..., loop)
+
+    BuildEagerInsertionRegionsImpl(impl, view, ctx, parent, succs,
+                                   last_table):           # Build.cpp:841
+      bind view's columns
+      (parent, table, last_table) = InTryInsert(...)  # the fold: an
+          # UPDATECOUNT crossing on view's table, if table-backed
+      par = new PARALLEL under parent
+      if table differential && !induction-owned:
+        par += AppendViewTupleToVector(table's kAddQueue)   # park for (A)
+      any_cut = false
+      for succ in succs:                       # THE CUT-SUCCESSOR TEST
+        # REPLICATED on the DR side as AnyCutSuccessorDR /
+        # MonotoneIngestRoleDR; the §7d role/walk cross-check ABORTS on
+        # divergence. Four arms at tip:
+        if succ.CanReceiveDeletions()          # differential consumer
+           or succ.IsAggregate() or succ.IsKVIndex()   # GROUP_UPDATE
+           or (demand_instance_enabled &&
+               succ.GuardAnnotationIndex() != kNone):  # D2.b: recognized
+          any_cut = true; continue             # (A) owns the successor
+        BuildEagerRegion(impl, view, succ, ctx, LET under par, last_table)
+      if table monotone && (any_cut || monotone_negated):
+        par += append to table's kNetAdditions frontier   # OD-4
+            # mechanism-natural: the boundary provisioning that forces
+            # the monotone commit sweep (X-DS-2)
+
+    BuildEagerRegion(impl, pred, view, ctx, parent, last_table):  # :1084
+      MapVariablesInEagerRegion(...)
+      dispatch on view kind:                   # the SYNTAX-DIRECTED WALK
+        JOIN w/ pivots  -> BuildEagerJoinRegion      # index-probe loop
+        JOIN w/o pivots -> BuildEagerProductRegion
+        MERGE inductive -> BuildEagerInductiveRegion # fixpoint shell
+        MERGE plain     -> BuildEagerUnionRegion
+        AGG | KVINDEX   -> return                    # chain-breaker: (A)
+        MAP pure        -> BuildEagerGenerateRegion  # functor call
+        CMP             -> BuildEagerCompareRegions
+        SELECT          -> rebind + recurse (unit-condition plumbing)
+        TUPLE           -> BuildEagerTupleRegion     # forward
+        INSERT          -> BuildEagerInsertRegion    # terminal
+        NEGATE          -> BuildEagerNegateRegion    # gate
+      # None of these interior steps exist as ops: the plan is only its
+      # execution trace. The T2b dump has a hole here BY CONSTRUCTION —
+      # a monotone program's .deltarel is 12-16 lines vs 419-427
+      # differential (§19(H)'s motivating measurement).
+
+    THE FOUR SEAM ARTIFACTS (the §19(H) acceptance list — all become
+    internal invariants of ONE mint+lower path when Rel lands):
+      S1 the ingest-fold HOLE CONTRACT (empty cursor, filled by B);
+      S2 the replicated cut-successor predicates + the §7d role/walk
+         divergence-abort (two copies of one decision);
+      S3 V-INGEST-XCHECK Site 5 (multiset boundary check that B's folds
+         match A's enrollment);
+      S4 the E-42 VECTORLOOP shim (emission from no op).
+    Plus the D2.b twin of S2: is_recog_guard is replicated symmetric
+    with AnyCutSuccessorDR (kept lock-step by the same §7d cross-check).
+
+## §3. "DeltaRel → Rel" AS DIFFS on §2 (the owner re-ranks slices at
+##     epoch open; per-slice byte-identity A/B, structural gates for
+##     one-time shape changes; the rename ritual last)
+
+    R-a2 (FIRST DELIVERABLE, from the D2.b RAT-6 residual): the
+      input-frontier drain for SUBGRAPH_INSTANTIATE — band-(a2) full-
+      rescan keyed on the edge frontier (the ADJ-C1 collapse), giving the
+      mechanism-natural edge frontier its first consumer and UN-GAPPING
+      edge-after-demand. Un-retires the witness REBUILD batch; fence-ii
+      question dissolves. (This is Rel-epoch work per OD-3's re-homing.)
+
+    R1..Rk (ONE STEP KIND AT A TIME, the strangler-fig ritual): mint a
+      Rel op kind for each §2 dispatch arm (TUPLE forward, INSERT
+      terminal, CMP filter, MAP call, JOIN index-probe, MERGE union,
+      NEGATE gate, SELECT rebind), each op carrying the walk position so
+      LowerRelStep emits AT the original position (id-stream identity —
+      the hole contract's own trick, generalized). Per step: census
+      extended day one; byte-identity A/B across the 692-row corpus;
+      the retained N-run sweep on substrate change; the dump grows the
+      op kinds (wholesale .deltarel churn is EXPECTED and is WHY OD-10
+      deferred the witness irgold).
+      + first slice REC (rel-epoch-open-brief §5): the witness's own
+        two-join monotone web — TUPLE/INSERT before JOIN.
+
+    R-final (the seam deletion — §19(H) acceptance):
+      - S1 retires: LowerIngestFold's cursor body is minted ops; the
+        INGEST-CURSOR-SHAPE guard becomes an internal invariant.
+      - S2 retires: ONE cut/boundary decision on the Rel graph; the §7d
+        cross-check deletes (nothing to diverge).
+      - S3 becomes an interior validator of the one path.
+      - S4 retires: the table-less receive minted as a real op.
+      - differentialness = op ATTRIBUTE/regime (the direction D1.b's
+        regime-split effect multisets already took); eager-per-row vs
+        frontier-batch = a LOWERING CHOICE on modeled monotone ops
+        (opens the access-plan/WCOJ consumer — the spine's section-walk
+        target vs full-scan lowering from §19(N) is the same seam).
+      - every program gets a PROPORTIONAL dump + whole-program census.
+      - THEN: DeltaRel → Rel rename (the lib/DR→lib/DeltaRel ritual).
+
+    CARRIED PINS THAT BIND Rel WORK: E-62 tripwire at every DeltaRel
+    diff; the (F) law (no pointer-ordered emission — det_seq/mint-order
+    only); the T2b dump law (stored fields, loud-abort spellings);
+    HP-17's death-op residual EXTENDS through Rel (D3.a retires it);
+    OWN-3 (the View.cpp record-comparing fold diagnostic) is a HARD
+    precondition of D3 multi-guard admission, not of Rel.
