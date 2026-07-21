@@ -7,6 +7,13 @@ closing paragraph (census shape contingent on OD-4; kInstanceEmit/Old
 spellings contingent on HP-11; p-rules gain HP-6's partition pin); its
 §C residuals C-1..C-12 are dispositioned in d1-pinned.md §4. The real
 dumps it byte-pins live in d1-ground-truth-nbhd.md.
+*** §B.4 SUPERSEDED IN WHOLE (2026-07-21, the §20 checkpoint): the D2.b
+*** ritual's re-derivation — committed as d2b-desired-states.md — replaced
+*** the §B.4 nested block entirely (wrong on FOUR axes: OD-4
+*** mechanism-natural, the D1.b HP-11 collapse spellings, the collapsed
+*** seal's write hazard, and deps are SIX edges not two). Read
+*** d2b-desired-states.md; the first nested emission matched it exactly
+*** (§19(N)).
 *** OD-4 RULED MECHANISM-NATURAL (2026-07-20, KeyedInstances.md §19(I)):
 *** the §B.4 nested block AMENDS per this file's own §C-2 enumeration —
 *** census kCommitSweep=2, the edge ingest fold gains

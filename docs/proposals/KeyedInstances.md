@@ -2620,4 +2620,163 @@ this section before building on it; errata continue at E-81.
     N/A by construction). THE D1→D2 IMPLEMENTATION CHARTER IS
     COMPLETE: D1.a → D1.b → D2.a → D2.b → D2.c all landed under the
     ritual. NEXT: the §20 epoch-close checkpoint + the §9
+    "DeltaRel → Rel" epoch-open.
+
+## §20. EPOCH-CLOSE CHECKPOINT (2026-07-21, tip a77b8bea) — the D1→D2 charter COMPLETE; THE ENTRY POINT for the next session (single-pass: re-verify per the house precedent, errata E-87+)
+
+THE ENTRY POINT for the next session. The D1→D2 keyed-instances charter is
+DONE: the nested (`-demand-instance`) lowering runs end-to-end, knob-off
+INERT, behind the standing gates. SINGLE-PASS (the house precedent): the
+next session re-verifies THIS section before building on it; errata continue
+at E-87. The next epoch is §9 "DeltaRel → Rel" per OD-11 — its epoch-open
+brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
+
+(A) STATUS — WHAT LANDED THIS EPOCH.
+    Prior sessions (ledger §8-§19(J)): T1 + the (F) determinism landing +
+    T2a/T2b/T2b.0 (the -df-out/-deltarel-out dump instruments) + T3 (the
+    irgold golden machinery) + P1 (the PassPolicy pass-harness). This
+    session, the five D-diffs of the §19 charter, ONE DIFF AT A TIME under
+    the per-diff design ritual (pseudocode → diff → critique → desired-IR-
+    states-vs-real-dumps → implement → Fable review → owner brief), each a
+    landing record:
+      §19(K) D1.a  DataFlow annotation + recognition registry (INERT).
+      §19(L) D1.b  DR-IR instance op family + validators + dump grammar
+                   (MINT GATED OFF); ctest 3→4 (tests/DeltaRelValidators).
+      §19(M) D2.a  Runtime InstanceStore + RowStore::Reset + unit (INERT);
+                   ctest 4→5 (tests/InstanceStore).
+      §19(N) D2.b  THE NESTED LOWERING — recognizer excision → DR-IR mint →
+                   CF lowering → codegen against the real InstanceStore;
+                   knob-off byte-identical, knob-on the first nested compile
+                   in history.
+      §19(O) D2.c  witness + equivalence gate + fence witnesses enter the
+                   suite; ZERO compiler change.
+    SUITE 169→173 (demand_neighborhood_witness + demand_cyclic_1 +
+    demand_recursive_content_1 + demand_diff_input_1). ctest 3→5. Errata
+    through E-86 (E-86 the D1.a F6-annot kind fix; E-81..E-85 the §19(J)
+    re-verify cosmetics). Owner pins PIN-1/PIN-3 remain OPEN (no carriers
+    arose). The ten owner ratifications, binding:
+
+      RAT   DIFF   STATEMENT (one line; full text in the cited §19 record)
+      ----  -----  -----------------------------------------------------
+      RAT-1 D1.a   per-view QueryViewImpl::guard_annotation_index REPLACES
+                   the pinned guard_annotation_of map (un-implementable at
+                   the View.cpp:557 choke point) — no map, no HP-9 hazard.
+      RAT-2 D1.a   the step-8 query-projection guard is stamped kReadAtTuple
+                   (role=kQueryProjection + demand_side=kRawSeed; a
+                   static_assert couples GuardAnnotation::Kind to GuardSite).
+      RAT-3 D1.b   HP-3's negative-space test = the PERMANENT death test:
+                   pure CheckInstanceOrder + tests/DeltaRelValidators fork/
+                   waitpid SIGABRT (not a run-once probe).
+      RAT-4 D2.a   a `monotone` ctor bool (default true) gates the HP-7
+                   frozen⊆current seal belt (it CANNOT be unconditional —
+                   the death half + R-DIFF legitimately shrink current).
+      RAT-5 D2.a   the belt-fires NEGATIVE ships NOW (fork/waitpid death
+                   arm, #ifndef NDEBUG) — overriding the design's defer.
+      RAT-6 D2.b   a1-ONLY BIRTH-ONLY: OD-1's demand-flap rebuild is a NO-OP
+                   under R-MONO (code-proven); the flap narrative RETIRED,
+                   edge-after-demand a LOUD LABELED gap, the mechanism-
+                   natural edge frontier provisioned-undrained.
+      RAT-7 D2.b   NO runtime band-(b) partition assert — the SITE-3 real-
+                   codegen review (EXECUTED: (F,T)-gated, α-elision real,
+                   Row_0 carries no α) + the eqgate are the guardians;
+                   re-opens at D3.a.
+      RAT-8 D2.c   the BLESS-BOOTSTRAP house rule (STANDING, E-77 family):
+                   seeding a first-ever golden from a REVIEWED run is the
+                   sanctioned exception to "never bless a red case green".
+      RAT-9 D2.c   the eqgate's nested arm runs ALL FOUR optimization modes,
+                   each byte-compared to the .stdout golden (the opt-only
+                   hole was real); FLAT-NESTED-DIVERGE → NESTED-GOLDEN-DIVERGE.
+      RAT-10 D2.c  demand_recursive_content_1's .drflags is BARE -demand: it
+                   rejects UPSTREAM in the plain-demand body-walk (the
+                   Build.cpp recursive-content fence is SHADOWED at tip,
+                   documented) — a body-walk witness, not a nested fence.
+
+(B) THE AS-LANDED NESTED-LOWERING ARCHITECTURE (source of truth = the five
+    committed adjudicated contracts; POINT, don't restate).
+    Section-by-section authority:
+      - D1.a annotation + registry .... KeyedInstances.artifacts/d1a-design.md
+      - D1.b op family/validators ...... d1b-design.md
+      - D2.a Runtime store ............. d2a-design.md
+      - D2.b lowering + codegen ........ d2b-design.md (+ d2b-desired-states.md,
+                                         the REAL-dump re-derivation superseding
+                                         d1-desired-states §B.4 IN WHOLE)
+      - D2.c witness + eqgate .......... d2c-design.md
+    THE ~15-LINE END-TO-END FLOW (knob = -demand-instance, implies -demand,
+    OFF the PassPolicy registry — "demand is semantics"):
+        -demand-instance
+          → Query::Build: ApplyDemandTransform mints the demand relation,
+            then D1.a stamps a GuardAnnotation at each guard JOIN (Demand.cpp
+            step-7 / step-8, keyed on the GUARD JOIN — GT-3) and pushes one
+            RecognizedSubgraph per DemandForcing (X-9); guard_annotation_index
+            rides CopyDifferentialAndGroupIdsTo (View.cpp:557), CLEAR-ON-MOVE
+          → Program::Build: ResolveLiveRecognition (ABA-SAFE, DEREF-FREE —
+            stored handles are DEAD post-Optimize; walks LIVE guard JOINs via
+            the CSE-migrating GuardAnnotationIndex stamp, tables keyed off
+            parse identity; census recount live under the knob)
+          → BuildSubgraphInstanceOps mints the three-op family (Context::
+            demand_instance_enabled): kSubgraphInstantiate (BIRTH/REBUILD +
+            band-(b) publish, SOLE pub deriver) / kInstanceDeath (OWN op,
+            minted-OFF at R-MONO, HP-17) / kInstanceSeal (band 11, self-
+            lowered per OD-5/HP-1); payload rides table_op_table=pub_table +
+            table_op_sign ∓1 (the same-table_id band-key sign tie-break
+            REPLACES the circular explicit edge — OD-2)
+          → LowerSubgraphInstance (Stratum.cpp, GroupUpdates mold): band-a1
+            drain demand frontier → FindOrAddInstance → V-INST-FRESH →
+            full-rescan → TryAdd (BIRTH-ONLY per RAT-6 — no a2 rebuild) →
+            band-b (F,T)→+pub_row publish (the (T,F) drop scan EMPTY under
+            R-MONO); seal self-lowered
+          → codegen: SUBGRAPHINSTANCE region against the real InstanceStore
+            (monotone=true; the flat guard web + %table:15 EXCISED — no Row15
+            in the header)
+        The eqgate (run_eqgate, runall.sh --one) is the STANDING referee:
+        flat stdout == nested stdout (all four modes) == blessed .stdout
+        golden (ANSWER identity, never generated bytes); the oracle closes
+        the flat arm; DEATH is oracle-blind forever.
+
+(C) LOUD RESIDUALS carried forward (harvested from §19(K)-(O)).
+    - EDGE-AFTER-DEMAND = a LABELED FEATURE GAP (RAT-6/OD-3). a1-only birth-
+      only silently drops a monotone edge added AFTER its demand is asked;
+      the mechanism-natural edge frontier is provisioned-UNDRAINED (the OD-4
+      accepted pricing). The rebuild plumbing (input-triggered rebuild via
+      input frontiers) LANDS WITH/AFTER Rel, where it is the natural
+      generalization; the witness flips diagnostic→golden then (aggregate_1
+      precedent). Named in CLAUDE.md + a Build.cpp comment.
+    - HP-17 the death-op / V-INST-ORDER EXECUTING-COVERAGE residual. kInstance
+      Death is minted-OFF at R-MONO and V-INST-ORDER's corpus line is
+      vacuous-green (0 instance ops); no test EXECUTES an ordered instance-
+      op pair through the emitter. Per OD-11 this EXTENDS PAST Rel — D3.a
+      (R-DIFF) retires it. Mitigations standing: the D2.a DrTest death half +
+      the RAT-3 permanent CheckInstanceOrder negative. CARRIED LOUD.
+    - OWN-3 (d2b-design §OWN-3 / ADJ-C4): the View.cpp:585-587 record-
+      comparing incompatible-fold diagnostic must be PROMOTED always-on — a
+      HARD D3 PRECONDITION before recursive demanded content is admitted.
+    - THE Build.cpp RECURSIVE-CONTENT FENCE is SHADOWED UPSTREAM by the
+      plain-demand body-walk reject (RAT-10). The Build.cpp fence stands as
+      the D3.a belt; demand_recursive_content_1 witnesses the upstream
+      body-walk reject, not the nested fence.
+    - THE SPINE SECTION-WALK is the MODELED TARGET plan; D2.b codegen full-
+      scans-with-key-filter (review-RATIFIED as model/emission layering, not
+      a defect). The keyed rescan is the DEFERRED perf refinement; .ir is
+      uncertified at D2.b by design.
+    - NESTED GOLDENS / .irgold UNBLESSED (OD-10/OWN-5): deferred past BOTH
+      scheduled substrate churns (the D3.a differential flip AND the §9-Rel
+      dump reshape). Correctness at D2.c rests on .stdout + oracle + eqgate.
+    - N-1 the InstanceStore WorkingOccupied==NumRows>0 working_count drop —
+      recorded in the header, revisit at R-DIFF.
+    - THE BAND-(b) PARTITION-ASSERT question RE-OPENS at D3.a (RAT-7): the
+      (T,F) drop scan is empty under R-MONO; whether a runtime partition
+      assert is owed returns when R-DIFF makes drops reachable.
+    - PIN-1 (constant-column token) / PIN-3 (negate class refinement) still
+      OPEN — no carriers arose this epoch.
+
+(D) THE PATH FORWARD.
+    NEXT EPOCH = §9 "DeltaRel → Rel" per OD-11 (one relational authority for
+    ALL flow; differentialness = op attribute/regime). Its epoch-open brief
+    is KeyedInstances.artifacts/rel-epoch-open-brief.md (§19(H)'s acceptance
+    criterion, the migration ritual, what D2.b added to the Rel case, the
+    first-slice recommendation). D3.a (R-DIFF + multi-adornment) FOLLOWS Rel;
+    D4 (seams design-only) defers with it. NEXT SESSION: (0) ASAN sweep per
+    §19(F); (1) re-verify THIS section (errata E-87+); (2) epoch-open re-rank
+    (Rel is the ranked top per OD-11; pass-harness P2-P5, §13 lattice, §14
+    CodeQL compete); (3) open the chosen epoch under its design ritual.
     "DeltaRel → Rel" epoch-open brief (OD-11: Rel precedes D3.a).
