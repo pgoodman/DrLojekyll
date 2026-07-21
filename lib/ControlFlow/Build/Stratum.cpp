@@ -2193,6 +2193,27 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     impl->state_cells.push_back(std::move(desc));
   }
 
+  // D2.b: one keyed-instance store descriptor per DR instance. Key_<id> types =
+  // the pub columns at key_cols; Row_<id> types = the pub columns at row_cols
+  // (column types read off the live pub_view, which carries the declared
+  // TypeLocs — ABA-safe: the mint re-resolved pub_view to a live handle).
+  impl->instance_stores.clear();
+  for (unsigned i = 0u; i < flow.instances.size(); ++i) {
+    const DRInstance &inst = flow.instances[i];
+    ProgramInstanceStore desc(i);
+    std::vector<QueryColumn> pub_cols;
+    for (auto col : inst.pub_view.Columns()) {
+      pub_cols.push_back(col);
+    }
+    for (unsigned p : inst.key_cols) {
+      desc.key_types.push_back(pub_cols[p].Type());
+    }
+    for (unsigned p : inst.row_cols) {
+      desc.row_types.push_back(pub_cols[p].Type());
+    }
+    impl->instance_stores.push_back(std::move(desc));
+  }
+
   // No per-stratum phase work? (No branch/join/crossover/product op, no phase-
   // owned differential table.) Then the entry-body nesting + phase-series
   // emission below are skipped — but the stash above still feeds the sweeps.

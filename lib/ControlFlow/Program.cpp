@@ -229,6 +229,29 @@ unsigned ProgramStateCellInfo::NumConfigTypes(void) const noexcept {
   return static_cast<const ProgramStateCell *>(impl)->num_config_types;
 }
 
+// D2.b keyed-instance store descriptors.
+std::vector<ProgramInstanceStoreInfo> Program::InstanceStores(void) const {
+  std::vector<ProgramInstanceStoreInfo> out;
+  for (const ProgramInstanceStore &store : impl->instance_stores) {
+    out.push_back(ProgramInstanceStoreInfo(&store));
+  }
+  return out;
+}
+
+unsigned ProgramInstanceStoreInfo::Id(void) const noexcept {
+  return static_cast<const ProgramInstanceStore *>(impl)->id;
+}
+
+const std::vector<TypeLoc> &
+ProgramInstanceStoreInfo::KeyTypes(void) const noexcept {
+  return static_cast<const ProgramInstanceStore *>(impl)->key_types;
+}
+
+const std::vector<TypeLoc> &
+ProgramInstanceStoreInfo::RowTypes(void) const noexcept {
+  return static_cast<const ProgramInstanceStore *>(impl)->row_types;
+}
+
 // Return the query used to build this program.
 ::hyde::Query Program::Query(void) const noexcept {
   return impl->query;
@@ -300,6 +323,7 @@ IS_OP(CheckMember)
 IS_OP(CheckRecord)
 IS_OP(CommitSweep)
 IS_OP(GroupUpdate)
+IS_OP(SubgraphInstance)
 IS_OP(Claim)
 IS_OP(Retire)
 IS_OP(NetBatch)
@@ -383,6 +407,7 @@ FROM_OP(ProgramCheckMemberRegion, AsCheckMember)
 FROM_OP(ProgramCheckRecordRegion, AsCheckRecord)
 FROM_OP(ProgramCommitSweepRegion, AsCommitSweep)
 FROM_OP(ProgramGroupUpdateRegion, AsGroupUpdate)
+FROM_OP(ProgramSubgraphInstanceRegion, AsSubgraphInstance)
 FROM_OP(ProgramClaimRegion, AsClaim)
 FROM_OP(ProgramRetireRegion, AsRetire)
 FROM_OP(ProgramNetBatchRegion, AsNetBatch)
@@ -718,6 +743,36 @@ DataVector ProgramGroupUpdateRegion::DelQueue(void) const noexcept {
 
 DataVector ProgramGroupUpdateRegion::AddQueue(void) const noexcept {
   return DataVector(impl->add_queue.get());
+}
+
+// D2.b keyed-instance region wrappers.
+unsigned ProgramSubgraphInstanceRegion::StoreId(void) const noexcept {
+  return impl->store_id;
+}
+DataVector ProgramSubgraphInstanceRegion::DemandFrontier(void) const noexcept {
+  return DataVector(impl->demand_frontier.get());
+}
+DataTable ProgramSubgraphInstanceRegion::InputTable(void) const {
+  return DataTable(impl->input_table.get());
+}
+DataTable ProgramSubgraphInstanceRegion::PubTable(void) const {
+  return DataTable(impl->pub_table.get());
+}
+const std::vector<unsigned> &
+ProgramSubgraphInstanceRegion::KeyPositions(void) const noexcept {
+  return impl->key_positions;
+}
+const std::vector<unsigned> &
+ProgramSubgraphInstanceRegion::RowPositions(void) const noexcept {
+  return impl->row_positions;
+}
+const std::vector<unsigned> &
+ProgramSubgraphInstanceRegion::InputKeyCols(void) const noexcept {
+  return impl->input_key_cols;
+}
+const std::vector<unsigned> &
+ProgramSubgraphInstanceRegion::InputRowCols(void) const noexcept {
+  return impl->input_row_cols;
 }
 
 unsigned ProgramClaimRegion::Arity(void) const noexcept {

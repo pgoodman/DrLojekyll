@@ -223,6 +223,16 @@ class Context {
     uint64_t message;    // ParsedMessage::Id()
   };
   std::vector<EmittedIngestFold> emitted_ingest_folds;
+
+  // V-INST-EMITTED (D2.b, HP-1): the (store_id, kind) of every keyed-instance
+  // region emitted, cross-checked against the flow's {kSubgraphInstantiate,
+  // kInstanceDeath, kInstanceSeal} enrollment. Enrolls ALL THREE kinds (a
+  // minted-but-unlowered seal aborts).
+  struct EmittedInstanceOp {
+    unsigned store_id;
+    uint8_t kind;  // DROpKind cast (kSubgraphInstantiate/Death/Seal)
+  };
+  std::vector<EmittedInstanceOp> emitted_instance_ops;
 };
 
 // Populate `context.monotone_negated_tables` from `query.Negations()`: the

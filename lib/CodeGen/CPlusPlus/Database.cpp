@@ -254,6 +254,7 @@ class Generator {
     std::unordered_set<unsigned> indexes;  // DataIndex ids (member-backed)
     std::unordered_set<unsigned> globals;  // global DataVariable ids
     std::unordered_set<unsigned> statecells;  // R3: StateCell store ids
+    std::unordered_set<unsigned> instances;   // D2.b: InstanceStore ids
     bool uses_log{false};       // publishes (publish region / commit sweep)
     bool uses_functors{false};  // calls a non-inline functor
   };
@@ -305,6 +306,8 @@ class Generator {
                           &typed_fields);
   void EmitRowStructs(void);
   void EmitStateCellStructs(void);  // R3
+  void EmitInstanceStructs(void);   // D2.b
+  void EmitSubgraphInstance(ProgramSubgraphInstanceRegion region);  // D2.b
   void EmitFunctorsDecl(void);
   void EmitLogDecl(void);
   void EmitDatabaseDecl(void);
@@ -749,6 +752,18 @@ void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
     auto gu = ProgramGroupUpdateRegion::From(region);
     out.tables.insert(gu.AggTable().Id());
     out.statecells.insert(gu.StateCellId());
+  } else if (region.IsSubgraphInstance()) {
+    auto si = ProgramSubgraphInstanceRegion::From(region);
+    out.tables.insert(si.InputTable().Id());
+    out.tables.insert(si.PubTable().Id());
+    // band-(b) maintains the pub table's indices (EmitIndexAdds), so they ride
+    // as ref-params too.
+    for (DataIndex index : si.PubTable().Indices()) {
+      if (index_member.contains(index.Id())) {
+        out.indexes.insert(index.Id());
+      }
+    }
+    out.instances.insert(si.StoreId());
   } else if (region.IsClaim()) {
     auto claim = ProgramClaimRegion::From(region);
     out.tables.insert(claim.Table().Id());
@@ -809,6 +824,7 @@ void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
     out.indexes.insert(callee.indexes.begin(), callee.indexes.end());
     out.globals.insert(callee.globals.begin(), callee.globals.end());
     out.statecells.insert(callee.statecells.begin(), callee.statecells.end());
+    out.instances.insert(callee.instances.begin(), callee.instances.end());
     out.uses_log |= callee.uses_log;
     out.uses_functors |= callee.uses_functors;
     recurse(call.BodyIfTrue());
@@ -876,6 +892,14 @@ std::string Generator::DetailStateParams(ProgramProcedure proc) {
                       std::to_string(cell.Id()));
     }
   }
+  // D2.b: InstanceStores used by this procedure ride as reference params.
+  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
+    if (fx.instances.contains(store.Id())) {
+      const auto id = std::to_string(store.Id());
+      parts.push_back("::hyde::rt::InstanceStore<Key_" + id + ", Row_" + id +
+                      "> &instance_" + id);
+    }
+  }
   return JoinExprs(parts, ", ");
 }
 
@@ -919,6 +943,13 @@ std::string Generator::DetailStateArgs(ProgramProcedure proc,
     if (fx.statecells.contains(cell.Id())) {
       parts.push_back(std::string(prefix) + "statecell_" +
                       std::to_string(cell.Id()));
+    }
+  }
+  // D2.b: forward the used InstanceStores by name.
+  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
+    if (fx.instances.contains(store.Id())) {
+      parts.push_back(std::string(prefix) + "instance_" +
+                      std::to_string(store.Id()));
     }
   }
   return JoinExprs(parts, ", ");
@@ -1199,6 +1230,35 @@ void Generator::EmitStateCellStructs(void) {
   }
 }
 
+// D2.b: per keyed-instance store, emit a `Key_<id>` value struct (the demanded
+// α columns) and a `Row_<id>` value struct (the published row columns). Both
+// are plain hash structs (Hash() + operator==) — the InstanceStore key uses
+// Key::Hash()/==, and the index-free nested Table<Row> uses Row equality for
+// Find/TryAdd (A.4: leading plain values, no functor ABI change).
+void Generator::EmitInstanceStructs(void) {
+  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
+    const auto id = std::to_string(store.Id());
+    std::vector<std::pair<std::string, std::string>> key_fields;
+    {
+      auto i = 0u;
+      for (TypeLoc t : store.KeyTypes()) {
+        key_fields.emplace_back(TypeName(module, t), "c" + std::to_string(i++));
+      }
+    }
+    hh << "// InstanceStore #" << id << " key (the demanded alpha).\n";
+    EmitHashStruct("Key_" + id, key_fields);
+    std::vector<std::pair<std::string, std::string>> row_fields;
+    {
+      auto i = 0u;
+      for (TypeLoc t : store.RowTypes()) {
+        row_fields.emplace_back(TypeName(module, t), "c" + std::to_string(i++));
+      }
+    }
+    hh << "// InstanceStore #" << id << " published row.\n";
+    EmitHashStruct("Row_" + id, row_fields);
+  }
+}
+
 void Generator::EmitFunctorsDecl(void) {
   EmitInlines(hh, "c++:database:functors:prologue");
 
@@ -1395,6 +1455,11 @@ void Generator::EmitDatabaseDecl(void) {
   for (const ProgramStateCellInfo &cell : program.StateCells()) {
     hh << ",\n" << hh.Indent() << "  statecell_" << cell.Id() << "(allocator_)";
   }
+  // D2.b: InstanceStores. R-MONO constructs monotone=true (default) — the HP-7
+  // frozen-subset-current Seal belt is ON (RAT-4). R-DIFF (D3.a) passes false.
+  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
+    hh << ",\n" << hh.Indent() << "  instance_" << store.Id() << "(allocator_)";
+  }
   hh << " {}\n\n";
   hh.PopIndent();
 
@@ -1503,6 +1568,17 @@ void Generator::EmitDatabaseDecl(void) {
        << algebra << "> statecell_" << id << ";\n";
   }
   if (!program.StateCells().empty()) {
+    hh << "\n";
+  }
+
+  // D2.b: one InstanceStore per RecognizedSubgraph (the StateCellStore
+  // transpose). monotone=true (R-MONO belt on) via the default ctor arg.
+  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
+    const auto id = std::to_string(store.Id());
+    hh << hh.Indent() << "::hyde::rt::InstanceStore<Key_" << id << ", Row_"
+       << id << "> instance_" << id << ";\n";
+  }
+  if (!program.InstanceStores().empty()) {
     hh << "\n";
   }
 
@@ -1797,6 +1873,8 @@ void Generator::EmitRegion(ProgramRegion region) {
     EmitCommitSweep(ProgramCommitSweepRegion::From(region));
   } else if (region.IsGroupUpdate()) {
     EmitGroupUpdate(ProgramGroupUpdateRegion::From(region));
+  } else if (region.IsSubgraphInstance()) {
+    EmitSubgraphInstance(ProgramSubgraphInstanceRegion::From(region));
   } else if (region.IsClaim()) {
     EmitClaim(ProgramClaimRegion::From(region));
   } else if (region.IsRetire()) {
@@ -2195,6 +2273,144 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
   cc << cc.Indent() << "}\n";  // occupancy cases
   cc.PopIndent();
   cc << cc.Indent() << "}\n";  // for touched
+}
+
+// D2.b keyed-instance codegen (SUBGRAPH_INSTANTIATE, R-MONO a1-only). Band-(a1)
+// BIRTH: drain the demand net-additions frontier, FindOrAddInstance, the
+// V-INST-FRESH inline guard, TouchCurrent, then rescan the input keyed on the
+// instance key (a full scan with a key filter — the keyed index is a deferred
+// perf refinement; the DR spine already tags section-walk) and TryAdd each
+// matching row into `current`. Band-(b) PUBLISH: for each touched instance, the
+// (F,T) born set (current \ frozen) is published into the pub table. Then the
+// self-lowered Seal (HP-1/OD-5) swaps current->frozen.
+void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
+  EmitComment(region);
+  const auto id = std::to_string(region.StoreId());
+  const auto sname = "instance_" + id;
+  const DataVector demand = region.DemandFrontier();
+  const DataTable input = region.InputTable();
+  const DataTable pub = region.PubTable();
+  const auto input_member = table_member[input.Id()];
+  const auto &input_fields = col_field[input.Id()];
+  const auto pub_member = table_member[pub.Id()];
+  const auto &key_pos = region.KeyPositions();
+  const auto &row_pos = region.RowPositions();
+  const auto &in_key = region.InputKeyCols();
+  const auto &in_row = region.InputRowCols();
+
+  // band-(a1) drain the demand frontier (rows == the instance key columns).
+  const auto key_arity =
+      static_cast<unsigned>(demand.ColumnTypes().size());
+  std::vector<std::string> kbinds;
+  for (unsigned i = 0u; i < key_arity; ++i) {
+    kbinds.push_back("k" + std::to_string(i));
+  }
+  cc << cc.Indent() << "for (const auto &[" << JoinExprs(kbinds, ", ")
+     << "] : " << VecName(demand) << ") {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto iid = " << sname << ".FindOrAddInstance(Key_"
+     << id << "{" << JoinExprs(kbinds, ", ") << "});\n";
+  // First touch this epoch only: the V-INST-FRESH guard + the rescan run once.
+  cc << cc.Indent() << "if (!" << sname << ".TouchedFlag(iid)) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "if (" << sname << ".WorkingOccupied(iid)) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "std::fprintf(stderr, \"V-INST-FRESH: instance %u "
+     << "current non-empty at band-(a) entry (store " << id
+     << ")\\n\", iid); std::abort();\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";
+  cc << cc.Indent() << "auto &cur = " << sname << ".TouchCurrent(iid);\n";
+  // Rescan the input keyed on the instance key (full scan + key filter).
+  cc << cc.Indent() << "for (uint32_t s = 0; s < " << input_member
+     << ".NumRows(); ++s) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto ir = " << input_member << ".RowAt(s);\n";
+  std::string cond;
+  {
+    auto sep = "";
+    for (unsigned j = 0u; j < in_key.size(); ++j) {
+      cond += sep + std::string("ir.") + input_fields[in_key[j]] +
+              " == k" + std::to_string(j);
+      sep = " && ";
+    }
+  }
+  if (cond.empty()) {
+    cond = "true";
+  }
+  cc << cc.Indent() << "if (" << cond << ") {\n";
+  cc.PushIndent();
+  std::vector<std::string> rowvals;
+  for (unsigned j = 0u; j < in_row.size(); ++j) {
+    rowvals.push_back("ir." + input_fields[in_row[j]]);
+  }
+  cc << cc.Indent() << "cur.TryAdd(Row_" << id << "{" << JoinExprs(rowvals, ", ")
+     << "});\n";
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // key filter
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // input rescan
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // !TouchedFlag
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // demand drain
+
+  // band-(b) PUBLISH the (F,T) born set of every touched instance.
+  bool pub_has_indexes = false;
+  for (DataIndex index : pub.Indices()) {
+    if (index_member.contains(index.Id())) {
+      pub_has_indexes = true;
+      break;
+    }
+  }
+  const unsigned npub =
+      static_cast<unsigned>(key_pos.size() + row_pos.size());
+  // Map each pub position to its source expr (KeyAt slot or the rescanned row).
+  std::vector<std::string> pub_exprs(npub);
+  for (unsigned r = 0u; r < key_pos.size(); ++r) {
+    pub_exprs[key_pos[r]] = "key.c" + std::to_string(r);
+  }
+  for (unsigned r = 0u; r < row_pos.size(); ++r) {
+    pub_exprs[row_pos[r]] = "row.c" + std::to_string(r);
+  }
+
+  cc << cc.Indent() << "for (const auto iid : " << sname << ".Touched()) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "auto &cur = " << sname << ".Current(iid);\n";
+  cc << cc.Indent() << "const auto &frz = " << sname << ".Frozen(iid);\n";
+  cc << cc.Indent() << "const auto &key = " << sname << ".KeyAt(iid);\n";
+  cc << cc.Indent() << "(void) key;\n";
+  cc << cc.Indent() << "for (uint32_t r = 0; r < cur.NumRows(); ++r) {\n";
+  cc.PushIndent();
+  cc << cc.Indent() << "const auto &row = cur.RowAt(r);\n";
+  // HP-6 (F,T) partition (RAT-7: no runtime assert; the SITE-3 review line is
+  // the D2.b guardian): publish only rows absent from the sealed frozen buffer.
+  cc << cc.Indent() << "if (frz.Find(row) == ::hyde::rt::kNoRow) {\n";
+  cc.PushIndent();
+  if (!pub_has_indexes) {
+    cc << cc.Indent() << pub_member << ".TryAdd(" << RowExpr(pub_exprs)
+       << ");\n";
+  } else {
+    const auto ins = "ins" + std::to_string(next_ins_id++);
+    cc << cc.Indent() << "if (const auto " << ins << " = " << pub_member
+       << ".TryAdd(" << RowExpr(pub_exprs) << "); " << ins << ".added) {\n";
+    cc.PushIndent();
+    EmitIndexAdds(pub, ins, pub_exprs);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  }
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // (F,T) gate
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // rows of current
+  cc.PopIndent();
+  cc << cc.Indent() << "}\n";  // touched
+
+  // The self-lowered Seal (HP-1/OD-5): swap current->frozen for touched groups.
+  cc << cc.Indent() << sname << ".Seal();\n";
+  cc << "#ifndef NDEBUG\n";
+  cc << cc.Indent() << sname << ".DebugValidate();\n";
+  cc << "#endif\n";
 }
 
 // The runtime method reading one named membership predicate.
@@ -3056,6 +3272,11 @@ void Generator::Run(void) {
   if (!program.StateCells().empty()) {
     hh << "#include <drlojekyll/Runtime/StateCell.h>\n";
   }
+  // D2.b: the InstanceStore header, emitted only when a program instantiates a
+  // keyed-instance store (byte-identity guard for instance-free programs).
+  if (!program.InstanceStores().empty()) {
+    hh << "#include <drlojekyll/Runtime/InstanceStore.h>\n";
+  }
   hh << "#include <drlojekyll/Runtime/Vec.h>\n\n"
      << "#include <cassert>\n"
      << "#include <cstdint>\n"
@@ -3097,6 +3318,7 @@ void Generator::Run(void) {
 
   EmitRowStructs();
   EmitStateCellStructs();  // R3: Key_<id> + Reduce_<id> per state cell.
+  EmitInstanceStructs();   // D2.b: Key_<id> + Row_<id> per instance store.
   EmitFunctorsDecl();
   EmitLogDecl();
 

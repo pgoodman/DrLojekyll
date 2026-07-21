@@ -434,6 +434,15 @@ class QueryView : public Node<QueryView, QueryViewImpl> {
   // emitted output — never iterate such a container in pointer order.
   unsigned DeterministicOrder(void) const noexcept;
 
+  // COMPILER-INTERNAL (keyed instances): the index into
+  // `Query::GuardAnnotations()` this view's guard JOIN was stamped with by
+  // `ApplyDemandTransform` (D1.a), or `kNoGuardAnnotation` (~0u) if this is not
+  // a recognized guard. ABA-safe: the stamp is a per-view field that migrates
+  // through CSE with group_ids (View.cpp:579-590), never a raw handle. Ordered
+  // consumption must still walk the DefList (HP-9).
+  static constexpr unsigned kNoGuardAnnotation = ~0u;
+  unsigned GuardAnnotationIndex(void) const noexcept;
+
   // Color value for formatting. This is influenced by the `@highlight`
   // pragma, for example:
   //

@@ -127,9 +127,19 @@ static void CollectSectionTargetsDR(ProgramImpl *impl, Context &context,
 // Replicate the cut-successor test (Build.cpp:857-858) EXACTLY: a deletion-
 // capable / aggregate / KV-index successor is fed by phases or its
 // GROUP_UPDATE, never by the eager walk.
-static bool AnyCutSuccessorDR(QueryView view) {
+static bool AnyCutSuccessorDR(Context &context, QueryView view) {
   for (QueryView succ : view.Successors()) {
     if (succ.CanReceiveDeletions() || succ.IsAggregate() || succ.IsKVIndex()) {
+      return true;
+    }
+    // Keyed instances (GT-5 / OD-4): under -demand-instance, a recognized-
+    // subgraph guard JOIN successor is fed by its SUBGRAPH_INSTANTIATE op, never
+    // the eager walk — treat it as a cut successor so this monotone boundary
+    // input is provisioned a net-additions frontier (BOTH the demand and edge
+    // boundaries). Symmetric with Build.cpp so the §7d role/walk cross-check
+    // never diverges.
+    if (context.demand_instance_enabled &&
+        succ.GuardAnnotationIndex() != QueryView::kNoGuardAnnotation) {
       return true;
     }
   }
@@ -152,7 +162,7 @@ static VecRole MonotoneIngestRoleDR(Context &context, TABLE *table) {
     return VecRole::kNetAddition;
   }
   for (const QueryView &member : table->views) {
-    if (AnyCutSuccessorDR(member)) {
+    if (AnyCutSuccessorDR(context, member)) {
       return VecRole::kNetAddition;
     }
   }
@@ -582,6 +592,16 @@ std::vector<const DROp *> DRFlowGraph::StateSeals(void) const {
   return out;
 }
 
+std::vector<const DROp *> DRFlowGraph::SubgraphInstances(void) const {
+  std::vector<const DROp *> out;
+  for (const DROp &op : ops) {
+    if (op.kind == DROpKind::kSubgraphInstantiate) {
+      out.push_back(&op);
+    }
+  }
+  return out;
+}
+
 std::vector<const DROp *> DRFlowGraph::OpsOfKind(DROpKind kind) const {
   std::vector<const DROp *> out;
   for (const DROp &op : ops) {
@@ -871,6 +891,120 @@ static DREffect SealEffect(TABLE *pub) {
 }
 
 // ---------------------------------------------------------------------------
+// §2.1 ABA-SAFE re-resolution (the §19(M) LOUD carry). Re-resolve a recognized
+// forcing's three tables from LIVE guard JOINs + parse identities — NEVER a
+// stored RecognizedSubgraph QueryView handle (they dangle after Optimize).
+// SINGLE authority: the D2.b mint AND the census recount both call this, so
+// they cannot drift. The anchor is the CSE-migrating `GuardAnnotationIndex`
+// stamp (D1.a, View.cpp:579-590); consumption walks the DefList (HP-9).
+// ---------------------------------------------------------------------------
+struct ResolvedInstance {
+  bool ok{false};
+  TABLE *demand_table{nullptr};   // guard JOIN joined[0] (demand side) model
+  TABLE *input_table{nullptr};    // BODY guard JOIN joined[1] (read) model
+  TABLE *pub_table{nullptr};      // live INSERT matching forcing.query
+  std::optional<QueryView> demanded_view;  // a live body-guard JOIN handle
+  std::optional<QueryView> pub_view;       // the live answer INSERT view
+  std::optional<QueryView> input_view;     // the live summarized-input read
+  unsigned pub_ncols{0u};
+  std::vector<unsigned> input_key_cols;  // input cols bound to the instance key
+};
+struct LiveRecognition {
+  std::unordered_map<unsigned, ResolvedInstance> by_forcing;  // forcing_index ->
+};
+
+static LiveRecognition ResolveLiveRecognition(ProgramImpl *impl, Query query) {
+  LiveRecognition out;
+  const auto &annots = query.GuardAnnotations();
+  const auto &forcings = query.DemandForcings();
+  const auto model_table = [&](QueryView v) -> TABLE * {
+    auto it = impl->view_to_model.find(v);
+    return it == impl->view_to_model.end()
+               ? nullptr
+               : it->second->FindAs<DataModel>()->table;
+  };
+
+  // Bucket LIVE guard JOINs by forcing index (DefList walk — HP-9 ordered).
+  std::unordered_map<unsigned, std::vector<std::pair<QueryView, unsigned>>>
+      guards;
+  query.ForEachView([&](QueryView v) {
+    const unsigned ai = v.GuardAnnotationIndex();
+    if (ai == QueryView::kNoGuardAnnotation) {
+      return;
+    }
+    assert(ai < annots.size());
+    guards[annots[ai].forcing_index].emplace_back(v, ai);
+  });
+
+  for (auto &entry : guards) {
+    const unsigned fidx = entry.first;
+    ResolvedInstance ri;
+    for (auto &[v, ai] : entry.second) {
+      if (!v.IsJoin()) {
+        continue;
+      }
+      std::vector<QueryView> jl;
+      for (QueryView jv : QueryJoin::From(v).JoinedViews()) {
+        jl.push_back(jv);
+      }
+      if (jl.size() < 2u) {
+        continue;  // MintGuardJoin always has {demand_side, read}
+      }
+      // joined[0] = demand side (traces to the fabricated demand message).
+      if (TABLE *d = model_table(jl[0])) {
+        ri.demand_table = d;
+      }
+      // The BODY guard's joined[1] is the summarized monotone INPUT; the
+      // query-projection guard's read is an intermediate copy, not the input.
+      if (annots[ai].role == GuardAnnotation::kBody && !ri.input_table) {
+        if (TABLE *in = model_table(jl[1])) {
+          ri.input_table = in;
+          ri.input_view = jl[1];
+          ri.input_key_cols = annots[ai].instance_key;  // pivot positions
+          ri.demanded_view = v;  // a live handle for the descriptor render
+        }
+      }
+    }
+    // pub = the live INSERT whose declaration IS forcing.query (full parse
+    // identity — Id() embeds name AND arity, Optimize-stable; a name-only
+    // match can bind a legal same-name/different-arity sibling's table and
+    // silently partition a mismatched-width pub row).
+    if (fidx < forcings.size()) {
+      const ParsedDeclaration q_decl(forcings[fidx].query);
+      for (QueryInsert ins : query.Inserts()) {
+        if (ins.Declaration().Id() != q_decl.Id()) {
+          continue;
+        }
+        const QueryView iv = QueryView::From(ins);
+        if (TABLE *pt = model_table(iv)) {
+          ri.pub_table = pt;
+          // pub_view carries the published-column NAMES (Format pub_col_name);
+          // an INSERT view has no own Columns(), so name off its producing
+          // predecessor (the demanded content, whose Columns() are the answer
+          // row in stored order — Start,Node).
+          QueryView name_view = iv;
+          for (QueryView p : iv.Predecessors()) {
+            name_view = p;
+            break;
+          }
+          ri.pub_view = name_view;
+          ri.pub_ncols = static_cast<unsigned>(name_view.Columns().size());
+          break;
+        }
+      }
+    }
+    if (!ri.demanded_view && !entry.second.empty()) {
+      ri.demanded_view = entry.second.front().first;
+    }
+    ri.ok = ri.demand_table && ri.input_table && ri.pub_table &&
+            ri.demanded_view.has_value() && ri.pub_view.has_value() &&
+            ri.input_view.has_value();
+    out.by_forcing.emplace(fidx, std::move(ri));
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // The keyed-instance mint (§3), GATED OFF at D1.b. The caller guards on
 // `context.demand_instance_enabled`, unconditionally false at D1.b (no
 // `-demand-instance` flag until D2.b), AND `query.RecognizedSubgraphs()` is
@@ -891,45 +1025,36 @@ static void BuildSubgraphInstanceOps(
   // UniqueId reads the QueryView's OWN by-value pointer, never derefs the
   // possibly-freed pointee). crit-correctness-1: this is NOT ABA-safe and must
   // be replaced by a stable deref-free identity scheme at D2.b — DEAD here.
-  std::unordered_set<uint64_t> live;
-  for (const auto &entry : impl->view_to_model) {
-    live.insert(entry.first.UniqueId());
-  }
-  const auto model_table = [&](QueryView v) -> TABLE * {
-    auto it = impl->view_to_model.find(v);
-    if (it == impl->view_to_model.end()) {
-      return nullptr;
-    }
-    return it->second->FindAs<DataModel>()->table;
-  };
+  // §2.1 ABA-SAFE re-resolution: NO stored RecognizedSubgraph QueryView handle
+  // is dereferenced (they dangle after Optimize — crit-correctness-1 / §19(M)).
+  // Everything resolves from the LIVE guard JOINs (walked by the CSE-migrating
+  // `GuardAnnotationIndex` stamp) + parse identities.
+  LiveRecognition lr = ResolveLiveRecognition(impl, query);
 
   for (const RecognizedSubgraph &rs : query.RecognizedSubgraphs()) {
-    if (!live.count(rs.pub_view.UniqueId()) ||
-        !live.count(rs.demanded_view.UniqueId())) {
-      continue;  // §3.6 dangling-handle pre-filter
+    auto git = lr.by_forcing.find(rs.forcing_index);
+    if (git == lr.by_forcing.end() || !git->second.ok) {
+      continue;  // fully-dead forcing (all guards eliminated) — ABA-safe skip
     }
-    TABLE *const pub_table = model_table(rs.pub_view);
-    TABLE *const demand_table = model_table(rs.demanded_view);
-    // The summarized monotone input: walk the demanded view's single-predecessor
-    // plumbing to the first table-bearing view (mirrors BuildGroupUpdateOps).
-    // The true summarized-input resolution lands with the D2.b α wiring.
-    TABLE *input_table = nullptr;
-    {
-      QueryView v = rs.demanded_view;
-      input_table = model_table(v);
-      while (input_table == nullptr) {
-        auto preds = v.Predecessors();
-        if (preds.begin() == preds.end()) {
-          break;
-        }
-        v = *preds.begin();
-        input_table = model_table(v);
-      }
+    const ResolvedInstance &ri = git->second;
+    TABLE *const pub_table = ri.pub_table;
+    TABLE *const demand_table = ri.demand_table;
+    TABLE *input_table = ri.input_table;
+
+    // HP-4 RECOGNIZER REFUSAL belt (§3.2e): the re-resolved input side must be a
+    // plain table-bearing view, never a MAP/NEGATE/AGG model (the demand body
+    // walk already rejects those, Demand.cpp; this trips LOUD if a D3 body
+    // relaxation reopens the α-through-functor path before V-ALPHA covers it).
+    if (ri.input_view->IsMap() || ri.input_view->IsNegate() ||
+        ri.input_view->IsAggregate() || ri.input_view->IsKVIndex()) {
+      ValidatorFail("BuildSubgraphInstanceOps: recognized-subgraph input is a "
+                    "MAP/NEGATE/AGG model (HP-4 refusal belt)");
     }
+
     const bool diff = TableIsDifferential(pub_table);
     const unsigned sid = static_cast<unsigned>(flow.instances.size());
 
-    DRInstance inst_desc(rs.demanded_view, rs.pub_view);
+    DRInstance inst_desc(*ri.demanded_view, *ri.pub_view);
     inst_desc.forcing_index = rs.forcing_index;
     // crit-pins-3: resolve the forcing name at mint (Format has no `query`),
     // fprintf+abort on an out-of-range forcing index — never a silent guess.
@@ -945,11 +1070,10 @@ static void BuildSubgraphInstanceOps(
     inst_desc.demand_table = demand_table;
     inst_desc.input_table = input_table;
     inst_desc.key_cols = rs.key_cols;
+    const unsigned npub = ri.pub_ncols;  // live pub width (ABA-safe, not rs)
     {  // row_cols = the published positions not in key_cols.
       std::unordered_set<unsigned> keyset(rs.key_cols.begin(),
                                           rs.key_cols.end());
-      const unsigned npub =
-          static_cast<unsigned>(rs.pub_view.Columns().size());
       for (unsigned p = 0u; p < npub; ++p) {
         if (!keyset.count(p)) {
           inst_desc.row_cols.push_back(p);
@@ -965,11 +1089,48 @@ static void BuildSubgraphInstanceOps(
     inst.table_op_sign = +1;
     inst.demand_table = demand_table;
     inst.input_table = input_table;
-    inst.demanded_view = rs.demanded_view;
+    inst.demanded_view = *ri.demanded_view;
     inst.instance_store_id = sid;
     inst.forcing_index = rs.forcing_index;
     inst.effects =
         InstantiateEffects(diff, pub_table, demand_table, input_table);
+    // §3.2b α FOLD-side representation: per published position, kInstanceKeySlot
+    // iff the position is an instance key (rs.key_cols), else kRowSlot. No
+    // kConfigSlot in the demand slice. V-ALPHA arm B checks this multiset.
+    {
+      std::unordered_set<unsigned> keyset(rs.key_cols.begin(),
+                                          rs.key_cols.end());
+      for (unsigned p = 0u; p < npub; ++p) {
+        inst.context_cols.push_back(p);
+        inst.context_col_sources.push_back(keyset.count(p)
+                                               ? BindingSource::kInstanceKeySlot
+                                               : BindingSource::kRowSlot);
+      }
+    }
+    // §3.2c the Rederive body spine: a single keyed section-walk ACCESS over the
+    // input keyed on the instance-key column, child = the kFold leaf into pub.
+    {
+      DRArm arm;
+      arm.sign = +1;
+      auto access = std::make_unique<PlanNode>();
+      access->kind = PlanKind::kAccess;
+      access->table = input_table;
+      access->pred = Pred::kPresent;
+      access->lowering = Lowering::kSectionWalk;
+      access->ctx = Ctx::kSeed;
+      // The bound column(s): the input columns joined to the instance key.
+      access->bound_cols = ri.input_key_cols;
+      access->bound_col_sources.assign(ri.input_key_cols.size(),
+                                       BindingSource::kInstanceKeySlot);
+      auto fold = std::make_unique<PlanNode>();
+      fold->kind = PlanKind::kFold;
+      fold->fold_table = pub_table;
+      fold->fold_sign = +1;
+      fold->fold_class = DerivClass::kNonRecursive;
+      access->child = std::move(fold);
+      arm.body = std::move(access);
+      inst.arms.push_back(std::move(arm));
+    }
     flow.ops.push_back(std::move(inst));
 
     // ---- kInstanceDeath (R-DIFF ONLY; ships INERT — HP-17) ----
@@ -979,7 +1140,7 @@ static void BuildSubgraphInstanceOps(
       death.table_op_table = pub_table;
       death.table_op_sign = -1;  // OD-2: shares table_id ⇒ sorts before +1
       death.demand_table = demand_table;
-      death.demanded_view = rs.demanded_view;
+      death.demanded_view = *ri.demanded_view;
       death.instance_store_id = sid;
       death.forcing_index = rs.forcing_index;
       death.effects = DeathEffects(pub_table, demand_table);
@@ -3149,22 +3310,20 @@ void ValidateDROps(
   // with the D2.b mint; at D1.b the count contract is the byte-visible census.
   unsigned exp_instance = 0u, exp_death = 0u;
   if (context.demand_instance_enabled) {
-    std::unordered_set<uint64_t> live;
-    for (const auto &entry : impl->view_to_model) {
-      live.insert(entry.first.UniqueId());
-    }
+    // ABA-safe recount (§3.1): re-resolve via the SAME LiveRecognition helper
+    // the mint uses (deref-free, from live guards + parse identities), keyed off
+    // the DataFlow pass's `RecognizedSubgraphs()` (A.1.5 independence — never
+    // the mint's own output). A fully-dead forcing (guards eliminated) mints no
+    // instance and is skipped identically here.
+    LiveRecognition lr = ResolveLiveRecognition(impl, query);
     for (const RecognizedSubgraph &rs : query.RecognizedSubgraphs()) {
-      if (!live.count(rs.pub_view.UniqueId()) ||
-          !live.count(rs.demanded_view.UniqueId())) {
+      auto git = lr.by_forcing.find(rs.forcing_index);
+      if (git == lr.by_forcing.end() || !git->second.ok) {
         continue;
       }
       ++exp_instance;
-      TABLE *demand_table = nullptr;
-      if (auto it = impl->view_to_model.find(rs.demanded_view);
-          it != impl->view_to_model.end()) {
-        demand_table = it->second->FindAs<DataModel>()->table;
-      }
-      if (demand_table && TableIsDifferential(demand_table)) {
+      if (git->second.demand_table &&
+          TableIsDifferential(git->second.demand_table)) {
         ++exp_death;
       }
     }
@@ -3437,6 +3596,105 @@ void ValidateDROps(
         ValidatorFail("V-INST-PAIR: an INSTANCE_SEAL has no matching "
                       "SUBGRAPH_INSTANTIATE for its store id");
       }
+    }
+  }
+
+  // V-ALPHA (D2.b, HP-4 / HP-12; ADJ-P1). VACUOUS knob-off (no instance ops,
+  // and all corpus PlanNodes default to kRowSlot ⇒ arm A short-circuits).
+  //   arm A (ACCESS/GATE): any PlanNode binding a kInstanceKeySlot column MUST
+  //     lower as a point-test / section-walk against the instance store — never
+  //     a full scan / row-table gate.
+  //   arm B (FOLD/publish): per kSubgraphInstantiate, the published-column
+  //     BindingSource multiset is (B-i) column-total, (B-ii) positive — every
+  //     instance-key position is kInstanceKeySlot, and (B-iii) NEGATIVE — no
+  //     row position is instance-key-sourced.
+  {
+    std::function<void(const PlanNode *)> check_access =
+        [&](const PlanNode *n) {
+          if (!n) {
+            return;
+          }
+          for (unsigned k = 0u; k < n->bound_col_sources.size(); ++k) {
+            if (n->bound_col_sources[k] == BindingSource::kInstanceKeySlot &&
+                n->lowering != Lowering::kPointTest &&
+                n->lowering != Lowering::kSectionWalk) {
+              ValidatorFail("V-ALPHA (arm A): an instance-key-slot ACCESS is "
+                            "not a point-test/section-walk against the store");
+            }
+          }
+          check_access(n->child.get());
+        };
+    for (const DROp &op : flow.ops) {
+      for (const DRArm &arm : op.arms) {
+        check_access(arm.body.get());
+      }
+    }
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kSubgraphInstantiate) {
+        continue;
+      }
+      if (op.instance_store_id >= flow.instances.size()) {
+        ValidatorFail("V-ALPHA (arm B): instantiate store id out of range");
+      }
+      const DRInstance &in = flow.instances[op.instance_store_id];
+      const unsigned npub =
+          static_cast<unsigned>(in.key_cols.size() + in.row_cols.size());
+      // B-i COLUMN-TOTAL: every published position is modeled exactly once.
+      if (op.context_cols.size() != npub ||
+          op.context_col_sources.size() != npub) {
+        ValidatorFail("V-ALPHA (arm B-i): instantiate context columns are not "
+                      "pub-row column-total");
+      }
+      std::vector<bool> seen(npub, false);
+      for (unsigned p : op.context_cols) {
+        if (p >= npub) {
+          ValidatorFail("V-ALPHA (arm B-i): context column position out of "
+                        "range");
+        }
+        seen[p] = true;
+      }
+      for (unsigned p = 0u; p < npub; ++p) {
+        if (!seen[p]) {
+          ValidatorFail("V-ALPHA (arm B-i): an unmodeled published column");
+        }
+      }
+      std::unordered_map<unsigned, BindingSource> src;
+      for (unsigned i = 0u; i < op.context_cols.size(); ++i) {
+        src[op.context_cols[i]] = op.context_col_sources[i];
+      }
+      // B-ii POSITIVE: every instance-key position is kInstanceKeySlot.
+      for (unsigned p : in.key_cols) {
+        if (src[p] != BindingSource::kInstanceKeySlot) {
+          ValidatorFail("V-ALPHA (arm B-ii): an instance-key position is not "
+                        "kInstanceKeySlot (published from KeyAt)");
+        }
+      }
+      // B-iii NEGATIVE: no row position traces to an instance-key value.
+      for (unsigned p : in.row_cols) {
+        if (src[p] == BindingSource::kInstanceKeySlot) {
+          ValidatorFail("V-ALPHA (arm B-iii): a row position is instance-key-"
+                        "sourced (an aliased key)");
+        }
+      }
+    }
+  }
+
+  // V-INST-DRAIN (HP-2, §3.3): every instantiate's demand net-additions
+  // frontier must have been provisioned by the cut test (§2.2) — a missing
+  // frontier would birth zero keys silently. VACUOUS knob-off.
+  for (const DROp &op : flow.ops) {
+    if (op.kind != DROpKind::kSubgraphInstantiate) {
+      continue;
+    }
+    auto it = context.table_delta_vecs.find(op.demand_table);
+    const bool ok =
+        it != context.table_delta_vecs.end() &&
+        it->second.count(static_cast<unsigned>(VectorKind::kNetAdditions)) &&
+        it->second.at(static_cast<unsigned>(VectorKind::kNetAdditions)) !=
+            nullptr;
+    if (!ok) {
+      ValidatorFail("V-INST-DRAIN: an instantiate's demand net-additions "
+                    "frontier was never provisioned (OD-7/§2.2 gap)");
     }
   }
 

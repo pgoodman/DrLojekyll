@@ -46,6 +46,7 @@ namespace {
 
 static unsigned gFirstId = 0u;
 static bool gDemand = false;
+static bool gDemandInstance = false;
 static PassPolicy gPassPolicy;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
@@ -77,7 +78,8 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   SetDeltaRelDumpStream(gDeltaRelStream);
 
   auto program_opt =
-      Program::Build(*query_opt, error_log, gFirstId, gPassPolicy);
+      Program::Build(*query_opt, error_log, gFirstId, gPassPolicy,
+                     gDemandInstance);
   if (!program_opt) {
     return EXIT_FAILURE;
   }
@@ -215,6 +217,7 @@ static int HelpMessage(const char *argv[]) {
       << "  -disable-controlflow-opt  Skip control-flow IR optimization (region flattening, no-op removal," << std::endl
       << "                            procedure deduplication)." << std::endl
       << "  -demand                   Enable the live demand transform (magic-sets) for bound queries." << std::endl
+      << "  -demand-instance          Enable the keyed-instance nested lowering for demanded subgraphs (implies -demand)." << std::endl
       << "  -opt-disable=<glob>[,..]  Skip optional passes by name (e.g. df.cse, cf.*)." << std::endl
       << "  -opt-only=<glob>[,..]     Run only the matched optional passes." << std::endl
       << "  -opt-bisect-limit=<N>     Skip optional pass applications with index > N (-1 prints indices)." << std::endl
@@ -466,6 +469,14 @@ extern "C" int main(int argc, const char *argv[]) {
     } else if (!strcmp(argv[i], "-demand") ||
                !strcmp(argv[i], "--demand")) {
       hyde::gDemand = true;
+
+    // Enable the keyed-instance nested lowering for demanded subgraphs
+    // (implies `-demand`). A lowering SELECTOR / semantics — OFF the PassPolicy
+    // registry, never a registered pass name, never a 5th golden mode.
+    } else if (!strcmp(argv[i], "-demand-instance") ||
+               !strcmp(argv[i], "--demand-instance")) {
+      hyde::gDemand = true;          // implies -demand
+      hyde::gDemandInstance = true;
 
     // Datalog module file search path.
     } else if (!strcmp(argv[i], "-M")) {

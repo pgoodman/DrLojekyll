@@ -2455,3 +2455,98 @@ this section before building on it; errata continue at E-81.
     identity, the §B.4 desired-state re-derivation (OD-4
     mechanism-natural + the collapsed-seal kStateFold WAW edge), and
     HP-13(b)'s end-to-end real-dump review before any nested bless.
+
+(N) D2.b LANDED (2026-07-21; the -demand-instance nested lowering
+    end-to-end — recognizer excision → DR-IR mint → CF lowering →
+    codegen; record written pre-commit). DESIGN RITUAL (the epoch's
+    largest): designer + desired-states writer in parallel (the
+    ds-writer re-derived the nested .deltarel from REAL tip dumps,
+    SUPERSEDING d1-desired-states §B.4 IN WHOLE — wrong on FOUR axes:
+    OD-4 mechanism-natural, the HP-11 collapse spellings, the
+    collapsed seal's write hazard, and DEPS ARE SIX EDGES NOT TWO) +
+    3 critics + xhigh adjudicator; GO-WITH-AMENDMENTS, 9 folded
+    (ADJ-C1 the full-rescan collapse — TouchCurrent does NOT reset,
+    freshness comes from the prior Seal's Reset; ADJ-C2 fence-i also
+    rejects recursive content; ADJ-P1 V-ALPHA arm B three-part;
+    ADJ-G1 the a2 effects fork). THE RITUAL'S BIG CATCH (ADJ-C3,
+    code-proven): OD-1's "demand-flap rebuild" wording is a NO-OP
+    under R-MONO (if-crossed idempotent — a re-asserted demand never
+    re-seeds); a1-only silently drops edge-after-demand forever.
+    OWNER RULINGS this round:
+    RAT-6 a1-ONLY, BIRTH-ONLY witness (ruling-consistent with OD-3's
+          plumbing-lands-with-Rel): the flap narrative RETIRED, the
+          D2.c witness ENFORCED birth-only with edges hard-ordered
+          before every demand, edge-after-demand a LOUD LABELED gap,
+          the mechanism-natural edge frontier provisioned-undrained
+          (the OD-4 accepted pricing).
+    RAT-7 NO runtime band-(b) partition assert: the HP-6 guardians
+          post-HP-11-collapse are the SITE-3 real-codegen review
+          (EXECUTED by the orchestrator this landing — the emitted
+          band-(b) is genuinely frz.Find==kNoRow (F,T)-gated, the
+          (T,F) scan correctly absent under R-MONO, V-INST-FRESH
+          always-on, Row_0 carries NO α column — the elision is
+          real) + the D2.c eqgate; revisit at D3.a.
+    OWNER-BRIEF DEVIATION (from OD-3's literal wording, implementer-
+    proven): fence-(ii) CANNOT be a compile diagnostic — mid-stream
+    edge-add is a BATCH-ORDERING property indistinguishable at
+    compile time from the accepted witness program itself; it ships
+    as the DOCUMENTED labeled feature gap (Build.cpp comment;
+    CLAUDE.md naming at D2.c) — consequently demand_midstream_edge_1
+    has no diagnostic to witness and the D2.c fence-witness set
+    becomes {demand_cyclic_1, demand_recursive_content_1 (OWN-4/
+    ADJ-C2), demand_diff_input_1}; suite arithmetic 169→170→173
+    holds with the recomposed set. Also: fence-iii's shape is
+    pre-empted upstream by the demand body-walk rejects (the fence
+    stands as the D3.a belt); the spine renders the section-walk
+    TARGET plan while D2.b codegen full-scans-with-key-filter (the
+    review REFUTED this as a defect — ratified model/emission
+    layering; the keyed rescan is the deferred perf refinement, .ir
+    uncertified at D2.b by design).
+    AS LANDED (+1039 lines, 16 files): ResolveLiveRecognition — the
+    ABA-SAFE DEREF-FREE identity (the §19(K)/(L)/(M) carry
+    DISCHARGED): stored handles empirically DEAD post-Optimize
+    (live_rs=0); resolution walks LIVE guard JOINs via the
+    CSE-migrating GuardAnnotationIndex stamp, tables keyed off parse
+    identities; the census recount UN-GATED and live under the knob.
+    New public QueryView::GuardAnnotationIndex(). The knob
+    (-demand-instance, implies -demand, OFF PassPolicy); GT-5
+    excision (the flat guard web + %table:15 machinery NOT emitted
+    under the knob — the generated header carries NO Row15 at all);
+    OD-4 mechanism-natural provisioning (both boundary frontiers;
+    census kCommitSweep=2); V-ALPHA arms A + B(i/ii/iii),
+    V-INST-DRAIN, V-INST-EMITTED (all three kinds), HP-4 refusal;
+    LowerSubgraphInstance (band-a1 drain → FindOrAddInstance →
+    V-INST-FRESH → full-rescan → TryAdd; band-b (F,T) publish; seal
+    self-lowered per OD-5/HP-1); SUBGRAPHINSTANCE region + codegen
+    against the real InstanceStore (monotone=true). FIRST NESTED
+    COMPILE IN HISTORY matches the re-derived ds contract EXACTLY —
+    op set, effect multisets, line order, census, ALL SIX dep edges;
+    the op-id map came out IDENTITY vs the illustrative labels.
+    Nested .df == flat .df BYTE-IDENTICAL (Alt-A held). BIRTH PROBE:
+    flat==nested stdout byte-equal (nb 1: 2 3 — NOT 9, HP-5's
+    out-of-neighborhood discrimination held; nb 9: 9; nb 5 empty).
+    FABLE REVIEW (workflow, 10 agents ~1.02M tokens): 1 CONFIRMED
+    (MED, probe-REPRODUCED silent miscompile — pub_table resolved by
+    declaration NAME only, ignoring arity; a legal same-name/
+    different-arity sibling with a table-modeled answer INSERT bound
+    the WRONG pub table and flowed to codegen silently; FIXED to
+    full declaration identity Id()==Id(), the design's own §2.1
+    mandate; the repro probe now binds the correct-width table and
+    the witness dumps are byte-UNCHANGED by the fix), 5 refuted
+    (incl. the spine-honesty and V-ALPHA-arm-A-scope candidates).
+    GATES ALL GREEN (post-fix re-runs incl.): SUITE PASS (169)
+    knob-off ×3 runs (debug, ASAN, post-fix); 676-row + data A/B
+    BYTE-IDENTICAL vs frozen 99f211f5 (P-D2b.1); ctest 5/5 debug +
+    5/5 ASAN; G5 debug==release + multi-run 1-hash on all four
+    NESTED surfaces (HP-13(b)'s config-invariance precondition — the
+    nested goldens themselves stay UNBLESSED at D2.b per OWN-5/
+    OD-10); G6 E-62 re-grepped CLEAN; ASAN both surfaces + the
+    nested compile under the ASAN binary (the ABA walk sanitized)
+    zero reports; HP-12's no-uncovered-α-consumer line checked (the
+    two α consumers on the witness — the rescan filter and the
+    pub_row ik: slot — both covered; review fences lens concurred);
+    Q5 progsize@128 release SAME-SESSION INTERLEAVED ABABAB A
+    {152,152,154} vs B {154,152,151} ms (0.0% median, noise; round-0
+    cold outlier discarded); post-fix SUITE PASS (169) + ctest 5/5
+    re-run. NEXT: D2.c (witness + eqgate + the recomposed
+    fence-witness set enter the suite).

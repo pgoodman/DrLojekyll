@@ -656,6 +656,20 @@ OutputStream &operator<<(OutputStream &os, ProgramGroupUpdateRegion region) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os,
+                         ProgramSubgraphInstanceRegion region) {
+  os << os.Indent() << "subgraph-instance i#" << region.StoreId()
+     << " demand " << region.DemandFrontier() << " rescan "
+     << region.InputTable() << " -> publish " << region.PubTable() << " key@{";
+  auto sep = "";
+  for (auto p : region.KeyPositions()) { os << sep << p; sep = ", "; }
+  os << "} row@{";
+  sep = "";
+  for (auto p : region.RowPositions()) { os << sep << p; sep = ", "; }
+  os << "} seal";
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramClaimRegion region) {
   os << os.Indent() << (region.IsDelete() ? "claim-del" : "claim-add")
      << " {";
@@ -945,6 +959,7 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramCheckRecordRegion)
   MAKE_VISITOR(ProgramCommitSweepRegion)
   MAKE_VISITOR(ProgramGroupUpdateRegion)
+  MAKE_VISITOR(ProgramSubgraphInstanceRegion)
   MAKE_VISITOR(ProgramClaimRegion)
   MAKE_VISITOR(ProgramRetireRegion)
   MAKE_VISITOR(ProgramNetBatchRegion)

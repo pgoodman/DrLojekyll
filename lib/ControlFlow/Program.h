@@ -297,6 +297,7 @@ class DataRecordImpl : public Def<DataRecordImpl>, public User {
 using DATARECORD = DataRecordImpl;
 
 class ProgramOperationRegionImpl;
+class ProgramSubgraphInstanceRegionImpl;
 
 // A lexically scoped region in the program.
 class ProgramRegionImpl : public Def<ProgramRegionImpl>, public User {
@@ -440,6 +441,12 @@ enum class ProgramOperation {
   // aggregate's own differential table (v3-spec-statecell.md §2.2).
   kGroupUpdate,
 
+  // D2.b keyed-instance SUBGRAPH_INSTANTIATE (birth/rebuild + band-(b) publish
+  // + self-lowered seal). Drains the demand net-additions frontier, rescans the
+  // summarized input per newly-demanded key into the InstanceStore `current`
+  // buffer, publishes the (F,T) born set into the pub table, then Seal()s.
+  kSubgraphInstance,
+
   // When dealing with MERGE/UNION nodes with an inductive cycle.
   kAppendToInductionVector,
   kLoopOverInductionVector,
@@ -567,6 +574,8 @@ class ProgramOperationRegionImpl : public REGION {
   virtual ProgramCheckRecordRegionImpl *AsCheckRecord(void) noexcept;
   virtual ProgramCommitSweepRegionImpl *AsCommitSweep(void) noexcept;
   virtual ProgramGroupUpdateRegionImpl *AsGroupUpdate(void) noexcept;  // R3
+  virtual ProgramSubgraphInstanceRegionImpl *AsSubgraphInstance(
+      void) noexcept;  // D2.b
   virtual ProgramClaimRegionImpl *AsClaim(void) noexcept;
   virtual ProgramRetireRegionImpl *AsRetire(void) noexcept;
   virtual ProgramNetBatchRegionImpl *AsNetBatch(void) noexcept;
@@ -1138,6 +1147,46 @@ class ProgramGroupUpdateRegionImpl final : public OP {
 };
 
 using GROUPUPDATE = ProgramGroupUpdateRegionImpl;
+
+// D2.b keyed-instance SUBGRAPH_INSTANTIATE region (the GROUPUPDATE peer). Holds
+// the runtime pieces its codegen (EmitSubgraphInstance) needs: the demand
+// net-additions frontier (BAND (a1) drain), the summarized input + pub tables,
+// the pub-row key/row partition (HP-6), the input columns that equal the
+// instance key (rescan filter) and the input columns forming the row, and the
+// InstanceStore descriptor id. The seal self-lowers at the region tail
+// (HP-1/OD-5) — codegen emits `instance_<id>.Seal()` after band-(b).
+class ProgramSubgraphInstanceRegionImpl final : public OP {
+ public:
+  virtual ~ProgramSubgraphInstanceRegionImpl(void);
+
+  inline ProgramSubgraphInstanceRegionImpl(REGION *parent_, unsigned store_id_)
+      : OP(parent_, ProgramOperation::kSubgraphInstance),
+        store_id(store_id_) {}
+
+  void Accept(ProgramVisitor &visitor) override;
+  uint64_t Hash(uint32_t depth) const override;
+  bool IsNoOp(void) const noexcept override;
+  ProgramSubgraphInstanceRegionImpl *AsSubgraphInstance(void) noexcept override;
+  bool Equals(EqualitySet &eq, REGION *that,
+              uint32_t depth) const noexcept override;
+
+  UseRef<VECTOR> demand_frontier;  // BAND (a1) drain source (birth keys)
+  UseRef<TABLE> input_table;       // the summarized monotone input
+  UseRef<TABLE> pub_table;         // the published answer relation
+
+  // The pub-row partition (HP-6): published positions that are instance keys
+  // (published from KeyAt) vs the row payload (published from the rescan).
+  std::vector<unsigned> key_positions;
+  std::vector<unsigned> row_positions;
+  // The input-table columns that equal the instance key (rescan filter) and the
+  // input columns forming the published row (in row_positions order).
+  std::vector<unsigned> input_key_cols;
+  std::vector<unsigned> input_row_cols;
+
+  const unsigned store_id;  // -> program.InstanceStores()[store_id]
+};
+
+using SUBGRAPHINSTANCE = ProgramSubgraphInstanceRegionImpl;
 
 // A claim of one row of a differential table into the overdeletion set
 // (`is_del`) or the addition set, and into the current frontier round.
@@ -1888,6 +1937,17 @@ struct ProgramStateCell {
       : id(id_), invertible(invertible_), functor(functor_) {}
 };
 
+// D2.b codegen descriptor for one keyed-instance store (one RecognizedSubgraph).
+// Names the generated `instance_<id>` member + its `Key_<id>` / `Row_<id>` value
+// structs. Populated from the DR flow's instances at stratum-phase build time.
+struct ProgramInstanceStore {
+  unsigned id{0u};
+  std::vector<TypeLoc> key_types;  // the demanded α column types (Key_<id>)
+  std::vector<TypeLoc> row_types;  // the published row column types (Row_<id>)
+
+  explicit ProgramInstanceStore(unsigned id_) : id(id_) {}
+};
+
 class ProgramImpl : public User {
  public:
   ~ProgramImpl(void);
@@ -1947,6 +2007,9 @@ class ProgramImpl : public User {
   // R3: one StateCell store descriptor per GROUP_UPDATE view (codegen emits a
   // `statecell_<id>` member, its Key/Reduce types, and the commit-tail Seal).
   std::vector<ProgramStateCell> state_cells;
+
+  // D2.b: one keyed-instance store descriptor per RecognizedSubgraph.
+  std::vector<ProgramInstanceStore> instance_stores;
 };
 
 }  // namespace hyde

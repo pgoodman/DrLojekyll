@@ -348,6 +348,12 @@ bool QueryView::CanReceiveDeletions(void) const noexcept {
   return impl->can_receive_deletions;
 }
 
+// COMPILER-INTERNAL (keyed instances): the guard-annotation stamp (D1.a),
+// ABA-safe and CSE-migrating (View.cpp:579-590).
+unsigned QueryView::GuardAnnotationIndex(void) const noexcept {
+  return impl->guard_annotation_index;
+}
+
 // Can this view produce outputs that should logically "delete" entries?
 bool QueryView::CanProduceDeletions(void) const noexcept {
   return impl->can_produce_deletions;

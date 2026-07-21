@@ -177,6 +177,17 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
         break;
       }
 
+      // D2.b SUBGRAPH_INSTANCE: it DRAINS the demand net-additions frontier
+      // (read) — the birth keys. No vector writes (it publishes into the pub
+      // table + the instance store, not a vector).
+      case ProgramOperation::kSubgraphInstance: {
+        auto *si = op->AsSubgraphInstance();
+        if (vec == si->demand_frontier.get()) {
+          read.insert(vec);
+        }
+        break;
+      }
+
       default: assert(false);
     }
   // Parameter; by construction, neither the entry nor the primary procedures
@@ -227,6 +238,61 @@ static void CreateDifferentialMessageVectors(
         }
       }
     }
+  }
+}
+
+// D2.b keyed-instance lowering: build ONE SUBGRAPHINSTANCE region per
+// kSubgraphInstantiate op (birth/rebuild + band-(b) publish + self-lowered
+// seal — HP-1/OD-5 realization (ii): the seal is the region's own tail). Runs
+// in the (pre-split) flow proc so ExtractPrimaryProcedure threads the demand
+// frontier automatically. Under R-MONO no kInstanceDeath is minted (HP-17).
+static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
+                                   const DRFlowGraph &dr_flow, SERIES *seq) {
+  for (const DROp *op : dr_flow.SubgraphInstances()) {
+    const unsigned sid = op->instance_store_id;
+    if (sid >= dr_flow.instances.size()) {
+      continue;
+    }
+    const DRInstance &inst = dr_flow.instances[sid];
+
+    VECTOR *const demand_front =
+        TableDeltaVector(impl, context, op->demand_table,
+                         VectorKind::kNetAdditions);
+
+    SUBGRAPHINSTANCE *const si =
+        impl->operation_regions.CreateDerived<SUBGRAPHINSTANCE>(seq, sid);
+    seq->AddRegion(si);
+    si->demand_frontier.Emplace(si, demand_front);
+    si->input_table.Emplace(si, op->input_table);
+    si->pub_table.Emplace(si, op->table_op_table);  // HP-3: pub rides op_table
+    si->key_positions = inst.key_cols;
+    si->row_positions = inst.row_cols;
+    // input_key_cols = the section-walk bound cols (the input columns equal to
+    // the instance key), carried on the op's rescan spine (§3.2c).
+    if (!op->arms.empty() && op->arms[0].body &&
+        op->arms[0].body->kind == PlanKind::kAccess) {
+      si->input_key_cols = op->arms[0].body->bound_cols;
+    }
+    // input_row_cols = the remaining input columns (in order) — the published
+    // row payload (the single-monotone-hop shape: input = key ++ row cols).
+    {
+      std::unordered_set<unsigned> keyset(si->input_key_cols.begin(),
+                                          si->input_key_cols.end());
+      const unsigned arity =
+          static_cast<unsigned>(op->input_table->columns.Size());
+      for (unsigned c = 0u; c < arity; ++c) {
+        if (!keyset.count(c)) {
+          si->input_row_cols.push_back(c);
+        }
+      }
+    }
+
+    // V-INST-EMITTED (HP-1): enroll the instantiate AND the self-lowered seal
+    // (both kinds emitted by this region). Death is not minted under R-MONO.
+    context.emitted_instance_ops.push_back(
+        {sid, static_cast<uint8_t>(DROpKind::kSubgraphInstantiate)});
+    context.emitted_instance_ops.push_back(
+        {sid, static_cast<uint8_t>(DROpKind::kInstanceSeal)});
   }
 }
 
@@ -311,7 +377,41 @@ static void PublishDifferentialMessageVectors(ProgramImpl *impl, PROC *proc,
   // stratum phases ran (no differential tables), the graph is null and there are
   // no sweeps to emit.
   if (context.dr_flow) {
+    // D2.b: emit the keyed-instance regions BEFORE the commit sweeps (band-(b)
+    // publish precedes the store Seal; the frontier-table Seals are independent).
+    LowerSubgraphInstances(impl, context, *context.dr_flow, seq);
     LowerCommitSweeps(impl, context, *context.dr_flow, seq);
+
+    // V-INST-EMITTED (HP-1, the V-INGEST-XCHECK Site-5 mold): the (store_id,
+    // kind) multiset of EMITTED instance regions must equal the flow's
+    // {kSubgraphInstantiate, kInstanceDeath, kInstanceSeal} enrollment — a
+    // minted-but-unlowered op (esp. the seal) aborts.
+    {
+      using Key = std::pair<unsigned, uint8_t>;
+      std::vector<Key> emitted, enrolled;
+      for (const auto &e : context.emitted_instance_ops) {
+        emitted.emplace_back(e.store_id, e.kind);
+      }
+      for (const DROp &op : context.dr_flow->ops) {
+        if (op.kind == DROpKind::kSubgraphInstantiate ||
+            op.kind == DROpKind::kInstanceDeath ||
+            op.kind == DROpKind::kInstanceSeal) {
+          enrolled.emplace_back(op.instance_store_id,
+                                static_cast<uint8_t>(op.kind));
+        }
+      }
+      std::sort(emitted.begin(), emitted.end());
+      std::sort(enrolled.begin(), enrolled.end());
+      if (emitted != enrolled) {
+        std::fprintf(stderr,
+                     "error: V-INST-EMITTED failed: the emitted instance "
+                     "regions' (store_id, kind) multiset disagrees with the "
+                     "flow's instance-op enrollment (%zu emitted vs %zu "
+                     "enrolled)\n",
+                     emitted.size(), enrolled.size());
+        std::abort();
+      }
+    }
   }
 
   // Finally, return from the data flow procedure.

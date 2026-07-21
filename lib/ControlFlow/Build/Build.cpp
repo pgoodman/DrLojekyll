@@ -955,8 +955,18 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
     // net-additions frontier (else the fold drains an empty vec → empty agg,
     // the stage-B symptom). Value churn from the aggregate is a downstream
     // deletion source, but the INPUT relation itself can be a monotone message.
+    // Keyed instances (GT-5): under -demand-instance, a recognized-subgraph
+    // guard JOIN successor is fed by its SUBGRAPH_INSTANTIATE op
+    // (LowerSubgraphInstance), never the eager walk. Stop the descent (the flat
+    // guard-join web / flow:58 is NOT emitted) AND provision this monotone
+    // input's net-additions frontier (OD-4 mechanism-natural — BOTH the demand
+    // and edge boundary inputs). Symmetric with AnyCutSuccessorDR so the §7d
+    // role/walk cross-check never diverges.
+    const bool is_recog_guard =
+        context.demand_instance_enabled &&
+        succ_view.GuardAnnotationIndex() != QueryView::kNoGuardAnnotation;
     if (succ_view.CanReceiveDeletions() || succ_view.IsAggregate() ||
-        succ_view.IsKVIndex()) {
+        succ_view.IsKVIndex() || is_recog_guard) {
       any_cut_succ = true;
       continue;
     }
@@ -1163,7 +1173,8 @@ WorkItem::~WorkItem(void) {}
 // Build a program from a query.
 std::optional<Program> Program::Build(const ::hyde::Query &query,
                                       const ErrorLog &log, unsigned first_id,
-                                      const PassPolicy &policy) {
+                                      const PassPolicy &policy,
+                                      bool demand_instance) {
 
   // Reject data-flow view kinds that the control-flow builder does not yet
   // support. Each region-dispatch switch below asserts on these kinds; this
@@ -1265,6 +1276,78 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
              "recursive cycles are not yet supported";
     }
   }
+  // ---- Keyed-instance feature-gap fences (D2.b §2.3), per forcing. Gated on
+  // `-demand-instance` (under plain `-demand` the flat lowering handles all
+  // shapes, so NONE fire). Resolved from LIVE guard JOINs (the CSE-migrating
+  // GuardAnnotationIndex stamp) — never a stored RecognizedSubgraph handle.
+  //   FENCE (i) cyclic-demand — a recursive demand relation through the
+  //     instance boundary.
+  //   FENCE (i, ADJ-C2) recursive-CONTENT — a demanded body whose summarized
+  //     input is induction-owned / self-reachable (a labeled feature gap):
+  //     two independent defects (input ambiguity + single-scan cannot close a
+  //     TC) make it unlowerable in the R-MONO slice.
+  //   FENCE (iii) differential-summarized-input — a deletable input (R-DIFF is
+  //     D3.a).
+  // FENCE (ii) mid-stream monotone-input-add is NOT a compile reject in the
+  // a1-only regime (RAT-6): it is indistinguishable at compile time from the
+  // accepted witness, so it ships as the DOCUMENTED "edge-after-demand" feature
+  // gap (CLAUDE.md, D2.c) + the birth-only witness ordering — no spurious reject.
+  if (demand_instance) {
+    const auto &annots = query.GuardAnnotations();
+    std::unordered_map<unsigned, std::vector<std::pair<QueryView, unsigned>>>
+        fguards;
+    query.ForEachView([&](QueryView v) {
+      const unsigned ai = v.GuardAnnotationIndex();
+      if (ai == QueryView::kNoGuardAnnotation) {
+        return;
+      }
+      fguards[annots[ai].forcing_index].emplace_back(v, ai);
+    });
+    for (auto &fe : fguards) {
+      bool diff_input = false, recursive_content = false, cyclic_demand = false;
+      for (auto &[v, ai] : fe.second) {
+        if (!v.IsJoin()) {
+          continue;
+        }
+        std::vector<QueryView> jl;
+        for (QueryView jv : QueryJoin::From(v).JoinedViews()) {
+          jl.push_back(jv);
+        }
+        if (jl.size() < 2u) {
+          continue;
+        }
+        if (annots[ai].role == GuardAnnotation::kBody) {
+          const QueryView in = jl[1];
+          if (in.CanReceiveDeletions()) {
+            diff_input = true;
+          }
+          if (in.InductionGroupId().has_value() || ViewSelfReachable(in)) {
+            recursive_content = true;
+          }
+          for (QueryView p : in.Predecessors()) {
+            if (p.InductionGroupId().has_value()) {
+              recursive_content = true;
+            }
+          }
+        }
+        if (ViewSelfReachable(jl[0])) {
+          cyclic_demand = true;
+        }
+      }
+      if (cyclic_demand) {
+        log.Append() << "Recursive demand relations are not yet supported "
+                        "under -demand-instance";
+      } else if (recursive_content) {
+        log.Append() << "Demanded subgraphs with recursive (induction-owned) "
+                        "content are not yet supported under -demand-instance "
+                        "(a keyed-instance feature gap)";
+      } else if (diff_input) {
+        log.Append() << "Demanded subgraphs over deletable (differential) "
+                        "inputs are not yet supported under -demand-instance";
+      }
+    }
+  }
+
   if (num_errors != log.Size()) {
     return std::nullopt;
   }
@@ -1279,6 +1362,12 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // The demand-forcing registry (empty unless built under `-demand`): the
   // injector builder consults it for demand-transformed queries (recipe F2).
   context.demand_forcings = &query.DemandForcings();
+
+  // Keyed-instance nested lowering selector (D2.b `-demand-instance`). Gates the
+  // DR-IR mint (BuildSubgraphInstanceOps), the census recount, the eager-walk
+  // chain-breaker excision + OD-4 provisioning, and the three feature-gap
+  // fences. OFF the PassPolicy registry (a lowering selector, not a pass).
+  context.demand_instance_enabled = demand_instance;
 
   BuildDataModel(query, program);
 

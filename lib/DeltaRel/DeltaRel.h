@@ -348,6 +348,14 @@ class DRJoin {
 // ---------------------------------------------------------------------------
 enum class PlanKind : uint8_t { kAccess, kGate, kFold };
 
+// Keyed-instance α (D2.b, HP-4): the binding SOURCE of a bound column. A
+// kInstanceKeySlot entry resolves against the InstanceStore key (a section
+// walk / point test keyed on the instance key), never a row-table full scan;
+// kRowSlot is the ordinary row-payload source; kConfigSlot is reserved (no
+// config in the demand slice). Defaults kRowSlot ⇒ V-ALPHA short-circuits on
+// every one of the 169 corpus cases (all-kRowSlot).
+enum class BindingSource : uint8_t { kRowSlot, kInstanceKeySlot, kConfigSlot };
+
 // The identity lowering choice for an ACCESS (spec §3.2): a point-test
 // (Find+pred), a keyed section walk (idx.First/Next + pivot re-test), or a full
 // scan (zero bound columns). `kSeek` is reserved for the D5 substrate.
@@ -363,6 +371,10 @@ class PlanNode {
   // SortAndUnique order == the index identity, NEVER prefix contiguity). Empty
   // for a full scan or a bare gate. Column ids, sorted ascending (canonical).
   std::vector<unsigned> bound_cols;
+  // Parallel to bound_cols (D2.b α, HP-4): the binding source tag per bound
+  // col. Empty (or all-kRowSlot) ⇒ V-ALPHA short-circuits. A kInstanceKeySlot
+  // entry MUST have lowering==kPointTest|kSectionWalk (V-ALPHA arm A).
+  std::vector<BindingSource> bound_col_sources;
   Pred pred{Pred::kInNew};
   bool absent{false};       // polarity: membership gate ABSENT (negate) vs member
   Lowering lowering{Lowering::kFullScan};
@@ -579,6 +591,14 @@ class DROp {
   unsigned instance_store_id{~0u};         // dense per-forcing store id
   unsigned forcing_index{~0u};             // -> query.RecognizedSubgraphs()[i]
 
+  // D2.b α FOLD-side representation (HP-4 / F4-annot): the published-row
+  // positions + their parallel BindingSource tags (kInstanceKeySlot iff the
+  // position is an instance key, else kRowSlot). V-ALPHA arm B checks this
+  // multiset column-total + positive (key slots) + negative (no row column
+  // traces to an instance key).
+  std::vector<unsigned> context_cols;
+  std::vector<BindingSource> context_col_sources;
+
   // The per-arm structure (A-3). A FIXPOINT_FIRE has one arm per same-SCC delta
   // position; a SEED_FOLD/CHAIN_FOLD has exactly one. Empty for the per-table
   // families (claim/retire/rederive/filter/sweep) and the negate gate.
@@ -756,6 +776,7 @@ class DRFlowGraph {
   std::vector<const DROp *> ProductArms(void) const;
   std::vector<const DROp *> GroupUpdates(void) const;  // R3
   std::vector<const DROp *> StateSeals(void) const;    // R3
+  std::vector<const DROp *> SubgraphInstances(void) const;  // D2.b (kSubgraphInstantiate)
   // R1c: every op of one kind, in construction order.
   std::vector<const DROp *> OpsOfKind(DROpKind kind) const;
 
