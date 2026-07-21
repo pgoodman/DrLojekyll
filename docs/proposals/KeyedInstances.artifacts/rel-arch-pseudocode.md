@@ -8,6 +8,14 @@ ExtendEagerProcedure, Stratum.cpp:1909 LowerIngestFold), with the Rel
 path expressed as DIFFS on it. SINGLE-PASS: the §9-Rel epoch's opening
 fleet re-verifies this against code (per the house precedent) before
 building on it — it is the epoch's seed, not its ground truth.
+RE-VERIFIED 2026-07-21 at tip 5813ab8a by the Rel epoch-open fleet
+(3 seed-unread derivation lanes + 4 seed-read verifiers + xhigh
+consolidator; KeyedInstances.md §20(E)): SOUND-WITH-ERRATA, corrections
+E-87/E-88/E-89/E-90/E-91/E-92/E-95/E-96 applied IN PLACE below (each
+marked at its site). The §2 seam pseudocode, the four seam artifacts,
+the cut-successor/AnyCutSuccessorDR lock-step, and the §3 Rel-diff
+structure all HELD; the errata were navigation/attribution/figure
+drift only.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -22,7 +30,8 @@ building on it — it is the epoch's seed, not its ground truth.
                 # ... ApplyDemandTransform (stamps GuardAnnotations +
                 #     RecognizedSubgraphs pre-CSE — D1.a) -> Optimize ->
                 #     IdentifyInductions (det_seq) -> ... -> Stratify
-      program = Program::Build(query, log, first_id, policy)
+      program = Program::Build(query, log, first_id, policy,
+                               demand_instance)          # E-91
                 # fences pre-pass (cyclic/recursive-content/diff-input
                 #     under -demand-instance — D2.b)
                 # BuildStratumPhases:                    AUTHORITY A
@@ -31,8 +40,9 @@ building on it — it is the epoch's seed, not its ground truth.
                 #   -> V-PRED-XCHECK / V-INGEST-XCHECK    <- seam check
                 #   -> Lower{DRFlow,DRRounds,CommitSweeps,GroupUpdate,
                 #      SubgraphInstance}                 # emission
-                # BuildEagerProcedures:                  AUTHORITY B
+                # BuildEntryProcedure (Procedure.cpp:725): AUTHORITY B
                 #   per IO: ExtendEagerProcedure -> the eager descent
+                #   (E-87: was misnamed "BuildEagerProcedures")
       dumps; codegen.
 
 ## §2. AUTHORITY B — the hand-coded eager web (what Rel dissolves)
@@ -47,13 +57,17 @@ building on it — it is the epoch's seed, not its ground truth.
           # flow, censused, V-INGEST-XCHECK'd), but they are LOWERED HERE,
           # at the original walk position, for id-stream identity.
           for op in MakeStageOneIngestFolds(message, receive, table):
-            LowerIngestFold(...)     # Stratum.cpp:1909 — RETURNS the
-                                     # UPDATECOUNT cursor with an EMPTY
-                                     # body; INGEST-CURSOR-SHAPE guards it
+            LowerIngestFold(...)     # Stratum.cpp:1909 — E-88: on THIS
+                                     # side the fold body IS the queue
+                                     # VECTORAPPEND (:1962-1975) and the
+                                     # returned cursor is DISCARDED
+                                     # (Procedure.cpp:54-59) — no guard
           continue                   # consumers run in stratum phases (A)
         if receive is table-backed monotone:
           op = MakeMonotoneIngestFold(...)   # single payload authority
-          cursor = LowerIngestFold(op, vec)
+          cursor = LowerIngestFold(op, vec)  # E-88: HERE the cursor body
+              # is EMPTY (the HOLE) and INGEST-CURSOR-SHAPE guards it
+              # (Procedure.cpp:79-93) — monotone-only properties
           BuildEagerInsertionRegions(..., cursor)   # THE HOLE FILLED by B
         else:  # table-less monotone receive
           # E-42: a VECTORLOOP shim minted from NO DR-IR op — the one
@@ -67,8 +81,10 @@ building on it — it is the epoch's seed, not its ground truth.
       (parent, table, last_table) = InTryInsert(...)  # the fold: an
           # UPDATECOUNT crossing on view's table, if table-backed
       par = new PARALLEL under parent
-      if table differential && !induction-owned:
+      if a fold happened this call (parent != parent_)
+         && table differential && !induction-owned:         # E-89:
         par += AppendViewTupleToVector(table's kAddQueue)   # park for (A)
+            # full predicate Build.cpp:867-868
       any_cut = false
       for succ in succs:                       # THE CUT-SUCCESSOR TEST
         # REPLICATED on the DR side as AnyCutSuccessorDR /
@@ -90,7 +106,9 @@ building on it — it is the epoch's seed, not its ground truth.
       dispatch on view kind:                   # the SYNTAX-DIRECTED WALK
         JOIN w/ pivots  -> BuildEagerJoinRegion      # index-probe loop
         JOIN w/o pivots -> BuildEagerProductRegion
-        MERGE inductive -> BuildEagerInductiveRegion # fixpoint shell
+        MERGE inductive -> BuildEagerInductiveRegion # feeds induction
+                           # input vecs (round shells are Authority A —
+                           # LowerDRRounds; E-92)
         MERGE plain     -> BuildEagerUnionRegion
         AGG | KVINDEX   -> return                    # chain-breaker: (A)
         MAP pure        -> BuildEagerGenerateRegion  # functor call
@@ -132,7 +150,8 @@ building on it — it is the epoch's seed, not its ground truth.
       NEGATE gate, SELECT rebind), each op carrying the walk position so
       LowerRelStep emits AT the original position (id-stream identity —
       the hole contract's own trick, generalized). Per step: census
-      extended day one; byte-identity A/B across the 692-row corpus;
+      extended day one; byte-identity A/B across the 676-row corpus
+      (the FROZEN 169×4 baseline — E-90; never a live-count recompute);
       the retained N-run sweep on substrate change; the dump grows the
       op kinds (wholesale .deltarel churn is EXPECTED and is WHY OD-10
       deferred the witness irgold).
@@ -159,4 +178,5 @@ building on it — it is the epoch's seed, not its ground truth.
     only); the T2b dump law (stored fields, loud-abort spellings);
     HP-17's death-op residual EXTENDS through Rel (D3.a retires it);
     OWN-3 (the View.cpp record-comparing fold diagnostic) is a HARD
-    precondition of D3 multi-guard admission, not of Rel.
+    precondition of D3 recursive/multi-guard admission (both halves,
+    per d2b-design §OWN-3 — E-96), not of Rel.

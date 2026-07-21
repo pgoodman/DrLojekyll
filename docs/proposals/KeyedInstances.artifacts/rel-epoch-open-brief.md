@@ -4,7 +4,7 @@ This is the §9 "DeltaRel → Rel" EPOCH-OPEN BRIEF, authored per
 KeyedInstances.md §19(H)'s promotion of §9 to the top next-epoch
 candidate and §19(I)/OD-11's REL-FIRST ratification. It is the binding
 entry document for the next epoch: the charter, the acceptance criterion
-(verbatim-faithful to §19(H)), the migration ritual pins, what the
+(faithful to §19(H); E-97), the migration ritual pins, what the
 keyed-instances epoch ADDED to the Rel case, and a PRE-REGISTERED
 first-slice recommendation. The owner re-ranks and re-scopes at epoch
 open (per §18(B) NEXT-EPOCH CANDIDATES + §19(H)); nothing here is a
@@ -41,7 +41,8 @@ monotone interior has no op kinds and is invisible to the dump. The
 model's proportionality is inverted: the largest emission surface casts
 the smallest shadow.
 
-## 2. ACCEPTANCE CRITERION (verbatim-faithful to §19(H):2105-2112)
+## 2. ACCEPTANCE CRITERION (faithful to §19(H):2105-2112 — an
+## elaboration, not a quotation; E-97)
 
 §9 is DONE when THE TWO-AUTHORITY SEAM IS DELETED — the four artifacts
 of the seam all become internal invariants of ONE mint+lower path:
@@ -129,7 +130,9 @@ identity gates, STARTING FROM THE WITNESS'S OWN TWO-JOIN WEB
 monotone eager web already in the suite, and the one whose nested arm is
 under the eqgate). The step kinds to migrate (§9:1174-1179): TUPLE
 forwards, MAP functor calls, CMP filters, JOIN index-probe loops, NEGATE
-gates, terminal inserts/vector appends; then the E-42 VECTORLOOP shim.
+gates, terminal inserts/vector appends, plus the two plumbing arms
+(plain-MERGE unions, SELECT rebinds — the Build.cpp:1084 dispatch has
+EIGHT monotone arms; E-95); then the E-42 VECTORLOOP shim.
 Suggested order: the simplest pure-forward kinds first (TUPLE, terminal
 insert), earning the census/dump/gate machinery on a trivial shape,
 before the JOIN index-probe loop (the shape where the F17/F18 class of
