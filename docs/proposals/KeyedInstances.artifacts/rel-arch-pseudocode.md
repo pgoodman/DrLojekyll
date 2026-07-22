@@ -252,13 +252,16 @@ re-verifies §4/§5 against code before R2.
 
 ## §5. THE PATH FORWARD AS DIFFS ON THE MOLD (§3's R1..Rk, updated)
 
-    R2 (NEXT; owner re-ranks scope at its ritual head): the CMP filter
-      arm (BuildEagerCompareRegions, Compare.cpp) + the MAP functor-call
-      arm (BuildEagerGenerateRegion, Generate.cpp) as marker ops on the
-      M1-M8 mold. Per-slice decisions owed: payload (what identity a
-      CMP/MAP op records — comparator spelling? functor + binding
-      pattern?), grammar productions (E-71 PRE-CODE), and whether the
-      MAP arm's impure-functor reject path needs a disposition. Expect
+    R2 — DONE (2026-07-22, §20(J); contracts r2-design.md ADJ-R2-0..8 +
+      r2-desired-states.md DS-R2-1..9): kEagerCompare(20)/
+      kEagerGenerate(21) on the mold; NO new payload field (cmp=/functor=
+      re-derive from eager_view); MAP mint pure-arm-only; census 22;
+      map_3 the third carrier (RAT-8, deltarel-opt-only pin);
+      IsEagerMarkerKind the ONE membership predicate. [Original owed
+      decisions, all ruled: payload = re-derived view operator /
+      functor name+arity; grammar E-71 pre-code adjudicated; impure
+      disposition = no mint, upstream reject.] The original expectation
+      text (retained for lineage): Expect
       the two-carrier .deltarel golden churn — E-101: CENSUS-LINE ONLY
       on the existing carriers (census renders zero-count kinds, so
       20->22 churns both; but NEITHER carrier contains a CMP or MAP
