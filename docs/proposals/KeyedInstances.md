@@ -3169,10 +3169,27 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         a4b807dc (pre-R2, correct as-written) — NOT renumbered; §4.1
         + this entry are the live anchors. THE M9 SWEEP (209 files /
         194 dumps, dataflow-layer proxy — CF InductionGroupId
-        unprobed, caveat carried): plain-MERGE union = ZERO
-        witnesses corpus+data (74/74 class=monotone merges carry
-        `; cycle` successors) — the R3 union arm NEEDS a RAT-8
-        carrier; SELECT rebind arm = WITNESSED by the unit-condition
+        unprobed, caveat carried): plain-MERGE union — the fleet's
+        "ZERO witnesses" statement was WRONG (E-106, ORCHESTRATOR-
+        caught post-consolidation: the sweep's category (a) filtered
+        class=monotone ONLY — an orchestrator prompt-spec defect the
+        whole fleet inherited, the E-101 lesson repeating one layer
+        up). CORRECT statement: zero TABLE-BACKED-monotone acyclic
+        merges (74/74 class=monotone merges carry `; cycle`
+        successors), but TABLE-LESS acyclic merges are PLENTIFUL —
+        47 corpus hits (merge_1..6, compare_6 ×3, select_2/4,
+        fibonacci_iterative, the transitive_closure family, …) +
+        data/ twins — and a table-less merge is never deletion-
+        capable, hence never cut, hence walk-reached (InTryInsert
+        no-fold pass-through; orchestrator-verified at merge_1's
+        ^merge.18 + the dispatch arm). The R3 union arm needs NO new
+        .dr — an .irgold sidecar on an existing green case (RAT-8
+        first-ever .deltarel seeding) suffices; compare_6 would
+        witness union blocks AND the scarce gt/lt spellings in one
+        carrier. The kEagerUnion table= arm (table-BACKED union
+        marker) stays corpus-unwitnessed either way (the map_3
+        all-table-less precedent). SELECT rebind arm = WITNESSED by
+        the unit-condition
         shape (booleans, booleans_diff, elim-cond-cycle-simple,
         prove_constant + data/ conditions_to_bools; raw select-node
         counts OVERSTATE — recv selects are walk roots); NEGATE =
@@ -3212,4 +3229,5 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         :222/:1351; E-100's R-a2 attributions EXACT; E-42 shim
         persists op-less (Procedure.cpp:94-104). Full record: session
         scratchpad fleet-r3open/consolidated.md (disposable; THIS
-        entry is binding). Errata continue at E-106.
+        entry is binding; the M9 plain-merge paragraph above is
+        CORRECTED in place per E-106). Errata continue at E-107.
