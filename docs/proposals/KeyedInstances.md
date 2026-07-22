@@ -3120,3 +3120,96 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     count oracle + ClassifyEagerSink replica carry unchanged (R-final).
     NEXT: R3..Rk per brief §5 as amended (MERGE-union/SELECT/NEGATE, then
     R-JOIN with the NOT-RULED pivot-belt fold, R-E42, R-final).
+
+(K) R3-OPEN RE-VERIFICATION RECORD (2026-07-22, tip b8314dc0; the
+    session-open items (0)+(1) EXECUTED per §20(J)'s NEXT).
+    (0) Frozen A/B baselines RE-SNAPSHOTTED from tip into the session
+        scratchpad BEFORE any code (debug c0a8a819… / release
+        958ddf8b…; both presets rebuilt clean) — the a4b807dc-era
+        snapshots retired as STALE post-R2. ASAN cadence stands
+        per-diff (§19(F)/(J)); the tip is docs-only atop 056d2f96,
+        whose ×2 both-surface sweeps are the standing green.
+    (1) §20(I)/(J) + rel-arch-pseudocode.md §4/§4.1/§5 FLEET-RE-
+        VERIFIED (house precedent): 3 seed-UNREAD opus derivation
+        lanes (Build.cpp dispatch/mints+wrappers; DeltaRel.cpp ctors/
+        IsEagerMarkerKind/EAGER_WEB/key_of/A.6(c); Format.cpp render +
+        golden conformance) + 3 seed-read adversarial verifiers
+        (§4+§4.1; §5+§20(J); §20(I)+R-a2) + 2 sonnet mechanical lanes
+        (carrier counts/census/hexdump pins; the M9 corpus-wide
+        reachability sweep) + 1 xhigh consolidator (9 agents, ~636k
+        tokens; every candidate adjudicated AT the code). The E-62
+        tripwire re-grepped by the ORCHESTRATOR personally: CLEAN
+        (zero out-of-lib body_ops/output_ops readers; pinned_order
+        neighbors = the standing Stratum.cpp:1073 comment + the RAT-3
+        InstanceOrderTest fixture). The carrier-golden referee
+        EXECUTED by the orchestrator personally: ALL EIGHT pinned
+        golden surfaces regenerate BYTE-IDENTICAL at tip (tc
+        h/ir/df/deltarel, symrec ir/df/deltarel, map_3 deltarel).
+        VERDICT: SOUND-WITH-ERRATA — zero code or design defects;
+        four errata, ALL LOW/COSM, ALL anchor-line drift confined to
+        §4's R1-era body (cause: R2 inserted the IsMap/IsCompare
+        dispatch arms and the two EAGER_WEB cases, shifting lines;
+        §4.1's own anchors were stamped at the R2 tip and HELD),
+        applied IN PLACE (each site tagged):
+          E-102 LOW  §4 M4: EAGER_WEB enrollment tail-append is
+                     DeltaRel.cpp:2424-2446; the cited :2389-2396 now
+                     lands in the UNRELATED DRRound test_vec build
+                     (misdirection, not a slip — the worst of the
+                     four).
+          E-103 COSM §4 R1 dispatch: mint sites :1254 (TUPLE) /
+                     :1263 (INSERT); MessageOfInsertOrNull :1262
+                     (+29 drift; E-98's own landed ":1233" was
+                     re-staled by R2 — an erratum can rot).
+          E-104 COSM §4 M6: A.6(c) recount head = :3454/:3461;
+                     ":3405" sits INSIDE the count-expect() lambda.
+          E-105 COSM §4 M7: EagerSinkName def = Format.cpp:128
+                     (:125-127 its doc-comment; E-99's :126 re-
+                     settled).
+        §20(I) carries the same drift family but self-declares tip
+        a4b807dc (pre-R2, correct as-written) — NOT renumbered; §4.1
+        + this entry are the live anchors. THE M9 SWEEP (209 files /
+        194 dumps, dataflow-layer proxy — CF InductionGroupId
+        unprobed, caveat carried): plain-MERGE union = ZERO
+        witnesses corpus+data (74/74 class=monotone merges carry
+        `; cycle` successors) — the R3 union arm NEEDS a RAT-8
+        carrier; SELECT rebind arm = WITNESSED by the unit-condition
+        shape (booleans, booleans_diff, elim-cond-cycle-simple,
+        prove_constant + data/ conditions_to_bools; raw select-node
+        counts OVERSTATE — recv selects are walk roots); NEGATE =
+        plentiful (17 monotone hits, negate_1..6 et al.) but @never
+        THIN (sole witness negate_6, rendered as prose "; never
+        negates", no @never token) + PIN-3 stands; compare spellings
+        eq=61/lt=33/neq=24/gt=3 (gt scarcest: compare_6 table-less +
+        reconverge_1 differential; only eq golden-pinned).
+        FORWARD-LOOKING CODE NOTES (recorded, out of doc-set scope,
+        R3-slice inputs): Build.cpp:1224 impure-MAP arm is a bare
+        assert(false) (defense-in-depth behind the real :1373-1375
+        upstream reject — NDEBUG-silent if that reject regressed);
+        Format.cpp:927 per-op generic render default silently
+        mis-renders an unhandled kind (unlike the EAGER_WEB/A.6(c)/
+        DROpKindName/census abort discipline) — the next marker
+        slice MUST add its dedicated render case per M7; three stale
+        in-code comment line-refs (Format.cpp:864, Procedure.cpp:
+        264-265, DeltaRel.cpp:2413-2415's carrier-specific "op.0/
+        op.1" phrasing — the unconditional invariant is "tail-append
+        shifts nothing"). VERIFIED-CLEAN (held): the four mint arms +
+        effect-free ctors :1279/:1290/:1317/:1328; MAP pure-arm-only
+        mint; CMP wrapper forwards neither pred_view nor last_table;
+        M2' no-payload-field (EmittedEagerOp = {kind,view,table,sink,
+        message}); M6' IsEagerMarkerKind :1306 with EXACTLY two
+        callers (:3462 + :4424); EAGER_WEB 4-way + loud-abort;
+        A.6(c) 4-way switch + honest abort + DS-ADJ-7 merged-model
+        match; census kAllKinds[22] zero-count-rendering + totality
+        abort; counts tc 12F/2I + symrec 7F/1I + map_3 3F/3I/1C/3G;
+        DS-ADJ-1 cross-knob (tc 16/16/24/24, symrec 9/9/14/14, map_3
+        10/10/18/18); sign=· c2 b7 + cmp=eq + functor=add_i32/3
+        hexdump-confirmed; ADJ-S13/S14 .find() discipline; Union.cpp
+        49 lines / Negate.cpp 105 lines / SELECT arm assert-IsInsert
+        :1239; MERGE-inductive round shells Authority A (LowerDRRounds
+        Stratum.cpp:1801); R2 commit = exactly 3 goldens + 1 sidecar,
+        Compare.cpp/Generate.cpp byte-unchanged; triple-copy
+        eq/neq/lt/gt at DeltaRel/Format.cpp:150 + DataFlow/Format.cpp
+        :222/:1351; E-100's R-a2 attributions EXACT; E-42 shim
+        persists op-less (Procedure.cpp:94-104). Full record: session
+        scratchpad fleet-r3open/consolidated.md (disposable; THIS
+        entry is binding). Errata continue at E-106.

@@ -28,6 +28,14 @@ DONE; §5's R3..Rk re-expressed as per-slice diff blocks ON THE AMENDED
 MOLD with the E-101 carrier-coverage requirement made standing.
 SINGLE-PASS: the next session's fleet re-verifies §4/§4.1/§5 against
 code before R3.
+RE-VERIFIED 2026-07-22 at tip b8314dc0 by the R3-open fleet (3 seed-
+unread derivation lanes + 3 seed-read verifiers + 2 mechanical lanes +
+xhigh consolidator; KeyedInstances.md §20(K)): SOUND-WITH-ERRATA, zero
+code or design defects; anchor corrections E-102..E-105 applied IN
+PLACE below (each marked at its site — all four are §4-R1-body line
+drift caused by R2's dispatch-arm insertions; §4.1's own anchors were
+stamped at the R2 tip and HELD). The M9 carrier-coverage/reachability
+sweep result is recorded in §20(K) and noted at §5's R3/R4 blocks.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -211,12 +219,14 @@ code before R3.
 
     R1 (§20(H); contract r1-design.md): §2's dispatch table is AMENDED —
     the TUPLE and INSERT arms are now MODELED OPS. The dispatch
-    (Build.cpp BuildEagerRegion, mint sites :1225/:1234):
+    (Build.cpp BuildEagerRegion, mint sites :1254/:1263 — E-103: R2
+    inserted the IsMap/IsCompare arms ABOVE these, +29 drift):
 
       TUPLE  -> op = MakeEagerForwardOp(view, ModelTableOrNull(view))
                 LowerRelStep_Forward(op, ...)       # Build.cpp:1138
       INSERT -> message = MessageOfInsertOrNull(insert)   # ONCE at the
-                # mint site (:1233; helper :1113, ADJ-S13 note :1092 — E-98)
+                # mint site (:1262 — E-103; helper :1113, ADJ-S13 note
+                # :1092 — E-98)
                 op = MakeEagerInsertOp(view, ModelTableOrNull(view),
                        ClassifyEagerSink(ctx, insert, message), message)
                 LowerRelStep_Insert(op, ...)        # Build.cpp:1146
@@ -235,14 +245,17 @@ code before R3.
          identity is MECHANICAL (same args, same walk moment).
       M4 inventory enrollment: BuildDRInventory re-invokes the ctor from
          the recorded stream, TAIL-APPENDED strictly after the ingest
-         folds (DeltaRel.cpp:2389-2396; ADJ-S2 BINDING — folds keep
+         folds (DeltaRel.cpp:2424-2446 — E-102: the pre-R2 ":2389-2396"
+         now lands in the UNRELATED DRRound test_vec build; ADJ-S2
+         BINDING — folds keep
          op.0/op.1; the walk is the reachability authority until the
          R-final direction flip).
       M5 key_of lead-0 off-lattice; ORDER LAW (op_table_id, sign, ctor):
          table-less eager ops LEAD the dump; sign-0 eager before each
          table's sign-+1 ingest fold.
       M6 census DAY ONE + the structural recount appended after the
-         expect() lines (DeltaRel.cpp:3405ff): kind<->view-kind + table
+         expect() lines (DeltaRel.cpp:3454/3461 — E-104: ":3405" sits
+         INSIDE the count-expect() lambda): kind<->view-kind + table
          == the union-find MERGED model (DS-ADJ-7 — the RENDER AUTHORITY
          is view_to_model->FindAs, NEVER the .df per-view attribute); NO
          count oracle until R-final (ADJ-S12; the ADJ-S10 bless-time
@@ -251,7 +264,8 @@ code before R3.
          (header + args: only — no reads/effects/spine sublines; table=
          rendered ONLY when non-null, tid() has no null guard; new
          payload spellings get their own loud-abort name table, e.g.
-         EagerSinkName Format.cpp:126 — E-99).
+         EagerSinkName Format.cpp:128 — E-99/E-105: the def re-settled;
+         :125-127 are its doc-comment).
       M8 helpers are .find()-ONLY on Context maps (ADJ-S13/S14 —
          operator[] on publish_vecs/view_to_model is FORBIDDEN in mint
          paths); identity extractions happen ONCE and feed all
@@ -347,7 +361,14 @@ code before R3.
         reached ONLY from unit-condition INSERTs (conditions_to_bools
         shape) — check reachability, not just view presence, before
         scoping (a .df `select` node that is a message receive is a
-        walk ROOT, not this arm).
+        walk ROOT, not this arm). [M9 SWEEP EXECUTED 2026-07-22,
+        §20(K): plain-MERGE union has ZERO corpus/data witnesses —
+        all 74 class=monotone merges carry `; cycle` successors
+        (dataflow-layer proxy; CF InductionGroupId unprobed) — the
+        union arm NEEDS a RAT-8 carrier; the SELECT arm IS witnessed
+        by the unit-condition shape: booleans, booleans_diff,
+        elim-cond-cycle-simple, prove_constant (+ data/
+        conditions_to_bools).]
       R4 NEGATE gate (BuildEagerNegateRegion, Negate.cpp — 105 lines).
         Payload per M2': @never-ness and the negated table are
         derivable from the view (QueryNegate) — expect bare marker +
@@ -355,7 +376,12 @@ code before R3.
         STANDING BLOCKER for any negate-carrying .deltarel bless
         (producer-side/table-level class refinement owed first —
         check PIN-3 §19 before scoping); M9: find/produce a monotone
-        negate carrier.
+        negate carrier. [M9 SWEEP 2026-07-22, §20(K): monotone-negate
+        witnesses PLENTIFUL (17 class=monotone hits across ~20 green
+        cases, negate_1..6 et al.); @never THIN — sole witness
+        negate_6 ^negate.8, rendered as the prose "; never negates
+        <target>", NOT an @never token; PIN-3 stands as the bless
+        blocker.]
       MERGE-INDUCTIVE is NOT a marker slice (the round shells are
         Authority A already — E-92); only its induction-input FEED may
         warrant a marker, decided at its own ritual.
