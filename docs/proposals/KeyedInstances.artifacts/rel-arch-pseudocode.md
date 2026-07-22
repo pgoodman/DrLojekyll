@@ -21,6 +21,13 @@ marker-op mold M1-M8 (orchestrator-read anchors), §5 = the path forward
 as diffs ON THE MOLD (supersedes §3's R-a2/R1 blocks, which are DONE;
 §3's R-final block stands). SINGLE-PASS: the next session's fleet
 re-verifies §4/§5 against code before R2.
+RE-AMENDED 2026-07-22 at tip 056d2f96 (post R2, §20(J)): §4.1 = the R2
+AS-LANDED MOLD DELTAS M2'/M6'/M7'/M9 (orchestrator-read anchors at the
+R2 tip — the same session that landed R2 wrote this); §5's R2 block
+DONE; §5's R3..Rk re-expressed as per-slice diff blocks ON THE AMENDED
+MOLD with the E-101 carrier-coverage requirement made standing.
+SINGLE-PASS: the next session's fleet re-verifies §4/§4.1/§5 against
+code before R3.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -250,6 +257,60 @@ re-verifies §4/§5 against code before R2.
          paths); identity extractions happen ONCE and feed all
          consumers.
 
+## §4.1 R2 AS-LANDED MOLD DELTAS (2026-07-22, tip 056d2f96; §20(J);
+##      contracts r2-design.md ADJ-R2-0..8 + r2-desired-states.md
+##      DS-R2-1..9 — anchors read at the R2 tip by the landing session)
+
+    The R2 dispatch cuts (Build.cpp): CMP :1227-1231 (wrapper :1157 —
+    forwards NEITHER pred_view NOR last_table, the builder's own
+    signature) and MAP :1211-1220 (wrapper :1166; mint in the IsPure()
+    TRUE arm ONLY — impure maps reject upstream pre-walk, ADJ-R2-3).
+    Ctors DeltaRel.cpp:1317/:1328; EAGER_WEB 4-way switch WITH loud-
+    abort default :2425-2447; render cases Format.cpp:901/:913;
+    ComparisonOperatorName :148. Mold deltas every future slice
+    inherits:
+
+      M2' NO-PAYLOAD-FIELD RULE (the R2 headline, ADJ-R2-1/2): when an
+          op's render identity is a PURE FUNCTION of the stored
+          eager_view (CMP operator via QueryCompare::Operator(); MAP
+          functor via QueryMap::Functor()), it is RE-DERIVED at Format
+          time (the agg_name precedent) — never stored. A field is
+          stored ONLY when derivation needs context unavailable at
+          Format (the kEagerInsert sink/message precedent). This keeps
+          EmittedEagerOp closed and the round-trip lossless by
+          construction.
+      M6' ONE MEMBERSHIP PREDICATE: IsEagerMarkerKind
+          (DeltaRel.cpp:1306) is the SOLE spelling of "is an eager
+          marker", shared by the A.6(c) guard (:3462) and the key_of
+          lead-0 branch (:4424). A new marker kind extends the
+          PREDICATE and both sites follow. The A.6(c) kind->view-kind
+          dispatch is a SWITCH with a loud-abort default (a fifth kind
+          that reaches it un-handled aborts honestly) — mirroring the
+          EAGER_WEB default (ADJ-R2-8a). Sites a new kind still edits
+          by hand: the enum tail, the ctor pair, the mint cut, the
+          EAGER_WEB case, the A.6(c) case, DROpKindName, kAllKinds,
+          the render case.
+      M7' SECOND NAME-TABLE PRECEDENT: a new payload spelling gets its
+          own loud-abort table (ComparisonOperatorName, Format.cpp:148
+          — the EagerSinkName mold), TOTAL BY CONSTRUCTION + abort
+          tail (-Wswitch is WARNING-ONLY in the presets: no -Werror;
+          the tail is the enforcement, d2-grammar finding). Reuse the
+          .df house spelling for cross-surface consistency — but NOTE
+          the accepted-deferred residual: eq/neq/lt/gt now has THREE
+          hand copies (two inline in lib/DataFlow/Format.cpp);
+          unification is a dedicated hygiene diff (touches the .df
+          emitter, never mid-slice).
+      M9  CARRIER COVERAGE IS A PER-SLICE DESIGN INPUT (the E-101
+          lesson, now STANDING): before scoping a slice, CHECK which
+          committed carriers contain the target view kinds (grep the
+          .df goldens' node-prefix histogram — the spelling is
+          `compare `/`map `, NOT `cmp`). If none, the slice needs a
+          new/extended carrier (RAT-8 seeding, sidecar on an
+          all-4-modes-clean golden case) or its blocks land corpus-
+          unwitnessed (the ADJ-S5 residual class — declined for R2).
+          Census renders zero-count kinds, so kind-set growth churns
+          EVERY carrier's census line regardless.
+
 ## §5. THE PATH FORWARD AS DIFFS ON THE MOLD (§3's R1..Rk, updated)
 
     R2 — DONE (2026-07-22, §20(J); contracts r2-design.md ADJ-R2-0..8 +
@@ -271,12 +332,33 @@ re-verifies §4/§5 against code before R2.
       via RAT-8, or the blocks land corpus-unwitnessed (the ADJ-S5
       residual class). Same bless ritual (ADJ-S7 referee / ADJ-S10
       count read).
-    R3..Rk: MERGE-union (Union.cpp), SELECT rebind (the §2 rebind+
-      recurse block), NEGATE gate (Negate.cpp) — same mold; NEGATE
-      payload likely carries the negated table + @never-ness. MERGE-
-      INDUCTIVE is NOT a marker slice (the round shells are Authority A
-      already — E-92); only its induction-input FEED may warrant a
-      marker, decided at its own ritual.
+    R3..Rk (each a diff on the AMENDED mold M1-M9; owner re-ranks
+      scope/pairing at each ritual head):
+      R3 MERGE-union (BuildEagerUnionRegion, Union.cpp — 49 lines) +
+        SELECT rebind (the §2 dispatch's IsSelect block: bind INSERT
+        input cols -> recurse; NO builder file). Owed decisions:
+        payload (a plain union has little identity beyond the view —
+        likely bare markers per M2'; SELECT's marker may record the
+        unit-condition-ness); whether SELECT-rebind is even a marker
+        (it mints no region of its own — the arm is pure plumbing; a
+        marker models the WALK STEP, the R1 forward precedent says
+        yes); M9 carrier coverage: the existing carriers HAVE merges/
+        selects in their .df, but the dispatch's IsSelect arm is
+        reached ONLY from unit-condition INSERTs (conditions_to_bools
+        shape) — check reachability, not just view presence, before
+        scoping (a .df `select` node that is a message receive is a
+        walk ROOT, not this arm).
+      R4 NEGATE gate (BuildEagerNegateRegion, Negate.cpp — 105 lines).
+        Payload per M2': @never-ness and the negated table are
+        derivable from the view (QueryNegate) — expect bare marker +
+        re-derived render tokens; the PIN-3 class= refinement is a
+        STANDING BLOCKER for any negate-carrying .deltarel bless
+        (producer-side/table-level class refinement owed first —
+        check PIN-3 §19 before scoping); M9: find/produce a monotone
+        negate carrier.
+      MERGE-INDUCTIVE is NOT a marker slice (the round shells are
+        Authority A already — E-92); only its induction-input FEED may
+        warrant a marker, decided at its own ritual.
     R-JOIN (LAST — the F17/F18 shape): the index-probe loop (Join.cpp),
       CARRYING the NOT-RULED pivot-equality-belt fold candidate (brief
       §5: the monotone body TUPLECMP + delta side_key_eqs re-check what

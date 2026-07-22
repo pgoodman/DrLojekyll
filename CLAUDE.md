@@ -229,19 +229,24 @@ exact signatures before writing a driver.
   the PRINCIPAL (not the only) remaining hand-coded emission surface — the
   table-less monotone receive also hand-mints a VECTORLOOP shim in
   `ExtendEagerProcedure` (`Procedure.cpp`) via no DR-IR op (E-42). Since
-  the R1 slice of the Rel epoch, the descent's TUPLE-forward and
-  terminal-INSERT arms are MODELED: effect-free, knob-independent
-  `kEagerForward`/`kEagerInsert` marker ops minted at the dispatch site
-  and lowered in place by `LowerRelStep_*` wrappers calling the untouched
-  region builders (zero emission change; the walk is the reachability
-  authority, enrollment tail-appends after the ingest folds so they keep
-  op.0/op.1; render `table=` comes from the union-find MERGED model).
-  Every program's `.deltarel` now shows its eager forwards/inserts; TWO
-  `.deltarel` goldens pin the surface (`demand_tc_witness` +
-  `symrec_tie_1`, both opt-mode via their `.irgold` sidecars). The
-  remaining unmodeled arms (CMP/MAP/JOIN/MERGE-union/SELECT/NEGATE +
-  E-42) migrate one slice at a time (see
-  KeyedInstances.artifacts/rel-arch-pseudocode.md §4-§5).
+  the R1/R2 slices of the Rel epoch, the descent's TUPLE-forward,
+  terminal-INSERT, CMP-filter and MAP functor-call arms are MODELED:
+  effect-free, knob-independent `kEagerForward`/`kEagerInsert`/
+  `kEagerCompare`/`kEagerGenerate` marker ops minted at the dispatch
+  site and lowered in place by `LowerRelStep_*` wrappers calling the
+  untouched region builders (zero emission change; the walk is the
+  reachability authority, enrollment tail-appends after the ingest
+  folds so they keep op.0/op.1; render `table=` comes from the
+  union-find MERGED model; the CMP operator / MAP functor carry NO
+  stored payload — `cmp=`/`functor=` re-derive from the stored
+  `eager_view` at render time; `IsEagerMarkerKind` (DeltaRel.cpp) is
+  the ONE membership predicate for the marker family). Every program's
+  `.deltarel` shows its eager markers; THREE `.deltarel` goldens pin
+  the surface (`demand_tc_witness` + `symrec_tie_1` + `map_3` — map_3
+  is the table-less-ingest carrier witnessing `cmp=`/`functor=`; all
+  opt-mode via their `.irgold` sidecars). The remaining unmodeled arms
+  (JOIN/MERGE-union/SELECT/NEGATE + E-42) migrate one slice at a time
+  (see KeyedInstances.artifacts/rel-arch-pseudocode.md §4-§5).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —
