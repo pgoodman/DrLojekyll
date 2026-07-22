@@ -152,6 +152,58 @@ TEST(InstanceStore, SealSwapsBuffersAndSnapshotsOccupancy) {
   st.DebugValidate();
 }
 
+// Edge-triggered rebuild (band-(a2) [R-REBUILD-a2] simulation): an edge arrives
+// for a STANDING key with NO new demand seed. a2 gates on FindInstance (the
+// NON-adding lookup) != kNoInstance, full-rescans current, and Seals clean;
+// band-(b) publishes exactly the born delta. A stray/undemanded key is
+// FindInstance==kNoInstance and skips — this arm pins that skip (ADJ-R4: the
+// skip is behaviorally silent in the eqgate witness, covered ONLY here).
+TEST(InstanceStore, EdgeTriggeredRebuildSealsCleanPublishesBorn) {
+  Store st(MallocAllocator());
+
+  // Epoch 1 (birth): key g demanded, current rebuilt = {10,20}, sealed.
+  const uint32_t g = st.FindOrAddInstance(KeyX{1});
+  st.TouchCurrent(g).TryAdd(Nbr{10});
+  st.Current(g).TryAdd(Nbr{20});
+  st.Seal();
+  ASSERT_EQ(Drain(st.Frozen(g)), (std::set<int32_t>{10, 20}));
+  ASSERT_EQ(st.Current(g).NumRows(), 0u);
+  ASSERT_TRUE(st.SealedOccupied(g));
+
+  // Epoch 2 simulates band-(a2): an edge (1,30) arrives, NO demand re-seed. The
+  // a2 gate is the NON-adding FindInstance — it must find the standing g (never
+  // FindOrAddInstance, which would over-materialize a stray edge, HP-5).
+  const uint32_t iid = st.FindInstance(KeyX{1});
+  ASSERT_NE(iid, kNoInstance);          // live-demanded gate fires.
+  ASSERT_EQ(iid, g);
+  ASSERT_FALSE(st.TouchedFlag(iid));    // not yet touched this epoch.
+
+  // The FORBIDDEN incremental path is a partial TryAdd; a2 does the SAME FULL
+  // rescan as a1 — re-add the whole keyed relation {10,20} PLUS the new 30.
+  auto &cur = st.TouchCurrent(iid);
+  cur.TryAdd(Nbr{10});
+  cur.TryAdd(Nbr{20});
+  cur.TryAdd(Nbr{30});
+
+  // band-(b) born set = current rows absent from the sealed frozen buffer.
+  std::set<int32_t> born;
+  const auto frz_rows = Drain(st.Frozen(iid));
+  for (int32_t v : Drain(st.Current(iid))) {
+    if (!frz_rows.count(v)) {
+      born.insert(v);
+    }
+  }
+  ASSERT_EQ(born, (std::set<int32_t>{30}));   // exactly the new edge's target.
+
+  st.Seal();                                  // frozen ⊆ current -> belt PASSES.
+  ASSERT_EQ(Drain(st.Frozen(iid)), (std::set<int32_t>{10, 20, 30}));
+  st.DebugValidate();
+
+  // The stray/undemanded-key skip arm (ADJ-R4): an edge for a never-demanded
+  // key K yields FindInstance==kNoInstance -> band-(a2) continues (no birth).
+  ASSERT_EQ(st.FindInstance(KeyX{999}), kNoInstance);
+}
+
 // RecycleCurrent is unconditional + idempotent: twice == once (same-epoch
 // demand flap); Touch stays append-once; a subsequent rebuild + monotone Seal
 // is coherent.

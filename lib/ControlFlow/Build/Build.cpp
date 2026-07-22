@@ -1288,10 +1288,9 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   //     TC) make it unlowerable in the R-MONO slice.
   //   FENCE (iii) differential-summarized-input — a deletable input (R-DIFF is
   //     D3.a).
-  // FENCE (ii) mid-stream monotone-input-add is NOT a compile reject in the
-  // a1-only regime (RAT-6): it is indistinguishable at compile time from the
-  // accepted witness, so it ships as the DOCUMENTED "edge-after-demand" feature
-  // gap (CLAUDE.md, D2.c) + the birth-only witness ordering — no spurious reject.
+  // (FENCE (ii) mid-stream monotone edge-add is no longer a gap: R-a2's
+  // band-(a2) rebuilds the standing instance via a full edge-frontier rescan,
+  // so an edge-after-demand is HANDLED, not fenced — no reject here.)
   if (demand_instance) {
     const auto &annots = query.GuardAnnotations();
     std::unordered_map<unsigned, std::vector<std::pair<QueryView, unsigned>>>

@@ -857,6 +857,9 @@ class ProgramSubgraphInstanceRegion
   // BAND (a1) demand net-additions frontier (birth keys).
   DataVector DemandFrontier(void) const noexcept;
 
+  // BAND (a2) input(edge) net-additions frontier (REBUILD keys). [R-REBUILD-a2]
+  DataVector InputFrontier(void) const noexcept;
+
   // The summarized monotone input + the published answer relation.
   DataTable InputTable(void) const;
   DataTable PubTable(void) const;

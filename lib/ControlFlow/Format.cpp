@@ -659,7 +659,8 @@ OutputStream &operator<<(OutputStream &os, ProgramGroupUpdateRegion region) {
 OutputStream &operator<<(OutputStream &os,
                          ProgramSubgraphInstanceRegion region) {
   os << os.Indent() << "subgraph-instance i#" << region.StoreId()
-     << " demand " << region.DemandFrontier() << " rescan "
+     << " demand " << region.DemandFrontier() << " input "
+     << region.InputFrontier() << " rescan "
      << region.InputTable() << " -> publish " << region.PubTable() << " key@{";
   auto sep = "";
   for (auto p : region.KeyPositions()) { os << sep << p; sep = ", "; }

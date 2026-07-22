@@ -2,3 +2,7 @@ nbhd 1: 2 3 4
 nbhd 3: 5 6
 nbhd 9: 9
 nbhd 5:
+nbhd 1: 2 3 4 11
+nbhd 3: 5 6 7
+nbhd 5: 12
+nbhd 9: 9

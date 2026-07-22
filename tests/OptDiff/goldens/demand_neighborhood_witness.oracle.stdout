@@ -1,8 +1,12 @@
-ORACLE: OK (2 batches, 420 assertions)
+ORACLE: OK (6 batches, 1640 assertions)
 neighborhood	1 2
 neighborhood	1 3
 neighborhood	1 4
+neighborhood	1 11
 neighborhood	3 5
 neighborhood	3 6
+neighborhood	3 7
+neighborhood	5 12
 neighborhood	7 8
 neighborhood	9 9
+neighborhood	13 14

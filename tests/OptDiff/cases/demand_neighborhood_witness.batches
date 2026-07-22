@@ -1,8 +1,10 @@
 # demand_neighborhood_witness -- oracle input batches (the SAME add_edge stream
-# the driver sends, BIRTH-ONLY: two edge epochs, NO post-demand edge). The
-# oracle evaluates the plain (undemanded) program, so its neighborhood rows are
-# the FULL single-hop relation -- the answer-identity referee for the demand-ON
-# driver's per-key answers.
+# the driver sends). BIRTH phase: two edge epochs. R-a2 REBUILD phase: four
+# single-edge epochs (each a post-demand edge in the driver). The oracle
+# evaluates the plain (undemanded) program, so its neighborhood rows are the
+# FULL single-hop relation -- the answer-identity referee for the demand-ON
+# driver's per-key answers (demand-blind, so it gains all four rebuild rows
+# including the undemanded (13,14)).
 #
 # Batch 1: 1's first two out-edges, the 9->9 self-loop, the detached 7->8.
 batch
@@ -16,4 +18,18 @@ batch
 + add_edge 1 4
 + add_edge 3 5
 + add_edge 3 6
+end
+# R-a2 REBUILD epochs: one post-demand edge each (matches the driver's REBUILD
+# phase). (13,14) is an UNDEMANDED-key edge — demand-blind, so the oracle sees it.
+batch
++ add_edge 1 11
+end
+batch
++ add_edge 3 7
+end
+batch
++ add_edge 5 12
+end
+batch
++ add_edge 13 14
 end

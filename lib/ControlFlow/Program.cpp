@@ -752,6 +752,9 @@ unsigned ProgramSubgraphInstanceRegion::StoreId(void) const noexcept {
 DataVector ProgramSubgraphInstanceRegion::DemandFrontier(void) const noexcept {
   return DataVector(impl->demand_frontier.get());
 }
+DataVector ProgramSubgraphInstanceRegion::InputFrontier(void) const noexcept {
+  return DataVector(impl->input_frontier.get());
+}
 DataTable ProgramSubgraphInstanceRegion::InputTable(void) const {
   return DataTable(impl->input_table.get());
 }

@@ -1171,6 +1171,7 @@ class ProgramSubgraphInstanceRegionImpl final : public OP {
               uint32_t depth) const noexcept override;
 
   UseRef<VECTOR> demand_frontier;  // BAND (a1) drain source (birth keys)
+  UseRef<VECTOR> input_frontier;   // BAND (a2) drain source (edge REBUILD keys)
   UseRef<TABLE> input_table;       // the summarized monotone input
   UseRef<TABLE> pub_table;         // the published answer relation
 

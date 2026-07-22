@@ -2739,13 +2739,13 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         the flat arm; DEATH is oracle-blind forever.
 
 (C) LOUD RESIDUALS carried forward (harvested from §19(K)-(O)).
-    - EDGE-AFTER-DEMAND = a LABELED FEATURE GAP (RAT-6/OD-3). a1-only birth-
-      only silently drops a monotone edge added AFTER its demand is asked;
-      the mechanism-natural edge frontier is provisioned-UNDRAINED (the OD-4
-      accepted pricing). The rebuild plumbing (input-triggered rebuild via
-      input frontiers) LANDS WITH/AFTER Rel, where it is the natural
-      generalization; the witness flips diagnostic→golden then (aggregate_1
-      precedent). Named in CLAUDE.md + a Build.cpp comment.
+    - EDGE-AFTER-DEMAND — DISCHARGED BY R-a2 (the first Rel slice, OD-12;
+      landing record §20(G)). Band-(a2) drains the OD-4 edge frontier and
+      full-rescans live-demanded keys (the ADJ-C1 collapse); the witness is
+      BIRTH-AND-REBUILD and its golden trio re-blessed via the ritual. The
+      CLAUDE.md + Build.cpp gap labels retired in the same diff. [Original
+      residual text retired 2026-07-21; RAT-6's witness enforcement lifted
+      per the OD-12-sanctioned reversal path.]
     - HP-17 the death-op / V-INST-ORDER EXECUTING-COVERAGE residual. kInstance
       Death is minted-OFF at R-MONO and V-INST-ORDER's corpus line is
       vacuous-green (0 instance ops); no test EXECUTES an ordered instance-
@@ -2868,3 +2868,55 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     and the edge-after-demand gap labels (CLAUDE.md + the Build.cpp
     comment) retire WITH the landing, not before. R-a2 proceeds under
     the full per-slice design ritual.
+
+(G) R-a2 LANDED (2026-07-21) — THE FIRST REL-EPOCH SLICE: the
+    SUBGRAPH_INSTANTIATE input-frontier drain; EDGE-AFTER-DEMAND CLOSED.
+    Binding contracts COMMITTED: KeyedInstances.artifacts/ra2-design.md
+    (ADJ-R1..R9) + ra2-desired-states.md (DS-ADJ-1..4). THE MECHANISM:
+    band-(a2) drains the OD-4-provisioned edge kNetAdditions frontier —
+    project the edge row's key cols, FindInstance (non-adding; a stray
+    undemanded edge SKIPS silently, pinned by the new InstanceStore unit
+    arm per ADJ-R4), !TouchedFlag dedup ([D-COLLAPSE]: one rescan per
+    key per epoch, two drain sources), then the SAME full-rescan as a1
+    via the shared emit_instance_rescan emitter ([9]-fold, generated .h
+    proven BYTE-NEUTRAL). Mint: InstantiateEffects pushes the second
+    kVecDrain(input, kNetAddition) ([D-DRAIN-SECOND] = push-order
+    determinism per ADJ-R9); the edge frontier threads into the flow
+    proc as a param in id-order (vec25 BEFORE vec29 — DS-ADJ-1, the
+    set_intersection order). V-INST-EFFECT is SOURCE-AWARE (one demand
+    drain + one input drain, roles checked — the Fable review's [4],
+    discharging ADJ-R8's "no wiring guarantee" residual); V-INST-DRAIN
+    checks input provisioning; a key-arity belt (always-on) aborts on
+    any rescan-spine/store-key mismatch ([5], the zero-fill probe
+    hazard, not constructible at tip). OBSERVABILITY: the .ir
+    SUBGRAPHINSTANCE line now renders "input $net_additions:N" ([3],
+    the review's headline — the ADJ-R5 hand-review surface can no
+    longer pass on a mis-wired frontier). THE WITNESS is
+    BIRTH-AND-REBUILD: STAGE-D red→green EXECUTED (frozen 4a5fbfc4
+    binary SIGABRTs at the first rebuild probe printing only the 4
+    birth lines = DS-ADJ-4; the landed binary prints the 8 predicted
+    lines; flat==nested byte-equal); golden trio re-blessed via the
+    ritual AFTER raw-output review (cross-mode single hash; oracle
+    1640 assertions/6 batches; monotone 11 facts — all DS-ADJ-3
+    byte-pins). RAT-6's witness enforcement LIFTED per the OD-12
+    reversal path; gap labels retired same-diff (CLAUDE.md
+    heading+anchor, Build.cpp fence-(ii) comment, §20(C) above).
+    EVERY pre-registered [BYTE]/[STRUCT] prediction MATCHED, incl. the
+    census (kSubgraphInstantiate=1, kInstanceDeath=0 — HP-17 carried,
+    kCommitSweep=2) and deps=6 a2-invariance. FABLE REVIEW (14-agent
+    workflow): 11 verified findings — 7 FIXED pre-commit ([3] printer,
+    [4] source-aware validator, [5] belt, [0/1/6]+[2/7]+[10] doc
+    retirements, [9] dedup), 1 ACCEPTED residual ([8] the contract-
+    pinned duplicated V-INST-DRAIN check). GATES (final tree): SUITE
+    PASS (173) eqgate-live; 676-row knob-off A/B 0-diverged vs frozen
+    4a5fbfc4 (run TWICE: post-impl + post-review-fixes); data/ 36-file
+    ×4 modes 0-diverged; ctest 5/5; ASAN BOTH surfaces ×2 sweeps zero
+    reports; E-62 CLEAN; config-invariance 3-run + debug==release
+    single hash 61ad8bdf; Q5 progsize@128 release SAME-SESSION
+    INTERLEAVED ABABAB A warm {146,149,149} vs B {146,151,148,149}
+    ms (−0.3% median, noise). RESIDUALS OPENED: [8] accepted above;
+    the a2 WorkingOccupied belt is R-MONO-unreachable (review LOW-3 —
+    a green witness is not evidence it has teeth; D3.a). NEXT: the
+    R1..Rk step kinds per brief §5 (TUPLE/INSERT first; the JOIN slice
+    carries the pre-registered pivot-equality-belt fold candidate,
+    NOT RULED).

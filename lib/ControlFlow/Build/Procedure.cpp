@@ -185,6 +185,9 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
         if (vec == si->demand_frontier.get()) {
           read.insert(vec);
         }
+        if (vec == si->input_frontier.get()) {
+          read.insert(vec);  // [R-REBUILD-a2] band-(a2) drains it (read-only)
+        }
         break;
       }
 
@@ -258,11 +261,17 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
     VECTOR *const demand_front =
         TableDeltaVector(impl, context, op->demand_table,
                          VectorKind::kNetAdditions);
+    // [R-REBUILD-a2] the SAME memoized edge frontier the eager cut-successor
+    // append (Build.cpp:999-1004) writes into — a2 drains it, provisions none.
+    VECTOR *const input_front =
+        TableDeltaVector(impl, context, op->input_table,
+                         VectorKind::kNetAdditions);
 
     SUBGRAPHINSTANCE *const si =
         impl->operation_regions.CreateDerived<SUBGRAPHINSTANCE>(seq, sid);
     seq->AddRegion(si);
     si->demand_frontier.Emplace(si, demand_front);
+    si->input_frontier.Emplace(si, input_front);  // [R-REBUILD-a2]
     si->input_table.Emplace(si, op->input_table);
     si->pub_table.Emplace(si, op->table_op_table);  // HP-3: pub rides op_table
     si->key_positions = inst.key_cols;
@@ -272,6 +281,20 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
     if (!op->arms.empty() && op->arms[0].body &&
         op->arms[0].body->kind == PlanKind::kAccess) {
       si->input_key_cols = op->arms[0].body->bound_cols;
+    }
+
+    // Band-(a2) keys FindInstance on input_key_cols; a shorter list would
+    // aggregate-init the missing Key components to ZERO and compile — a
+    // silently-wrong probe that re-opens edge-after-demand (the R-a2
+    // Fable-review latent). Every recognized shape today binds the full
+    // key; a future shape that doesn't must extend the plumbing, not
+    // truncate the probe. ALWAYS-ON (fprintf+abort, survives NDEBUG).
+    if (si->input_key_cols.size() != inst.key_cols.size()) {
+      std::fprintf(stderr,
+                   "error: SUBGRAPHINSTANCE store %u: rescan-spine bound "
+                   "cols (%zu) != instance key arity (%zu)\n",
+                   sid, si->input_key_cols.size(), inst.key_cols.size());
+      std::abort();
     }
     // input_row_cols = the remaining input columns (in order) — the published
     // row payload (the single-monotone-hop shape: input = key ++ row cols).

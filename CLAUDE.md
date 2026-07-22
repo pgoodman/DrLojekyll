@@ -352,7 +352,7 @@ corpus cases carry bound queries (38/165 at the demand-seeds seed sweep; the
 3 new cases added more) — an unconditional transform would rewrite ~a quarter
 of the goldens, so mode-gating is mandatory.
 
-## The keyed-instance nested lowering (`-demand-instance` — LANDED, birth-only)
+## The keyed-instance nested lowering (`-demand-instance` — LANDED, birth-and-rebuild)
 
 `-demand-instance` (Main.cpp `gDemandInstance`; implies `-demand`; OFF the
 PassPolicy registry — a lowering selector, not a pass) lowers a recognized
@@ -368,15 +368,16 @@ witness graph carries out-of-neighborhood edges and the driver asserts each
 probe's answer is EXACTLY neighborhood(Start) — an over-materialized nested arm
 both aborts and diverges (HP-5).
 
-The witness is ENFORCED BIRTH-ONLY (RAT-6): all edges land before any demand
-probe. EDGE-AFTER-DEMAND — adding a monotone input edge while a demand is
-already standing and expecting the standing instance to rebuild — is a LABELED
-FEATURE GAP, NOT a compile diagnostic (it is a batch-ordering property,
-indistinguishable at compile time from a legal program; the demand-triggered
-rebuild plumbing arrives with the DeltaRel->Rel epoch). Three all-4-modes
+The witness is BIRTH-AND-REBUILD (R-a2, the first DeltaRel->Rel deliverable):
+the birth phase lands all edges before its probes, then a REBUILD phase adds
+edges AFTER their key's demand is standing and re-probes. EDGE-AFTER-DEMAND —
+adding a monotone input edge while a demand is already standing — now REBUILDS
+the standing instance via band-(a2) (a full edge-frontier rescan keyed on the
+edge net-additions frontier); the birth-only enforcement (RAT-6) is lifted and
+the labeled feature gap is CLOSED. Three all-4-modes
 compile fences: recursive demand (`demand_cyclic_1`) and a @differential
 summarized input (`demand_diff_input_1`) reject at the Program::Build nested
-pre-pass (Build.cpp:1337-1347) only under `-demand-instance` (both compile
+pre-pass (Build.cpp:1336-1346) only under `-demand-instance` (both compile
 under plain `-demand`); a recursive-content demanded body
 (`demand_recursive_content_1`) is caught UPSTREAM by the plain-`-demand`
 body-walk (its `.drflags` is a bare `-demand`; it pins the shadowed Build.cpp

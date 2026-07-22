@@ -2288,6 +2288,7 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   const auto id = std::to_string(region.StoreId());
   const auto sname = "instance_" + id;
   const DataVector demand = region.DemandFrontier();
+  const DataVector input_front = region.InputFrontier();  // [R-REBUILD-a2]
   const DataTable input = region.InputTable();
   const DataTable pub = region.PubTable();
   const auto input_member = table_member[input.Id()];
@@ -2297,6 +2298,52 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   const auto &row_pos = region.RowPositions();
   const auto &in_key = region.InputKeyCols();
   const auto &in_row = region.InputRowCols();
+
+  // The one rescan mold, two drain sources ([D-COLLAPSE]): the V-INST-FRESH
+  // belt + TouchCurrent + the full-scan/key-filter/TryAdd rescan, shared by
+  // band-(a1) and band-(a2) and parameterized ONLY by the key-column
+  // expressions the filter compares against (a1: the demand binds k<j>;
+  // a2: the edge row's own key cols e<in_key[j]>). Emitted bytes are
+  // identical to the pre-fold clones by construction.
+  const auto emit_instance_rescan =
+      [&](const std::vector<std::string> &keyexprs) {
+    cc << cc.Indent() << "if (" << sname << ".WorkingOccupied(iid)) {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "std::fprintf(stderr, \"V-INST-FRESH: instance %u "
+       << "current non-empty at band-(a) entry (store " << id
+       << ")\\n\", iid); std::abort();\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+    cc << cc.Indent() << "auto &cur = " << sname << ".TouchCurrent(iid);\n";
+    cc << cc.Indent() << "for (uint32_t s = 0; s < " << input_member
+       << ".NumRows(); ++s) {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "const auto ir = " << input_member << ".RowAt(s);\n";
+    std::string cond;
+    {
+      auto sep = "";
+      for (unsigned j = 0u; j < in_key.size(); ++j) {
+        cond += sep + std::string("ir.") + input_fields[in_key[j]] +
+                " == " + keyexprs[j];
+        sep = " && ";
+      }
+    }
+    if (cond.empty()) {
+      cond = "true";
+    }
+    cc << cc.Indent() << "if (" << cond << ") {\n";
+    cc.PushIndent();
+    std::vector<std::string> rowvals;
+    for (unsigned j = 0u; j < in_row.size(); ++j) {
+      rowvals.push_back("ir." + input_fields[in_row[j]]);
+    }
+    cc << cc.Indent() << "cur.TryAdd(Row_" << id << "{"
+       << JoinExprs(rowvals, ", ") << "});\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";  // key filter
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";  // input rescan
+  };
 
   // band-(a1) drain the demand frontier (rows == the instance key columns).
   const auto key_arity =
@@ -2313,47 +2360,47 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   // First touch this epoch only: the V-INST-FRESH guard + the rescan run once.
   cc << cc.Indent() << "if (!" << sname << ".TouchedFlag(iid)) {\n";
   cc.PushIndent();
-  cc << cc.Indent() << "if (" << sname << ".WorkingOccupied(iid)) {\n";
-  cc.PushIndent();
-  cc << cc.Indent() << "std::fprintf(stderr, \"V-INST-FRESH: instance %u "
-     << "current non-empty at band-(a) entry (store " << id
-     << ")\\n\", iid); std::abort();\n";
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";
-  cc << cc.Indent() << "auto &cur = " << sname << ".TouchCurrent(iid);\n";
-  // Rescan the input keyed on the instance key (full scan + key filter).
-  cc << cc.Indent() << "for (uint32_t s = 0; s < " << input_member
-     << ".NumRows(); ++s) {\n";
-  cc.PushIndent();
-  cc << cc.Indent() << "const auto ir = " << input_member << ".RowAt(s);\n";
-  std::string cond;
-  {
-    auto sep = "";
-    for (unsigned j = 0u; j < in_key.size(); ++j) {
-      cond += sep + std::string("ir.") + input_fields[in_key[j]] +
-              " == k" + std::to_string(j);
-      sep = " && ";
-    }
-  }
-  if (cond.empty()) {
-    cond = "true";
-  }
-  cc << cc.Indent() << "if (" << cond << ") {\n";
-  cc.PushIndent();
-  std::vector<std::string> rowvals;
-  for (unsigned j = 0u; j < in_row.size(); ++j) {
-    rowvals.push_back("ir." + input_fields[in_row[j]]);
-  }
-  cc << cc.Indent() << "cur.TryAdd(Row_" << id << "{" << JoinExprs(rowvals, ", ")
-     << "});\n";
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";  // key filter
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";  // input rescan
+  emit_instance_rescan(kbinds);  // key filter RHS: the demand binds k<j>
   cc.PopIndent();
   cc << cc.Indent() << "}\n";  // !TouchedFlag
   cc.PopIndent();
   cc << cc.Indent() << "}\n";  // demand drain
+
+  // band-(a2) [R-REBUILD-a2] drain the edge net-additions frontier (REBUILD): a
+  // live-demanded key whose summarized input changed full-rescans exactly as
+  // band-(a1) does (the ADJ-C1 collapse — one rescan mold, two drain SOURCES).
+  // FindInstance (non-adding) SKIPS a stray/undemanded edge (kNoInstance);
+  // !TouchedFlag dedups a co-demanded-and-edge-touched key to one rescan.
+  {
+    // ADJ-R1: the outer bind is the FULL EDGE ROW (edge arity), NOT the demand
+    // key arity — the key is projected from the edge's own key cols below.
+    const auto edge_arity =
+        static_cast<unsigned>(input_front.ColumnTypes().size());
+    std::vector<std::string> ebinds;
+    for (unsigned i = 0u; i < edge_arity; ++i) {
+      ebinds.push_back("e" + std::to_string(i));
+    }
+    std::vector<std::string> ekeyexprs;
+    for (unsigned j = 0u; j < in_key.size(); ++j) {
+      ekeyexprs.push_back("e" + std::to_string(in_key[j]));
+    }
+    cc << cc.Indent() << "for (const auto &[" << JoinExprs(ebinds, ", ")
+       << "] : " << VecName(input_front) << ") {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "const auto iid = " << sname << ".FindInstance(Key_"
+       << id << "{" << JoinExprs(ekeyexprs, ", ") << "});\n";
+    // Live-demanded gate + first-touch dedup ([D-COLLAPSE]).
+    cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance && !" << sname
+       << ".TouchedFlag(iid)) {\n";
+    cc.PushIndent();
+    // The SAME rescan as band-(a1); the key filter compares the edge row's
+    // own key cols (e<in_key[j]>), not a demand bind.
+    emit_instance_rescan(ekeyexprs);
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";  // live && !TouchedFlag
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";  // edge drain
+  }
 
   // band-(b) PUBLISH the (F,T) born set of every touched instance.
   bool pub_has_indexes = false;

@@ -797,6 +797,17 @@ static std::vector<DREffect> InstantiateEffects(bool diff, TABLE *pub,
   drain.vec_role = VecRole::kNetAddition;
   fx.push_back(drain);
 
+  // [R-REBUILD-a2] the input(edge) net-additions REBUILD drain (ADJ-G1). The
+  // mechanism-natural OD-4 edge frontier's first consumer: band-(a2) rescans a
+  // live-demanded key whose input changed. Pushed SECOND for push-order
+  // determinism / dump stability (ADJ-R9 — no reader keys on drain order).
+  // Un-minted monotone frontier -> ResolveVecIdx ~0u -> NO dep edge (§2.4).
+  DREffect edge_drain;
+  edge_drain.kind = EffKind::kVecDrain;
+  edge_drain.value_table = input;
+  edge_drain.vec_role = VecRole::kNetAddition;
+  fx.push_back(edge_drain);
+
   DREffect demand_read;  // NEW: frozen read of the demand key, no hazard (HP-8)
   demand_read.kind = EffKind::kInstanceDemand;
   demand_read.read_table = demand;
@@ -3477,13 +3488,35 @@ void ValidateDROps(
       switch (op.kind) {
         case DROpKind::kSubgraphInstantiate: {
           const bool diff = TableIsDifferential(op.table_op_table);
-          unsigned drains = 0u, demands = 0u, leaves = 0u, rebuilds = 0u,
+          unsigned drains = 0u, demand_drains = 0u, input_drains = 0u,
+                   demands = 0u, leaves = 0u, rebuilds = 0u,
                    emits = 0u, olds = 0u, counters = 0u, crossings = 0u,
                    appends = 0u;
           int rebuild_sign = 0, counter_signs = 0;
           for (const DREffect &fx : op.effects) {
             switch (fx.kind) {
-              case EffKind::kVecDrain: ++drains; break;
+              case EffKind::kVecDrain:
+                ++drains;
+
+                // Source-aware: the two drains must be the demand frontier
+                // and the input (edge) frontier, both net-additions — a
+                // count alone cannot tell "demand + edge" from "demand
+                // twice" (the R-a2 Fable-review hazard; the dump renders
+                // these value_tables verbatim, so a mis-minted drain would
+                // otherwise lie undetected).
+                if (fx.vec_role != VecRole::kNetAddition ||
+                    (fx.value_table != op.demand_table &&
+                     fx.value_table != op.input_table)) {
+                  ValidatorFail("V-INST-EFFECT: an instantiate kVecDrain is "
+                                "not a net-additions drain of the demand or "
+                                "input frontier");
+                }
+                if (fx.value_table == op.demand_table) {
+                  ++demand_drains;
+                } else {
+                  ++input_drains;
+                }
+                break;
               case EffKind::kInstanceDemand: ++demands; break;
               case EffKind::kFlagRead: ++leaves; break;
               case EffKind::kInstanceRebuild:
@@ -3508,7 +3541,8 @@ void ValidateDROps(
             }
           }
           const bool ok =
-              drains == 1u && demands == 1u && leaves == 1u && rebuilds == 1u &&
+              drains == 2u && demand_drains == 1u && input_drains == 1u &&
+              demands == 1u && leaves == 1u && rebuilds == 1u &&
               rebuild_sign == 1 && emits == 1u && olds == 1u &&
               (diff ? (counters == 2u && counter_signs == 0 &&
                        crossings == 2u && appends == 2u)
@@ -3695,6 +3729,17 @@ void ValidateDROps(
     if (!ok) {
       ValidatorFail("V-INST-DRAIN: an instantiate's demand net-additions "
                     "frontier was never provisioned (OD-7/§2.2 gap)");
+    }
+    // [R-REBUILD-a2] the edge(input) frontier drain must ALSO resolve.
+    auto et = context.table_delta_vecs.find(op.input_table);
+    const bool edge_ok =
+        et != context.table_delta_vecs.end() &&
+        et->second.count(static_cast<unsigned>(VectorKind::kNetAdditions)) &&
+        et->second.at(static_cast<unsigned>(VectorKind::kNetAdditions)) !=
+            nullptr;
+    if (!edge_ok) {
+      ValidatorFail("V-INST-DRAIN: an instantiate's input(edge) net-additions "
+                    "frontier was never provisioned (OD-4/R-a2 gap)");
     }
   }
 

@@ -9,12 +9,13 @@
 ; demand_tc_witness stays the RECURSIVE flat witness; the nested lowering
 ; fences it out (its demanded body is recursive -> cyclic-demand reject).
 ;
-; RAT-6 BIRTH-ONLY (KeyedInstances.md sec 19(N)): under R-MONO the "demand
-; flap" rebuild is an if-crossed NO-OP (a re-asserted demand never re-seeds),
-; so the witness is ENFORCED birth-only -- the .batches/.main.cpp land ALL
-; edges (in two epochs) BEFORE any demand probe; there is NO edge-after-demand
-; batch. Edge-after-demand is the LOUD labeled feature gap (plumbing arrives
-; with the DeltaRel->Rel epoch), NOT exercised here.
+; R-a2 BIRTH-AND-REBUILD (KeyedInstances.md sec 20(C), DISCHARGED): the witness
+; now carries a REBUILD phase -- the .batches/.main.cpp add edges AFTER their
+; key's demand is standing, and band-(a2) [R-REBUILD-a2] rebuilds the standing
+; instance via a full edge-frontier rescan. Edge-after-demand under
+; -demand-instance is no longer a gap. (The birth-only enforcement is lifted;
+; the demand "flap" is still an if-crossed NO-OP under R-MONO, so a1 alone would
+; drop the post-demand edge -- a2's edge-frontier drain is exactly the fix.)
 ;
 ; HP-5: the graph carries edges OUTSIDE each probed key's neighborhood, and
 ; the driver asserts each probe's answer is EXACTLY neighborhood(Start), so an
