@@ -2977,3 +2977,70 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     R-final's reachability flip owes one). NEXT: R2 per brief §5 order
     (CMP/MAP next, JOIN last with the NOT-RULED pivot-belt fold
     candidate).
+(I) R2-OPEN RE-VERIFICATION RECORD (2026-07-22, tip a4b807dc; the
+    session-open items (0)+(1) EXECUTED per §20(G)/(H)'s NEXT).
+    (0) Frozen A/B baselines RE-SNAPSHOTTED from tip into the session
+        scratchpad BEFORE any code (debug 971d88ad… / release
+        f6ab49a1…; both presets rebuilt clean). ASAN cadence stands
+        per-diff (§19(F)/(J)); the tip is docs-only atop 8fa156bc,
+        whose ×2 both-surface sweeps are the standing green.
+    (1) §20(G)/(H) + rel-arch-pseudocode.md §4/§5 FLEET-RE-VERIFIED
+        (house precedent): 3 seed-UNREAD opus derivation lanes
+        (Build.cpp walk-side mint/dispatch; DeltaRel.cpp ctors/
+        enrollment/key_of/recount + Format render; the R-a2 lowering)
+        + 3 seed-read adversarial verifiers (§4/§5 mold, §20(H),
+        §20(G)) + 1 mechanical golden/census lane + 1 xhigh
+        consolidator (8 agents, ~708k tokens; every candidate
+        adjudicated AT the code). The E-62 tripwire re-grepped by the
+        ORCHESTRATOR personally: CLEAN (zero out-of-lib body_ops/
+        output_ops readers; Format.cpp dump reader + substrate-fill
+        writers in-lib; standing Stratum.cpp:1073 comment + the RAT-3
+        InstanceOrderTest fixture are the sanctioned pinned_order
+        neighbors). The carrier-golden referee EXECUTED by the
+        orchestrator personally: both .deltarel carriers regenerate
+        BYTE-IDENTICAL at tip (mechanical lane extended to all six
+        pinned surfaces: 6/6 byte-identical; counts tc 12F/2I +
+        symrec 7F/1I; census 20 kinds; sign glyph c2 b7 re-confirmed).
+        VERDICT: SOUND-WITH-ERRATA — zero code or design defects;
+        four errata, ALL LOW/COSM, applied IN PLACE (each site tagged):
+          E-98  COSM pseudocode §4: INSERT message extraction "ONCE"
+                     anchor is :1233 (helper :1113); ":1112" was the
+                     helper doc-comment line. Substance held.
+          E-99  COSM pseudocode §4 M7: EagerSinkName is Format.cpp:126
+                     (:125 is its doc-comment); loud-abort shape exact.
+          E-100 COSM pseudocode §4 R-a2 block: the band-(a2) drain
+                     CODEGEN (FindInstance/skip/dedup/rescan +
+                     emit_instance_rescan) lives in Generator::
+                     EmitSubgraphInstance (Database.cpp:2369-2403 /
+                     :2308-2346); LowerSubgraphInstances
+                     (Procedure.cpp:252-320) wires the memoized
+                     input-frontier param + the key-arity belt
+                     (:292-298). One cross-lane contradiction resolved
+                     AT CODE in the doc's favor: input_front (vec25)
+                     threads BEFORE the demand vec (vec29) — id-order,
+                     as §20(G) states.
+          E-101 LOW  pseudocode §5 R2 block (ORCHESTRATOR-caught, the
+                     carrier-coverage audit the fleet lacked): NEITHER
+                     .deltarel carrier contains a CMP or MAP view
+                     (verified in both .df goldens), so R2's golden
+                     churn on the existing carriers is CENSUS-LINE
+                     ONLY (census renders zero-count kinds, 20->22);
+                     "+ blocks" requires a THIRD carrier (map_3 /
+                     fibonacci_iterative candidates, RAT-8 seeding)
+                     or R2's blocks land corpus-unwitnessed (the
+                     ADJ-S5 residual class). Materially re-scopes the
+                     R2 bless plan; folded into the slice re-rank.
+        VERIFIED-CLEAN (held): enum 18/19 + effect-free ctors
+        (DeltaRel.cpp:1279/:1290); mint sites Build.cpp:1225/:1234 +
+        LowerRelStep :1138/:1146; enrollment tail-append
+        (DeltaRel.cpp:2389-2396, folds keep op.0/op.1); the A.6(c)
+        recount (:3405-3440) + merged-model render authority
+        (DS-ADJ-7); the order-law key (:4326-4390) incl. the golden-
+        verified table-less-lead + sign-0-before-fold layout;
+        ADJ-S13/S14 .find() discipline; §5's remaining arms confirmed
+        hand-coded (Compare/Generate/Union/Negate/Join.cpp); E-42
+        shim persists op-less; MERGE-inductive round shells Authority
+        A; ra2 band mechanics + V-INST-EFFECT source-awareness +
+        always-on key-arity belt + the .ir input-frontier render.
+        Full record: session scratchpad fleet/consolidated-e98.md
+        (disposable; THIS entry is binding). Errata continue at E-102.

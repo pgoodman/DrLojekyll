@@ -191,11 +191,16 @@ re-verifies §4/§5 against code before R2.
 ##     next session's fleet re-verifies THIS section before R2)
 
     R-a2 (§20(G); contract ra2-design.md): §2's OD-4 frontier append now
-    HAS its consumer — LowerSubgraphInstances band-(a2) drains the edge
-    kNetAdditions frontier (threaded as a flow-proc param, id-order) and
-    full-rescans live-demanded keys (FindInstance skip + !TouchedFlag
-    dedup, ONE shared emit_instance_rescan emitter). Knob-on only.
-    EDGE-AFTER-DEMAND is CLOSED; §3's R-a2 block is DONE.
+    HAS its consumer — the SUBGRAPH_INSTANTIATE lowering's band-(a2)
+    drains the edge kNetAdditions frontier and full-rescans live-demanded
+    keys (FindInstance skip + !TouchedFlag dedup, ONE shared
+    emit_instance_rescan emitter). E-100 attribution: the drain CODEGEN
+    (FindInstance/skip/dedup/rescan + the emit_instance_rescan lambda)
+    lives in Generator::EmitSubgraphInstance (Database.cpp:2369-2403 /
+    :2308-2346); LowerSubgraphInstances (Procedure.cpp:252-320) wires the
+    memoized input-frontier flow-proc param (id-order) + carries the
+    key-arity belt (:292-298). Knob-on only. EDGE-AFTER-DEMAND is
+    CLOSED; §3's R-a2 block is DONE.
 
     R1 (§20(H); contract r1-design.md): §2's dispatch table is AMENDED —
     the TUPLE and INSERT arms are now MODELED OPS. The dispatch
@@ -203,7 +208,8 @@ re-verifies §4/§5 against code before R2.
 
       TUPLE  -> op = MakeEagerForwardOp(view, ModelTableOrNull(view))
                 LowerRelStep_Forward(op, ...)       # Build.cpp:1138
-      INSERT -> message = MessageOfInsertOrNull(insert)   # ONCE (:1112)
+      INSERT -> message = MessageOfInsertOrNull(insert)   # ONCE at the
+                # mint site (:1233; helper :1113, ADJ-S13 note :1092 — E-98)
                 op = MakeEagerInsertOp(view, ModelTableOrNull(view),
                        ClassifyEagerSink(ctx, insert, message), message)
                 LowerRelStep_Insert(op, ...)        # Build.cpp:1146
@@ -238,7 +244,7 @@ re-verifies §4/§5 against code before R2.
          (header + args: only — no reads/effects/spine sublines; table=
          rendered ONLY when non-null, tid() has no null guard; new
          payload spellings get their own loud-abort name table, e.g.
-         EagerSinkName Format.cpp:125).
+         EagerSinkName Format.cpp:126 — E-99).
       M8 helpers are .find()-ONLY on Context maps (ADJ-S13/S14 —
          operator[] on publish_vecs/view_to_model is FORBIDDEN in mint
          paths); identity extractions happen ONCE and feed all
@@ -253,8 +259,15 @@ re-verifies §4/§5 against code before R2.
       CMP/MAP op records — comparator spelling? functor + binding
       pattern?), grammar productions (E-71 PRE-CODE), and whether the
       MAP arm's impure-functor reject path needs a disposition. Expect
-      the two-carrier .deltarel golden churn (census 20->22 + blocks) —
-      the same bless ritual (ADJ-S7 referee / ADJ-S10 count read).
+      the two-carrier .deltarel golden churn — E-101: CENSUS-LINE ONLY
+      on the existing carriers (census renders zero-count kinds, so
+      20->22 churns both; but NEITHER carrier contains a CMP or MAP
+      view — verified in both .df goldens — so no new BLOCKS appear
+      there). Witnessing R2 blocks needs a THIRD carrier (candidates:
+      map_3, acyclic monotone MAP×3+CMP; fibonacci_iterative) seeded
+      via RAT-8, or the blocks land corpus-unwitnessed (the ADJ-S5
+      residual class). Same bless ritual (ADJ-S7 referee / ADJ-S10
+      count read).
     R3..Rk: MERGE-union (Union.cpp), SELECT rebind (the §2 rebind+
       recurse block), NEGATE gate (Negate.cpp) — same mold; NEGATE
       payload likely carries the negated table + @never-ness. MERGE-
