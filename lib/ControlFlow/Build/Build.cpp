@@ -2,11 +2,13 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include "Build.h"
+#include "DeltaRel.h"
 
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <algorithm>
+#include <optional>
 #include <sstream>
 
 namespace hyde {
@@ -1080,6 +1082,75 @@ void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
   });
 }
 
+// R1 (design §B.1): the sink discriminant of a terminal INSERT, recorded on
+// the kEagerInsert op for render only. A PURE restatement of Insert.cpp's
+// branch — reads only insert kind + the two Context maps, mints nothing, and
+// (ADJ-S13, BINDING) NEVER uses operator[] on publish_vecs (a default-insert
+// would later mint impl->next_id per non-null entry — the classifier must not
+// mutate the map). The untouched BuildEagerInsertRegion still owns the actual
+// emission branch; this only tags which terminal shape fired.
+// Fable-review R1 [3]: the message identity is extracted ONCE at the mint
+// site (MessageOfInsertOrNull) and passed in — a second in-body extraction
+// could silently diverge the dump's eager_message from the classification.
+static EagerSink ClassifyEagerSink(Context &context, QueryInsert insert,
+                                   const std::optional<ParsedMessage> &message_opt) {
+  if (insert.IsStream()) {
+    const ParsedMessage message = *message_opt;
+    if (context.commit_published_view.count(message)) {
+      return EagerSink::kCommitPublished;
+    }
+    const auto it = context.publish_vecs.find(message);
+    if (it != context.publish_vecs.end() && it->second != nullptr) {
+      return EagerSink::kPublishVec;
+    }
+    return EagerSink::kPublishNow;
+  }
+  assert(insert.IsRelation());
+  return EagerSink::kRelation;
+}
+
+// R1: the stream terminal's message identity (null for a relation insert).
+static std::optional<ParsedMessage> MessageOfInsertOrNull(QueryInsert insert) {
+  if (insert.IsStream()) {
+    return ParsedMessage::From(QueryIO::From(insert.Stream()).Declaration());
+  }
+  return std::nullopt;
+}
+
+// R1 (design §B.2): record one eager dispatch into the walk-order Context list,
+// in walk (DFS) order — enough to re-invoke the single-authority ctor at
+// inventory time (BuildDRInventory's EAGER_WEB block).
+static void RecordEagerDispatch(Context &context, const DROp &op) {
+  Context::EmittedEagerOp rec;
+  rec.kind = static_cast<uint8_t>(op.kind);
+  rec.view = op.eager_view;
+  rec.table = op.table_op_table;
+  rec.sink = static_cast<uint8_t>(op.eager_sink);
+  rec.message = op.eager_message;
+  context.emitted_eager_ops.push_back(std::move(rec));
+}
+
+// R1 (design §B): the strangler-fig cut — record the dispatch, then CALL the
+// UNTOUCHED region builder at the exact original walk site. Because the builder
+// is entered with the identical arguments at the identical walk moment, every
+// impl->next_id++ inside it (and inside the descent it drives) fires in the
+// identical order → id-stream identity is mechanical, not argued (§B.3).
+static void LowerRelStep_Forward(ProgramImpl *impl, Context &context,
+                                 const DROp &op, QueryView pred_view,
+                                 QueryTuple tuple, OP *parent,
+                                 TABLE *last_table) {
+  RecordEagerDispatch(context, op);
+  BuildEagerTupleRegion(impl, pred_view, tuple, context, parent, last_table);
+}
+
+static void LowerRelStep_Insert(ProgramImpl *impl, Context &context,
+                                const DROp &op, QueryView pred_view,
+                                QueryInsert insert, OP *parent,
+                                TABLE *last_table) {
+  RecordEagerDispatch(context, op);
+  BuildEagerInsertRegion(impl, pred_view, insert, context, parent, last_table);
+}
+
 // Build an eager region.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                       Context &context, OP *parent, TABLE *last_table) {
@@ -1148,13 +1219,24 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                                last_table);
 
   } else if (view.IsTuple()) {
-    BuildEagerTupleRegion(impl, pred_view, QueryTuple::From(view), context,
-                          parent, last_table);
+    // R1: mint the effect-free kEagerForward marker, then lower IN PLACE by
+    // calling the untouched BuildEagerTupleRegion (design §B.1). Zero id-stream
+    // change — the op ctor/record mint no impl->next_id.
+    const DROp op = MakeEagerForwardOp(view, ModelTableOrNull(impl, view));
+    LowerRelStep_Forward(impl, context, op, pred_view, QueryTuple::From(view),
+                         parent, last_table);
 
   } else if (view.IsInsert()) {
     const auto insert = QueryInsert::From(view);
-    BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
-                           last_table);
+    // R1: mint the effect-free kEagerInsert marker (with its sink discriminant
+    // + stream message recorded for render), then lower IN PLACE.
+    const auto message = MessageOfInsertOrNull(insert);
+    const DROp op = MakeEagerInsertOp(view, ModelTableOrNull(impl, view),
+                                      ClassifyEagerSink(context, insert,
+                                                        message),
+                                      message);
+    LowerRelStep_Insert(impl, context, op, pred_view, insert, parent,
+                        last_table);
 
   } else if (view.IsNegate()) {
     const auto negate = QueryNegate::From(view);

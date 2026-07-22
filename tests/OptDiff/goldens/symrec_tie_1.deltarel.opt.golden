@@ -1,0 +1,28 @@
+deltarel
+
+op.5 kEagerForward sign=· ctx=eager stratum=0
+    args:
+op.6 kEagerForward sign=· ctx=eager stratum=0
+    args:
+op.4 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:4
+op.7 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:4
+op.8 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+    args: table=%table:4
+op.1 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:8
+op.2 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:8
+op.3 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:8
+op.0 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:8, +, NonRecursive)}
+    spine: —
+    args: table=%table:8 message=edge/2
+
+rounds:
+
+deps:
+
+census: kCrossover=0 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=0 kRetire=0 kRederive=0 kFrontierFilter=0 kCommitSweep=0 kNegateGate=0 kPivotAssemble=0 kIngestFold=1 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=7 kEagerInsert=1

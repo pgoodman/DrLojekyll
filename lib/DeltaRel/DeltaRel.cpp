@@ -1262,6 +1262,42 @@ DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
   return op;
 }
 
+// R1: a `.find()`-guarded model-table lookup (ADJ-S13/S14). Null when the view
+// has no model entry (a table-less TUPLE forward), never a crash.
+TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view) {
+  const auto it = impl->view_to_model.find(view);
+  if (it == impl->view_to_model.end()) {
+    return nullptr;
+  }
+  return it->second->FindAs<DataModel>()->table;
+}
+
+// R1: the single authority for a kEagerForward marker op (design §A.3). Pure —
+// no ids, NO effects (the central §A.2 choice: an effect-free op contributes no
+// vec/flag access, hence no dep edge, hence is invisible to V-LINEAR/
+// V-BAND-HAZARD/V-READY/V-LOOP). `table` may be null (table-less TUPLE).
+DROp MakeEagerForwardOp(QueryView tuple_view, TABLE *table) {
+  DROp op(DROpKind::kEagerForward);
+  op.ctx = Ctx::kEager;
+  op.eager_view = tuple_view;
+  op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
+  return op;
+}
+
+// R1: the single authority for a kEagerInsert marker op (design §A.3). Pure, NO
+// effects. `sink`/`message` record the terminal shape for render only (the
+// untouched BuildEagerInsertRegion still owns the actual emission branch).
+DROp MakeEagerInsertOp(QueryView insert_view, TABLE *table, EagerSink sink,
+                       std::optional<ParsedMessage> message) {
+  DROp op(DROpKind::kEagerInsert);
+  op.ctx = Ctx::kEager;
+  op.eager_view = insert_view;
+  op.table_op_table = table;
+  op.eager_sink = sink;
+  op.eager_message = message;
+  return op;
+}
+
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map) {
@@ -2337,6 +2373,29 @@ DRFlowGraph BuildDRInventory(
     }
   }
 
+  // ------------------------------------------------------------- EAGER_WEB (R1)
+  // Enroll the monotone eager web's TUPLE-forward / terminal-INSERT dispatches
+  // (design §A.4). STRICTLY AFTER every other flow.ops enrollment family
+  // (ADJ-S2 BINDING PIN): the two ingest folds MUST keep construction indices
+  // 0/1 so their `op.0`/`op.1 kIngestFold` headers stay byte-identical — this
+  // block appends at the TAIL and shifts no pre-existing op's construction
+  // index. Walk-authoritative (§A.4): `BuildDRInventory` cannot cheaply
+  // re-derive the eager reachability set, so the walk (which already ran and
+  // COMPLETED before BuildStratumPhases — F-ORDER) is the reachability
+  // authority; here we re-invoke the SAME single-authority ctor from each
+  // recorded dispatch, in walk (DFS) order (deterministic, (F)-clean — a
+  // std::vector iterated by index, never a pointer-ordered container). The ops
+  // are EFFECT-FREE ⇒ no vec def-edge is recorded (there is no vec to define).
+  for (const Context::EmittedEagerOp &rec : context.emitted_eager_ops) {
+    if (rec.kind == static_cast<uint8_t>(DROpKind::kEagerForward)) {
+      flow.ops.push_back(MakeEagerForwardOp(*rec.view, rec.table));
+    } else {
+      flow.ops.push_back(MakeEagerInsertOp(*rec.view, rec.table,
+                                           static_cast<EagerSink>(rec.sink),
+                                           rec.message));
+    }
+  }
+
   return flow;
 }
 
@@ -3343,6 +3402,43 @@ void ValidateDROps(
   expect(DROpKind::kInstanceDeath, exp_death, "instance deaths");
   expect(DROpKind::kInstanceSeal, exp_instance, "instance seals");  // 1:1 w/ inst
 
+  // R1 (A.6(c)): STRUCTURAL well-formedness of the eager-web ops. Walk-
+  // authoritative enrollment (§A.4) declines the reachability oracle, so there
+  // is NO exp_eager COUNT expect() (ADJ-S12; the bless-time structural read is
+  // the compensating control, ADJ-S10). Instead each enrolled eager op's
+  // payload is checked against the Query view-kind it claims — genuinely
+  // independent of the walk (it checks view-kinds + the model-table routing,
+  // not the walk's count). Catches payload corruption / mis-kinded enrollment.
+  for (const DROp &op : flow.ops) {
+    if (op.kind != DROpKind::kEagerForward &&
+        op.kind != DROpKind::kEagerInsert) {
+      continue;
+    }
+    if (!op.eager_view.has_value()) {
+      ValidatorFail("R1 A.6(c): an eager-web op has no eager_view");
+    }
+    const QueryView v = *op.eager_view;
+    if (op.kind == DROpKind::kEagerForward) {
+      if (!v.IsTuple()) {
+        ValidatorFail("R1 A.6(c): a kEagerForward op's view is not a TUPLE");
+      }
+    } else if (!v.IsInsert()) {
+      ValidatorFail("R1 A.6(c): a kEagerInsert op's view is not an INSERT");
+    }
+    // NOTE (Fable-review R1 [1]): the walk's CUT discipline (chain-breaker /
+    // recognized-subgraph exclusion) is NOT view-kind-checkable here — an
+    // eager op's view is a TUPLE/INSERT by the checks above, so an
+    // IsAggregate()/IsKVIndex() test on it is tautologically DEAD (a
+    // QueryView is exactly one kind). A cut regression mints markers for
+    // INTERIOR views of the right kinds; the standing controls are the
+    // full-corpus byte-identity A/B, the eqgate, and the ADJ-S10 bless-time
+    // structural count read — never this loop.
+    if (op.table_op_table != ModelTableOrNull(impl, v)) {
+      ValidatorFail("R1 A.6(c): an eager-web op's table does not match the "
+                    "view's model table");
+    }
+  }
+
   // The INGEST_FOLD per-op key multiset (order-free; artifact §7): the
   // recomputed (table, sign, is_explicit, role, message) keys must equal the
   // multiset read off `flow`'s ops. This is the E-22 completeness half of the
@@ -4247,6 +4343,18 @@ void LinearizeAndValidateDRFlow(
     // queue the lead-1 phase drain reads — seed_before_drain).
     if (op.kind == DROpKind::kIngestFold) {
       return Key{0u, 0u, 0u, op_table_id(op), op.ingest_sign, oi};
+    }
+    // R1 (design §A.6(a)): the eager forwards/inserts ARE the pre-phase monotone
+    // push path — the same lead-0 off-lattice band as the ingest folds that feed
+    // them. VALIDATOR-ORDERING ONLY (emission never reads this key; the lowering
+    // is the walk's own DFS order). Sign 0 (signless markers): within a shared
+    // table_id a sign-0 eager op sorts BEFORE its sign-+1 ingest fold (ADJ-S1).
+    // `op_table_id` resolves via table_op_table with no new arm (null → sentinel
+    // 0 ⇒ the table-less block leads). Effect-free ⇒ no dep edge ⇒ Kahn places
+    // by key alone (V-ORDER-CONSISTENT holds trivially).
+    if (op.kind == DROpKind::kEagerForward ||
+        op.kind == DROpKind::kEagerInsert) {
+      return Key{0u, 0u, 0u, op_table_id(op), 0, oi};
     }
     if (op.kind == DROpKind::kCommitSweep) {
       return Key{2u, max_stratum + 1u, 9u, op_table_id(op), 0, oi};

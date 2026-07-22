@@ -113,8 +113,25 @@ static const char *DROpKindName(DROpKind k) {
     case DROpKind::kSubgraphInstantiate: return "kSubgraphInstantiate";
     case DROpKind::kInstanceDeath: return "kInstanceDeath";
     case DROpKind::kInstanceSeal: return "kInstanceSeal";
+    case DROpKind::kEagerForward: return "kEagerForward";
+    case DROpKind::kEagerInsert: return "kEagerInsert";
   }
   fprintf(stderr, "DELTAREL-DUMP: unhandled enum value in a spelling table\n");
+  abort();
+}
+
+// R1: the terminal-INSERT sink spelling table (design §C.1, k-stripped
+// lowercase-hyphen per the ClaimForm/Deferral house convention). kNone never
+// reaches a kEagerInsert (a forward carries no sink), so it loud-aborts.
+static const char *EagerSinkName(EagerSink s) {
+  switch (s) {
+    case EagerSink::kRelation: return "relation";
+    case EagerSink::kPublishNow: return "publish-now";
+    case EagerSink::kPublishVec: return "publish-vec";
+    case EagerSink::kCommitPublished: return "commit-published";
+    case EagerSink::kNone: break;  // never on a kEagerInsert — loud-abort
+  }
+  fprintf(stderr, "DELTAREL-DUMP: unhandled EagerSink in a spelling table\n");
   abort();
 }
 
@@ -820,6 +837,38 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         break;
       }
 
+      // R1 (design §C.2, ADJ-S1/S3 applied): the two eager-web marker ops.
+      // DEDICATED cases (NOT the :823 default — that would silently render
+      // empty `effects:`/`spine:` sublines and NO `args:` line, DS-ADJ-5).
+      // sign=· (table_op_sign 0); ctx=eager; stratum=0 (DROpStratum default
+      // arm). NO reads/effects/spine sublines (effect-free markers, §A.2). The
+      // `table=` token is OMITTED when null (ADJ-S3 — the `input=` OMIT-when-
+      // null precedent; tid() has no null guard, so the `if` is load-bearing).
+      case DROpKind::kEagerForward: {
+        os << " sign=" << SignGlyph(op.table_op_sign)
+           << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op) << "\n";
+        os << "    args:";
+        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        os << "\n";
+        break;
+      }
+
+      case DROpKind::kEagerInsert: {
+        os << " sign=" << SignGlyph(op.table_op_sign)
+           << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op)
+           << " sink=" << EagerSinkName(op.eager_sink) << "\n";
+        os << "    args:";
+        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.eager_message.has_value()) {
+          os << " message=" << std::string(op.eager_message->NameAsString())
+             << "/" << op.eager_message->Arity();
+        }
+        os << "\n";
+        break;
+      }
+
       default: {
         // Generic fallback (crossover, product-arm, fixpoint-fire, chain-fold,
         // retire, rederive, negate-gate, pivot-assemble). Renders the common
@@ -883,7 +932,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << "\n";
   }
 
-  // ---- census (18 DROpKind counts, enum order, one line; grammar R-10) ----
+  // ---- census (20 DROpKind counts, enum order, one line; grammar R-10) ----
   os << "\n";
   const auto count_kind = [&](DROpKind k) -> unsigned {
     unsigned n = 0u;
@@ -902,7 +951,8 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       DROpKind::kIngestFold,  DROpKind::kGroupUpdate,
       DROpKind::kStateSeal,
       DROpKind::kSubgraphInstantiate, DROpKind::kInstanceDeath,
-      DROpKind::kInstanceSeal};
+      DROpKind::kInstanceSeal,
+      DROpKind::kEagerForward, DROpKind::kEagerInsert};
   os << "census:";
   unsigned census_total = 0u;
   for (DROpKind k : kAllKinds) {

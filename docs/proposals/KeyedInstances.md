@@ -2920,3 +2920,60 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     R1..Rk step kinds per brief §5 (TUPLE/INSERT first; the JOIN slice
     carries the pre-registered pivot-equality-belt fold candidate,
     NOT RULED).
+
+(H) R1 LANDED (2026-07-22) — THE FIRST STEP-KIND MIGRATION: the monotone
+    eager web's TUPLE-forward + terminal-INSERT dispatch arms are MODELED
+    DR-IR OPS. Binding contracts COMMITTED: r1-design.md (ADJ-S1..S14) +
+    r1-desired-states.md (DS-ADJ-1..7). THE MECHANISM: kEagerForward(18)/
+    kEagerInsert(19) — EFFECT-FREE, KNOB-INDEPENDENT walk-position
+    markers minted at the dispatch site (Build.cpp) and lowered IN PLACE
+    by thin LowerRelStep wrappers CALLING the untouched
+    BuildEagerTupleRegion/BuildEagerInsertRegion (Tuple.cpp/Insert.cpp
+    byte-unchanged; id-stream identity MECHANICAL). Enrollment appends
+    to flow.ops STRICTLY AFTER the ingest folds (ADJ-S2 BINDING pin —
+    folds keep op.0/op.1); lead-0 off-lattice key_of; effect-free ⇒
+    ZERO dep edges ⇒ invisible to every hazard validator (the exclusion
+    generalizing the kIngestFold precedent). Helpers .find()-guarded
+    (ADJ-S13/S14 — operator[] on publish_vecs/view_to_model FORBIDDEN);
+    message extracted ONCE at the mint site (review [3]). RENDER:
+    dedicated Format cases (no reads/effects/spine sublines; table=
+    only when non-null per ADJ-S3 — tid() has no null guard); census
+    18→20 DAY ONE; the A.6(c) structural recount (kind↔view-kind +
+    MERGED-MODEL table match; NO count oracle per ADJ-S12 — the
+    ADJ-S10 bless-time count read compensates; the chain-breaker arm
+    DELETED as tautologically dead per review [1], honest note in
+    place). THE ORDER LAW (ADJ-S1, corrected pre-code): pinned_order =
+    (op_table_id, sign, ctor) — table-less eager ops LEAD the dump;
+    sign-0 eager ops precede each table's sign-+1 ingest fold (symrec's
+    op.0 fold renders LAST — verified live). RENDER AUTHORITY (DS-ADJ-7,
+    post-bless): eager table= = the union-find MERGED model, never the
+    .df per-view attribute. GOLDENS: demand_tc_witness.deltarel
+    re-blessed + symrec_tie_1.deltarel FIRST-EVER seeded (ADJ-S9 second
+    carrier; RAT-8 lineage) via the FULL ritual — pre-bless divergence
+    EXACTLY the two pre-registered (tc IRGOLD-DIVERGE + symrec
+    IRGOLD-MISSING, nothing else); ADJ-S7 same-workroot referee RUN
+    (purely additive eager blocks, folds byte-identical at op.0/op.1,
+    census tail-append only); ADJ-S10 counts tc 12F/2I + symrec 7F/1I
+    within floors; DS-ADJ-4 sign=· FIRST-PINNED c2 b7 by hexdump;
+    git-verified ONLY the two sanctioned goldens changed. DS-ADJ-1:
+    census mode-stability holds ONLY across the controlflow axis
+    (df-axis growth EXPECTED — CSE-skip enlarges the walk). FABLE
+    REVIEW (11 agents): 5 verified findings, ALL handled pre-commit
+    ([0] untracked-golden staged; [1] dead arm deleted; [2] → DS-ADJ-7;
+    [3] single extraction; [4] enum comment de-transient-ed); fixes
+    proven DUMP-NEUTRAL. GATES (final tree): SUITE PASS (173) ×3 +
+    post-fix; 676-row knob-off A/B 0-diverged vs frozen 6d695aec ×2;
+    post-baseline-4 A/B (incl. nested ×4 modes) 20 rows 0-diverged;
+    data/ 144 rows 0-diverged; ctest 5/5 (no fixture edits); ASAN both
+    surfaces ×2 zero reports; E-62 CLEAN; config-invariance 3-run +
+    debug==release single hash; Q5 progsize@128 release SAME-SESSION
+    INTERLEAVED ABABAB A warm {149,149,147} vs B {149,152,148,147} ms
+    (−0.3% median, noise — the ADJ-S8 MEASURED gate). RESIDUALS OPENED:
+    publish-* sink spellings + stream message= arm corpus-UNWITNESSED
+    (ADJ-S5 — a publishing-demanded-insert case is a future candidate);
+    the ClassifyEagerSink replica ships with no cross-check vs the
+    emission branch (ADJ-S4, retired at the R-final direction-flip);
+    the eager census counts have NO independent oracle (ADJ-S12 —
+    R-final's reachability flip owes one). NEXT: R2 per brief §5 order
+    (CMP/MAP next, JOIN last with the NOT-RULED pivot-belt fold
+    candidate).

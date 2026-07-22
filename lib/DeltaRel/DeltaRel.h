@@ -159,6 +159,21 @@ enum class DROpKind : uint8_t {
   kInstanceSeal,         // (17) trailing pointer swap (kStateSeal peer, band 11
                          //   via key_of). Self-lowered from its own dispatch
                          //   (HP-1/OD-5); carries the sign-0 kStateFold seal.
+  kEagerForward,         // (18) R1: the monotone eager web's TUPLE-forward
+                         //   dispatch (Build.cpp BuildEagerTupleRegion). An
+                         //   EFFECT-FREE position marker (A.2) — no counter, no
+                         //   vec edge, invisible to the dep-edge derivation.
+                         //   `eager_view` = the TUPLE; `table_op_table` = its
+                         //   model table (null when table-less). Lowered IN
+                         //   PLACE by calling the untouched region builder.
+  kEagerInsert,          // (19) R1: the terminal-INSERT dispatch (Build.cpp
+                         //   BuildEagerInsertRegion). EFFECT-FREE marker too;
+                         //   `eager_sink` records the terminal shape
+                         //   (relation / publish-*) and `eager_message` the
+                         //   stream terminal's message (null for a relation
+                         //   insert; kNone sink is invalid). Corpus-witness
+                         //   status of the publish-* spellings lives in the
+                         //   ra2/r1 design artifacts (ADJ-S5), not here.
 };
 
 // R3 aggregate provenance (spec §2.2): whether a GROUP_UPDATE came from an
@@ -210,6 +225,19 @@ enum class SweepFlavor : uint8_t { kDifferential, kMonotone };
 enum class ClaimGate : uint8_t {
   kDelGateCnrNonPositive,  // TryClaimDel: C_nr <= 0
   kAddGateTotalPositive,   // TryClaimAdd: total > 0
+};
+
+// R1: the terminal-INSERT sink discriminant (design §A.3 / C.1). A PURE
+// restatement of Insert.cpp's sink branch, recorded on a kEagerInsert op for
+// render only (never re-drives emission — the untouched BuildEagerInsertRegion
+// owns the actual branch). kNone is the kEagerForward default and is never
+// valid on a kEagerInsert (EagerSinkName loud-aborts on it).
+enum class EagerSink : uint8_t {
+  kNone,
+  kRelation,          // insert.IsRelation() → BuildEagerInsertionRegions descent
+  kPublishNow,        // stream, no accumulation vec → PUBLISH now
+  kPublishVec,        // stream, accumulation vec present → append
+  kCommitPublished,   // stream, @differential commit-published → owned by sweep
 };
 
 // ---------------------------------------------------------------------------
@@ -599,6 +627,20 @@ class DROp {
   std::vector<unsigned> context_cols;
   std::vector<BindingSource> context_col_sources;
 
+  // ---- EAGER_FORWARD / EAGER_INSERT data (R1) ------------------------------
+  // (kind == kEagerForward | kEagerInsert). EFFECT-FREE position markers of the
+  // monotone eager web (design §A.2/§A.3): `eager_view` is the dispatched
+  // TUPLE/INSERT view (drives render + the A.6(c) structural recount); the
+  // target table rides the EXISTING `table_op_table` (nullable — a table-less
+  // TUPLE carries null, HP-3 precedent so op_table_id needs no new arm) with
+  // `table_op_sign == 0` (signless). `eager_sink` (kEagerInsert only) records
+  // the terminal shape; `eager_message` the stream terminal's message. No
+  // pred_view / last_table (those are lower-time cursors, consumed only by the
+  // in-place emission).
+  std::optional<QueryView> eager_view;
+  EagerSink eager_sink{EagerSink::kNone};
+  std::optional<ParsedMessage> eager_message;
+
   // The per-arm structure (A-3). A FIXPOINT_FIRE has one arm per same-SCC delta
   // position; a SEED_FOLD/CHAIN_FOLD has exactly one. Empty for the per-table
   // families (claim/retire/rederive/filter/sweep) and the negate gate.
@@ -905,6 +947,22 @@ std::vector<DROp> MakeStageOneIngestFolds(ParsedMessage message,
 DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
                             ParsedMessage message, QueryView receive,
                             TABLE *table);
+
+// R1: the two single-authority ctors for the eager-web marker ops (design
+// §A.3). Pure functions (no ids, no effects). `table` may be null (a table-less
+// TUPLE). The walk-position mint (Build.cpp LowerRelStep_*) and the inventory
+// re-invocation (BuildDRInventory's EAGER_WEB block) both build their op here,
+// so the recorded payload and the enrolled payload cannot diverge.
+DROp MakeEagerForwardOp(QueryView tuple_view, TABLE *table);
+DROp MakeEagerInsertOp(QueryView insert_view, TABLE *table, EagerSink sink,
+                       std::optional<ParsedMessage> message);
+
+// R1: a `.find()`-guarded lookup of a view's model table (ADJ-S13/S14 — never
+// operator[], which default-inserts a null NODE and SIGSEGVs FindAs on a
+// table-less view). Returns null when the view has no model entry / no table.
+// Shared by the eager ctors' callers and the A.6(c) recount so both see the
+// same table. FindAs path-compression is (F)-safe (no id-minting reads it).
+TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view);
 
 // Emit ONE ingest fold from the DROp payload — VECTORLOOP over `loop_vec` →
 // UPDATECOUNT± → (deletion-capable only) VECTORAPPEND into the receive table's

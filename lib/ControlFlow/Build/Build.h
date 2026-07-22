@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -233,6 +234,22 @@ class Context {
     uint8_t kind;  // DROpKind cast (kSubgraphInstantiate/Death/Seal)
   };
   std::vector<EmittedInstanceOp> emitted_instance_ops;
+
+  // R1 (design §A.4/§B.2): the eager-web dispatch stream recorded at walk time
+  // (the eager walk runs BEFORE the flow is built at BuildStratumPhases, so the
+  // flow does not exist at walk time — the §12.6 walk-authority shape, shared
+  // with emitted_ingest_folds). `BuildDRInventory`'s EAGER_WEB block iterates
+  // this vector in walk (DFS) order, re-invoking the single-authority ctor per
+  // record. Enough to rebuild the marker op: the view (re-invokes the ctor),
+  // the target table (nullable), the sink discriminant, and the stream message.
+  struct EmittedEagerOp {
+    uint8_t kind;                          // DROpKind cast (kEagerForward/Insert)
+    std::optional<QueryView> view;         // eager_view (re-invokes the ctor)
+    TABLE *table{nullptr};                 // table_op_table (nullable)
+    uint8_t sink{0};                       // EagerSink cast (kNone for forwards)
+    std::optional<ParsedMessage> message;  // kEagerInsert stream sinks only
+  };
+  std::vector<EmittedEagerOp> emitted_eager_ops;
 };
 
 // Populate `context.monotone_negated_tables` from `query.Negations()`: the
