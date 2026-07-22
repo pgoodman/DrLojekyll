@@ -16,6 +16,11 @@ marked at its site). The §2 seam pseudocode, the four seam artifacts,
 the cut-successor/AnyCutSuccessorDR lock-step, and the §3 Rel-diff
 structure all HELD; the errata were navigation/attribution/figure
 drift only.
+AMENDED 2026-07-22 at tip 8fa156bc (post R-a2 + R1): §4 = the AS-LANDED
+marker-op mold M1-M8 (orchestrator-read anchors), §5 = the path forward
+as diffs ON THE MOLD (supersedes §3's R-a2/R1 blocks, which are DONE;
+§3's R-final block stands). SINGLE-PASS: the next session's fleet
+re-verifies §4/§5 against code before R2.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -180,3 +185,99 @@ drift only.
     OWN-3 (the View.cpp record-comparing fold diagnostic) is a HARD
     precondition of D3 recursive/multi-guard admission (both halves,
     per d2b-design §OWN-3 — E-96), not of Rel.
+
+## §4. AS-LANDED AMENDMENT (2026-07-22, tip 8fa156bc; orchestrator-read
+##     anchors — R-a2 landed §20(G), R1 landed §20(H); SINGLE-PASS: the
+##     next session's fleet re-verifies THIS section before R2)
+
+    R-a2 (§20(G); contract ra2-design.md): §2's OD-4 frontier append now
+    HAS its consumer — LowerSubgraphInstances band-(a2) drains the edge
+    kNetAdditions frontier (threaded as a flow-proc param, id-order) and
+    full-rescans live-demanded keys (FindInstance skip + !TouchedFlag
+    dedup, ONE shared emit_instance_rescan emitter). Knob-on only.
+    EDGE-AFTER-DEMAND is CLOSED; §3's R-a2 block is DONE.
+
+    R1 (§20(H); contract r1-design.md): §2's dispatch table is AMENDED —
+    the TUPLE and INSERT arms are now MODELED OPS. The dispatch
+    (Build.cpp BuildEagerRegion, mint sites :1225/:1234):
+
+      TUPLE  -> op = MakeEagerForwardOp(view, ModelTableOrNull(view))
+                LowerRelStep_Forward(op, ...)       # Build.cpp:1138
+      INSERT -> message = MessageOfInsertOrNull(insert)   # ONCE (:1112)
+                op = MakeEagerInsertOp(view, ModelTableOrNull(view),
+                       ClassifyEagerSink(ctx, insert, message), message)
+                LowerRelStep_Insert(op, ...)        # Build.cpp:1146
+      all other arms -> unchanged hand-coded builders (§2 stands)
+
+    THE MARKER-OP MOLD (established once by R1; every R2..Rk slice is a
+    diff on THIS mold, not a fresh design):
+      M1 op kinds at the ENUM TAIL, EFFECT-FREE — zero dep edges, so
+         V-LINEAR/V-READY/V-BAND-HAZARD never see them (the kIngestFold
+         exclusion, generalized).
+      M2 ONE single-authority ctor (DeltaRel.cpp:1279/:1290) invoked
+         from BOTH the walk mint and inventory enrollment.
+      M3 walk-time: mint -> RecordEagerDispatch (Context::
+         emitted_eager_ops, walk/DFS order — Build.cpp:1123) -> CALL the
+         UNTOUCHED region builder at the original site; id-stream
+         identity is MECHANICAL (same args, same walk moment).
+      M4 inventory enrollment: BuildDRInventory re-invokes the ctor from
+         the recorded stream, TAIL-APPENDED strictly after the ingest
+         folds (DeltaRel.cpp:2389-2396; ADJ-S2 BINDING — folds keep
+         op.0/op.1; the walk is the reachability authority until the
+         R-final direction flip).
+      M5 key_of lead-0 off-lattice; ORDER LAW (op_table_id, sign, ctor):
+         table-less eager ops LEAD the dump; sign-0 eager before each
+         table's sign-+1 ingest fold.
+      M6 census DAY ONE + the structural recount appended after the
+         expect() lines (DeltaRel.cpp:3405ff): kind<->view-kind + table
+         == the union-find MERGED model (DS-ADJ-7 — the RENDER AUTHORITY
+         is view_to_model->FindAs, NEVER the .df per-view attribute); NO
+         count oracle until R-final (ADJ-S12; the ADJ-S10 bless-time
+         count read compensates).
+      M7 Format: DROpKindName + kAllKinds + a DEDICATED render case
+         (header + args: only — no reads/effects/spine sublines; table=
+         rendered ONLY when non-null, tid() has no null guard; new
+         payload spellings get their own loud-abort name table, e.g.
+         EagerSinkName Format.cpp:125).
+      M8 helpers are .find()-ONLY on Context maps (ADJ-S13/S14 —
+         operator[] on publish_vecs/view_to_model is FORBIDDEN in mint
+         paths); identity extractions happen ONCE and feed all
+         consumers.
+
+## §5. THE PATH FORWARD AS DIFFS ON THE MOLD (§3's R1..Rk, updated)
+
+    R2 (NEXT; owner re-ranks scope at its ritual head): the CMP filter
+      arm (BuildEagerCompareRegions, Compare.cpp) + the MAP functor-call
+      arm (BuildEagerGenerateRegion, Generate.cpp) as marker ops on the
+      M1-M8 mold. Per-slice decisions owed: payload (what identity a
+      CMP/MAP op records — comparator spelling? functor + binding
+      pattern?), grammar productions (E-71 PRE-CODE), and whether the
+      MAP arm's impure-functor reject path needs a disposition. Expect
+      the two-carrier .deltarel golden churn (census 20->22 + blocks) —
+      the same bless ritual (ADJ-S7 referee / ADJ-S10 count read).
+    R3..Rk: MERGE-union (Union.cpp), SELECT rebind (the §2 rebind+
+      recurse block), NEGATE gate (Negate.cpp) — same mold; NEGATE
+      payload likely carries the negated table + @never-ness. MERGE-
+      INDUCTIVE is NOT a marker slice (the round shells are Authority A
+      already — E-92); only its induction-input FEED may warrant a
+      marker, decided at its own ritual.
+    R-JOIN (LAST — the F17/F18 shape): the index-probe loop (Join.cpp),
+      CARRYING the NOT-RULED pivot-equality-belt fold candidate (brief
+      §5: the monotone body TUPLECMP + delta side_key_eqs re-check what
+      the exact Index::First/Next probe guarantees — owner rules at the
+      slice head; if adopted, ONE bless cycle and probe-exactness
+      becomes a documented Runtime contract).
+    R-E42: the table-less receive's VECTORLOOP shim minted from an op
+      (ExtendEagerProcedure, Procedure.cpp) — S4 retires.
+    R-final (the §19(H) acceptance, unchanged from §3): the DIRECTION
+      FLIP — inventory becomes the reachability authority and the walk
+      CONSUMES ops instead of recording them; then S1 (hole contract) /
+      S2 (cut predicates + §7d cross-check) / S3 (V-INGEST-XCHECK) /
+      S4 retire as interior invariants; the eager COUNT ORACLE lands
+      (owed, ADJ-S12); the ClassifyEagerSink replica retires (ADJ-S4);
+      eager-vs-frontier becomes a lowering choice; THEN the DeltaRel->
+      Rel rename ritual. R1 RESIDUALS CARRIED LOUD: publish-* sink
+      spellings + the stream message= arm are corpus-UNWITNESSED
+      (ADJ-S5 — a publishing-demanded-insert corpus case is the cheap
+      witness); DS-ADJ-1: census counts are mode-stable ONLY across the
+      controlflow axis (df-axis growth is EXPECTED).
