@@ -1151,6 +1151,26 @@ static void LowerRelStep_Insert(ProgramImpl *impl, Context &context,
   BuildEagerInsertRegion(impl, pred_view, insert, context, parent, last_table);
 }
 
+// R2 (r2-design §A M3): the CMP-filter cut. NOTE the builder's own signature —
+// BuildEagerCompareRegions takes neither pred_view nor last_table (a compare
+// never shares its predecessor's data model; successors restart at null).
+static void LowerRelStep_Compare(ProgramImpl *impl, Context &context,
+                                 const DROp &op, QueryCompare cmp,
+                                 OP *parent) {
+  RecordEagerDispatch(context, op);
+  BuildEagerCompareRegions(impl, cmp, context, parent);
+}
+
+// R2 (r2-design §A M3): the MAP functor-call cut (pure functors only —
+// ADJ-R2-3; the impure else never reaches here, rejected upstream).
+static void LowerRelStep_Generate(ProgramImpl *impl, Context &context,
+                                  const DROp &op, QueryView pred_view,
+                                  QueryMap map, OP *parent,
+                                  TABLE *last_table) {
+  RecordEagerDispatch(context, op);
+  BuildEagerGenerateRegion(impl, pred_view, map, context, parent, last_table);
+}
+
 // Build an eager region.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                       Context &context, OP *parent, TABLE *last_table) {
@@ -1191,15 +1211,24 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
   } else if (view.IsMap()) {
     auto map = QueryMap::From(view);
     if (map.Functor().IsPure()) {
-      BuildEagerGenerateRegion(impl, pred_view, map, context, parent,
-                               last_table);
+      // R2: mint the effect-free kEagerGenerate marker (functor identity
+      // re-derives from the view at Format time — ADJ-R2-2), then lower IN
+      // PLACE by calling the untouched BuildEagerGenerateRegion. The impure
+      // else stays mint-free (ADJ-R2-3: impure functors reject upstream,
+      // before the eager walk).
+      const DROp op = MakeEagerGenerateOp(view, ModelTableOrNull(impl, view));
+      LowerRelStep_Generate(impl, context, op, pred_view, map, parent,
+                            last_table);
 
     } else {
       assert(false && "TODO(pag): Impure functors");
     }
 
   } else if (view.IsCompare()) {
-    BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
+    // R2: mint the effect-free kEagerCompare marker (the VIEW's operator
+    // re-derives at Format time — ADJ-R2-1), then lower IN PLACE.
+    const DROp op = MakeEagerCompareOp(view, ModelTableOrNull(impl, view));
+    LowerRelStep_Compare(impl, context, op, QueryCompare::From(view), parent);
 
   } else if (view.IsSelect()) {
 

@@ -3044,3 +3044,79 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         always-on key-arity belt + the .ir input-frontier render.
         Full record: session scratchpad fleet/consolidated-e98.md
         (disposable; THIS entry is binding). Errata continue at E-102.
+
+(J) R2 LANDED (2026-07-22) — THE SECOND STEP-KIND MIGRATION: the monotone
+    eager web's CMP-filter + MAP functor-call dispatch arms are MODELED
+    DR-IR OPS. Binding contracts COMMITTED: r2-design.md (ADJ-R2-0..8,
+    Fable-review record in banner) + r2-desired-states.md (DS-R2-1..9,
+    stage-(d) critique record in banner). THE MECHANISM: kEagerCompare(20)/
+    kEagerGenerate(21) — EFFECT-FREE, knob-independent walk-position
+    markers on the R1 M1-M8 mold, minted at the Build.cpp dispatch site
+    (the MAP mint in the IsPure() TRUE arm ONLY — ADJ-R2-3; impure maps
+    reject upstream pre-walk) and lowered IN PLACE by LowerRelStep_Compare/
+    _Generate wrappers calling the UNTOUCHED builders (Compare.cpp/
+    Generate.cpp byte-unchanged; the CMP wrapper forwards neither pred_view
+    nor last_table — the builder's own signature). NO NEW PAYLOAD FIELD
+    (the headline): the CMP operator and MAP functor are PURE FUNCTIONS of
+    the stored eager_view, re-derived at Format time (the agg_name
+    precedent) — EmittedEagerOp unchanged, round-trip lossless by
+    construction. EAGER_WEB re-invocation now a 4-way switch WITH a
+    loud-abort default (ADJ-R2-8a); enrollment stays strictly after the
+    ingest folds (ADJ-S2); key_of admits both kinds into the lead-0
+    off-lattice band via the review-minted ONE IsEagerMarkerKind predicate
+    (shared with the A.6(c) guard); A.6(c) recount extended 4-way
+    (IsCompare/IsMap + the unchanged DS-ADJ-7 merged-model table match),
+    restructured as a switch with an honest loud-abort default. RENDER
+    (E-71 pre-code-adjudicated productions): kEagerCompare header token
+    cmp=<eq|neq|lt|gt> via the new ComparisonOperatorName loud-abort table
+    (the .df house spelling; totality = by-construction + abort tail,
+    -Wswitch is warning-only); kEagerGenerate args token
+    functor=<name>/<arity> (decl arity, the message= idiom; NO positivity
+    token — an unwitnessed spelling declined). Census 20→22 DAY ONE.
+    OWNER RULINGS (pre-code): kEagerGenerate over kEagerMap;
+    functor=<name>/<arity> over the codegen <name>_<pattern> key;
+    map_3.irgold pins deltarel-opt ONLY. THE THIRD CARRIER: map_3
+    (owner-ruled; acyclic monotone, TABLE-LESS ingest kIngestFold=0,
+    compare×1 + map×3 opt) — goldens/map_3.deltarel.opt.golden FIRST-EVER
+    seeded (RAT-8) via the FULL ritual. STAGE-(d) HEADLINE: the blind
+    inventory re-derivation + the orchestrator's personal all_cols_match
+    verification UPGRADED the render-order prediction to [BYTE]-derived
+    going-in (no union rule reaches map_3's maps/compare — subset-width
+    tuples defeat the only inbound passthrough path) — and the landed dump
+    MATCHED Candidate A line-for-line; the general "MAP/COMPARE can never
+    carry table=" claim was REFUTED (a full-width passthrough TUPLE would
+    union — corpus-UNWITNESSED, future-carrier note). EVERY pre-registered
+    [BYTE]/[STRUCT] prediction MATCHED: tc/symrec census-line-ONLY diffs
+    (exact predicted lines); map_3 opt = 10 ops (3G/1C/3F/3I), nodf/none
+    18; pre-bless reds EXACTLY the 3 pre-registered (tc+symrec
+    IRGOLD-DIVERGE, map_3 IRGOLD-MISSING, literal run_irgold format);
+    git-status exactly 3 goldens + 1 sidecar. Referee steps EXECUTED
+    PERSONALLY (E-77): ADJ-S7 same-workroot direct-diff (census-tail-only,
+    bless-source byte-identical to the reviewed dump); ADJ-S10 count read
+    (per-VISIT semantics noted); DS-ADJ-4 hexdump (sign= c2 b7, cmp=eq,
+    functor=add_i32/3 first-pinned); DS-ADJ-1 manual knob compiles
+    (opt==nocf 10, nodf==none 18 — the sidecar drives opt only). FABLE
+    REVIEW (10 agents): 4 verified findings, ZERO correctness — [1]
+    IsEagerMarkerKind unification FIXED, [2] A.6(c) switch + loud-abort
+    default FIXED, [4] stale note FIXED, [3] the triple-copied eq/neq/lt/gt
+    spelling ACCEPTED-DEFERRED (a .df-emitter-touching hygiene diff, not
+    mid-slice); fixes proven DUMP-NEUTRAL + post-fix suite/A-B green.
+    GATES (final tree): SUITE ×3 pre-bless (exact reds) + PASS (173) ×3
+    post-bless + post-fix; 676-row knob-off A/B 0-diverged vs frozen
+    a4b807dc ×3 (post-impl ×2 + post-fix); post-baseline-4 16 rows +
+    nested witness ×4 modes clean; data/ 144 rows 0-diverged (NOTE
+    surfaced: data/self_testing_examples/evm_array_parse.dr SIGABRTs
+    IDENTICALLY at baseline and tip, all 4 modes — a PRE-EXISTING
+    clean-diagnostic-then-abort, record-only, out of R2 scope); ctest 5/5
+    debug + 5/5 ASAN; ASAN BOTH surfaces ×2 sweeps PASS zero reports;
+    config-invariance 3-run + debug==release single hash ×3 carriers;
+    E-62 re-grep CLEAN (no new reader; edited sites widened branches
+    only); Q5 progsize@128 release SAME-SESSION INTERLEAVED ABABAB A warm
+    {148,152,151} vs B {155,150,150,150} ms (−0.7% median, noise — ADJ-S8
+    MEASURED, A1 cold discarded). RESIDUALS: neq/lt/gt + any positivity
+    spelling corpus-UNWITNESSED (only eq pinned — ADJ-S5-analog); the
+    full-width-passthrough MAP-with-table= shape corpus-UNWITNESSED; the
+    [3] spelling unification deferred; publish-*/message= + the eager
+    count oracle + ClassifyEagerSink replica carry unchanged (R-final).
+    NEXT: R3..Rk per brief §5 as amended (MERGE-union/SELECT/NEGATE, then
+    R-JOIN with the NOT-RULED pivot-belt fold, R-E42, R-final).

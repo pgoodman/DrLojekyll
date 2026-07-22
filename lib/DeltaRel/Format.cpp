@@ -115,6 +115,8 @@ static const char *DROpKindName(DROpKind k) {
     case DROpKind::kInstanceSeal: return "kInstanceSeal";
     case DROpKind::kEagerForward: return "kEagerForward";
     case DROpKind::kEagerInsert: return "kEagerInsert";
+    case DROpKind::kEagerCompare: return "kEagerCompare";
+    case DROpKind::kEagerGenerate: return "kEagerGenerate";
   }
   fprintf(stderr, "DELTAREL-DUMP: unhandled enum value in a spelling table\n");
   abort();
@@ -132,6 +134,26 @@ static const char *EagerSinkName(EagerSink s) {
     case EagerSink::kNone: break;  // never on a kEagerInsert — loud-abort
   }
   fprintf(stderr, "DELTAREL-DUMP: unhandled EagerSink in a spelling table\n");
+  abort();
+}
+
+// R2 (ADJ-R2-1): the CMP operator spelling table, reusing the .df house
+// spelling (lib/DataFlow/Format.cpp's eq/neq/lt/gt). Total by construction
+// (4 cases = the 4 ComparisonOperator members) + the loud-abort tail (the
+// T2b law; -Wswitch is warning-only in the presets, so the tail is the
+// enforcement). Fable-review R2 [3], accepted-deferred: this is the THIRD
+// hand copy of the spelling (two inline switches in lib/DataFlow/Format.cpp)
+// — unify in a dedicated hygiene diff, not mid-slice (it touches the .df
+// emitter, outside the R2 scope).
+static const char *ComparisonOperatorName(ComparisonOperator op) {
+  switch (op) {
+    case ComparisonOperator::kEqual: return "eq";
+    case ComparisonOperator::kNotEqual: return "neq";
+    case ComparisonOperator::kLessThan: return "lt";
+    case ComparisonOperator::kGreaterThan: return "gt";
+  }
+  fprintf(stderr,
+          "DELTAREL-DUMP: unhandled ComparisonOperator in a spelling table\n");
   abort();
 }
 
@@ -869,6 +891,39 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         break;
       }
 
+      // R2 (r2-design §B5, E-71-adjudicated productions): the CMP-filter and
+      // MAP-call marker ops. Same effect-free shape as the R1 pair — NO
+      // reads/effects/spine sublines, `table=` omitted when null. `cmp=` is a
+      // HEADER token (the `sink=` precedent); `functor=` an ARGS token (the
+      // `message=` precedent). Both re-derive from the STORED eager_view (a
+      // pure function of a stored field — the agg_name precedent), never a
+      // context re-computation.
+      case DROpKind::kEagerCompare: {
+        const QueryCompare cmp = QueryCompare::From(*op.eager_view);
+        os << " sign=" << SignGlyph(op.table_op_sign)
+           << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op)
+           << " cmp=" << ComparisonOperatorName(cmp.Operator()) << "\n";
+        os << "    args:";
+        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        os << "\n";
+        break;
+      }
+
+      case DROpKind::kEagerGenerate: {
+        const ParsedFunctor functor =
+            QueryMap::From(*op.eager_view).Functor();
+        os << " sign=" << SignGlyph(op.table_op_sign)
+           << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op) << "\n";
+        os << "    args:";
+        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        os << " functor=" << std::string(functor.NameAsString()) << "/"
+           << functor.Arity();
+        os << "\n";
+        break;
+      }
+
       default: {
         // Generic fallback (crossover, product-arm, fixpoint-fire, chain-fold,
         // retire, rederive, negate-gate, pivot-assemble). Renders the common
@@ -932,7 +987,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << "\n";
   }
 
-  // ---- census (20 DROpKind counts, enum order, one line; grammar R-10) ----
+  // ---- census (22 DROpKind counts, enum order, one line; grammar R-10) ----
   os << "\n";
   const auto count_kind = [&](DROpKind k) -> unsigned {
     unsigned n = 0u;
@@ -952,7 +1007,8 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       DROpKind::kStateSeal,
       DROpKind::kSubgraphInstantiate, DROpKind::kInstanceDeath,
       DROpKind::kInstanceSeal,
-      DROpKind::kEagerForward, DROpKind::kEagerInsert};
+      DROpKind::kEagerForward, DROpKind::kEagerInsert,
+      DROpKind::kEagerCompare, DROpKind::kEagerGenerate};
   os << "census:";
   unsigned census_total = 0u;
   for (DROpKind k : kAllKinds) {
@@ -961,7 +1017,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << " " << DROpKindName(k) << "=" << n;
   }
   os << "\n";
-  if (census_total != flow.ops.size()) {  // a 19th DROpKind not in kAllKinds
+  if (census_total != flow.ops.size()) {  // a 23rd DROpKind not in kAllKinds
     fprintf(stderr,
             "DELTAREL-DUMP: census covers %u of %zu ops (kAllKinds is "
             "missing a DROpKind)\n",

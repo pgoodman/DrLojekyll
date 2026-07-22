@@ -1298,6 +1298,41 @@ DROp MakeEagerInsertOp(QueryView insert_view, TABLE *table, EagerSink sink,
   return op;
 }
 
+// Fable-review R2 [1]: the ONE membership predicate for the eager-web marker
+// kinds, shared by the A.6(c) structural-recount guard and the key_of lead-0
+// off-lattice branch — a future step-kind slice extends the marker set HERE
+// and both sites follow (missing one previously failed silently: the recount
+// skipped the new kind, the linearizer mis-banded it).
+static bool IsEagerMarkerKind(DROpKind kind) {
+  return kind == DROpKind::kEagerForward ||
+         kind == DROpKind::kEagerInsert ||
+         kind == DROpKind::kEagerCompare ||
+         kind == DROpKind::kEagerGenerate;
+}
+
+// R2: the single authority for a kEagerCompare marker op (r2-design §A M2).
+// Pure, NO effects. The comparison operator is NOT stored — it re-derives from
+// `eager_view` at Format time (ADJ-R2-1). `table` may be null (a filter CMP is
+// usually table-less).
+DROp MakeEagerCompareOp(QueryView cmp_view, TABLE *table) {
+  DROp op(DROpKind::kEagerCompare);
+  op.ctx = Ctx::kEager;
+  op.eager_view = cmp_view;
+  op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
+  return op;
+}
+
+// R2: the single authority for a kEagerGenerate marker op (r2-design §A M2).
+// Pure, NO effects. Minted only for pure functors (ADJ-R2-3); the functor
+// identity re-derives from `eager_view` at Format time (ADJ-R2-2).
+DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table) {
+  DROp op(DROpKind::kEagerGenerate);
+  op.ctx = Ctx::kEager;
+  op.eager_view = map_view;
+  op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
+  return op;
+}
+
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map) {
@@ -2387,12 +2422,26 @@ DRFlowGraph BuildDRInventory(
   // std::vector iterated by index, never a pointer-ordered container). The ops
   // are EFFECT-FREE ⇒ no vec def-edge is recorded (there is no vec to define).
   for (const Context::EmittedEagerOp &rec : context.emitted_eager_ops) {
-    if (rec.kind == static_cast<uint8_t>(DROpKind::kEagerForward)) {
-      flow.ops.push_back(MakeEagerForwardOp(*rec.view, rec.table));
-    } else {
-      flow.ops.push_back(MakeEagerInsertOp(*rec.view, rec.table,
-                                           static_cast<EagerSink>(rec.sink),
-                                           rec.message));
+    switch (static_cast<DROpKind>(rec.kind)) {
+      case DROpKind::kEagerForward:
+        flow.ops.push_back(MakeEagerForwardOp(*rec.view, rec.table));
+        break;
+      case DROpKind::kEagerCompare:
+        flow.ops.push_back(MakeEagerCompareOp(*rec.view, rec.table));
+        break;
+      case DROpKind::kEagerGenerate:
+        flow.ops.push_back(MakeEagerGenerateOp(*rec.view, rec.table));
+        break;
+      case DROpKind::kEagerInsert:
+        flow.ops.push_back(MakeEagerInsertOp(*rec.view, rec.table,
+                                             static_cast<EagerSink>(rec.sink),
+                                             rec.message));
+        break;
+      default:
+        // R2 (ADJ-R2-8a): a recorded eager dispatch can only be one of the
+        // four marker kinds — anything else is a mint-site defect.
+        fprintf(stderr, "DELTAREL: non-eager kind in emitted_eager_ops\n");
+        abort();
     }
   }
 
@@ -3410,24 +3459,44 @@ void ValidateDROps(
   // independent of the walk (it checks view-kinds + the model-table routing,
   // not the walk's count). Catches payload corruption / mis-kinded enrollment.
   for (const DROp &op : flow.ops) {
-    if (op.kind != DROpKind::kEagerForward &&
-        op.kind != DROpKind::kEagerInsert) {
-      continue;
+    if (!IsEagerMarkerKind(op.kind)) {  // Fable-review R2 [1]: ONE predicate
+      continue;                         // shared with the key_of lead-0 branch
     }
     if (!op.eager_view.has_value()) {
       ValidatorFail("R1 A.6(c): an eager-web op has no eager_view");
     }
     const QueryView v = *op.eager_view;
-    if (op.kind == DROpKind::kEagerForward) {
-      if (!v.IsTuple()) {
-        ValidatorFail("R1 A.6(c): a kEagerForward op's view is not a TUPLE");
-      }
-    } else if (!v.IsInsert()) {
-      ValidatorFail("R1 A.6(c): a kEagerInsert op's view is not an INSERT");
+    // Fable-review R2 [2]: a SWITCH with the same loud-abort default as the
+    // BuildDRInventory re-invocation (ADJ-R2-8a) — a fifth marker kind that
+    // reaches here un-handled aborts HONESTLY instead of falling into the
+    // insert arm with a misleading message.
+    switch (op.kind) {
+      case DROpKind::kEagerForward:
+        if (!v.IsTuple()) {
+          ValidatorFail("R1 A.6(c): a kEagerForward op's view is not a TUPLE");
+        }
+        break;
+      case DROpKind::kEagerCompare:  // R2 (ADJ-R2-7)
+        if (!v.IsCompare()) {
+          ValidatorFail("R2 A.6(c): a kEagerCompare op's view is not a CMP");
+        }
+        break;
+      case DROpKind::kEagerGenerate:  // R2 (ADJ-R2-7)
+        if (!v.IsMap()) {
+          ValidatorFail("R2 A.6(c): a kEagerGenerate op's view is not a MAP");
+        }
+        break;
+      case DROpKind::kEagerInsert:
+        if (!v.IsInsert()) {
+          ValidatorFail("R1 A.6(c): a kEagerInsert op's view is not an INSERT");
+        }
+        break;
+      default:
+        ValidatorFail("R2 A.6(c): an eager marker kind has no view-kind arm");
     }
     // NOTE (Fable-review R1 [1]): the walk's CUT discipline (chain-breaker /
     // recognized-subgraph exclusion) is NOT view-kind-checkable here — an
-    // eager op's view is a TUPLE/INSERT by the checks above, so an
+    // eager op's view is a TUPLE/INSERT/CMP/MAP by the checks above, so an
     // IsAggregate()/IsKVIndex() test on it is tautologically DEAD (a
     // QueryView is exactly one kind). A cut regression mints markers for
     // INTERIOR views of the right kinds; the standing controls are the
@@ -4352,8 +4421,9 @@ void LinearizeAndValidateDRFlow(
     // `op_table_id` resolves via table_op_table with no new arm (null → sentinel
     // 0 ⇒ the table-less block leads). Effect-free ⇒ no dep edge ⇒ Kahn places
     // by key alone (V-ORDER-CONSISTENT holds trivially).
-    if (op.kind == DROpKind::kEagerForward ||
-        op.kind == DROpKind::kEagerInsert) {
+    if (IsEagerMarkerKind(op.kind)) {  // R2 (ADJ-R2-4 + Fable-review R2 [1]):
+      // ALL marker kinds share the lead-0 off-lattice band, sign 0 — the ONE
+      // predicate keeps this branch and the A.6(c) guard in lock-step.
       return Key{0u, 0u, 0u, op_table_id(op), 0, oi};
     }
     if (op.kind == DROpKind::kCommitSweep) {

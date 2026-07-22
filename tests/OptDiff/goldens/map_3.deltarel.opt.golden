@@ -1,0 +1,28 @@
+deltarel
+
+op.0 kEagerGenerate sign=· ctx=eager stratum=0
+    args: functor=add_i32/3
+op.3 kEagerGenerate sign=· ctx=eager stratum=0
+    args: functor=add_i32/3
+op.6 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
+    args:
+op.7 kEagerGenerate sign=· ctx=eager stratum=0
+    args: functor=add_i32/3
+op.1 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:6
+op.2 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+    args: table=%table:6
+op.4 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:10
+op.5 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+    args: table=%table:10
+op.8 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:15
+op.9 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+    args: table=%table:15
+
+rounds:
+
+deps:
+
+census: kCrossover=0 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=0 kRetire=0 kRederive=0 kFrontierFilter=0 kCommitSweep=0 kNegateGate=0 kPivotAssemble=0 kIngestFold=0 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=3 kEagerInsert=3 kEagerCompare=1 kEagerGenerate=3

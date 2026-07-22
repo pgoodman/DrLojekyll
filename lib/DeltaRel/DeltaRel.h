@@ -174,6 +174,19 @@ enum class DROpKind : uint8_t {
                          //   insert; kNone sink is invalid). Corpus-witness
                          //   status of the publish-* spellings lives in the
                          //   ra2/r1 design artifacts (ADJ-S5), not here.
+  kEagerCompare,         // (20) R2: the CMP-filter dispatch (Build.cpp
+                         //   BuildEagerCompareRegions). EFFECT-FREE marker on
+                         //   the R1 mold. NO stored operator — the dump's
+                         //   `cmp=` re-derives from `eager_view` at Format
+                         //   time (QueryCompare::Operator(), the VIEW's
+                         //   operator, not the NE→EQ-normalized emission
+                         //   form — ADJ-R2-1).
+  kEagerGenerate,        // (21) R2: the MAP functor-call dispatch (Build.cpp
+                         //   BuildEagerGenerateRegion). EFFECT-FREE marker;
+                         //   minted ONLY on the pure-functor arm (impure maps
+                         //   reject upstream — ADJ-R2-3). NO stored functor —
+                         //   `functor=<name>/<arity>` re-derives from
+                         //   `eager_view` (QueryMap::Functor(), ADJ-R2-2).
 };
 
 // R3 aggregate provenance (spec §2.2): whether a GROUP_UPDATE came from an
@@ -627,10 +640,13 @@ class DROp {
   std::vector<unsigned> context_cols;
   std::vector<BindingSource> context_col_sources;
 
-  // ---- EAGER_FORWARD / EAGER_INSERT data (R1) ------------------------------
-  // (kind == kEagerForward | kEagerInsert). EFFECT-FREE position markers of the
+  // ---- EAGER_* data (R1: forward/insert; R2: compare/generate) -------------
+  // (kind == kEagerForward | kEagerInsert | kEagerCompare | kEagerGenerate).
+  // EFFECT-FREE position markers of the
   // monotone eager web (design §A.2/§A.3): `eager_view` is the dispatched
-  // TUPLE/INSERT view (drives render + the A.6(c) structural recount); the
+  // TUPLE/INSERT/CMP/MAP view (drives render + the A.6(c) structural recount —
+  // the CMP operator and MAP functor re-derive from it at Format time, no
+  // stored payload of their own, ADJ-R2-1/2); the
   // target table rides the EXISTING `table_op_table` (nullable — a table-less
   // TUPLE carries null, HP-3 precedent so op_table_id needs no new arm) with
   // `table_op_sign == 0` (signless). `eager_sink` (kEagerInsert only) records
@@ -956,6 +972,14 @@ DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
 DROp MakeEagerForwardOp(QueryView tuple_view, TABLE *table);
 DROp MakeEagerInsertOp(QueryView insert_view, TABLE *table, EagerSink sink,
                        std::optional<ParsedMessage> message);
+
+// R2: the two single-authority ctors for the CMP-filter / MAP-call marker ops
+// (r2-design §A M2). Same discipline: pure functions (no ids, no effects);
+// `table` may be null (a filter CMP / interior MAP is usually table-less). The
+// operator/functor are NOT taken — they re-derive from the view at Format time
+// (ADJ-R2-1/2).
+DROp MakeEagerCompareOp(QueryView cmp_view, TABLE *table);
+DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table);
 
 // R1: a `.find()`-guarded lookup of a view's model table (ADJ-S13/S14 — never
 // operator[], which default-inserts a null NODE and SIGSEGVs FindAs on a
