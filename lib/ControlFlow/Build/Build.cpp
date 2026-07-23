@@ -1171,6 +1171,50 @@ static void LowerRelStep_Generate(ProgramImpl *impl, Context &context,
   BuildEagerGenerateRegion(impl, pred_view, map, context, parent, last_table);
 }
 
+// R3 (r3-design §A.2, owner-ruled §F.5 extract-and-wrap): the SELECT-rebind
+// body, moved VERBATIM out of the BuildEagerRegion dispatch (a byte-move —
+// the rebind loop mints zero impl->next_id; the first allocation is inside
+// the untouched BuildEagerInsertionRegions descent).
+//
+// A SELECT is reached bottom-up only from an INSERT into its relation
+// (a unit condition relation keeps its INSERT -> RELATION -> SELECT
+// structure). Bind the SELECT's columns to the INSERT's stored columns,
+// whose variables are in scope.
+static void BuildEagerSelectRegion(ProgramImpl *impl, QueryView pred_view,
+                                   QueryView select_view, Context &context,
+                                   OP *parent, TABLE *last_table) {
+  assert(pred_view.IsInsert());
+  const auto insert = QueryInsert::From(pred_view);
+  auto i = 0u;
+  for (auto col : select_view.Columns()) {
+    const auto in_col = insert.NthInputColumn(i++);
+    parent->col_id_to_var[col.Id()] = parent->VariableFor(impl, in_col);
+  }
+
+  BuildEagerInsertionRegions(impl, select_view, context, parent,
+                             select_view.Successors(), last_table);
+}
+
+// R3 (r3-design §A.1): the MERGE-union cut — only a merge that does NOT own
+// an InductionGroupId reaches here (the owning-merge leg is Authority A).
+static void LowerRelStep_Union(ProgramImpl *impl, Context &context,
+                               const DROp &op, QueryView pred_view,
+                               QueryMerge merge, OP *parent,
+                               TABLE *last_table) {
+  RecordEagerDispatch(context, op);
+  BuildEagerUnionRegion(impl, pred_view, merge, context, parent, last_table);
+}
+
+// R3 (r3-design §A.2): the SELECT-rebind cut.
+static void LowerRelStep_Select(ProgramImpl *impl, Context &context,
+                                const DROp &op, QueryView pred_view,
+                                QueryView select_view, OP *parent,
+                                TABLE *last_table) {
+  RecordEagerDispatch(context, op);
+  BuildEagerSelectRegion(impl, pred_view, select_view, context, parent,
+                         last_table);
+}
+
 // Build an eager region.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                       Context &context, OP *parent, TABLE *last_table) {
@@ -1192,8 +1236,13 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
       BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
                                 last_table);
     } else {
-      BuildEagerUnionRegion(impl, pred_view, merge, context, parent,
-                            last_table);
+      // R3: mint the effect-free kEagerUnion marker (no stored payload —
+      // a union carries no operator/functor), then lower IN PLACE by
+      // calling the untouched BuildEagerUnionRegion. The inductive leg
+      // above stays mint-free (Authority A round shells).
+      const DROp op = MakeEagerUnionOp(view, ModelTableOrNull(impl, view));
+      LowerRelStep_Union(impl, context, op, pred_view, merge, parent,
+                         last_table);
     }
 
   } else if (view.IsAggregate() || view.IsKVIndex()) {
@@ -1231,21 +1280,12 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
     LowerRelStep_Compare(impl, context, op, QueryCompare::From(view), parent);
 
   } else if (view.IsSelect()) {
-
-    // A SELECT is reached bottom-up only from an INSERT into its relation
-    // (a unit condition relation keeps its INSERT -> RELATION -> SELECT
-    // structure). Bind the SELECT's columns to the INSERT's stored columns,
-    // whose variables are in scope.
-    assert(pred_view.IsInsert());
-    const auto insert = QueryInsert::From(pred_view);
-    auto i = 0u;
-    for (auto col : view.Columns()) {
-      const auto in_col = insert.NthInputColumn(i++);
-      parent->col_id_to_var[col.Id()] = parent->VariableFor(impl, in_col);
-    }
-
-    BuildEagerInsertionRegions(impl, view, context, parent, view.Successors(),
-                               last_table);
+    // R3: mint the effect-free kEagerSelect marker (no stored payload —
+    // unit-condition-ness re-derives from the view), then lower IN PLACE
+    // via the extracted-verbatim BuildEagerSelectRegion.
+    const DROp op = MakeEagerSelectOp(view, ModelTableOrNull(impl, view));
+    LowerRelStep_Select(impl, context, op, pred_view, view, parent,
+                        last_table);
 
   } else if (view.IsTuple()) {
     // R1: mint the effect-free kEagerForward marker, then lower IN PLACE by

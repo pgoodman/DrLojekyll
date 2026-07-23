@@ -1307,7 +1307,9 @@ static bool IsEagerMarkerKind(DROpKind kind) {
   return kind == DROpKind::kEagerForward ||
          kind == DROpKind::kEagerInsert ||
          kind == DROpKind::kEagerCompare ||
-         kind == DROpKind::kEagerGenerate;
+         kind == DROpKind::kEagerGenerate ||
+         kind == DROpKind::kEagerUnion ||
+         kind == DROpKind::kEagerSelect;
 }
 
 // R2: the single authority for a kEagerCompare marker op (r2-design §A M2).
@@ -1329,6 +1331,30 @@ DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table) {
   DROp op(DROpKind::kEagerGenerate);
   op.ctx = Ctx::kEager;
   op.eager_view = map_view;
+  op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
+  return op;
+}
+
+// R3: the single authority for a kEagerUnion marker op (r3-design §B.2).
+// Pure, NO effects, NO stored payload (a plain union carries no operator or
+// functor — M2'). `table` is the merged-model table, typically NON-null even
+// for a `.df class=table-less` merge (the DataModel equivalence-set, E-107).
+DROp MakeEagerUnionOp(QueryView merge_view, TABLE *table) {
+  DROp op(DROpKind::kEagerUnion);
+  op.ctx = Ctx::kEager;
+  op.eager_view = merge_view;
+  op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
+  return op;
+}
+
+// R3: the single authority for a kEagerSelect marker op (r3-design §B.2).
+// Pure, NO effects, NO stored payload (unit-condition-ness re-derives from
+// `eager_view` if ever rendered — M2'). `table` is the merged model, shared
+// with the pred INSERT via the SELECT<->INSERT model-union rule.
+DROp MakeEagerSelectOp(QueryView select_view, TABLE *table) {
+  DROp op(DROpKind::kEagerSelect);
+  op.ctx = Ctx::kEager;
+  op.eager_view = select_view;
   op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
   return op;
 }
@@ -2437,9 +2463,15 @@ DRFlowGraph BuildDRInventory(
                                              static_cast<EagerSink>(rec.sink),
                                              rec.message));
         break;
+      case DROpKind::kEagerUnion:  // R3
+        flow.ops.push_back(MakeEagerUnionOp(*rec.view, rec.table));
+        break;
+      case DROpKind::kEagerSelect:  // R3
+        flow.ops.push_back(MakeEagerSelectOp(*rec.view, rec.table));
+        break;
       default:
         // R2 (ADJ-R2-8a): a recorded eager dispatch can only be one of the
-        // four marker kinds — anything else is a mint-site defect.
+        // six marker kinds — anything else is a mint-site defect.
         fprintf(stderr, "DELTAREL: non-eager kind in emitted_eager_ops\n");
         abort();
     }
@@ -3489,6 +3521,25 @@ void ValidateDROps(
       case DROpKind::kEagerInsert:
         if (!v.IsInsert()) {
           ValidatorFail("R1 A.6(c): a kEagerInsert op's view is not an INSERT");
+        }
+        break;
+      case DROpKind::kEagerUnion:
+        // R3 (owner-ruled STRENGTHENED arm, r3-design §F.2): re-check the
+        // mint's ACTUAL predicate — IsMerge AND does-not-own-an-induction-
+        // group. The view-kind alone is AMBIGUOUS here (inductive merges are
+        // IsMerge too, but they lower through Authority A round shells and
+        // must never enroll a union marker).
+        if (!v.IsMerge()) {
+          ValidatorFail("R3 A.6(c): a kEagerUnion op's view is not a MERGE");
+        }
+        if (v.InductionGroupId().has_value()) {
+          ValidatorFail("R3 A.6(c): a kEagerUnion op's merge owns an "
+                        "induction group (Authority A, must not mint)");
+        }
+        break;
+      case DROpKind::kEagerSelect:  // strict view-kind arm (r3-design §F.3)
+        if (!v.IsSelect()) {
+          ValidatorFail("R3 A.6(c): a kEagerSelect op's view is not a SELECT");
         }
         break;
       default:

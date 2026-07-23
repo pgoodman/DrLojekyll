@@ -187,6 +187,25 @@ enum class DROpKind : uint8_t {
                          //   reject upstream — ADJ-R2-3). NO stored functor —
                          //   `functor=<name>/<arity>` re-derives from
                          //   `eager_view` (QueryMap::Functor(), ADJ-R2-2).
+  kEagerUnion,           // (22) R3: the MERGE-union dispatch (Build.cpp
+                         //   BuildEagerUnionRegion) — a merge that does NOT
+                         //   OWN an InductionGroupId (it may still sit inside
+                         //   a cycle, dominated by the owning merge —
+                         //   Union.cpp NOTE). The owning-merge leg is
+                         //   Authority A (round shells), no marker.
+                         //   EFFECT-FREE marker; NO stored payload (a union
+                         //   carries no operator/functor). `table_op_table` =
+                         //   the merged-model table — typically NON-null even
+                         //   for `.df class=table-less` merges (the DataModel
+                         //   equivalence-set, E-107).
+  kEagerSelect,          // (23) R3: the SELECT-rebind dispatch (Build.cpp
+                         //   BuildEagerSelectRegion — the unit-condition
+                         //   INSERT->RELATION->SELECT rebind). EFFECT-FREE
+                         //   marker; NO stored payload (unit-condition-ness
+                         //   re-derives from `eager_view` if ever rendered —
+                         //   M2'). `table_op_table` = the merged model,
+                         //   shared with the pred INSERT via the SELECT<->
+                         //   INSERT model-union rule (non-null in practice).
 };
 
 // R3 aggregate provenance (spec §2.2): whether a GROUP_UPDATE came from an
@@ -640,11 +659,14 @@ class DROp {
   std::vector<unsigned> context_cols;
   std::vector<BindingSource> context_col_sources;
 
-  // ---- EAGER_* data (R1: forward/insert; R2: compare/generate) -------------
-  // (kind == kEagerForward | kEagerInsert | kEagerCompare | kEagerGenerate).
+  // ---- EAGER_* data (R1: forward/insert; R2: compare/generate; R3:
+  // union/select) --------------------------------------------------------
+  // (kind == kEagerForward | kEagerInsert | kEagerCompare | kEagerGenerate |
+  //  kEagerUnion | kEagerSelect).
   // EFFECT-FREE position markers of the
   // monotone eager web (design §A.2/§A.3): `eager_view` is the dispatched
-  // TUPLE/INSERT/CMP/MAP view (drives render + the A.6(c) structural recount —
+  // TUPLE/INSERT/CMP/MAP/MERGE/SELECT view (drives render + the A.6(c)
+  // structural recount —
   // the CMP operator and MAP functor re-derive from it at Format time, no
   // stored payload of their own, ADJ-R2-1/2); the
   // target table rides the EXISTING `table_op_table` (nullable — a table-less
@@ -980,6 +1002,8 @@ DROp MakeEagerInsertOp(QueryView insert_view, TABLE *table, EagerSink sink,
 // (ADJ-R2-1/2).
 DROp MakeEagerCompareOp(QueryView cmp_view, TABLE *table);
 DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table);
+DROp MakeEagerUnionOp(QueryView merge_view, TABLE *table);
+DROp MakeEagerSelectOp(QueryView select_view, TABLE *table);
 
 // R1: a `.find()`-guarded lookup of a view's model table (ADJ-S13/S14 — never
 // operator[], which default-inserts a null NODE and SIGSEGVs FindAs on a

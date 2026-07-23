@@ -117,6 +117,8 @@ static const char *DROpKindName(DROpKind k) {
     case DROpKind::kEagerInsert: return "kEagerInsert";
     case DROpKind::kEagerCompare: return "kEagerCompare";
     case DROpKind::kEagerGenerate: return "kEagerGenerate";
+    case DROpKind::kEagerUnion: return "kEagerUnion";
+    case DROpKind::kEagerSelect: return "kEagerSelect";
   }
   fprintf(stderr, "DELTAREL-DUMP: unhandled enum value in a spelling table\n");
   abort();
@@ -924,6 +926,32 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         break;
       }
 
+      // R3 (r3-design §C.2, E-71-adjudicated productions): the MERGE-union
+      // and SELECT-rebind marker ops. Byte-identical to the kEagerForward
+      // shape — NO extra token (a union carries no operator/functor; the
+      // select's unit-condition-ness stays un-rendered, owner-declined §F.4).
+      // DEDICATED cases per M7 — the generic default would silently render
+      // empty effects:/spine: sublines and no args: line (§20(K)).
+      case DROpKind::kEagerUnion: {
+        os << " sign=" << SignGlyph(op.table_op_sign)
+           << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op) << "\n";
+        os << "    args:";
+        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        os << "\n";
+        break;
+      }
+
+      case DROpKind::kEagerSelect: {
+        os << " sign=" << SignGlyph(op.table_op_sign)
+           << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op) << "\n";
+        os << "    args:";
+        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        os << "\n";
+        break;
+      }
+
       default: {
         // Generic fallback (crossover, product-arm, fixpoint-fire, chain-fold,
         // retire, rederive, negate-gate, pivot-assemble). Renders the common
@@ -987,7 +1015,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << "\n";
   }
 
-  // ---- census (22 DROpKind counts, enum order, one line; grammar R-10) ----
+  // ---- census (24 DROpKind counts, enum order, one line; grammar R-10) ----
   os << "\n";
   const auto count_kind = [&](DROpKind k) -> unsigned {
     unsigned n = 0u;
@@ -1008,7 +1036,8 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       DROpKind::kSubgraphInstantiate, DROpKind::kInstanceDeath,
       DROpKind::kInstanceSeal,
       DROpKind::kEagerForward, DROpKind::kEagerInsert,
-      DROpKind::kEagerCompare, DROpKind::kEagerGenerate};
+      DROpKind::kEagerCompare, DROpKind::kEagerGenerate,
+      DROpKind::kEagerUnion,   DROpKind::kEagerSelect};
   os << "census:";
   unsigned census_total = 0u;
   for (DROpKind k : kAllKinds) {
@@ -1017,7 +1046,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << " " << DROpKindName(k) << "=" << n;
   }
   os << "\n";
-  if (census_total != flow.ops.size()) {  // a 23rd DROpKind not in kAllKinds
+  if (census_total != flow.ops.size()) {  // a 25th DROpKind not in kAllKinds
     fprintf(stderr,
             "DELTAREL-DUMP: census covers %u of %zu ops (kAllKinds is "
             "missing a DROpKind)\n",

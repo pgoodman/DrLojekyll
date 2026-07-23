@@ -3239,3 +3239,84 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         entry is binding; the M9 plain-merge paragraph above is
         CORRECTED in place per E-106 and E-107). Errata continue at
         E-108.
+
+(L) R3 LANDED (2026-07-22) — THE THIRD STEP-KIND MIGRATION: the monotone
+    eager web's MERGE-union + SELECT-rebind dispatch arms are MODELED
+    DR-IR OPS. Binding contracts COMMITTED: r3-design.md (owner rulings
+    ADJ-R3-1..10 + Fable-review record in banner) + r3-desired-states.md
+    (DS-R3-1..9, stage-(d) blind-probe record in banner). THE MECHANISM:
+    kEagerUnion(22)/kEagerSelect(23) — EFFECT-FREE, knob-independent
+    walk-position markers on the M1-M9 mold, minted at the Build.cpp
+    dispatch site (the union mint ONLY on the does-NOT-own-an-
+    InductionGroupId leg — the owning-merge leg is Authority A round
+    shells, mint-free; the ADJ-R2-3 one-leg precedent) and lowered IN
+    PLACE by LowerRelStep_Union (calling the UNTOUCHED
+    BuildEagerUnionRegion — Union.cpp byte-unchanged) and
+    LowerRelStep_Select (calling BuildEagerSelectRegion, the owner-ruled
+    EXTRACT-AND-WRAP: the inline rebind block moved VERBATIM out of the
+    dispatch — a byte-move minting zero impl->next_id, id-stream
+    identity mechanical). NO payload field on either kind (M2';
+    EmittedEagerOp closed). A.6(c): the union arm is the mold's FIRST
+    STRENGTHENED arm (owner-ruled: re-checks IsMerge AND
+    !InductionGroupId — the view-kind alone is ambiguous between
+    inductive and plain, a discrimination the Compare/Map precedent
+    never had); the select arm strict. IsEagerMarkerKind 6-way (key_of +
+    A.6(c) ride free); EAGER_WEB 6-way + loud-abort; census 22→24 DAY
+    ONE (both ADJ-S11 count-in-comment bumps); dedicated render cases =
+    the kEagerForward shape exactly (no extra token — owner-declined
+    cond=/rel=). THE E-106→E-107 CARRIER STORY (two orchestrator/fleet
+    corrections mid-ritual, both committed as errata BEFORE code): the
+    M9 sweep's class=monotone filter missed the plentiful `.df
+    class=table-less` acyclic merges (E-106 — reachability half STANDS);
+    then the stage-(d) BLIND lane's ModelTableOrNull instrumentation
+    probe INVERTED the render prediction (E-107): those merges are
+    ControlFlow-DataModel table-BACKED, so the WITNESSED kEagerUnion arm
+    renders table=%table:N and the table-LESS union render is the
+    opt-UNWITNESSED residual. CARRIERS (owner-ruled): merge_2 (PRIMARY
+    union — 5 markers, %table:4 ×3 + %table:8 ×2) + booleans (PRIMARY
+    select — 1 marker, table=%table:4 via the SELECT<->pred-INSERT
+    model union) + elim-cond-cycle-simple (the NEGATIVE guard: its
+    induction-owned merge minted ZERO unions — the mint-guard witness;
+    select @%table:5) — three .irgold sidecars pinning deltarel opt,
+    three FIRST-EVER goldens seeded via RAT-8 from the reviewed
+    suite-pre1 workroot. EVERY pre-registered [BYTE]/[STRUCT] prediction
+    MATCHED: censuses (merge_2 20 ops 10F/5I/5U; booleans 11 ops
+    6F/2I/2fold/1S; elim 9 ops 6F/2I/1S), the three existing carriers'
+    census-tail-only churn (` kEagerUnion=0 kEagerSelect=0`, verified 6
+    diff lines total), pre-bless reds EXACTLY the six pre-registered
+    (tc/symrec/map_3 IRGOLD-DIVERGE + 3 IRGOLD-MISSING) ×3 runs,
+    git-status exactly 3 modified + 3 new goldens + 3 sidecars.
+    REFEREES EXECUTED PERSONALLY (E-77): ADJ-S7 same-workroot
+    direct-diff (6/6 bless-sources SAME-AS-REVIEWED); ADJ-S10 count
+    read (per-visit semantics, ADJ-R3-9); DS-ADJ-4 hexdump (sign=· c2
+    b7; the args-table bytes first-pinned); DS-ADJ-1 manual knob
+    compiles (opt==nocf / nodf==none on all three new carriers: 20/20/
+    53/53, 11/11/18/18, 9/9/24/24 — df-axis growth expected). FABLE
+    REVIEW (10-agent workflow): 3 verified findings, ZERO live
+    correctness — [1] the Induction.cpp:996 SECOND BuildEagerUnionRegion
+    caller (DEAD at tip behind the NeedsInductionCycleVector TODO
+    short-circuit) is a LABELED coverage hole outside the marker model
+    (the strengthened A.6(c) arm forbids minting there): loud comment
+    landed at the call site, recorded residual, re-visit at R-final;
+    [2]/[3] four→six comment drift FIXED; [R1] shared render-case
+    labels REFUTED (dedicated blocks contract-specified). Fixes
+    comment-only, DUMP-NEUTRAL ×6 carriers + post-fix suite/A-B green.
+    GATES (final tree): SUITE ×3 pre-bless (exact six reds) + PASS
+    (173) ×3 post-bless + post-fix; 676-row knob-off A/B 0-diverged vs
+    frozen c0a8a819/958ddf8b ×3 (post-impl ×2 + post-fix); post-
+    baseline-4 20 rows (incl. nested witness ×4) + data/ 144 rows
+    0-diverged ×3 (evm_array_parse identical-SIGABRT baseline stands);
+    ctest 5/5 debug + 5/5 ASAN; ASAN BOTH surfaces PASS (173) zero
+    reports; config-invariance 3-run + debug==release SINGLE-HASH ×6
+    carriers; E-62 re-grep CLEAN (edited sites widened branches only);
+    Q5 progsize@128 release SAME-SESSION INTERLEAVED ABABAB A warm
+    {139,141,139} vs B {139,139,139,137} ms (0.0% median — ADJ-S8
+    MEASURED, A1 cold discarded; generated headers byte-identical).
+    RESIDUALS: the table-LESS kEagerUnion render (bare args:) is
+    opt-UNWITNESSED (nodf/none only, unpinned — ADJ-S5-analog); the
+    Induction.cpp dead-branch coverage hole (review [1], labeled,
+    R-final); neq/lt/gt + positivity spellings, publish-*/message=,
+    the eager count oracle + ClassifyEagerSink replica carry unchanged.
+    NEXT: R4 NEGATE per §5 (PIN-3 class= refinement is the standing
+    bless blocker — rule at the R4 ritual head), then R-JOIN (the
+    NOT-RULED pivot-belt fold), R-E42, R-final.

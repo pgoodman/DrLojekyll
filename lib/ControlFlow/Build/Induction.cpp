@@ -993,6 +993,15 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     }
 
   } else {
+    // R3 (Fable-review [1], LABELED COVERAGE HOLE — dead at tip): this is
+    // BuildEagerUnionRegion's SECOND caller, outside the marker model (no
+    // kEagerUnion mint here), and the strengthened A.6(c) arm FORBIDS a
+    // union marker on an induction-owning merge. Unreachable today —
+    // NeedsInductionCycleVector's merge short-circuit returns true for
+    // every InductionGroupId-owning merge — but if that TODO is ever
+    // relaxed, this branch would emit a real union region the .deltarel
+    // dump cannot show. Model it (its own op kind or a sanctioned mint)
+    // before relaxing the short-circuit; re-visit at R-final.
     BuildEagerUnionRegion(impl, pred_view, view, context, parent,
                           already_added);
   }
