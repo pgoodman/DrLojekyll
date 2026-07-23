@@ -348,35 +348,25 @@ sweep result is recorded in §20(K) and noted at §5's R3/R4 blocks.
       count read).
     R3..Rk (each a diff on the AMENDED mold M1-M9; owner re-ranks
       scope/pairing at each ritual head):
-      R3 MERGE-union (BuildEagerUnionRegion, Union.cpp — 49 lines) +
-        SELECT rebind (the §2 dispatch's IsSelect block: bind INSERT
-        input cols -> recurse; NO builder file). Owed decisions:
-        payload (a plain union has little identity beyond the view —
-        likely bare markers per M2'; SELECT's marker may record the
-        unit-condition-ness); whether SELECT-rebind is even a marker
-        (it mints no region of its own — the arm is pure plumbing; a
-        marker models the WALK STEP, the R1 forward precedent says
-        yes); M9 carrier coverage: the existing carriers HAVE merges/
-        selects in their .df, but the dispatch's IsSelect arm is
-        reached ONLY from unit-condition INSERTs (conditions_to_bools
-        shape) — check reachability, not just view presence, before
-        scoping (a .df `select` node that is a message receive is a
-        walk ROOT, not this arm). [M9 SWEEP EXECUTED 2026-07-22,
-        §20(K), CORRECTED by E-106 + E-107: zero `.df`
-        class=monotone acyclic merges (all 74 are cycle
-        participants), but `.df class=table-less` acyclic merges are
-        PLENTIFUL (47 corpus hits incl. merge_1..6, compare_6 ×3,
-        select_2/4) and are walk-reached (never deletion-capable →
-        never cut). E-107: at the ControlFlow DataModel layer these
-        are typically model-table-BACKED (probe-verified: merge_2's
-        5 unions render table=%table:4/%table:8) — the witnessed
-        kEagerUnion arm is TABLE-BACKED; the table-less render is
-        the opt-unwitnessed residual. Union carrier = an
-        .irgold sidecar on an existing green case (RAT-8 seeding).
-        The SELECT
-        arm IS witnessed by the unit-condition shape: booleans,
-        booleans_diff, elim-cond-cycle-simple, prove_constant
-        (+ data/ conditions_to_bools).]
+      R3 — DONE (2026-07-22, §20(L); contracts r3-design.md
+        ADJ-R3-1..10 + r3-desired-states.md DS-R3-1..9):
+        kEagerUnion(22)/kEagerSelect(23) on the mold; NO payload
+        field (M2'); the union mint ONLY on the not-owning-an-
+        InductionGroupId leg; SELECT lowered via the extracted
+        BuildEagerSelectRegion + LowerRelStep_Select (owner-ruled
+        extract-and-wrap); A.6(c) union arm = the mold's FIRST
+        STRENGTHENED arm (re-checks !InductionGroupId), select
+        strict; census 24; carriers merge_2 + booleans +
+        elim-cond-cycle-simple (RAT-8, deltarel-opt pins — six
+        .deltarel goldens total now). [All originally-owed decisions
+        ruled: bare markers per M2'; SELECT DOES mint (the R1
+        forward precedent); E-106/E-107 carrier story recorded in
+        §20(K)/(L) — the witnessed kEagerUnion arm is TABLE-BACKED
+        (`.df class=table-less` ≠ model-table-null); the table-less
+        union render is the opt-unwitnessed residual; the
+        Induction.cpp:996 dead second BuildEagerUnionRegion caller
+        is a LABELED coverage hole outside the marker model (Fable
+        review [1], re-visit at R-final).]
       R4 NEGATE gate (BuildEagerNegateRegion, Negate.cpp — 105 lines).
         Payload per M2': @never-ness and the negated table are
         derivable from the view (QueryNegate) — expect bare marker +
