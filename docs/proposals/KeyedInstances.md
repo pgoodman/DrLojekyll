@@ -3320,3 +3320,111 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     NEXT: R4 NEGATE per §5 (PIN-3 class= refinement is the standing
     bless blocker — rule at the R4 ritual head), then R-JOIN (the
     NOT-RULED pivot-belt fold), R-E42, R-final.
+
+(M) R4-OPEN RE-VERIFICATION RECORD (2026-07-23, tip 1492adbf; the
+    session-open items (0)+(1) EXECUTED per §20(L)'s NEXT).
+    (0) Frozen A/B baselines RE-SNAPSHOTTED from tip into the session
+        scratchpad BEFORE any code (debug f69574b8… / release
+        56da82ab…; both presets rebuilt clean) — the c0a8a819/
+        958ddf8b-era snapshots retired as STALE post-R3. ASAN cadence
+        stands per-diff (§19(F)/(J)); the tip is docs-only atop
+        7982db9a, whose both-surface sweeps are the standing green.
+    (1) §20(K)/(L) + rel-arch-pseudocode.md §4/§4.1/§4.2/§5 FLEET-RE-
+        VERIFIED (house precedent): 3 seed-UNREAD opus derivation
+        lanes (Build.cpp dispatch/mints/wrappers incl. the extracted
+        BuildEagerSelectRegion + all-caller sweeps; DeltaRel.cpp
+        ctors/IsEagerMarkerKind/EAGER_WEB/key_of/A.6(c); Format.cpp
+        render + six-golden conformance) + 3 seed-read adversarial
+        verifiers (§4+§4.1; §4.2+§5; §20(K)+(L)) + 1 sonnet
+        mechanical lane (11-surface regen, counts, census 24,
+        hexdump pins, cross-knob compiles) + 1 WORKTREE-ISOLATED
+        opus R4-input lane (the M12-sanctioned fprintf walk/model
+        probe on its own build — the pristine tree never touched) +
+        1 xhigh consolidator (9 agents, ~818k tokens; every
+        candidate adjudicated AT the code). The E-62 tripwire
+        re-grepped by the ORCHESTRATOR personally: CLEAN (zero
+        out-of-lib body_ops/output_ops readers; pinned_order
+        neighbors = the standing Stratum.cpp:1073 comment + the
+        RAT-3 InstanceOrderTest fixture). The carrier-golden referee
+        EXECUTED by the orchestrator personally: ALL ELEVEN pinned
+        golden surfaces regenerate BYTE-IDENTICAL at tip (tc
+        h/ir/df/deltarel, symrec ir/df/deltarel, map_3/merge_2/
+        booleans/elim-cond-cycle-simple deltarel — the sidecars are
+        the surface-count authority; "nine" in the session brief was
+        a miscount). VERDICT: SOUND-WITH-ERRATA — zero code or
+        design defects; the M1-M13 mold holds exactly; four errata,
+        applied IN PLACE (each site tagged):
+          E-108 MED  §5 R4 block STARTING-STATE CAVEAT (the fleet's
+                     headline, orchestrator-re-verified at code):
+                     NEGATE is NOT un-modeled — an EAGER kNegateGate
+                     op ALREADY exists, minted per-negate from
+                     query.Negations() (DeltaRel.cpp:2299-2321,
+                     ctx=kEager) with a REAL kFlagRead effect (the
+                     R1-R3 markers are effect-FREE), inventory-only
+                     (no LowerNegateGate; BuildEagerNegateRegion is
+                     the sole CHECKMEMBER emitter), OVER-ENUMERATING
+                     the walk on 9 corpus cases (the walk-cut
+                     differential negates; the mint comment's
+                     "every negate is eager-walk-reached" premise is
+                     false there — its "Build.cpp:1048-1051" anchor
+                     is also a stale code comment, an R4-implementer
+                     nit). R4 is therefore a DIFF/RE-SOURCE of an
+                     existing op (option A: move the mint to the
+                     walk dispatch) or a FOLD/KEEP + separate marker
+                     (option B) — ruled at the R4 ritual head; the
+                     effect asymmetry must be accounted for either
+                     way; V-NEG-CTX (DeltaRel.cpp:3057) must survive;
+                     DeltaRel.cpp:417-422 pre-anticipates the
+                     re-source ("R1d+").
+          E-109 LOW  "negate_6 is the sole @never witness" sharpened
+                     to sole @never-NEGATE witness (map_5.dr:17's
+                     `@never is_even` is @never-on-a-#functor -> a
+                     negated MAP, kNegateGate=0, not a QueryNegate;
+                     two other grep hits are comment text). Both §5
+                     sites.
+          E-110 COSM §4.2 M13 "Induction.cpp:997-1005" ->
+                     ":996-1005" (the loud label opens at :996,
+                     matching §5's anchor).
+          E-111 LOW  the §4/§4.1 R1/R2-body anchor re-base at tip
+                     1492adbf (banner-pre-declared drift from R3's
+                     insertions): mint sites :1294/:1303, INSERT
+                     msg :1302; M4 enroll :2437-2478; M6 recount
+                     :3486-3560 (guard :3494, switch :3505,
+                     table-match :3556); M7 EagerSinkName
+                     Format.cpp:130; §4.1 CMP :1276-1281, MAP
+                     :1260-1274, ctors :1319/:1330, render
+                     :903/:915, ComparisonOperatorName :150,
+                     A.6(c) guard :3494, key_of :4475; EAGER_WEB
+                     re-counted 6-way at tip (was 4-way at the R2
+                     tip). Definition anchors :1138/:1146/:1157/
+                     :1166/:1113/:1123/:1306/:1279/:1290 HELD
+                     exactly (orchestrator spot-verified).
+        ADJUDICATED NON-DEFECT (recorded, no erratum): the
+        cross-knob nodf/none op totals for tc/symrec/map_3 are
+        26/15/21 at tip — §20(K)'s 24/14/18 self-declares the
+        pre-R3 tip and stands as-written; the surplus is EXACTLY
+        the R3 kEagerUnion markers on un-CSE'd merges (dataflow
+        axis only; opt==nocf and nodf==none held; no golden pins
+        those modes — DS-ADJ-1-consistent).
+        R4-INPUT (adjudicated at the correct layers per M12,
+        consolidator-spot-checked, recorded in the §5 R4 block):
+        walk-cut discriminator = CanReceiveDeletions
+        (Build.cpp:970); ~18 dispatch fires opt / 22 none; EVERY
+        reached negate has group_id=none (InductionGroupId is the
+        WRONG discriminator — F22); M10 strengthened arm =
+        !v.CanReceiveDeletions() (non-dead via d5_recursive_negate);
+        M13 DISCHARGED (sole live caller Build.cpp:1312); PIN-3
+        MANIFESTS at the model layer (negate_1 ^negate.5 .df
+        class=monotone but model %table:4 DIFFERENTIAL,
+        CanProduceDeletions=1); negate_6's @never leg MODE-SPLITS
+        (%table:7 opt / null none — the E-107 shape); recommended
+        golden trio negate_6 + negate_1 + d5_recursive_negate (the
+        zero-mint NEGATIVE guard). VERIFIED-CLEAN (held): the full
+        §20(K)-style list in the consolidation record — six kinds
+        18-23 effect-free, single-authority ctors, tail-append
+        enrollment shifting nothing, M2' no-payload, M10/M11/M12
+        exact, census 24 totality-guarded, six render cases, 11/11
+        goldens, E-106/E-107 internally consistent, R2/R3 residuals
+        stand as declared. Full record: session scratchpad
+        fleet-r4open/consolidated.md (disposable; THIS entry is
+        binding). Errata continue at E-112.

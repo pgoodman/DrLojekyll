@@ -44,6 +44,18 @@ re-based here — §4.2's fresh anchors + the fleet's next pass are the
 live authority); §5's R3 block DONE; §5's R4..Rk re-expressed with
 the M12 model-layer caveat. SINGLE-PASS: the next session's fleet
 re-verifies §4/§4.1/§4.2/§5 against code before R4.
+RE-VERIFIED 2026-07-23 at tip 1492adbf by the R4-open fleet (3 seed-
+unread derivation lanes + 3 seed-read verifiers + 1 mechanical lane +
+1 worktree-isolated R4-input probe lane + xhigh consolidator;
+KeyedInstances.md §20(M)): SOUND-WITH-ERRATA, zero code or design
+defects — the M1-M13 mold holds exactly. Errata applied IN PLACE
+below (each marked at its site): E-108 MED (the §5 R4 block's
+STARTING-STATE CAVEAT — an eager kNegateGate op ALREADY exists,
+effect-carrying and walk-over-enumerating; R4 is a diff/re-source,
+not a greenfield marker), E-109 LOW (sole @never-NEGATE witness
+precision), E-110 COSM (Induction.cpp:996), E-111 LOW (the §4/§4.1
+R1/R2-body anchor re-base at tip 1492adbf; definition anchors
+:1138/:1146/:1157/:1166/:1113/:1123/:1306/:1279/:1290 HELD exactly).
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -227,14 +239,14 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
 
     R1 (§20(H); contract r1-design.md): §2's dispatch table is AMENDED —
     the TUPLE and INSERT arms are now MODELED OPS. The dispatch
-    (Build.cpp BuildEagerRegion, mint sites :1254/:1263 — E-103: R2
-    inserted the IsMap/IsCompare arms ABOVE these, +29 drift):
+    (Build.cpp BuildEagerRegion, mint sites :1294/:1303 — E-103/E-111:
+    R2 then R3 inserted arms ABOVE these; re-based at tip 1492adbf):
 
       TUPLE  -> op = MakeEagerForwardOp(view, ModelTableOrNull(view))
                 LowerRelStep_Forward(op, ...)       # Build.cpp:1138
       INSERT -> message = MessageOfInsertOrNull(insert)   # ONCE at the
-                # mint site (:1262 — E-103; helper :1113, ADJ-S13 note
-                # :1092 — E-98)
+                # mint site (:1302 — E-103/E-111; helper :1113, ADJ-S13
+                # note :1092 — E-98; both HELD through R3)
                 op = MakeEagerInsertOp(view, ModelTableOrNull(view),
                        ClassifyEagerSink(ctx, insert, message), message)
                 LowerRelStep_Insert(op, ...)        # Build.cpp:1146
@@ -253,7 +265,8 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
          identity is MECHANICAL (same args, same walk moment).
       M4 inventory enrollment: BuildDRInventory re-invokes the ctor from
          the recorded stream, TAIL-APPENDED strictly after the ingest
-         folds (DeltaRel.cpp:2424-2446 — E-102: the pre-R2 ":2389-2396"
+         folds (DeltaRel.cpp:2437-2478 — E-102/E-111 re-based at tip
+         1492adbf; the pre-R2 ":2389-2396"
          now lands in the UNRELATED DRRound test_vec build; ADJ-S2
          BINDING — folds keep
          op.0/op.1; the walk is the reachability authority until the
@@ -262,8 +275,11 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
          table-less eager ops LEAD the dump; sign-0 eager before each
          table's sign-+1 ingest fold.
       M6 census DAY ONE + the structural recount appended after the
-         expect() lines (DeltaRel.cpp:3454/3461 — E-104: ":3405" sits
-         INSIDE the count-expect() lambda): kind<->view-kind + table
+         expect() lines (base batch DeltaRel.cpp:3443-3453; A.6(c)
+         recount :3486-3560, guard :3494, view-kind switch :3505,
+         table-match :3556 — E-104/E-111 re-based at tip 1492adbf;
+         ":3405" sits INSIDE the count-expect() lambda):
+         kind<->view-kind + table
          == the union-find MERGED model (DS-ADJ-7 — the RENDER AUTHORITY
          is view_to_model->FindAs, NEVER the .df per-view attribute); NO
          count oracle until R-final (ADJ-S12; the ADJ-S10 bless-time
@@ -272,8 +288,8 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
          (header + args: only — no reads/effects/spine sublines; table=
          rendered ONLY when non-null, tid() has no null guard; new
          payload spellings get their own loud-abort name table, e.g.
-         EagerSinkName Format.cpp:128 — E-99/E-105: the def re-settled;
-         :125-127 are its doc-comment).
+         EagerSinkName Format.cpp:130 — E-99/E-105/E-111: the def
+         re-settled again post-R3; :127-129 are its doc-comment).
       M8 helpers are .find()-ONLY on Context maps (ADJ-S13/S14 —
          operator[] on publish_vecs/view_to_model is FORBIDDEN in mint
          paths); identity extractions happen ONCE and feed all
@@ -283,13 +299,15 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
 ##      contracts r2-design.md ADJ-R2-0..8 + r2-desired-states.md
 ##      DS-R2-1..9 — anchors read at the R2 tip by the landing session)
 
-    The R2 dispatch cuts (Build.cpp): CMP :1227-1231 (wrapper :1157 —
+    The R2 dispatch cuts (Build.cpp): CMP :1276-1281 (wrapper :1157 —
     forwards NEITHER pred_view NOR last_table, the builder's own
-    signature) and MAP :1211-1220 (wrapper :1166; mint in the IsPure()
+    signature) and MAP :1260-1274 (wrapper :1166; mint in the IsPure()
     TRUE arm ONLY — impure maps reject upstream pre-walk, ADJ-R2-3).
-    Ctors DeltaRel.cpp:1317/:1328; EAGER_WEB 4-way switch WITH loud-
-    abort default :2425-2447; render cases Format.cpp:901/:913;
-    ComparisonOperatorName :148. Mold deltas every future slice
+    Ctors DeltaRel.cpp:1319/:1330; EAGER_WEB switch (6-way at tip
+    after R3's union/select arms; was 4-way at the R2 tip) WITH loud-
+    abort default :2450-2478; render cases Format.cpp:903/:915;
+    ComparisonOperatorName :150. [E-111 re-based at tip 1492adbf.]
+    Mold deltas every future slice
     inherits:
 
       M2' NO-PAYLOAD-FIELD RULE (the R2 headline, ADJ-R2-1/2): when an
@@ -303,8 +321,8 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
           construction.
       M6' ONE MEMBERSHIP PREDICATE: IsEagerMarkerKind
           (DeltaRel.cpp:1306) is the SOLE spelling of "is an eager
-          marker", shared by the A.6(c) guard (:3462) and the key_of
-          lead-0 branch (:4424). A new marker kind extends the
+          marker", shared by the A.6(c) guard (:3494) and the key_of
+          lead-0 branch (:4475). [E-111 re-based; :1306 HELD.] A new marker kind extends the
           PREDICATE and both sites follow. The A.6(c) kind->view-kind
           dispatch is a SWITCH with a loud-abort default (a fifth kind
           that reaches it un-handled aborts honestly) — mirroring the
@@ -313,8 +331,8 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
           EAGER_WEB case, the A.6(c) case, DROpKindName, kAllKinds,
           the render case.
       M7' SECOND NAME-TABLE PRECEDENT: a new payload spelling gets its
-          own loud-abort table (ComparisonOperatorName, Format.cpp:148
-          — the EagerSinkName mold), TOTAL BY CONSTRUCTION + abort
+          own loud-abort table (ComparisonOperatorName, Format.cpp:150
+          — E-111 — the EagerSinkName mold), TOTAL BY CONSTRUCTION + abort
           tail (-Wswitch is WARNING-ONLY in the presets: no -Werror;
           the tail is the enforcement, d2-grammar finding). Reuse the
           .df house spelling for cross-surface consistency — but NOTE
@@ -385,7 +403,8 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
           minting for an arm, ENUMERATE ALL CALLERS of the target
           builder (grep, not just the dispatch) — a non-dispatch
           caller is emission outside the marker model. If dead,
-          label it LOUDLY at the call site (Induction.cpp:997-1005,
+          label it LOUDLY at the call site (Induction.cpp:996-1005
+          — E-110: the loud comment opens at :996, matching §5,
           the dead !NeedsInductionCycleVector fallback — a
           strengthened A.6(c) arm FORBIDS modeling it, so relaxing
           the guarding TODO requires modeling first; re-visit at
@@ -437,16 +456,51 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
         arm Build.cpp:1310-1312 (IsNegate -> BuildEagerNegateRegion,
         Negate.cpp — 105 lines, a real builder file: NO M11
         extraction needed, the R1-shape thin wrapper suffices).
+        STARTING-STATE CAVEAT (E-108, R4-open fleet, verified at tip
+        1492adbf): NEGATE is NOT un-modeled like union/select were —
+        an EAGER kNegateGate op ALREADY exists, minted per-negate
+        from query.Negations() (DeltaRel.cpp:2299-2321, ctx=kEager),
+        carrying a REAL kFlagRead effect (NOT effect-free — the
+        R1/R2/R3 markers were). It is inventory-only (no
+        LowerNegateGate; Negate.cpp BuildEagerNegateRegion is the
+        sole CHECKMEMBER emitter) and OVER-ENUMERATES the walk on 9
+        corpus cases (the population-2 differential/walk-cut negates:
+        cond_both_polarities 2, cond_diff_flipflop 1,
+        d5_recursive_negate 1, disassemble +1, merge_5 3,
+        negate_cobatch_diff 1, negate_lower_strata 1,
+        negate_multiplicity 1, negation_flap 1). The R4 ritual head
+        must rule: (A) DIFF/RE-SOURCE — move the mint from
+        query.Negations() to the walk dispatch (Build.cpp:1310 via
+        MakeEagerNegateOp + LowerRelStep_Negate), dropping the 9-case
+        surplus and making the mint comment's "every negate is
+        eager-walk-reached" premise true; or (B) FOLD/KEEP — leave
+        the all-negations gate as a dataflow census and add a
+        SEPARATE effect-free population-1 marker (two ops per
+        walk-reached negate). The effect asymmetry must be accounted
+        for either way. V-NEG-CTX (DeltaRel.cpp:3057) pins
+        @never->ctx=eager and must survive any re-source (all @never
+        negates are population 1). The code anticipates the reframe:
+        DeltaRel.cpp:417-422 "a standalone form is expected for the
+        EAGER context when the eager walk is inventoried, R1d+".
         Payload per M2': @never-ness (HasNeverHint) and the negated
         table are derivable from the view (QueryNegate) — expect a
         bare marker + re-derived render tokens (every new spelling
         E-71-adjudicated pre-code; a positivity/@never token was
-        DECLINED unwitnessed at R2 — negate_6 is the sole @never
-        witness, so the token question re-opens WITH that carrier or
-        stays declined). M10: check whether the negate mint predicate
-        is stricter than IsNegate (crossover/context structure) —
-        strengthen the A.6(c) arm to match the mint if so. M13:
-        enumerate ALL BuildEagerNegateRegion callers before scoping.
+        DECLINED unwitnessed at R2 — negate_6 is the sole
+        @never-NEGATE witness (E-109: map_5's `@never is_even` is
+        @never-on-a-#functor -> a negated MAP, kNegateGate=0, not a
+        QueryNegate; negate_cobatch_mono / negate_downstream_diff
+        @never hits are COMMENT text), so the token question re-opens
+        WITH that carrier or stays declined). M10: the walk-cut
+        discriminator is `!v.CanReceiveDeletions()` (the exact
+        Build.cpp:970 cut criterion; NON-DEAD via
+        d5_recursive_negate; NOT InductionGroupId() — every
+        reached-or-recursive negate has group_id=none, the F22
+        lesson) — the A.6(c) arm strengthens to match the
+        walk-authoritative mint (E-108). M13: DISCHARGED by the
+        R4-open fleet — BuildEagerNegateRegion has exactly ONE live
+        caller (Build.cpp:1312; def Negate.cpp:9, decl Build.h:533);
+        no Induction.cpp-style dead second caller.
         THE PIN-3 STANDING BLOCKER (KeyedInstances.md:431-437, T2b
         review): per-view class= mislabels a non-@never negate's OWN
         table (deletion-capable via its crossover while the negate
@@ -460,8 +514,18 @@ re-verifies §4/§4.1/§4.2/§5 against code before R4.
         (negate_1..6 et al.) are .df-LAYER readings — R4's stage-(a)
         must re-derive reachability at the walk layer and table-ness
         at the model layer (probe per M12) before trusting them;
-        @never THIN — sole witness negate_6 ^negate.8, rendered as
-        the prose "; never negates <target>", NOT an @never token.]
+        @never THIN — sole @never-NEGATE witness negate_6 ^negate.8
+        (E-109), rendered as
+        the prose "; never negates <target>", NOT an @never token.
+        THE R4-OPEN FLEET RE-DERIVED THIS AT THE RIGHT LAYERS
+        (§20(M)): walk-cut = CanReceiveDeletions (Build.cpp:970);
+        ~18 fires/opt, 22/none; every reached negate group_id=none;
+        PIN-3 MANIFESTS at the model layer (negate_1 ^negate.5 .df
+        class=monotone but model %table:4 DIFFERENTIAL,
+        CanProduceDeletions=1); negate_6's @never leg MODE-SPLITS
+        (%table:7 opt / null none — E-107 shape); recommended golden
+        trio negate_6 + negate_1 + d5_recursive_negate (the
+        zero-mint NEGATIVE guard, R3-elim analog).]
       MERGE-INDUCTIVE is NOT a marker slice (the round shells are
         Authority A already — E-92); only its induction-input FEED may
         warrant a marker, decided at its own ritual.
