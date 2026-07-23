@@ -3179,16 +3179,23 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         successors), but TABLE-LESS acyclic merges are PLENTIFUL —
         47 corpus hits (merge_1..6, compare_6 ×3, select_2/4,
         fibonacci_iterative, the transitive_closure family, …) +
-        data/ twins — and a table-less merge is never deletion-
-        capable, hence never cut, hence walk-reached (InTryInsert
-        no-fold pass-through; orchestrator-verified at merge_1's
-        ^merge.18 + the dispatch arm). The R3 union arm needs NO new
-        .dr — an .irgold sidecar on an existing green case (RAT-8
-        first-ever .deltarel seeding) suffices; compare_6 would
-        witness union blocks AND the scarce gt/lt spellings in one
-        carrier. The kEagerUnion table= arm (table-BACKED union
-        marker) stays corpus-unwitnessed either way (the map_3
-        all-table-less precedent). SELECT rebind arm = WITNESSED by
+        data/ twins — and a `.df class=table-less` merge is never
+        deletion-capable, hence never cut, hence walk-reached
+        (orchestrator-verified at merge_1's ^merge.18 + the dispatch
+        arm). The R3 union arm needs NO new .dr — an .irgold sidecar
+        on an existing green case (RAT-8 first-ever .deltarel
+        seeding) suffices. E-107 (R3 stage-(d), the blind lane's
+        ModelTableOrNull instrumentation probe, adjudicator-
+        re-executed): E-106's RENDER framing was INVERTED — `.df
+        class=table-less` is a DATAFLOW attribute; at the
+        ControlFlow DataModel layer these merges are typically
+        model-table-BACKED (equivalence-set sharing: merge_2's 5
+        unions render table=%table:4 ×3 / %table:8 ×2, select_2's 2
+        render %table:4), so InTryInsert FOLDS there and the
+        WITNESSED kEagerUnion arm is the table-BACKED one; the
+        table-LESS union render (bare args:) is the opt-UNWITNESSED
+        residual (nodf/none only, unpinned). E-106's REACHABILITY
+        half stands unchanged. SELECT rebind arm = WITNESSED by
         the unit-condition
         shape (booleans, booleans_diff, elim-cond-cycle-simple,
         prove_constant + data/ conditions_to_bools; raw select-node
@@ -3230,4 +3237,5 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         persists op-less (Procedure.cpp:94-104). Full record: session
         scratchpad fleet-r3open/consolidated.md (disposable; THIS
         entry is binding; the M9 plain-merge paragraph above is
-        CORRECTED in place per E-106). Errata continue at E-107.
+        CORRECTED in place per E-106 and E-107). Errata continue at
+        E-108.

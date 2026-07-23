@@ -362,14 +362,18 @@ sweep result is recorded in §20(K) and noted at §5's R3/R4 blocks.
         shape) — check reachability, not just view presence, before
         scoping (a .df `select` node that is a message receive is a
         walk ROOT, not this arm). [M9 SWEEP EXECUTED 2026-07-22,
-        §20(K), CORRECTED by E-106: zero TABLE-BACKED-monotone
-        acyclic merges (all 74 class=monotone merges are cycle
-        participants), but TABLE-LESS acyclic merges are PLENTIFUL
-        (47 corpus hits incl. merge_1..6, compare_6 ×3, select_2/4)
-        and are walk-reached (never deletion-capable → never cut;
-        InTryInsert no-fold pass-through). Union carrier = an
-        .irgold sidecar on an existing green case (RAT-8 seeding);
-        compare_6 also pins the scarce gt/lt spellings. The SELECT
+        §20(K), CORRECTED by E-106 + E-107: zero `.df`
+        class=monotone acyclic merges (all 74 are cycle
+        participants), but `.df class=table-less` acyclic merges are
+        PLENTIFUL (47 corpus hits incl. merge_1..6, compare_6 ×3,
+        select_2/4) and are walk-reached (never deletion-capable →
+        never cut). E-107: at the ControlFlow DataModel layer these
+        are typically model-table-BACKED (probe-verified: merge_2's
+        5 unions render table=%table:4/%table:8) — the witnessed
+        kEagerUnion arm is TABLE-BACKED; the table-less render is
+        the opt-unwitnessed residual. Union carrier = an
+        .irgold sidecar on an existing green case (RAT-8 seeding).
+        The SELECT
         arm IS witnessed by the unit-condition shape: booleans,
         booleans_diff, elim-cond-cycle-simple, prove_constant
         (+ data/ conditions_to_bools).]
