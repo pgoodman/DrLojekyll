@@ -428,7 +428,11 @@ enum indices, ref() checked (DF-REF abort). Recorded not-applied:
 the for_each_df_view/Tarjan duplication notes (the impl ForEachView
 is private; Stratify's Tarjan is file-static — refactor deferred).
 
-PIN-3 (owner, from the review — blocks only negate-carrying bless):
+PIN-3 [DISCHARGED 2026-07-23 by the standalone pre-diff, §20(N);
+contracts pin3-design.md + pin3-desired-states.md — class= is now
+TABLE-LEVEL producer-inclusive; negate_1.df.opt + aggregate_1.df.opt
+are the standing fences] (owner, from the review — blocked only
+negate-carrying bless):
 class= is per-view CanReceiveDeletions; a non-@never NEGATE's own
 table is deletion-capable via its crossover while the negate view
 does not receive deletions, so a negate block labels its own table
@@ -3318,7 +3322,8 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     R-final); neq/lt/gt + positivity spellings, publish-*/message=,
     the eager count oracle + ClassifyEagerSink replica carry unchanged.
     NEXT: R4 NEGATE per §5 (PIN-3 class= refinement is the standing
-    bless blocker — rule at the R4 ritual head), then R-JOIN (the
+    bless blocker — rule at the R4 ritual head [DISCHARGED as the
+    §20(N) standalone pre-diff]), then R-JOIN (the
     NOT-RULED pivot-belt fold), R-E42, R-final.
 
 (M) R4-OPEN RE-VERIFICATION RECORD (2026-07-23, tip 1492adbf; the
@@ -3414,9 +3419,10 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         WRONG discriminator — F22); M10 strengthened arm =
         !v.CanReceiveDeletions() (non-dead via d5_recursive_negate);
         M13 DISCHARGED (sole live caller Build.cpp:1312); PIN-3
-        MANIFESTS at the model layer (negate_1 ^negate.5 .df
-        class=monotone but model %table:4 DIFFERENTIAL,
-        CanProduceDeletions=1); negate_6's @never leg MODE-SPLITS
+        MANIFESTED at the model layer (negate_1 ^negate.5 .df
+        class=monotone at that tip while model %table:4 DIFFERENTIAL,
+        CanProduceDeletions=1 — cured by the §20(N) pre-diff);
+        negate_6's @never leg MODE-SPLITS
         (%table:7 opt / null none — the E-107 shape); recommended
         golden trio negate_6 + negate_1 + d5_recursive_negate (the
         zero-mint NEGATIVE guard). VERIFIED-CLEAN (held): the full
@@ -3428,3 +3434,76 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         stand as declared. Full record: session scratchpad
         fleet-r4open/consolidated.md (disposable; THIS entry is
         binding). Errata continue at E-112.
+
+(N) THE PIN-3 PRE-DIFF LANDED (2026-07-23) — class= IS A TABLE
+    PROPERTY; the T2b-era PIN-3 (this file:431-437) DISCHARGED as the
+    OD-12-style ruled pre-diff before R4. Binding contracts COMMITTED:
+    pin3-design.md (stage-(a)-(c) ritual + owner rulings Q1-Q4 +
+    Fable-review record in banner) + pin3-desired-states.md
+    (DS-PIN3-1..12; the stage-(d) three-way blind-convergence record
+    in banner). OWNER RULINGS: Q1 = candidate (ii) TABLE-LEVEL
+    (class= renders the TABLE's deletion-capability: differential iff
+    SOME live member view of the %table:<id> has CanReceiveDeletions
+    || CanProduceDeletions — the (i)≡(ii) zero-bystander equivalence
+    held corpus-wide, ruled on the category-error/peer-of-table=/
+    R4-invariant-coupling ground); Q2 = TWO standing fences blessed
+    in-slice (negate_1.df.opt + aggregate_1.df.opt — the FIRST
+    producer-carrying .df goldens; the A/B gate is .df-blind, so
+    without them no suite gate would catch a class= regression);
+    Q3 = standalone pre-diff (the churn premise REFUTED: the two
+    pre-existing .df pins are producer-free and proven byte-stable);
+    Q4 = loud fprintf+abort checked lookup (DF-CLASS, the
+    DF-REF/DF-JOIN idiom) + explicit crd||cpd (crd⟹cpd,
+    Differential.cpp:114-117). THE MECHANISM: a deterministic
+    pre-pass in the .df emitter (lib/DataFlow/Format.cpp, PASS 2
+    head) OR-folds each %table:N's member deletion-capability over
+    the same dead-skipping for_each_df_view the emission drives
+    (domain-match ⇒ the abort never false-fires; integer-keyed map,
+    never iterated — order-free by construction); attrs_line renders
+    the table's class. Dump-only: NO emission-path change. STAGE-(d)
+    THREE-WAY CONVERGENCE (the blind-lane precedent extended): the
+    author lane's hand-predicted golden bytes == the BLIND worktree
+    prototype's empirical dumps == the comparator's mechanical
+    tip-flip, for BOTH new fences; the 46-flip inventory (21 opt /
+    25 none over 18 cases: 17 negates + 2 agg + 2 kv at opt)
+    tuple-for-tuple identical across lanes and MATCHED EXACTLY at
+    implementation. negate_1's ^negate.5 @%table:4 now renders
+    differential, consistent with its table-sharing tuple/insert —
+    the PIN-3 lie is gone; R4's negate-carrying blesses UNBLOCKED.
+    F24 RECORDED (FINDINGS.md round 10): the intended-flip referee's
+    ONE non-flip diff — conflicting_constants nodf/none .df
+    run-to-run instability (AutoVar column order; 3 hashes / 8 runs)
+    — reproduces IDENTICALLY on the frozen 1492adbf baseline
+    (pre-existing, the F20-family .df-surface survivor; record-only,
+    out of slice scope). FABLE REVIEW (8-agent workflow): 2 verified
+    findings, ZERO live correctness — [1] the §20(N) cross-refs were
+    dangling pre-commit (CONFIRMED; discharged by THIS entry landing
+    in the same commit); [2] the pre-pass try_emplace four-liner
+    simplified to operator[] |= (the M8 checked-lookup discipline is
+    the EMISSION-side rule; contract pins the predicate spelling,
+    not map mechanics) — fix proven DUMP-NEUTRAL on all 10 pinned
+    surfaces + post-fix suite/A-B green. GATES (final tree): suite
+    pre-bless EXACTLY the 2 pre-registered IRGOLD-MISSING reds →
+    RAT-8 bless (sources byte-verified same-as-reviewed; the bless
+    arm's oracle/monotone/stdout rewrites were byte-identical no-ops)
+    → SUITE PASS (173) ×3 + post-fix; intended-flip referee
+    (orchestrator-EXECUTED, E-77) 21 opt / 25 none EXACT with
+    pure-flip shape across 674 comparisons; A/B vs frozen f69574b8/
+    56da82ab: 692 corpus rows + 4 nested rows + 144 data/ rows
+    0-DIVERGED (+346-row post-fix re-run clean); ctest 5/5 debug +
+    5/5 ASAN; ASAN BOTH surfaces SUITE PASS (173) zero reports;
+    config-invariance single-hash (3-run debug + release) on both
+    fence carriers × opt+none; E-62 re-grep clean (no DeltaRel
+    touch); Q5 progsize@128 release SAME-SESSION INTERLEAVED ABABAB
+    A warm {128,128,130} vs B {129,126,129,128} ms (0.0% median,
+    A1 cold discarded; generated headers byte-identical). DOC
+    DISCHARGES same-commit: this file :431-437 + §20(L)/(M) live
+    status lines; rel-arch §5 R4 block (blocker → discharged);
+    t2-dump-spec.md CLASS SEMANTICS clause (table-level,
+    producer-inclusive, normative); Format.cpp comment. NEXT: the
+    OD-13 model-set observability diff (owner-directed 2026-07-23:
+    DF dumps — at least DOT — document each view's DataModel
+    union-find set; DOT floor zero-golden; textual model= token =
+    its own E-71 ruling + mini re-bless), THEN R4 NEGATE under
+    option (A) diff/re-source per §20(M)/E-108 with the ruled
+    carrier trio negate_6 + negate_1 + d5_recursive_negate.

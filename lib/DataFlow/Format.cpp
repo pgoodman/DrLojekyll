@@ -1153,12 +1153,28 @@ OutputStream &operator<<(OutputStream &os, QueryDF df) {
   // ------------------------------------------------------------------
   // PASS 2 — emission.
 
-  // class= is the spec-pinned per-view CanReceiveDeletions derivation. KNOWN
-  // REFINEMENT PIN (review catch, owner-queued): a non-@never NEGATE's own
-  // table is deletion-capable via its crossover arm-pair while the negate
-  // view itself does not RECEIVE deletions, so a negate block can label its
-  // own table monotone while table-sharing views say differential. Refine
-  // (producer-side / table-level) before blessing any negate-carrying dump.
+  // PIN-3 (discharged): class= is a TABLE property. Aggregate each
+  // %table:N's deletion-capability once, over its live members, so every
+  // block sharing a table renders one consistent class (a producer view —
+  // a non-@never NEGATE, an AGGREGATE / KVINDEX, an impure MAP — makes
+  // its whole table differential even though it does not RECEIVE
+  // deletions). CanReceiveDeletions() implies CanProduceDeletions()
+  // (Differential.cpp), so the explicit disjunction below equals bare
+  // CanProduceDeletions(); the self-documenting form is kept.
+  std::unordered_map<unsigned, bool> table_is_differential;
+  for_each_df_view([&](QueryView v, unsigned, const char *) {
+    const auto tid = v.TableId();
+    if (!tid) {
+      return;  // Table-less views contribute nothing.
+    }
+    // OR-fold: any member ⇒ table diff (operator[] value-initializes the
+    // accumulator to false; insertion IS the job here — the checked-lookup
+    // discipline applies on the emission side below, where an insert would
+    // mask a live/dead skew).
+    table_is_differential[*tid] |=
+        v.CanReceiveDeletions() || v.CanProduceDeletions();
+  });
+
   const auto attrs_line = [&](QueryView v, bool omit_table) -> std::string {
     std::string r = "  ATTRIBUTES";
     const auto table_id = v.TableId();
@@ -1168,10 +1184,21 @@ OutputStream &operator<<(OutputStream &os, QueryDF df) {
     r += " class=";
     if (!table_id) {
       r += "table-less";
-    } else if (v.CanReceiveDeletions()) {
-      r += "differential";
     } else {
-      r += "monotone";
+      // Checked lookup: this view HAS table_id and the pre-pass enrolled
+      // every table-bearing live view, so the key is guaranteed present.
+      // A miss means emission reached a view the pre-pass skipped — a
+      // live/dead skew; abort loudly (the DF-REF/DF-JOIN idiom), never a
+      // silent operator[] insert or an opaque .at() throw.
+      const auto it = table_is_differential.find(*table_id);
+      if (it == table_is_differential.end()) {
+        fprintf(stderr,
+                "DF-CLASS: view on %%table:%u absent from the class "
+                "aggregate (live/dead skew in the .df drain)\n",
+                *table_id);
+        abort();
+      }
+      r += it->second ? "differential" : "monotone";
     }
     if (auto stratum = v.Stratum()) {
       r += " stratum=" + std::to_string(*stratum);

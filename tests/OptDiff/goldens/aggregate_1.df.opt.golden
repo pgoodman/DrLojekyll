@@ -1,0 +1,23 @@
+dataflow
+
+select ^select.0 (c1:i32)
+  ATTRIBUTES class=table-less stratum=0
+
+select ^select.1 (A:i32, Y:i32)                    ; recv #message pair/2
+  ATTRIBUTES class=table-less stratum=1
+  => ^tuple.2 (A, Y)
+
+tuple ^tuple.2 (A:i32, c5:i32, Y:i32)
+  ATTRIBUTES table=%table:15 class=monotone stratum=2
+  => ^aggregate.4 (A, Y)
+
+tuple ^tuple.3 (A:i32, c8:i32, N:i32)
+  ATTRIBUTES table=%table:10 class=differential stratum=4
+  => ^insert.5 (A, N)
+
+aggregate ^aggregate.4 (A:i32, c11:i32, N:i32)     ; count_i32
+  ATTRIBUTES table=%table:5 class=differential stratum=3
+  => ^tuple.3 (A, N)
+
+insert ^insert.5 (A:i32, c8:i32, N:i32) into %table:10
+  ATTRIBUTES class=differential stratum=5

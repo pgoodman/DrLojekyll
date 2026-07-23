@@ -146,10 +146,18 @@ emission commit.
     table-less>`, `stratum=<Stratum()>`, and for induction members
     `set=<merge_set_id> depth=<InductionDepth>` (the DOT's SET/DEPTH
     surface, ratified in — tc-writer F7).
-  - CLASS SEMANTICS PINNED (tc-writer F5, symrec-critic F-D):
-    differential = backing table present AND deletion-capable
-    (CanReceiveDeletions-derived); monotone = table present, not
-    deletion-capable; table-less = no table. RECURSION DOES NOT IMPLY
+  - CLASS SEMANTICS PINNED (tc-writer F5, symrec-critic F-D; PIN-3
+    refined 2026-07-23, pin3-design.md): differential = backing table
+    present AND the TABLE is deletion-capable — i.e. SOME live/emitted
+    view sharing this `%table:<id>` has `CanReceiveDeletions()` OR
+    `CanProduceDeletions()` (table-level, producer-inclusive);
+    monotone = table present, NO live member deletion-capable;
+    table-less = no table. A non-@never NEGATE, an AGGREGATE /
+    KVINDEX (over any input), and an impure MAP PRODUCE deletions
+    into their own table without RECEIVING them; class= reflects the
+    TABLE, so such a producer and all its table-siblings render
+    differential — never the per-view CanReceiveDeletions-only split
+    that mislabeled the producer monotone. RECURSION DOES NOT IMPLY
     DIFFERENTIAL — a fully monotone recursive program (insert-only
     tc) is class=monotone throughout.
   - v3.1 SESSION-PINNED EMITTER RULINGS (from the artifact-revision

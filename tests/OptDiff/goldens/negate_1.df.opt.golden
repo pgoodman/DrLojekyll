@@ -1,0 +1,27 @@
+dataflow
+
+select ^select.0 (A:i32, B:i32)                    ; recv #message feed/2
+  ATTRIBUTES class=table-less stratum=0
+  => ^tuple.4 (A, B)
+
+select ^select.1 (A:i32)                           ; recv #message unsee/1
+  ATTRIBUTES class=table-less stratum=1
+  => ^tuple.2 (A)
+
+tuple ^tuple.2 (A:i32)
+  ATTRIBUTES table=%table:8 class=monotone stratum=2
+
+tuple ^tuple.3 (A:i32, B:i32)
+  ATTRIBUTES table=%table:4 class=differential stratum=5
+  => ^insert.6 (A, B)
+
+tuple ^tuple.4 (A:i32, B:i32)
+  ATTRIBUTES table=%table:11 class=monotone stratum=3
+  => ^negate.5 (B, A)
+
+negate ^negate.5 (A:i32, B:i32)                    ; negates ^tuple.2
+  ATTRIBUTES table=%table:4 class=differential stratum=4
+  => ^tuple.3 (A, B)
+
+insert ^insert.6 (A:i32, B:i32) into %table:4
+  ATTRIBUTES class=differential stratum=6

@@ -501,7 +501,14 @@ R1/R2-body anchor re-base at tip 1492adbf; definition anchors
         R4-open fleet — BuildEagerNegateRegion has exactly ONE live
         caller (Build.cpp:1312; def Negate.cpp:9, decl Build.h:533);
         no Induction.cpp-style dead second caller.
-        THE PIN-3 STANDING BLOCKER (KeyedInstances.md:431-437, T2b
+        THE PIN-3 BLOCKER — DISCHARGED by the standalone PRE-diff
+        (2026-07-23, §20(N); contracts pin3-design.md +
+        pin3-desired-states.md): class= is now TABLE-LEVEL
+        producer-inclusive (owner ruling Q1 = candidate (ii));
+        negate_1.df.opt + aggregate_1.df.opt are the standing
+        producer fences (Q2). R4's negate-carrying blesses are
+        UNBLOCKED. [Historical text retained below.]
+        THE ORIGINAL PIN (KeyedInstances.md:431-437, T2b
         review): per-view class= mislabels a non-@never negate's OWN
         table (deletion-capable via its crossover while the negate
         view is not) — producer-side/table-level refinement owed
@@ -520,9 +527,11 @@ R1/R2-body anchor re-base at tip 1492adbf; definition anchors
         THE R4-OPEN FLEET RE-DERIVED THIS AT THE RIGHT LAYERS
         (§20(M)): walk-cut = CanReceiveDeletions (Build.cpp:970);
         ~18 fires/opt, 22/none; every reached negate group_id=none;
-        PIN-3 MANIFESTS at the model layer (negate_1 ^negate.5 .df
-        class=monotone but model %table:4 DIFFERENTIAL,
-        CanProduceDeletions=1); negate_6's @never leg MODE-SPLITS
+        PIN-3 MANIFESTED at the model layer (negate_1 ^negate.5 .df
+        class=monotone at that tip while model %table:4 DIFFERENTIAL,
+        CanProduceDeletions=1 — CURED by the §20(N) pre-diff: the
+        refined table-level class= renders it differential, pinned
+        by the negate_1.df.opt fence); negate_6's @never leg MODE-SPLITS
         (%table:7 opt / null none — E-107 shape); recommended golden
         trio negate_6 + negate_1 + d5_recursive_negate (the
         zero-mint NEGATIVE guard, R3-elim analog).]
