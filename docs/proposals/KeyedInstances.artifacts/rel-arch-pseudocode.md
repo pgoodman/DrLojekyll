@@ -56,6 +56,15 @@ not a greenfield marker), E-109 LOW (sole @never-NEGATE witness
 precision), E-110 COSM (Induction.cpp:996), E-111 LOW (the §4/§4.1
 R1/R2-body anchor re-base at tip 1492adbf; definition anchors
 :1138/:1146/:1157/:1166/:1113/:1123/:1306/:1279/:1290 HELD exactly).
+AMENDED 2026-07-23 at tip 57aef93d+ (post the PIN-3 pre-diff,
+§20(N)): §5's R4 block carries the E-108 STARTING-STATE CAVEAT and
+the PIN-3 DISCHARGE note; §6 = the OBSERVABILITY SURFACES + the
+TABLE-SHARING PARTITION as pseudocode (dump placement, the DOT
+emitter's EXISTING "EQ SET" render, the as-landed PIN-3 attrs_line,
+the ONE-UNION-SITE fact: the CF DataModel partition IS the DF
+EquivalenceSetId partition) with OD-13 expressed as a diff on it.
+SINGLE-PASS: the next session's fleet re-verifies §4/§4.1/§4.2/§5/§6
+against code before OD-13.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -548,6 +557,11 @@ R1/R2-body anchor re-base at tip 1492adbf; definition anchors
       becomes a documented Runtime contract).
     R-E42: the table-less receive's VECTORLOOP shim minted from an op
       (ExtendEagerProcedure, Procedure.cpp) — S4 retires.
+    OD-13 OBSERVABILITY (owner-directed 2026-07-23, §20(N) NEXT;
+      lands BEFORE R4 — R4's negate carriers are the model-sharing-
+      sensitive shapes and its fleet gets partition visibility
+      without worktree probes): see §6 below — the diff is expressed
+      on the §6 pseudocode.
     R-final (the §19(H) acceptance, unchanged from §3): the DIRECTION
       FLIP — inventory becomes the reachability authority and the walk
       CONSUMES ops instead of recording them; then S1 (hole contract) /
@@ -560,3 +574,86 @@ R1/R2-body anchor re-base at tip 1492adbf; definition anchors
       (ADJ-S5 — a publishing-demanded-insert corpus case is the cheap
       witness); DS-ADJ-1: census counts are mode-stable ONLY across the
       controlflow axis (df-axis growth is EXPECTED).
+
+## §6. THE OBSERVABILITY SURFACES + THE TABLE-SHARING PARTITION AS
+##     PSEUDOCODE — and OD-13 AS A DIFF (2026-07-23, tip 57aef93d+;
+##     orchestrator-read anchors at the PIN-3 landing tip. SINGLE-
+##     PASS: the next session's fleet re-verifies THIS section
+##     before OD-13)
+
+    PIPELINE PLACEMENT (Main.cpp:110-133): BOTH DataFlow dumps fire
+    AFTER Program::Build, deliberately — the in-code comment says it
+    outright: "we break abstraction layers in order to annotate the
+    data flow IR with table IDs". So CF-stamped facts (TableId, and
+    the model partition below) are AVAILABLE at DF render time.
+      -dot-out  -> operator<<(OutputStream&, Query)   Format.cpp:40
+      -df-out   -> operator<<(OutputStream&, QueryDF) (the T2a
+                   textual dump, the QueryDF tag keeps the DOT
+                   operator untouched)
+
+    THE TABLE-SHARING PARTITION (two layers, ONE partition):
+      BuildEquivalenceSets (DataFlow) assigns every view an
+        impl->equivalence_set DisjointSet; QueryView::
+        EquivalenceSetId() (Query.cpp:234) = equivalence_set->
+        Find()->id, or ~0u SENTINEL if the pass has not run.
+        EquivalenceSetViews() enumerates the member views.
+      BuildDataModel (ControlFlow Build.cpp:229-244) mints one
+        DataModel (a DisjointSet with a TABLE* — Program.h:152) per
+        view, then unions models keyed EXACTLY on
+        view.EquivalenceSetId(). THE ONE-UNION-SITE FACT
+        (orchestrator-grepped at tip): Build.cpp:242 is the SOLE
+        DataModel union in the codebase (the :279 hit is the
+        unrelated forcing-proc var_to_set) — so the CF DataModel
+        partition IS the DF EquivalenceSetId partition; CF adds no
+        merges, it only attaches TABLEs to some classes.
+      TableId (per-view, optional) is STAMPED CF-side from
+        model->table->id (Data.cpp:252; a second site :315 is
+        commented out) — present only when the class got a table AND
+        the view got the stamp; a table-less view of a table-BACKED
+        class is exactly the E-106/E-107 blind shape.
+      ModelTableOrNull (DeltaRel.cpp:1267) = view_to_model->FindAs
+        <DataModel>()->table — the render/recount authority (M12).
+
+    THE DOT EMITTER (Format.cpp:40ff, per-view label cell):
+      do_table(view): renders "TABLE <TableId>" when stamped;
+        "SET <id> DEPTH <d>" for induction members; "EQ SET <id>"
+        (Format.cpp:65) — THE PARTITION IS ALREADY RENDERED HERE
+        (verified live at tip: negate_1 -dot-out shows EQ SET 4 x3
+        correlating with TABLE 4). NOTE the vocabulary collision:
+        DOT "SET" = induction group; DOT "EQ SET" = the sharing
+        partition. No golden pins any DOT output.
+
+    THE TEXTUAL .df ATTRIBUTES LINE (Format.cpp attrs_line, as
+    landed by the PIN-3 pre-diff §20(N)):
+      pre-pass: table_is_differential[TableId] |=
+        CanReceiveDeletions() || CanProduceDeletions()   # over the
+        # dead-skipping for_each_df_view — the emission domain
+      attrs_line(v): "ATTRIBUTES [table=%table:N] class=<table's
+        fold | table-less> [stratum=S] [set=I depth=D]"
+      -> the textual dump does NOT render the partition; a table-
+        less view of a backed class still shows NOTHING sharing-
+        related. THIS is the gap OD-13 closes (it is why E-106/E-107
+        needed a worktree fprintf probe, and why the M12 ritual
+        exists).
+
+    OD-13 AS A DIFF ON THE ABOVE (owner-directed; open decisions ->
+    the slice's ritual head):
+      D1 DOT floor: possibly NOTHING to mint — "EQ SET" already
+         renders. The slice's stage-(a) must verify coverage (does
+         EVERY view render it, or only some? the negate_1 sample
+         showed 7 EQ SET cells vs 10 TABLE-prefixed cells) and
+         determinism of the id (Find()->id provenance — mint order
+         vs pointer order in BuildEquivalenceSets; the (F) law).
+      D2 textual .df: a partition token on the ATTRIBUTES line
+         (candidate spellings eqset=<id> / model=<id>; "set=" is
+         TAKEN by inductions) — an E-71 pre-code grammar ruling +
+         owner spelling ruling; churns ALL FOUR pinned .df goldens
+         (tc, symrec, negate_1, aggregate_1) -> own mini structural
+         gate + re-bless, plus contract clause in t2-dump-spec.md.
+      D3 decide whether the token renders the raw EquivalenceSetId
+         or a densely renumbered per-program ordinal (raw ids leak
+         DisjointSet numbering; a dense renumber in det_seq order is
+         the (F)-safe spelling candidate) — ruled at the head.
+      D4 zero emission change (dump-only; the PIN-3 gate battery is
+         the template: A/B corpus is .df-blind, the pinned-golden
+         referee + suite pre-bless reds are the structural gate).
