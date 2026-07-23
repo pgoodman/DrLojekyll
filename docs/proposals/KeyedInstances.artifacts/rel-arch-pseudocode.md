@@ -36,6 +36,14 @@ PLACE below (each marked at its site — all four are §4-R1-body line
 drift caused by R2's dispatch-arm insertions; §4.1's own anchors were
 stamped at the R2 tip and HELD). The M9 carrier-coverage/reachability
 sweep result is recorded in §20(K) and noted at §5's R3/R4 blocks.
+RE-AMENDED 2026-07-23 at tip d4678109 (post R3, §20(L)): §4.2 = the R3
+AS-LANDED MOLD DELTAS M10-M13 (orchestrator-read anchors at the R3
+tip — the same session that landed R3 wrote this; NOTE the §4/§4.1
+R1/R2-body anchors have shifted AGAIN by R3's insertions and are NOT
+re-based here — §4.2's fresh anchors + the fleet's next pass are the
+live authority); §5's R3 block DONE; §5's R4..Rk re-expressed with
+the M12 model-layer caveat. SINGLE-PASS: the next session's fleet
+re-verifies §4/§4.1/§4.2/§5 against code before R4.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -325,6 +333,64 @@ sweep result is recorded in §20(K) and noted at §5's R3/R4 blocks.
           Census renders zero-count kinds, so kind-set growth churns
           EVERY carrier's census line regardless.
 
+## §4.2 R3 AS-LANDED MOLD DELTAS (2026-07-23, tip d4678109; §20(L);
+##      contracts r3-design.md ADJ-R3-1..10 + r3-desired-states.md
+##      DS-R3-1..9 — anchors read at the R3 tip by the landing session)
+
+    The R3 dispatch cuts (Build.cpp): UNION mint :1243-1245 (inside
+    the IsMerge arm's not-owning-an-InductionGroupId else-leg; the
+    owning leg is Authority A, mint-free) and SELECT mint :1286-1288.
+    Wrappers :1200 (LowerRelStep_Union — forwards the builder's full
+    6-arg signature; pred_view is never read by the builder, forwarded
+    for uniformity) and :1209 (LowerRelStep_Select). The extracted
+    builder BuildEagerSelectRegion :1183 (the inline rebind block
+    moved VERBATIM — assert(pred_view.IsInsert()) + the col rebind
+    loop + the BuildEagerInsertionRegions recursion; a byte-move
+    minting zero impl->next_id). Ctors DeltaRel.cpp:1342/:1354;
+    EAGER_WEB cases :2466-2471 (6-way + loud-abort); A.6(c) arms
+    :3526 (union, STRENGTHENED) / :3540 (select, strict);
+    IsEagerMarkerKind :1306 (6-way; callers :3494 + :4475); render
+    Format.cpp:935/:945 (the kEagerForward shape exactly, no extra
+    token); DROpKindName :120-121; kAllKinds :1040 (24); enum
+    DeltaRel.h:190/:201. Mold deltas every future slice inherits:
+
+      M10 STRENGTHENED-RECOUNT PRECEDENT (ADJ-R3-2): when the mint
+          predicate is STRICTER than the view-kind (union: IsMerge &&
+          !InductionGroupId — the view-kind alone is ambiguous), the
+          A.6(c) arm re-checks the FULL mint predicate, not just the
+          kind. The R1/R2 "recount checks only the unambiguous
+          view-kind" uniformity is a coincidence of those arms, not a
+          law. An arm whose strengthen could FALSE-abort on a
+          reachable shape stays strict until the reachable set is
+          verified (the select arm's declined condition-relation
+          strengthen, ADJ-R3-3).
+      M11 EXTRACT-AND-WRAP PRECEDENT (ADJ-R3-5): a dispatch arm with
+          NO builder file (inline body) is extracted VERBATIM into a
+          builder so the LowerRelStep_* family stays uniform and the
+          id-stream argument is MECHANICAL (a byte-move), never
+          argued per-case. Applies to any future inline arm.
+      M12 MODEL-TABLE-NOT-DF-CLASS (the E-106/E-107 lesson, STANDING;
+          supersedes the naive half of M9): `.df class=` and `.df`
+          TableId are DATAFLOW-layer attributes; the render `table=`,
+          InTryInsert's fold-vs-passthrough, and the A.6(c) table
+          match all read ModelTableOrNull — the ControlFlow DataModel
+          EQUIVALENCE-SET (a `.df class=table-less` view is typically
+          model-table-BACKED via sharing). M9 carrier sweeps must
+          classify reachability at the WALK layer and table-ness at
+          the MODEL layer; when a prediction hinges on model tables,
+          PROBE (the stage-(d) blind lane's fprintf-ModelTableOrNull
+          instrumentation is the sanctioned precedent — build, probe,
+          revert, rebuild, verify pristine vs a blessed golden).
+      M13 SECOND-CALLER COVERAGE (Fable-review R3 [1]): before
+          minting for an arm, ENUMERATE ALL CALLERS of the target
+          builder (grep, not just the dispatch) — a non-dispatch
+          caller is emission outside the marker model. If dead,
+          label it LOUDLY at the call site (Induction.cpp:997-1005,
+          the dead !NeedsInductionCycleVector fallback — a
+          strengthened A.6(c) arm FORBIDS modeling it, so relaxing
+          the guarding TODO requires modeling first; re-visit at
+          R-final). If live, it is in-scope for the slice.
+
 ## §5. THE PATH FORWARD AS DIFFS ON THE MOLD (§3's R1..Rk, updated)
 
     R2 — DONE (2026-07-22, §20(J); contracts r2-design.md ADJ-R2-0..8 +
@@ -367,23 +433,41 @@ sweep result is recorded in §20(K) and noted at §5's R3/R4 blocks.
         Induction.cpp:996 dead second BuildEagerUnionRegion caller
         is a LABELED coverage hole outside the marker model (Fable
         review [1], re-visit at R-final).]
-      R4 NEGATE gate (BuildEagerNegateRegion, Negate.cpp — 105 lines).
-        Payload per M2': @never-ness and the negated table are
-        derivable from the view (QueryNegate) — expect bare marker +
-        re-derived render tokens; the PIN-3 class= refinement is a
-        STANDING BLOCKER for any negate-carrying .deltarel bless
-        (producer-side/table-level class refinement owed first —
-        check PIN-3 §19 before scoping); M9: find/produce a monotone
-        negate carrier. [M9 SWEEP 2026-07-22, §20(K): monotone-negate
-        witnesses PLENTIFUL (17 class=monotone hits across ~20 green
-        cases, negate_1..6 et al.); @never THIN — sole witness
-        negate_6 ^negate.8, rendered as the prose "; never negates
-        <target>", NOT an @never token; PIN-3 stands as the bless
-        blocker.]
+      R4 NEGATE gate (a diff on the AMENDED mold M1-M13). Dispatch
+        arm Build.cpp:1310-1312 (IsNegate -> BuildEagerNegateRegion,
+        Negate.cpp — 105 lines, a real builder file: NO M11
+        extraction needed, the R1-shape thin wrapper suffices).
+        Payload per M2': @never-ness (HasNeverHint) and the negated
+        table are derivable from the view (QueryNegate) — expect a
+        bare marker + re-derived render tokens (every new spelling
+        E-71-adjudicated pre-code; a positivity/@never token was
+        DECLINED unwitnessed at R2 — negate_6 is the sole @never
+        witness, so the token question re-opens WITH that carrier or
+        stays declined). M10: check whether the negate mint predicate
+        is stricter than IsNegate (crossover/context structure) —
+        strengthen the A.6(c) arm to match the mint if so. M13:
+        enumerate ALL BuildEagerNegateRegion callers before scoping.
+        THE PIN-3 STANDING BLOCKER (KeyedInstances.md:431-437, T2b
+        review): per-view class= mislabels a non-@never negate's OWN
+        table (deletion-capable via its crossover while the negate
+        view is not) — producer-side/table-level refinement owed
+        BEFORE any negate-carrying .deltarel bless; NOTE the
+        refinement itself churns existing class=-bearing dumps (its
+        own structural-gate + re-bless cycle) — rule at the R4
+        ritual head whether it lands as a PRE-diff or folds in.
+        [M9 SWEEP 2026-07-22, §20(K), WITH THE M12 CAVEAT: the 17
+        "class=monotone" negate hits across ~20 green cases
+        (negate_1..6 et al.) are .df-LAYER readings — R4's stage-(a)
+        must re-derive reachability at the walk layer and table-ness
+        at the model layer (probe per M12) before trusting them;
+        @never THIN — sole witness negate_6 ^negate.8, rendered as
+        the prose "; never negates <target>", NOT an @never token.]
       MERGE-INDUCTIVE is NOT a marker slice (the round shells are
         Authority A already — E-92); only its induction-input FEED may
         warrant a marker, decided at its own ritual.
-    R-JOIN (LAST — the F17/F18 shape): the index-probe loop (Join.cpp),
+    R-JOIN (LAST — the F17/F18 shape; after R4 the remaining
+      hand-coded arms are JOIN-with-pivots, JOIN-product,
+      MERGE-inductive FEED, and the E-42 shim): the index-probe loop (Join.cpp),
       CARRYING the NOT-RULED pivot-equality-belt fold candidate (brief
       §5: the monotone body TUPLECMP + delta side_key_eqs re-check what
       the exact Index::First/Next probe guarantees — owner rules at the
