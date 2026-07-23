@@ -65,6 +65,15 @@ the ONE-UNION-SITE fact: the CF DataModel partition IS the DF
 EquivalenceSetId partition) with OD-13 expressed as a diff on it.
 SINGLE-PASS: the next session's fleet re-verifies §4/§4.1/§4.2/§5/§6
 against code before OD-13.
+RE-VERIFIED 2026-07-23 at tip 527d9dd4 by the OD-13-open fleet (3
+seed-unread derivation lanes + 3 seed-read verifiers + 1 mechanical
+lane + xhigh consolidator; KeyedInstances.md §20(O)): SOUND-WITH-
+ERRATA, zero code or design defects — the M1-M13 mold, the E-108
+caveat, the PIN-3 pre-diff, and the §6 partition facts hold exactly.
+Errata E-112..E-116 applied IN PLACE below (anchor/terminology drift
+only). §6 D1's mint-vs-pointer determinism question is RESOLVED
+empirically (see the amended D1 text: EQ SET values deterministic,
+DOT whole-file node names pointer-unstable).
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -255,7 +264,8 @@ against code before OD-13.
                 LowerRelStep_Forward(op, ...)       # Build.cpp:1138
       INSERT -> message = MessageOfInsertOrNull(insert)   # ONCE at the
                 # mint site (:1302 — E-103/E-111; helper :1113, ADJ-S13
-                # note :1092 — E-98; both HELD through R3)
+                # note :1088, Fable-[3] note :1092 — E-98/E-113; HELD
+                # through R3)
                 op = MakeEagerInsertOp(view, ModelTableOrNull(view),
                        ClassifyEagerSink(ctx, insert, message), message)
                 LowerRelStep_Insert(op, ...)        # Build.cpp:1146
@@ -287,7 +297,8 @@ against code before OD-13.
          expect() lines (base batch DeltaRel.cpp:3443-3453; A.6(c)
          recount :3486-3560, guard :3494, view-kind switch :3505,
          table-match :3556 — E-104/E-111 re-based at tip 1492adbf;
-         ":3405" sits INSIDE the count-expect() lambda):
+         E-112: ":3405" is the GROUP_UPDATE key setup, NOT inside the
+         count lambdas — count_kind :3425 / expect :3434):
          kind<->view-kind + table
          == the union-find MERGED model (DS-ADJ-7 — the RENDER AUTHORITY
          is view_to_model->FindAs, NEVER the .df per-view attribute); NO
@@ -400,9 +411,14 @@ against code before OD-13.
           supersedes the naive half of M9): `.df class=` and `.df`
           TableId are DATAFLOW-layer attributes; the render `table=`,
           InTryInsert's fold-vs-passthrough, and the A.6(c) table
-          match all read ModelTableOrNull — the ControlFlow DataModel
-          EQUIVALENCE-SET (a `.df class=table-less` view is typically
-          model-table-BACKED via sharing). M9 carrier sweeps must
+          match all read the MODEL EQUIVALENCE-SET table (E-114:
+          ModelTableOrNull is that read on the mint/recount path;
+          InTryInsert reads it INLINE via view_to_model[]->FindAs —
+          Build.cpp:808-809, a pre-existing hand-coded builder OUTSIDE
+          the M8 mint-path .find()-only discipline, same table either
+          way) — the ControlFlow DataModel EQUIVALENCE-SET (a `.df
+          class=table-less` view is typically model-table-BACKED via
+          sharing). M9 carrier sweeps must
           classify reachability at the WALK layer and table-ness at
           the MODEL layer; when a prediction hinges on model tables,
           PROBE (the stage-(d) blind lane's fprintf-ModelTableOrNull
@@ -581,7 +597,9 @@ against code before OD-13.
 ##     PASS: the next session's fleet re-verifies THIS section
 ##     before OD-13)
 
-    PIPELINE PLACEMENT (Main.cpp:110-133): BOTH DataFlow dumps fire
+    PIPELINE PLACEMENT (Main.cpp:118-132 — E-115: the abstraction-
+    break comment :118-120, gDOTStream :121-124, gDFStream :126-132;
+    ":110" was an unrelated cpp-out line): BOTH DataFlow dumps fire
     AFTER Program::Build, deliberately — the in-code comment says it
     outright: "we break abstraction layers in order to annotate the
     data flow IR with table IDs". So CF-stamped facts (TableId, and
@@ -639,11 +657,22 @@ against code before OD-13.
     OD-13 AS A DIFF ON THE ABOVE (owner-directed; open decisions ->
     the slice's ritual head):
       D1 DOT floor: possibly NOTHING to mint — "EQ SET" already
-         renders. The slice's stage-(a) must verify coverage (does
-         EVERY view render it, or only some? the negate_1 sample
-         showed 7 EQ SET cells vs 10 TABLE-prefixed cells) and
-         determinism of the id (Find()->id provenance — mint order
-         vs pointer order in BuildEquivalenceSets; the (F) law).
+         renders. E-116: coverage is COMPLETE over view nodes —
+         Format.cpp:65 is UNCONDITIONAL, negate_1 renders EQ SET on
+         7/7 view nodes vs TABLE-id on the stamped subset (5); the
+         earlier "10 TABLE-prefixed cells" counted HTML <TABLE>
+         label-markup tags, not do_table TABLE-id cells. THE OD-13-
+         OPEN FLEET RESOLVED THE DETERMINISM HALF EMPIRICALLY
+         (§20(O)): EquivalenceSetId = Find()->id is min-id-wins over
+         COUNTER-MINTED ids in ForEachView order (EquivalenceSet.h,
+         NOT pointer-ordered) — EQ SET VALUES are run-to-run
+         byte-stable and (F)-safe raw; but the DOT WHOLE-FILE dump is
+         NOT byte-reproducible (node names v<N>/t<N> embed raw
+         pointers via UniqueId, 3 runs -> 3 hashes, semantics
+         identical after node-id strip) — so the DOT floor stays
+         ZERO-GOLDEN (or node ids canonicalize first, a separate
+         choice). D3's dense-renumber is leak hygiene, not a
+         determinism need.
       D2 textual .df: a partition token on the ATTRIBUTES line
          (candidate spellings eqset=<id> / model=<id>; "set=" is
          TAKEN by inductions) — an E-71 pre-code grammar ruling +

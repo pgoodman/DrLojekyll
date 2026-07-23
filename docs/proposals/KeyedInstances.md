@@ -3507,3 +3507,106 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     its own E-71 ruling + mini re-bless), THEN R4 NEGATE under
     option (A) diff/re-source per §20(M)/E-108 with the ruled
     carrier trio negate_6 + negate_1 + d5_recursive_negate.
+
+(O) OD-13-OPEN RE-VERIFICATION RECORD (2026-07-23, tip 527d9dd4; the
+    session-open items (0)+(1) EXECUTED per §20(N)'s NEXT).
+    (0) Frozen A/B baselines RE-SNAPSHOTTED from tip into the session
+        scratchpad BEFORE any code (debug 0e017e89… / release
+        5090a5d2…; both presets rebuilt clean) — the f69574b8/
+        56da82ab-era snapshots retired as STALE post-PIN-3. ASAN
+        cadence stands per-diff (§19(F)/(J)); the tip is docs-only
+        atop 57aef93d, whose both-surface sweeps are the standing
+        green.
+    (1) §20(M)/(N) + rel-arch-pseudocode.md §4/§4.1/§4.2/§5/§6
+        FLEET-RE-VERIFIED (house precedent): 3 seed-UNREAD opus
+        derivation lanes (the six-marker machinery + the PIN-3
+        attrs_line/pre-pass; kNegateGate/V-NEG-CTX/Negate.cpp
+        end-to-end incl. live census-vs-walk counts; the partition/
+        dump surfaces incl. BuildEquivalenceSets determinism
+        EMPIRICS) + 3 seed-read adversarial verifiers (§4/§4.1/§4.2;
+        §5+§20(M); §6+§20(N)) + 1 sonnet mechanical lane (13-surface
+        regen, census 24, hexdump pins, cross-knob compiles) + 1
+        xhigh consolidator (8 agents, ~695k tokens; every candidate
+        adjudicated AT the code). The E-62 tripwire re-grepped by
+        the ORCHESTRATOR personally: CLEAN (sole out-of-lib hits =
+        the standing Stratum.cpp:1073 comment + the RAT-3
+        InstanceOrderTest fixture). The carrier-golden referee
+        EXECUTED by the orchestrator personally: ALL THIRTEEN pinned
+        golden surfaces regenerate BYTE-IDENTICAL at tip (tc
+        h/ir/df/deltarel, symrec ir/df/deltarel, map_3/merge_2/
+        booleans/elim-cond-cycle-simple deltarel, negate_1.df,
+        aggregate_1.df — the irgold sidecars are the count
+        authority). VERDICT: SOUND-WITH-ERRATA — zero code or
+        design defects; the M1-M13 mold, the E-108 caveat, the
+        PIN-3 pre-diff, and the §6 one-union-site partition hold
+        EXACTLY; five errata, ALL COSM/LOW doc drift, applied IN
+        PLACE (each site tagged):
+          E-112 COSM §4 M6: ":3405" is the GROUP_UPDATE key setup
+                     (add_gu_key :3407-3416), NOT inside the count
+                     lambdas — count_kind :3425 / expect :3434.
+          E-113 COSM §4 R1: the ADJ-S13 binding text is
+                     Build.cpp:1088; :1092 is the Fable-review R1
+                     [3] single-extraction note (both inside the
+                     ClassifyEagerSink doc-comment :1085-1094).
+          E-114 LOW  §4.2 M12: InTryInsert resolves its table
+                     INLINE via view_to_model[]->FindAs
+                     (Build.cpp:808-809), not the ModelTableOrNull
+                     helper — same equivalence-set table; a
+                     pre-existing builder outside the M8 mint-path
+                     discipline, not a violation. M12's thesis
+                     unchanged.
+          E-115 COSM §6: dump placement = Main.cpp:118-132 (the
+                     abstraction-break comment :118-120, gDOTStream
+                     :121-124, gDFStream :126-132); ":110" was an
+                     unrelated cpp-out line.
+          E-116 LOW  §6 D1: EQ SET coverage is COMPLETE over view
+                     nodes (Format.cpp:65 UNCONDITIONAL; negate_1
+                     7/7) vs TABLE-id on the stamped subset (5);
+                     the "10 TABLE-prefixed cells" counted HTML
+                     <TABLE> label-markup tags, not do_table cells.
+        OD-13 STAGE-(a) INPUTS RESOLVED BY THE FLEET (L3 empirics,
+        consolidator-adjudicated, folded into §6 D1): (1) EQ SET
+        VALUES ARE DETERMINISTIC — EquivalenceSetId = Find()->id,
+        min-id-wins over COUNTER-MINTED ids in ForEachView order
+        (EquivalenceSet.h; NOT pointer-ordered); byte-identical
+        across 3 runs on negate_1 + merge_2; raw ids are (F)-safe,
+        D3's dense renumber is leak hygiene not necessity. (2) the
+        DOT WHOLE-FILE dump is NOT byte-reproducible — node names
+        v<N>/t<N> embed raw pointers via UniqueId (3 runs -> 3
+        hashes, semantics identical after node-id strip) — the DOT
+        floor stays ZERO-GOLDEN unless node ids canonicalize first.
+        (3) EQ SET already renders on EVERY view node — D1
+        "possibly nothing to mint" empirically supported. (4) the
+        textual .df renders NO partition token (live grep) — D2 is
+        the real work, churning all FOUR pinned .df goldens.
+        R4-INPUT NITS (code-side, recorded for the option-A
+        re-source): stale mint-block comments DeltaRel.cpp:2331/
+        :2335 (beyond E-108's :2294; live anchors = cut
+        Build.cpp:970, boundary append :999-1006); the kNegateGate
+        EFFECT ASYMMETRY is the R4 crux — off-lattice for stratum
+        ordering (key_of lead-0, V-READY skip :4991-5000) YET
+        dep-edge-bearing via kFlagRead (FlagAccess :4295-4296 ->
+        RAW/WAR; negate_1 op.7->op.6/op.9 WAR) — any re-source must
+        preserve the gate's read effect while an effect-free marker
+        (if any) stays effect-free; d5_recursive_negate.dr's header
+        comment misattributes the cut to CanProduceDeletions
+        (actual: CanReceiveDeletions; both hold there — fix when d5
+        becomes the R4 zero-mint NEGATIVE guard). VERIFIED-CLEAN
+        (held): the full §20(M)-style list in the consolidation
+        record — six kinds effect-free w/ single-authority ctors,
+        tail-append enrollment, IsEagerMarkerKind :1306 exactly-two-
+        callers, A.6(c) 6-way + strengthened union arm, census 24
+        totality, 13/13 goldens, counts tc 12F/2I + symrec 7F/1I +
+        map_3 3G/1C/3F/3I + merge_2 10F/5I/5U + booleans 6F/2I/1S +
+        elim 6F/2I/1S, cross-knob opt==nocf / nodf==none ×6, sign=·
+        c2 b7 + cmp=eq + functor=add_i32/3, kNegateGate inventory-
+        only ctx=kEager + V-NEG-CTX :3057 + 9-case over-enumeration
+        (merge_5=3 / cond_both_polarities=2 / d5=1 live), PIN-3
+        pre-pass + DF-CLASS abort + crd⟹cpd Differential.cpp:
+        114-117, one-union-site Build.cpp:242 + Data.cpp:252 stamp,
+        both .df fences byte-identical. Full record: session
+        scratchpad fleet-od13open/consolidated.md (disposable; THIS
+        entry is binding). Errata continue at E-117. NEXT: the
+        OD-13 slice under the full ritual (§6 D1-D4 as amended;
+        the E-71 grammar adjudication + owner spelling ruling at
+        the head), then R4 NEGATE option (A).
