@@ -74,6 +74,14 @@ Errata E-112..E-116 applied IN PLACE below (anchor/terminology drift
 only). §6 D1's mint-vs-pointer determinism question is RESOLVED
 empirically (see the amended D1 text: EQ SET values deterministic,
 DOT whole-file node names pointer-unstable).
+AMENDED 2026-07-23 at tip 3e02db13+ (post OD-13, §20(P)): §5's
+OD-13 block DONE; §6's textual-gap paragraph updated to the landed
+`eqset=` token (contracts od13-design.md + od13-desired-states.md;
+owner rulings Q-A eqset= / Q-B RAW / Q-C render-on-INSERT — the
+Fable review refuted the INSERT-omit recoverability premise on
+demand_tc_witness; four-way byte convergence on the pre-Q-C shape,
+the Q-C delta = the four INSERT lines, consistency-law verified;
+all four .df pins re-blessed via the ritual, twice).
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -573,11 +581,18 @@ DOT whole-file node names pointer-unstable).
       becomes a documented Runtime contract).
     R-E42: the table-less receive's VECTORLOOP shim minted from an op
       (ExtendEagerProcedure, Procedure.cpp) — S4 retires.
-    OD-13 OBSERVABILITY (owner-directed 2026-07-23, §20(N) NEXT;
-      lands BEFORE R4 — R4's negate carriers are the model-sharing-
-      sensitive shapes and its fleet gets partition visibility
-      without worktree probes): see §6 below — the diff is expressed
-      on the §6 pseudocode.
+    OD-13 OBSERVABILITY — DONE (2026-07-23, §20(P); contracts
+      od13-design.md + od13-desired-states.md DS-OD13-1..10): the
+      .df ATTRIBUTES `eqset=` token landed (owner rulings Q-A
+      eqset= / Q-B RAW / Q-C render-on-INSERT — the review-refuted
+      recoverability premise, od13-design.md banner; after table=,
+      before class=; table= alone stays INSERT-omitted; DF-EQSET
+      belt); DOT floor proven nothing-to-mint;
+      all four .df pins re-blessed via the ritual after a
+      FOUR-way byte convergence (author == blind worktree ==
+      DOT-comparator == implementation). R4's fleet now has
+      partition visibility without worktree probes (the M12
+      fprintf ritual retires for THIS question).
     R-final (the §19(H) acceptance, unchanged from §3): the DIRECTION
       FLIP — inventory becomes the reachability authority and the walk
       CONSUMES ops instead of recording them; then S1 (hole contract) /
@@ -648,11 +663,15 @@ DOT whole-file node names pointer-unstable).
         # dead-skipping for_each_df_view — the emission domain
       attrs_line(v): "ATTRIBUTES [table=%table:N] class=<table's
         fold | table-less> [stratum=S] [set=I depth=D]"
-      -> the textual dump does NOT render the partition; a table-
-        less view of a backed class still shows NOTHING sharing-
-        related. THIS is the gap OD-13 closes (it is why E-106/E-107
-        needed a worktree fprintf probe, and why the M12 ritual
-        exists).
+      -> [GAP CLOSED by OD-13, §20(P)]: attrs_line now renders
+        `eqset=<raw EquivalenceSetId>` on EVERY block, INSERT
+        included (Q-C; after table=, before class=; only table=
+        stays INSERT-omitted) — a table-less view of a backed class
+        shows its set membership in text (negate_1 select.0
+        eqset=1 == tuple.4/%table:11), and an INSERT that is its
+        table's sole stamped block still links set<->table (tc
+        insert.19 eqset=10 into %table:4). The E-106/E-107 blind
+        shape no longer needs the M12 worktree probe.
 
     OD-13 AS A DIFF ON THE ABOVE (owner-directed; open decisions ->
     the slice's ritual head):

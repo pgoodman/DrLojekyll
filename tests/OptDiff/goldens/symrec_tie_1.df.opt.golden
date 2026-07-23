@@ -1,38 +1,38 @@
 dataflow
 
 select ^select.0 (A:u64, X:u64)                    ; recv #message edge/2
-  ATTRIBUTES class=table-less stratum=0
+  ATTRIBUTES eqset=1 class=table-less stratum=0
   => ^tuple.5 (A, X)
   => ^tuple.6 (A, X)
   => ^tuple.7 (A, X)
 
 tuple ^tuple.1 (A:u64, B:u64)
-  ATTRIBUTES class=table-less stratum=4
+  ATTRIBUTES eqset=2 class=table-less stratum=4
   => ^merge.10 (A, B)                              ; cycle
 
 tuple ^tuple.2 (A:u64, B:u64)
-  ATTRIBUTES class=table-less stratum=4
+  ATTRIBUTES eqset=3 class=table-less stratum=4
   => ^merge.10 (A, B)                              ; cycle
 
 tuple ^tuple.3 (A:u64, B:u64)
-  ATTRIBUTES table=%table:4 class=monotone stratum=4
+  ATTRIBUTES table=%table:4 eqset=11 class=monotone stratum=4
   => ^join.8 .in0(B, A)                            ; cycle
   => ^join.9 .in1(A, B)                            ; cycle
 
 tuple ^tuple.4 (A:u64, B:u64)
-  ATTRIBUTES class=table-less stratum=5
+  ATTRIBUTES eqset=11 class=table-less stratum=5
   => ^insert.11 (A, B)
 
 tuple ^tuple.5 (A:u64, X:u64)
-  ATTRIBUTES table=%table:8 class=monotone stratum=3
+  ATTRIBUTES table=%table:8 eqset=1 class=monotone stratum=3
   => ^join.8 .in1(A, X)
 
 tuple ^tuple.6 (A:u64, X:u64)
-  ATTRIBUTES table=%table:8 class=monotone stratum=2
+  ATTRIBUTES table=%table:8 eqset=1 class=monotone stratum=2
   => ^join.9 .in0(X, A)
 
 tuple ^tuple.7 (A:u64, X:u64)
-  ATTRIBUTES class=table-less stratum=1
+  ATTRIBUTES eqset=1 class=table-less stratum=1
   => ^merge.10 (A, B=X)
 
 join ^join.8 (X:u64, A:u64, B:u64) {
@@ -40,7 +40,7 @@ join ^join.8 (X:u64, A:u64, B:u64) {
   out A:u64 <- .in0.A
   out B:u64 <- .in1.X
 }
-  ATTRIBUTES class=table-less stratum=4 set=0 depth=1
+  ATTRIBUTES eqset=9 class=table-less stratum=4 set=0 depth=1
   => ^tuple.1 (A, B)                               ; cycle
 
 join ^join.9 (X:u64, A:u64, B:u64) {
@@ -48,13 +48,13 @@ join ^join.9 (X:u64, A:u64, B:u64) {
   out A:u64 <- .in0.A
   out B:u64 <- .in1.B
 }
-  ATTRIBUTES class=table-less stratum=4 set=0 depth=1
+  ATTRIBUTES eqset=10 class=table-less stratum=4 set=0 depth=1
   => ^tuple.2 (A, B)                               ; cycle
 
 merge ^merge.10 (A:u64, B:u64)                     ; callers: ^tuple.1, ^tuple.2, ^tuple.7
-  ATTRIBUTES table=%table:4 class=monotone stratum=4 set=0 depth=1
+  ATTRIBUTES table=%table:4 eqset=11 class=monotone stratum=4 set=0 depth=1
   => ^tuple.3 (A, B)                               ; cycle
   => ^tuple.4 (A, B)
 
 insert ^insert.11 (A:u64, B:u64) into %table:4
-  ATTRIBUTES class=monotone stratum=6
+  ATTRIBUTES eqset=11 class=monotone stratum=6

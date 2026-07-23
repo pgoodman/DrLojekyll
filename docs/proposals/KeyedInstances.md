@@ -3609,4 +3609,79 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         entry is binding). Errata continue at E-117. NEXT: the
         OD-13 slice under the full ritual (§6 D1-D4 as amended;
         the E-71 grammar adjudication + owner spelling ruling at
-        the head), then R4 NEGATE option (A).
+        the head), then R4 NEGATE option (A). [EXECUTED — §20(P).]
+
+(P) OD-13 LANDED (2026-07-23) — THE .df TABLE-SHARING PARTITION
+    TOKEN; the §6 textual observability gap CLOSED (the owner-
+    directed model-set observability diff, §20(N) NEXT item one).
+    Binding contracts COMMITTED: od13-design.md (stage-(b)/(c)
+    adjudication verbatim + owner rulings Q-A/Q-B/Q-C in banner) +
+    od13-desired-states.md (DS-OD13-1..10 + the stage-(d) three-way
+    record + the Fable-review record). OWNER RULINGS: Q-A =
+    `eqset=` (over model= — names the computed quantity, matches
+    the DOT "EQ SET" cell: one concept, one name, one value on
+    both DataFlow surfaces); Q-B = RAW EquivalenceSetId (over
+    dense — literal DOT cross-surface identity, zero machinery;
+    a dense renumber, if ever, lands on BOTH surfaces together);
+    Q-C (POST-REVIEW, superseding the stage-(b) INSERT-omit
+    adjudication) = eqset= RENDERS ON INSERT (table= stays
+    omitted — the Fable review REFUTED the "recoverable from any
+    table-sibling" ground on demand_tc_witness: insert.19 is
+    %table:4's SOLE table-stamped rendered block, its set
+    rendering elsewhere only as table-less eqset=10 on
+    tuple.9/join.16). THE MECHANISM (dump-only, ZERO emission
+    change): attrs_line (lib/DataFlow/Format.cpp) renders
+    ` eqset=<raw EquivalenceSetId>` unconditionally on EVERY
+    block, positioned after table=/before class= (the DOT
+    TABLE-then-EQ-SET pair-order precedent); bare integer, no
+    sigil; the DF-EQSET ~0u belt (unreachable — BuildEquivalence-
+    Sets runs unconditionally at DataFlow Build.cpp:2640); the
+    PIN-3 pre-pass untouched. DOT FLOOR: NOTHING minted (D1
+    proven — Format.cpp:65 renders EQ SET unconditionally on
+    every view node, values deterministic (min-id over
+    ForEachView-order counter mints, (F)-safe raw), whole-file
+    DOT stays zero-golden on pointer node names). t2-dump-spec.md
+    gains the normative PARTITION TOKEN SEMANTICS clause
+    (cross-surface identity + pair-order precision per review
+    [4]). STAGE-(d) THREE-WAY CONVERGENCE (PIN-3 precedent
+    extended): author hand-simulation (DOT-blind) == blind
+    worktree prototype == DOT-derived mechanical comparator,
+    BYTE-IDENTICAL ×4 carriers; the pristine implementation
+    reproduced the converged bytes exactly (four-way); the Q-C
+    delta = exactly the 4 INSERT lines (values insert.19=10 /
+    insert.11=11 / insert.6=4 / insert.5=4, each verified by the
+    table-consistency law + the DOT cell). CHURN as landed: 45
+    ATTRIBUTES lines in place (tc 20 / symrec 12 / negate_1 7 /
+    aggregate_1 6), zero non-ATTRIBUTES changes, line counts
+    unchanged — the four .df pins re-blessed via the ritual TWICE
+    (pre-Q-C 41 + Q-C 4; both cycles: pre-bless reds EXACTLY the
+    four .df IRGOLD-DIVERGE, bless sources byte-verified
+    same-as-reviewed). FABLE REVIEW (11-agent workflow, high): 5
+    verified findings, ZERO live code-correctness — [1] the
+    INSERT-omit premise refutation ESCALATED -> owner ruling Q-C
+    (fixed by the second bless cycle); [2] §20(P)/record
+    cross-refs discharged by THIS entry + the records landing
+    same-commit (the PIN-3 [1] family); [3] the Fable record
+    appended to od13-desired-states.md; [4] the "same order"
+    claim tightened to PAIR order; [5] the kDFInsert call-site
+    comment refreshed. GATES (final tree): SUITE pre-bless
+    EXACTLY 4 reds ×2 cycles -> PASS (173) ×3 + ×2; A/B vs frozen
+    0e017e89/5090a5d2: 840 rows (692 corpus ×4 modes + 4 nested +
+    144 data/) 0-DIVERGED + 346-row post-Q-C subset clean
+    (evm_array_parse identical-SIGABRT baseline stands); ctest
+    5/5 debug ×2 + 5/5 ASAN ×2; ASAN BOTH surfaces SUITE PASS
+    (173) ×2 cycles, zero sanitizer reports; config-invariance
+    SINGLE-HASH ×8 (3-run debug + release, opt+none, 4 carriers)
+    ×2 runs; E-62 re-grep CLEAN (no DeltaRel touch; same 5
+    sanctioned hits); Q5 progsize@128 release SAME-SESSION
+    INTERLEAVED ABABAB A warm {110,110,110} vs B {110,110,110}
+    ms (0.0% median, colds discarded; generated headers
+    byte-identical). DOC DISCHARGES same-commit: rel-arch §5
+    OD-13 block DONE + §6 gap-closed paragraph + banner; the M12
+    worktree-probe ritual RETIRES for the partition question
+    (R4's fleet reads eqset= from the dump). NEXT: R4 NEGATE
+    under option (A) diff/re-source per §20(M)/E-108 with the
+    ruled carrier trio negate_6 + negate_1 + d5_recursive_negate
+    (the §20(O) R4-input nits stand: stale mint comments
+    DeltaRel.cpp:2331/:2335, the kFlagRead effect asymmetry as
+    the crux, the d5 fixture header misattribution).

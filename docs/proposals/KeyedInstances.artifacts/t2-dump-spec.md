@@ -140,12 +140,55 @@ emission commit.
   - CALLERS: `; callers: ^a, ^b` ONLY on MERGE blocks (the fan-in
     join point), ascending det_seq — MANDATED sort (tc-critic LOW:
     an unsorted caller walk is a determinism hole).
-  - ATTRIBUTES line (only fields that apply): `table=%table:<id>`
-    (TableId — printed on every table-backed view incl. shared-model
-    pairs, faithful to the model), `class=<differential|monotone|
-    table-less>`, `stratum=<Stratum()>`, and for induction members
+  - ATTRIBUTES line (only fields that apply), in order:
+    `table=%table:<id>` (TableId — printed on every table-backed
+    non-INSERT view incl. shared-model pairs, faithful to the model),
+    `eqset=<id>` (the table-SHARING partition — OD-13, semantics
+    pinned below), `class=<differential|monotone|table-less>`,
+    `stratum=<Stratum()>`, and for induction members
     `set=<merge_set_id> depth=<InductionDepth>` (the DOT's SET/DEPTH
     surface, ratified in — tc-writer F7).
+  - PARTITION TOKEN SEMANTICS PINNED (OD-13, 2026-07-23,
+    od13-design.md; owner rulings Q-A/Q-B): `eqset=<id>` renders
+    `QueryView::EquivalenceSetId()` RAW as a BARE integer (no
+    `%`-sigil — a peer of `stratum=`/`set=`/`depth=`, NOT a
+    cross-surface ref) — the SAME integer the DOT surface prints as
+    `EQ SET <id>` (cross-surface identity is NORMATIVE: the two
+    DataFlow surfaces name one partition with one value AND in the
+    PAIR order — where both render, `table=` precedes `eqset=`
+    exactly as DOT's cell puts `TABLE` before `EQ SET`; the FULL
+    field sequences of the two surfaces differ and are each pinned
+    by their own emitter [Fable-review [4] precision]; a dense
+    renumber, if ever adopted, MUST land on both surfaces
+    together). The token is UNCONDITIONAL ON EVERY BLOCK, INSERT
+    INCLUDED — the equivalence-set partition is TOTAL
+    (`BuildEquivalenceSets` runs at DataFlow Build.cpp:2640 before
+    every dump; the `~0u` sentinel is unreachable at drain — the
+    DF-EQSET abort is the belt). On a table-less view `eqset=` is
+    the first identity token where `table=` would sit — this is how
+    a table-less view of a table-BACKED class (the E-106/E-107
+    shape: negate_1 `select.0` table-less shares `eqset=1` with
+    `tuple.4`/`%table:11`) makes its model membership visible in
+    the textual dump, the fact that previously needed a worktree
+    fprintf + the M12 ritual to see. On INSERT only `table=` is
+    omitted (redundant with the `into %table:<id>` header);
+    `eqset=` RENDERS (owner ruling Q-C, post-Fable-review: an
+    INSERT can be its table's ONLY table-stamped rendered view —
+    demand_tc_witness `insert.19` is `%table:4`'s sole stamped
+    block, its set rendering elsewhere only as table-less
+    `eqset=10` on `tuple.9`/`join.16` — so omitting eqset= there
+    severs the textual set<->table link in both directions; the
+    earlier "recoverable from any table-sibling" premise was
+    REFUTED on that carrier). DETERMINISM: `eqset=` is as stable as
+    `ForEachView` traversal order — min-id-wins fixes the label
+    given a stable mint order; the 3-run byte-identical bless gate
+    is the guard, not a proof of universal determinism (the F24
+    failure mode remains recorded). DOT FLOOR (OD-13 D1): the DOT
+    surface already renders the partition on every view node via
+    the unconditional `EQ SET <id>` cell (Format.cpp:65); no DOT
+    golden is minted (whole-file DOT is not byte-reproducible —
+    node ids embed raw pointers via UniqueId). The `.df eqset=`
+    token is its byte-golden'd counterpart.
   - CLASS SEMANTICS PINNED (tc-writer F5, symrec-critic F-D; PIN-3
     refined 2026-07-23, pin3-design.md): differential = backing table
     present AND the TABLE is deletion-capable — i.e. SOME live/emitted

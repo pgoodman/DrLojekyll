@@ -1178,9 +1178,26 @@ OutputStream &operator<<(OutputStream &os, QueryDF df) {
   const auto attrs_line = [&](QueryView v, bool omit_table) -> std::string {
     std::string r = "  ATTRIBUTES";
     const auto table_id = v.TableId();
+    // OD-13: `omit_table` drops only table= (an INSERT's table is its
+    // `into %table:N` header — redundant). eqset= renders UNCONDITIONALLY
+    // (owner ruling Q-C, post-Fable-review: an INSERT can be its table's
+    // ONLY table-stamped rendered view — demand_tc_witness insert.19 —
+    // so omitting eqset= there severs the textual set<->table link).
     if (table_id && !omit_table) {
       r += " table=%table:" + std::to_string(*table_id);
     }
+    // OD-13: the table-sharing partition, rendered RAW — the SAME value
+    // the DOT surface prints as "EQ SET <id>" (cross-surface identity is
+    // normative, t2-dump-spec). The partition is TOTAL: BuildEquivalence-
+    // Sets runs before every dump, so the ~0u sentinel is unreachable.
+    const auto es = v.EquivalenceSetId();
+    if (es == ~0u) {
+      fprintf(stderr,
+              "DF-EQSET: unbuilt equivalence set reached the -df-out "
+              "drain\n");
+      abort();
+    }
+    r += " eqset=" + std::to_string(es);
     r += " class=";
     if (!table_id) {
       r += "table-less";
@@ -1386,7 +1403,9 @@ OutputStream &operator<<(OutputStream &os, QueryDF df) {
         break;
       }
       case kDFInsert: {  // Terminal; `into %table:` in the header, table=
-                         // omitted from ATTRIBUTES (redundant).
+                         // omitted from ATTRIBUTES (redundant); eqset=
+                         // still renders (OD-13 Q-C — may be the table's
+                         // sole set<->table link in the dump).
         const auto insert = QueryInsert::From(v);
         std::vector<QueryColumn> ins;
         for (auto i = 0u; i < insert.NumInputColumns(); ++i) {
