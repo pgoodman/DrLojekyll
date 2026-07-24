@@ -89,6 +89,20 @@ r4-desired-states.md; the effect-bearing mold delta recorded; the
 goldens). Remaining hand-coded arms: JOIN-with-pivots,
 JOIN-product, MERGE-inductive FEED, the E-42 shim (R-JOIN next per
 §5 order, then R-E42, R-final).
+RE-AMENDED 2026-07-23 at tip 2aa23b3f (the R4-landing session,
+post-commit): §4.3 = the R4 AS-LANDED MOLD DELTAS M14 (the
+effect-bearing re-source precedent) + M15 (the per-visit/
+emission-side count-oracle law), orchestrator-read anchors at tip;
+§5's R-JOIN block re-expressed with fresh anchors AND the
+STARTING-STATE CAVEAT the R-JOIN fleet must lead with:
+BuildEagerJoinRegion emits via the DEFERRED ContinueJoinWorkItem
+machinery (Join.cpp:46-50), NOT in place at the walk moment — the
+M3 id-stream-identity argument does not transfer mechanically; two
+builder files (Join.cpp:707 pivots / Product.cpp:258 product) make
+slice scope a ritual-head ruling; the pivot-belt fold candidate is
+an EMISSION-shape change (structural gates, not byte-identity A/B).
+SINGLE-PASS: the next session's fleet re-verifies §4-§6 (incl.
+§4.3) against code before R-JOIN.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -450,6 +464,53 @@ JOIN-product, MERGE-inductive FEED, the E-42 shim (R-JOIN next per
           the guarding TODO requires modeling first; re-visit at
           R-final). If live, it is in-scope for the slice.
 
+## §4.3 R4 AS-LANDED MOLD DELTAS (2026-07-23, tip 2aa23b3f; §20(Q);
+##      contracts r4-design.md + r4-desired-states.md DS-R4-1..10 —
+##      anchors read at the R4 tip by the landing session)
+
+    The R4 dispatch cut (Build.cpp): the IsNegate arm :1332-1341
+    (resolves negated_table via view_to_model[NegatedView()] inline —
+    the :735 idiom, adjudicated over ModelTableOrNull whose null
+    contract is wrong for the always-tabled negated view; mints
+    MakeEagerNegateOp; calls the wrapper). Wrapper LowerRelStep_Negate
+    :1232-1238 (RecordEagerDispatch -> the UNTOUCHED
+    BuildEagerNegateRegion, Negate.cpp:9 — R1-shape, no M11
+    extraction). RecordEagerDispatch :1123-1137 (the kNegateGate
+    branch sources rec.view/table from gate_negate/gate_table).
+    Ctor MakeEagerNegateOp DeltaRel.cpp:1371 (decl DeltaRel.h:1013);
+    the old query.Negations() inventory mint loop DELETED (its slot
+    sat BEFORE the INGEST_FOLD block — folds keep op.0/op.1);
+    EAGER_WEB case :2470-2472 (7-way now + loud-abort); the M10
+    recount at the V-NEG-CTX op-site :3059ff (ctx==kEager &&
+    CanReceiveDeletions -> abort); key_of gate branch :4473;
+    V-READY eager-gate skips :5009/:5013. Mold deltas every future
+    slice inherits:
+
+      M14 EFFECT-BEARING RE-SOURCE PRECEDENT (the §20(O) crux,
+          ruled): an EXISTING effect-carrying op can join the
+          walk-mint family — the single-authority ctor RECONSTRUCTS
+          the effect from the op's stored identities (M2' extended
+          to an effect), identically at walk mint and EAGER_WEB
+          re-invocation. Such an op stays OUT of IsEagerMarkerKind
+          (its payload is its own field family, not eager_view/
+          table_op_table — the marker recount loop would false-fire
+          on null fields); its ctx-guarded special-cases (key_of,
+          V-READY, the M10 recount) ALL carry the same ctx==kEager
+          guard so reserved non-eager forms of the same kind never
+          trip them (Fable R4 [1]). Dep edges are EFFECT-determined,
+          not enrollment-determined, so the M4 tail-append is safe
+          for an effect-bearing op too (the WAR set is byte-stable;
+          only labels/oi renumber).
+      M15 THE COUNT-ORACLE LAW (DS-R4-5, the merged C1-F1+C2-F3
+          correction, NORMATIVE): any cross-check of a walk-minted
+          op population is PER-VISIT (the walk multi-visits — tc
+          kEagerForward=12 vs 11 TUPLE views) and EMISSION-SIDE
+          (the builder dispatch count / generated-code idiom count
+          — never a per-view count, never a re-derivation of the
+          mint predicate from the same graph). The R4 referee shape:
+          POST census per (case,mode) == BuildEagerNegateRegion
+          dispatch count, verified by lldb hit-counts.
+
 ## §5. THE PATH FORWARD AS DIFFS ON THE MOLD (§3's R1..Rk, updated)
 
     R2 — DONE (2026-07-22, §20(J); contracts r2-design.md ADJ-R2-0..8 +
@@ -605,14 +666,51 @@ JOIN-product, MERGE-inductive FEED, the E-42 shim (R-JOIN next per
       MERGE-INDUCTIVE is NOT a marker slice (the round shells are
         Authority A already — E-92); only its induction-input FEED may
         warrant a marker, decided at its own ritual.
-    R-JOIN (LAST — the F17/F18 shape; after R4 the remaining
+    R-JOIN (NEXT after R4 — the F17/F18 shape; the remaining
       hand-coded arms are JOIN-with-pivots, JOIN-product,
-      MERGE-inductive FEED, and the E-42 shim): the index-probe loop (Join.cpp),
-      CARRYING the NOT-RULED pivot-equality-belt fold candidate (brief
-      §5: the monotone body TUPLECMP + delta side_key_eqs re-check what
-      the exact Index::First/Next probe guarantees — owner rules at the
+      MERGE-inductive FEED, and the E-42 shim). ORCHESTRATOR-READ
+      ANCHORS AT TIP 2aa23b3f (the R4-landing session; SINGLE-PASS —
+      the R-JOIN-open fleet re-verifies): the dispatch arm is
+      Build.cpp:1246-1253 — IsJoin -> NumPivotColumns() ?
+      BuildEagerJoinRegion (Join.cpp:707; 785-line builder file) :
+      BuildEagerProductRegion (Product.cpp:258; 386-line file) — TWO
+      builder files, so scope (one slice or two: pivots first,
+      product after?) is a ritual-head ruling. THE STARTING-STATE
+      CAVEAT THAT BREAKS THE R1-R4 MOLD ASSUMPTION (flagged here so
+      stage-(a) leads with it): BuildEagerJoinRegion does NOT emit
+      in place at the walk moment — Join.cpp routes through the
+      DEFERRED WORK-ITEM machinery (ContinueJoinWorkItem,
+      Join.cpp:46-50, order key kContinueJoinOrder :38, induction-
+      aware :32-33): the walk APPENDS to the join's pivot vector and
+      enqueues; the TABLEJOIN body is emitted when the work item
+      RUNS. The M3 "same args, same walk moment" id-stream-identity
+      argument therefore does NOT transfer mechanically — the R-JOIN
+      design must decide what the marker MARKS (the per-predecessor
+      dispatch visit — per-visit like R1-R4 — vs the once-per-join
+      work-item emission) and how id-stream identity is argued
+      across the deferral (the mint itself is walk-side and
+      effect-free-or-not is a design question: the join's real
+      machinery — pivot vecs, work items — already lives in
+      Authority A round shells for the inductive case, E-92).
+      Product.cpp:258's arm is the ACYCLIC @product path (on-cycle
+      differential products reject upstream via ViewSelfReachable —
+      F22 lineage). M13 caller sweep at tip: BuildEagerJoinRegion
+      sole caller Build.cpp:1249 (decl Build.h:540);
+      BuildEagerProductRegion sole caller :1251 (decl :545) — no
+      dead second callers. CARRYING the NOT-RULED
+      pivot-equality-belt fold candidate (brief §5: the monotone
+      body TUPLECMP — minted `if (!for_delta)` at Join.cpp:317-321
+      — + the delta side_key_eqs re-check what the exact
+      Index::First/Next probe guarantees — owner rules at the
       slice head; if adopted, ONE bless cycle and probe-exactness
-      becomes a documented Runtime contract).
+      becomes a documented Runtime contract; NOTE it is an
+      EMISSION-shape change, unlike every R1-R4 slice — its gates
+      are the structural/irgold family, not byte-identity A/B).
+      M9 carrier coverage: joins are plentiful (tc/symrec carry
+      them — kEagerForward-heavy dumps already pin join-feeding
+      forwards; whether an existing .deltarel carrier witnesses a
+      JOIN marker or a new carrier is needed is a stage-(a)
+      deliverable, walk/model-layer per M12).
     R-E42: the table-less receive's VECTORLOOP shim minted from an op
       (ExtendEagerProcedure, Procedure.cpp) — S4 retires.
     OD-13 OBSERVABILITY — DONE (2026-07-23, §20(P); contracts
