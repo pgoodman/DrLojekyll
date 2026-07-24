@@ -124,6 +124,19 @@ R-final — which now ALSO owes the per-join emission op carrying the
 ContinueJoinOrder drain key, the fold, and the side_key_eqs delta
 fold). SINGLE-PASS: the next session's fleet re-verifies §4-§6
 (incl. §4.4) against code before R-E42.
+RE-AMENDED 2026-07-24 (the R-JOIN-landing session, post-commit):
+§5's R-E42 block built out with orchestrator-read anchors at tip
+18026049 and TWO STARTING-STATE CAVEATS the R-E42 fleet must lead
+with — (1) the shim MINTS next_id ids (VECTORLOOP Procedure.cpp:96
++ per-column VARs :101), so the marker-ctor zero-next_id trick does
+NOT apply (the LowerIngestFold hole-contract shape does); (2) E-42
+is an INGEST-layer surface (sibling family kIngestFold, Site-5
+cross-check Stratum.cpp:2101ff), not a walk-dispatch arm — the
+family choice, effect question, and per-RECEIVE count law rule at
+the ritual head. M13 pre-swept (sole caller Procedure.cpp:820); M9:
+four committed kIngestFold=0 goldens (map_3/merge_2/elim/join_1)
+are candidate carriers. SINGLE-PASS: the next session's fleet
+re-verifies §4-§6 (incl. §4.4 and THIS block) before R-E42.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -797,8 +810,56 @@ fold). SINGLE-PASS: the next session's fleet re-verifies §4-§6
       forwards; whether an existing .deltarel carrier witnesses a
       JOIN marker or a new carrier is needed is a stage-(a)
       deliverable, walk/model-layer per M12).
-    R-E42: the table-less receive's VECTORLOOP shim minted from an op
-      (ExtendEagerProcedure, Procedure.cpp) — S4 retires.
+    R-E42 (NEXT after R-JOIN): the table-less monotone receive's
+      VECTORLOOP shim minted from an op — S4 retires (the LAST
+      emission surface with ZERO model representation).
+      ORCHESTRATOR-READ ANCHORS AT TIP 18026049 (the R-JOIN-landing
+      session; SINGLE-PASS — the R-E42-open fleet re-verifies): the
+      shim site is ExtendEagerProcedure (Procedure.cpp:14-111; SOLE
+      caller :820, BuildEntryProcedure — M13 pre-swept) — the
+      per-receive loop's table-LESS monotone else-arm :94-106 mints
+      a VECTORLOOP (impl->next_id++ :96) plus ONE VAR PER RECEIVE
+      COLUMN (next_id++ :101), then descends via
+      BuildEagerInsertionRegions :108 with table=null. TWO
+      STARTING-STATE CAVEATS the fleet must lead with:
+      (1) ID-MINTING — unlike EVERY R1..R-JOIN marker slice, the
+      shim ALLOCATES next_id ids (loop + one per column); the
+      modeled replacement must reproduce that id stream EXACTLY at
+      the original position — the LowerIngestFold HOLE-CONTRACT
+      trick (lower-in-place from the op), NOT the marker-ctor
+      zero-next_id trick; M16's referent lesson applies (pin what
+      the op means AND what its lowering allocates).
+      (2) LAYER — E-42 is an INGEST-layer surface, not a walk
+      dispatch arm: the sibling family is kIngestFold (ctors
+      MakeStageOneIngestFolds DeltaRel.cpp:1191/decl .h:996 +
+      MakeMonotoneIngestFold :1235/.h:1006 — both explicitly
+      ID-NEUTRAL construction; flow enrollment = the per-IO loop
+      DeltaRel.cpp:2369ff whose :2366 comment ALREADY acknowledges
+      the table-less arm as "not an ingest fold"), lowered by
+      LowerIngestFold (Stratum.cpp:1909; walk-position note
+      :1899-1906; records into context.emitted_ingest_folds :1980)
+      and cross-checked by V-INGEST-XCHECK Site 5 (Stratum.cpp:
+      2101-2130s multiset compare vs the flow's kIngestFold
+      enrollment; count expect DeltaRel.cpp:3403, per-op key
+      multiset :3633). RITUAL-HEAD RULING: a new INGEST-family op
+      kind (table-less monotone receive-loop; payload
+      message+receive; Site-5/count-expect/key-multiset EXTENDED to
+      it) vs a marker-family kind — the ingest-family shape is the
+      natural fit, but the effect question (a kIngestFold carries
+      table effects; a table-less loop has none — vec-only) and the
+      count law's referent (PER-RECEIVE here, not per-visit — the
+      M15 statement must be re-derived for this surface) rule at
+      the head. The WHY of table-less-ness (in-code, Procedure.cpp:
+      66-69): the receive's head is induction-owned — the descent's
+      InTryInsert emits the fold under an induction, so no counter
+      fold exists at the receive. M9 CARRIER COVERAGE (grep at
+      tip): FOUR committed .deltarel goldens already carry
+      kIngestFold=0 (map_3 — the NAMED table-less-ingest carrier —
+      merge_2, elim-cond-cycle-simple, join_1); an ingest-layer op
+      on this arm gives them REAL blocks + census 26->27 churn on
+      all ELEVEN pins; whether every kIngestFold=0 case actually
+      HAS a table-less receive (vs no receives reaching the arm) is
+      a stage-(a) deliverable (walk/model layers per M12).
     OD-13 OBSERVABILITY — DONE (2026-07-23, §20(P); contracts
       od13-design.md + od13-desired-states.md DS-OD13-1..10): the
       .df ATTRIBUTES `eqset=` token landed (owner rulings Q-A
