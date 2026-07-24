@@ -229,12 +229,17 @@ exact signatures before writing a driver.
   the PRINCIPAL (not the only) remaining hand-coded emission surface — the
   table-less monotone receive also hand-mints a VECTORLOOP shim in
   `ExtendEagerProcedure` (`Procedure.cpp`) via no DR-IR op (E-42). Since
-  the R1/R2/R3/R4 slices of the Rel epoch, the descent's TUPLE-forward,
-  terminal-INSERT, CMP-filter, MAP functor-call, MERGE-union,
-  SELECT-rebind and NEGATE-gate arms are MODELED: the six effect-free,
-  knob-independent
+  the R1/R2/R3/R4/R-JOIN slices of the Rel epoch, the descent's
+  TUPLE-forward, terminal-INSERT, CMP-filter, MAP functor-call,
+  MERGE-union, SELECT-rebind, NEGATE-gate, pivot-JOIN and @product
+  dispatch arms are MODELED: the eight effect-free, knob-independent
   `kEagerForward`/`kEagerInsert`/`kEagerCompare`/`kEagerGenerate`/
-  `kEagerUnion`/`kEagerSelect` marker ops plus the R4 EFFECT-BEARING
+  `kEagerUnion`/`kEagerSelect`/`kEagerJoin`/`kEagerProduct` marker ops
+  (the JOIN/PRODUCT pair are PER-VISIT dispatch-edge records — the
+  once-per-join TABLEJOIN emission stays hand-coded behind the
+  `ContinueJoinWorkItem` drain-order deferral, owed to R-final; a join
+  marker's `table=` is usually absent but a model-SHARED join renders
+  it, the E-107 shape) plus the R4 EFFECT-BEARING
   `kNegateGate` (a mint RELOCATION: it carries a real kFlagRead of the
   negated view's model table, reconstructed identically at mint and
   re-invocation; every minted gate is eager-walk-reached — the
@@ -254,7 +259,7 @@ exact signatures before writing a driver.
   owning-merge leg is Authority A round shells; the SELECT arm lowers
   via the extracted `BuildEagerSelectRegion`; @never negates render
   IMPLICIT via `reads: Present` vs `InI`, no token). Every program's
-  `.deltarel` shows its eager markers; NINE `.deltarel` goldens pin
+  `.deltarel` shows its eager markers; ELEVEN `.deltarel` goldens pin
   the surface (`demand_tc_witness` + `symrec_tie_1` + `map_3` — the
   table-less-ingest carrier witnessing `cmp=`/`functor=` — plus the R3
   trio: `merge_2` (table-BACKED union markers), `booleans` (select with
@@ -262,9 +267,13 @@ exact signatures before writing a driver.
   guard — its induction-owned merge mints zero unions), plus the R4
   trio: `negate_1`, `negate_6` (the @never carrier), and
   `d5_recursive_negate` (the zero-mint NEGATIVE guard — its walk-cut
-  recursive negate mints no gate); all opt-mode via their `.irgold`
-  sidecars). The remaining unmodeled arms
-  (JOIN + E-42) migrate one slice at a time
+  recursive negate mints no gate AND no join marker: its recursive
+  differential join lives in Authority A, `kPivotAssemble=1`), plus
+  the R-JOIN pair: `join_1` (the acyclic pivot-join carrier,
+  `kEagerJoin=4` over 2 table-less join views) and `optimize_2` (the
+  first @product carrier, `kEagerProduct=2`); all opt-mode via their
+  `.irgold` sidecars). The remaining unmodeled arm
+  (E-42) migrates as its own slice
   (see KeyedInstances.artifacts/rel-arch-pseudocode.md §4-§5).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,

@@ -83,4 +83,4 @@ deps:
   op.13 -> op.6 WAR epoch
   op.13 -> op.7 WAR epoch
 
-census: kCrossover=1 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=2 kRetire=0 kRederive=0 kFrontierFilter=2 kCommitSweep=2 kNegateGate=2 kPivotAssemble=0 kIngestFold=2 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=4 kEagerInsert=1 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0
+census: kCrossover=1 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=2 kRetire=0 kRederive=0 kFrontierFilter=2 kCommitSweep=2 kNegateGate=2 kPivotAssemble=0 kIngestFold=2 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=4 kEagerInsert=1 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0 kEagerJoin=0 kEagerProduct=0

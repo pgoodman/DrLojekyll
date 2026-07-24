@@ -113,6 +113,17 @@ alternative in Join.cpp is assert-disabled dead code). Errata
 E-117..E-121 applied IN PLACE below (anchor/arity/label drift only).
 The L2 JOIN/PRODUCT derivation lane doubles as the R-JOIN stage-(a)
 seed; its adjudicated digest is recorded in §20(R).
+AMENDED 2026-07-24 (post R-JOIN, §20(S)): §5's R-JOIN block DONE —
+kEagerJoin/kEagerProduct landed as owner-ruled per-visit effect-free
+dispatch-edge markers (contracts rjoin-design.md +
+rjoin-desired-states.md; the pivot-belt fold owner-DECLINED to a
+gated R-final follow-up; census 24->26; ELEVEN .deltarel goldens);
+§4.4 = the M16 deferred-emission marker precedent. Remaining
+hand-coded arms: the E-42 shim (R-E42 next per §5 order, then
+R-final — which now ALSO owes the per-join emission op carrying the
+ContinueJoinOrder drain key, the fold, and the side_key_eqs delta
+fold). SINGLE-PASS: the next session's fleet re-verifies §4-§6
+(incl. §4.4) against code before R-E42.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -528,6 +539,31 @@ seed; its adjudicated digest is recorded in §20(R).
           POST census per (case,mode) == BuildEagerNegateRegion
           dispatch count, verified by lldb hit-counts.
 
+## §4.4 R-JOIN AS-LANDED MOLD DELTAS (2026-07-24; §20(S); contracts
+##      rjoin-design.md + rjoin-desired-states.md — anchors read at the
+##      landing tip by the landing session)
+
+    The R-JOIN dispatch cut (Build.cpp): the IsJoin arm mints
+    kEagerJoin (NumPivotColumns()>0) or kEagerProduct (==0) via
+    ModelTableOrNull, lowered by LowerRelStep_Join/_Product wrappers
+    calling the UNTOUCHED BuildEagerJoinRegion/BuildEagerProductRegion
+    (Join.cpp/Product.cpp byte-unchanged). Ctors follow MakeEagerUnionOp
+    verbatim. Mold delta every future slice inherits:
+
+      M16 DEFERRED-EMISSION MARKER PRECEDENT (the §20(R) caveat,
+          resolved by the owner referent ruling): a marker may mark a
+          dispatch whose EMISSION is DEFERRED (here: the walk records
+          into pivot vecs + work items; the TABLEJOIN mints at
+          ContinueJoinWorkItem::Run in drain order, interior to the
+          untouched builder). The M3 id-stream argument then rests on
+          exactly two facts — the ctor mints ZERO next_id, and the
+          builder is UNTOUCHED — and the marker's REFERENT must be
+          pinned explicitly in the contract (per-visit dispatch edge,
+          NEVER the deferred emission; the census is the dispatch
+          count, M15). Such a marker is only the REACHABILITY half of
+          the R-final substrate: the direction flip owes a SEPARATE
+          per-emission op carrying the deferral's order key.
+
 ## §5. THE PATH FORWARD AS DIFFS ON THE MOLD (§3's R1..Rk, updated)
 
     R2 — DONE (2026-07-22, §20(J); contracts r2-design.md ADJ-R2-0..8 +
@@ -683,8 +719,41 @@ seed; its adjudicated digest is recorded in §20(R).
       MERGE-INDUCTIVE is NOT a marker slice (the round shells are
         Authority A already — E-92); only its induction-input FEED may
         warrant a marker, decided at its own ritual.
-    R-JOIN (NEXT after R4 — the F17/F18 shape; the remaining
-      hand-coded arms are JOIN-with-pivots, JOIN-product,
+    R-JOIN — DONE (2026-07-24, §20(S); contracts rjoin-design.md
+      (owner rulings in banner) + rjoin-desired-states.md
+      (DS-RJ-1..10 + the three-way + Fable records)):
+      kEagerJoin(24)/kEagerProduct(25) on the mold — PER-VISIT
+      dispatch-edge markers (owner-ruled referent: one marker per
+      (pred_view -> join_view) walk edge; the once-per-join
+      TABLEJOIN emission stays hand-coded behind the
+      ContinueJoinWorkItem drain-order deferral, owed to R-final —
+      the marker is the REACHABILITY half of the R-final substrate,
+      ADJ-RJ-14); EFFECT-FREE (owner-ruled: M14 does not transfer —
+      no pre-existing eager DR op; both kinds join IsEagerMarkerKind,
+      now 8); ONE slice for both kinds (owner-ruled; the R1-R3
+      sibling-pair precedent); the pivot-equality-belt fold
+      owner-DECLINED this slice (redundancy premise HOLDS —
+      Index::First exact full-key — but the belt is also the body
+      anchor + provenance-hider: an emission-shape change, deferred
+      to a gated follow-up at R-final; REVISES the epoch-brief §5
+      pre-registration). A.6(c) arms M10-STRENGTHENED on the
+      pivot-count discriminant (IsJoin && NumPivotColumns()>0 /
+      ==0). Census 24->26. CARRIERS: join_1 (kEagerJoin=4 over 2
+      table-less views) + optimize_2 (the FIRST product golden,
+      kEagerProduct=2) seeded RAT-8; four existing carriers gained
+      REAL blocks (demand_tc 8 — incl. the M12-probed FOUR
+      table-BACKED marker blocks on %table:4/%table:15, the first
+      JOIN E-107 witnesses, independently derived by the author
+      lane from eqset= (the OD-13 payoff) — symrec 4, booleans 4,
+      elim 2); d5_recursive_negate = the zero-mint join NEGATIVE
+      guard (its differential join stays Authority A,
+      kPivotAssemble=1 — which also REFUTED the stage-(a) digest's
+      "Path #2 unwitnessed" claim, E-122). Three-way convergence
+      44/44 (11 carriers x 4 modes); byte-identity A/B 840 rows x 2
+      pairs 0-diverged. [Historical starting-state text retained
+      below.]
+      THE ORIGINAL R-JOIN BLOCK (the F17/F18 shape; the remaining
+      hand-coded arms were JOIN-with-pivots, JOIN-product,
       MERGE-inductive FEED, and the E-42 shim). ORCHESTRATOR-READ
       ANCHORS AT TIP 2aa23b3f (the R4-landing session; SINGLE-PASS —
       the R-JOIN-open fleet re-verifies): the dispatch arm is

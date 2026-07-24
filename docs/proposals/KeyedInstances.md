@@ -3880,18 +3880,139 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         — Join.cpp:601 (eager, for_delta=false) and Stratum.cpp:1532
         (DR-round delta, for_delta=true) — the ONE region factory
         SHARED by hand-coded and modeled paths (touching it risks
-        the modeled path). (6) CARRIERS: NO JOIN/PRODUCT marker
-        exists today (kPivotAssemble is SCC-only, 0 in all 9
-        goldens); join_1 = the clean acyclic pivot-join candidate
-        (2 joins, table-less views, table-backed sides); symrec/tc
-        witness the deferred/inductive interplay; NO existing
-        .deltarel golden covers a PRODUCT (an acyclic-@product
-        carrier must be ADDED); the DR-IR differential-join path
-        (kPivotAssemble/kFixpointFire) is entirely golden-
-        unwitnessed — flagged for the head. Full record: session
+        the modeled path). (6) CARRIERS: NO JOIN/PRODUCT eager
+        marker exists today (kPivotAssemble is the DISJOINT
+        differential Path #2, not an eager op); join_1 = the clean
+        acyclic pivot-join candidate (2 joins, table-less views,
+        table-backed sides); symrec/tc witness the deferred/
+        inductive interplay; NO existing .deltarel golden covers a
+        PRODUCT (an acyclic-@product carrier must be ADDED).
+        [E-122, the stage-(b) adjudicator's correction, ORCHESTRATOR-
+        verified at the golden: the digest's "kPivotAssemble/
+        kFixpointFire 0 in all 9 goldens / Path #2 entirely golden-
+        unwitnessed" was FALSE — d5_recursive_negate.deltarel.opt.
+        golden carries kPivotAssemble=1 kFixpointFire=2, so the
+        differential-JOIN delta path through the shared
+        BuildJoin(for_delta=true) IS carrier-covered; only the
+        differential-PRODUCT path remains golden-unwitnessed.] Full record: session
         scratchpad fleet-rjoinopen/consolidated.md (disposable; THIS
         entry is binding). Errata continue at E-122. NEXT: the
         R-JOIN slice under the full ritual (stage-(a) pseudocode
         build-out from the digest; ritual-head rulings: slice scope,
         marker referent, effect-free vs effect-bearing (M14), and
         the NOT-RULED pivot-equality-belt fold — an OWNER ruling).
+        [EXECUTED — §20(S).]
+
+(S) R-JOIN LANDED (2026-07-24) — THE FIFTH STEP-KIND MIGRATION: the
+    pivot-JOIN + @product dispatch arms are MODELED DR-IR OPS. Binding
+    contracts COMMITTED: rjoin-design.md (stage-(b)/(c) adjudication
+    ADJ-RJ-1..16 + the four OWNER RULINGS in banner) +
+    rjoin-desired-states.md (DS-RJ-1..10 + the stage-(d) three-way +
+    Fable-review records). OWNER RULINGS (all four recommendations
+    ratified at the ritual head): (i) SCOPE = JOIN+PRODUCT, ONE slice
+    (the R1-R3 sibling-pair precedent; pivots-only rejected — census
+    double-churn for no isolation); (ii) REFERENT = the PER-VISIT
+    dispatch edge (normative: a kEagerJoin op marks that the eager
+    walk reached a pivot-join at one (pred_view -> join_view)
+    dispatch edge and lowered it in place via the UNTOUCHED deferral
+    machinery — a reachability record, NOT the once-per-join deferred
+    TABLEJOIN emission, which stays hand-coded in
+    ContinueJoinWorkItem::Run drain order and is owed to R-final
+    with its own emission op carrying the ContinueJoinOrder key —
+    ADJ-RJ-14, the M16 mold delta); (iii) EFFECT-FREE (M14 does NOT
+    transfer — no pre-existing eager DR op to re-source;
+    effect-bearing-ness is the DEP-EDGE an op contributes, not the
+    runtime reads of its lowered region; both kinds join
+    IsEagerMarkerKind, now 8 kinds); (iv) the pivot-equality-belt
+    fold DECLINED this slice (the epoch-brief §5 NOT-RULED candidate,
+    RULED: REDUNDANCY-HOLDS — Index::First is exact full-key
+    slot.key==key, Table.h:801, Next walks the per-exact-key chain,
+    the no-index path dead — but the TUPLECMP is ALSO the body
+    anchor and the provenance-hider (Join.cpp:532-534), so folding
+    is an EMISSION-shape change touching the SHARED
+    BuildJoin(for_delta) — its own gated follow-up at R-final;
+    REVISES the brief's "belongs WITH the JOIN migration"
+    pre-registration on principled grounds). THE MECHANISM:
+    kEagerJoin(24)/kEagerProduct(25) minted at the Build.cpp IsJoin
+    dispatch (pivot-count split), lowered IN PLACE by
+    LowerRelStep_Join/_Product wrappers calling the UNTOUCHED
+    BuildEagerJoinRegion/BuildEagerProductRegion (Join.cpp/
+    Product.cpp/Stratum.cpp/Induction.cpp byte-unchanged); ctors
+    clone MakeEagerUnionOp (zero next_id — id-stream identity holds
+    ACROSS the deferral because the ctor mints no id and the builder
+    is untouched, ADJ-RJ-7); A.6(c) arms M10-STRENGTHENED on the
+    pivot-count discriminant; census 24→26 DAY ONE; render = the
+    bare kEagerForward production (NO new token, NO E-71 lane).
+    STAGE-(a) CORRECTIONS mid-ritual (both committed as errata
+    BEFORE code): E-122 — the digest's "Path #2 golden-unwitnessed /
+    kPivotAssemble=0 in all 9" was FALSE (d5's golden carries
+    kPivotAssemble=1 kFixpointFire=2, so the shared
+    BuildJoin(for_delta=true) delta path IS carrier-covered);
+    ADJ-RJ-1 — "demand_tc is a zero-mint case" REFUTED by lldb
+    (8 dispatches; Induction.cpp:726 only pre-creates the work item,
+    the walk still dispatches). THE M12 HEADLINE (stage-(d) probe,
+    ADJ-RJ-16): the uniform table-less prediction REFUTED on
+    demand_tc_witness — TWO of its four join views are
+    model-table-BACKED (tables 4/15), so FOUR marker blocks render
+    table= and sort into their tables' bands (the FIRST JOIN
+    witnesses of the E-107 shape); the author lane independently
+    derived the same pair from the OD-13 eqset= tokens (the §20(P)
+    partition-visibility payoff — derivation without a worktree
+    probe, the probe as confirmation). STAGE-(d) THREE-WAY
+    CONVERGENCE (now FIVE slices deep): author hand-prediction
+    (dump-blind; full predicted dumps for both new goldens +
+    unified diffs for all 9 re-blessed) == blind worktree prototype
+    == pristine implementation, BYTE-IDENTICAL on ALL 44 SURFACES
+    (11 carriers × 4 modes; orchestrator-executed cmp per E-77).
+    THE COUNT ORACLE (M15): census == BuildEagerJoinRegion/
+    BuildEagerProductRegion lldb dispatch hit-counts, 44/44 rows,
+    per-VISIT + emission-side (join_1 = 4 markers over 2 join
+    views). CARRIERS: join_1 (kEagerJoin=4) + optimize_2 (the FIRST
+    product golden, kEagerProduct=2; the existing case, sidecar
+    only — Design C's product_conds candidate REFUTED, its
+    conditions desugar to unit pivot-JOINS) seeded RAT-8; four
+    existing carriers gained REAL blocks (demand_tc 8 / symrec 4 /
+    booleans 4 / elim 2 — the widest existing-carrier churn of the
+    epoch, ADJ-RJ-3); d5_recursive_negate = the ZERO-MINT join
+    NEGATIVE guard (third golden role: R4 zero-mint negate + Path
+    #2 delta-join carrier + join walk-cut). FABLE REVIEW (18-agent
+    workflow): 12 findings, TEN confirmed (one adjudicated by the
+    ORCHESTRATOR personally after its verifier lane died at the
+    StructuredOutput cap — recovered from the journal, never
+    respawned), ZERO live correctness — all doc/comment drift,
+    ALL FIXED PRE-COMMIT (DeltaRel.h field comment + EAGER_WEB
+    "six"→"eight" + census-guard "25th"→"27th" + the pre-existing
+    Build.cpp:743 "six"→"eight" + DS-RJ-4 four-blocks rewording +
+    CLAUDE.md re-point: eight markers, ELEVEN goldens, unmodeled
+    arm = E-42 only), proven DUMP-NEUTRAL (18/18 pinned surfaces
+    post-fix) + post-fix suite/A-B green; 2 REFUTED (the enum
+    "carries two" counts VIEWS; the :179/:180 cite nit). GATES
+    (final tree): SUITE pre-bless EXACTLY the 11 pre-registered
+    reds (2 IRGOLD-MISSING + 9 IRGOLD-DIVERGE, nothing else) →
+    RAT-8 bless (sources 11/11 byte-verified same-as-reviewed; all
+    other bless rewrites byte-identical no-ops) → PASS (173) ×3 +
+    post-fix; A/B vs frozen f60379c3 (debug 5f30847f / release
+    e69068d0): 840 rows × 2 pairs (692 corpus + 4 nested + 144
+    data/) 0-DIVERGED + post-fix 64-row subset clean
+    (evm_array_parse identical-SIGABRT stands); ctest 5/5 debug +
+    5/5 ASAN; ASAN BOTH surfaces SUITE PASS (173) zero reports;
+    config-invariance SINGLE-HASH ×22 (11 carriers × opt+none,
+    3-run debug + release); E-62 re-grep CLEAN (LIVE this diff —
+    same sanctioned hits, zero new pinned_order consumers); Q5
+    progsize@128 release SAME-SESSION INTERLEAVED ABABAB A warm
+    {155,154,155} vs B {158,155,154,155} ms (0.0% median, A1 cold
+    discarded; generated headers byte-identical — the ADJ-S8
+    MEASURED gate). RESIDUALS OPENED (DS-RJ-10): R-final owes
+    the per-join EMISSION op (drain-order key) — the per-visit
+    marker is the reachability HALF; the fold (redundancy holds,
+    stale "approximate" comment Join.cpp:513-516 lingers
+    deliberately); the side_key_eqs delta fold = a separate third
+    diff (Database.cpp :2788/:2791/:2862/:2896 — the brief's
+    ":2740-2744" was stale, ADJ-RJ-16); dead BuildNestedLoopJoin
+    (Join.cpp:179-294, assert-disabled) labeled, not removed; no
+    differential-PRODUCT kProductArm golden (d5 covers the join
+    delta path). The R1-R4 residual set carries unchanged. NEXT:
+    R-E42 per §5 (the VECTORLOOP shim minted from an op — S4
+    retires), then R-final (direction flip + the emission op + the
+    fold + count oracle + ClassifyEagerSink replica retirement +
+    the DeltaRel→Rel rename ritual).

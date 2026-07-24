@@ -590,4 +590,4 @@ deps:
   op.57 -> op.48 WAW epoch
   op.57 -> op.56 WAW epoch
 
-census: kCrossover=2 kProductArm=0 kSeedFold=4 kFixpointFire=2 kChainFold=6 kClaimDrain=10 kRetire=8 kRederive=4 kFrontierFilter=10 kCommitSweep=7 kNegateGate=0 kPivotAssemble=1 kIngestFold=4 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=2 kEagerInsert=0 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0
+census: kCrossover=2 kProductArm=0 kSeedFold=4 kFixpointFire=2 kChainFold=6 kClaimDrain=10 kRetire=8 kRederive=4 kFrontierFilter=10 kCommitSweep=7 kNegateGate=0 kPivotAssemble=1 kIngestFold=4 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=2 kEagerInsert=0 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0 kEagerJoin=0 kEagerProduct=0

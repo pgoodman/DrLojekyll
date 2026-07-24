@@ -206,6 +206,26 @@ enum class DROpKind : uint8_t {
                          //   M2'). `table_op_table` = the merged model,
                          //   shared with the pred INSERT via the SELECT<->
                          //   INSERT model-union rule (non-null in practice).
+  kEagerJoin,            // (24) R-JOIN: the pivot-JOIN dispatch (Build.cpp
+                         //   BuildEagerJoinRegion) — a PER-VISIT record of
+                         //   ONE (pred_view -> join_view) walk dispatch
+                         //   edge, NOT the once-per-join TABLEJOIN emission
+                         //   (which stays hand-coded behind the
+                         //   ContinueJoinWorkItem deferral, drain-ordered —
+                         //   owed to R-final). EFFECT-FREE marker; NO
+                         //   stored payload (the pivot count re-derives
+                         //   from `eager_view` if ever rendered — M2').
+                         //   `table_op_table` = the merged model (usually
+                         //   NULL — join views are typically table-less —
+                         //   but a model-SHARED join is table-backed and
+                         //   renders table=, the E-107 shape:
+                         //   demand_tc_witness carries two).
+  kEagerProduct,         // (25) R-JOIN: the zero-pivot @product dispatch
+                         //   (Build.cpp BuildEagerProductRegion) — the
+                         //   kEagerJoin analog for the acyclic cross-
+                         //   product arm (on-cycle differential products
+                         //   reject upstream via ViewSelfReachable).
+                         //   EFFECT-FREE; NO stored payload.
 };
 
 // R3 aggregate provenance (spec §2.2): whether a GROUP_UPDATE came from an
@@ -660,12 +680,13 @@ class DROp {
   std::vector<BindingSource> context_col_sources;
 
   // ---- EAGER_* data (R1: forward/insert; R2: compare/generate; R3:
-  // union/select) --------------------------------------------------------
+  // union/select; R-JOIN: join/product) -----------------------------------
   // (kind == kEagerForward | kEagerInsert | kEagerCompare | kEagerGenerate |
-  //  kEagerUnion | kEagerSelect).
+  //  kEagerUnion | kEagerSelect | kEagerJoin | kEagerProduct).
   // EFFECT-FREE position markers of the
   // monotone eager web (design §A.2/§A.3): `eager_view` is the dispatched
-  // TUPLE/INSERT/CMP/MAP/MERGE/SELECT view (drives render + the A.6(c)
+  // TUPLE/INSERT/CMP/MAP/MERGE/SELECT/JOIN/PRODUCT view (drives render +
+  // the A.6(c)
   // structural recount —
   // the CMP operator and MAP functor re-derive from it at Format time, no
   // stored payload of their own, ADJ-R2-1/2); the
@@ -1004,6 +1025,13 @@ DROp MakeEagerCompareOp(QueryView cmp_view, TABLE *table);
 DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table);
 DROp MakeEagerUnionOp(QueryView merge_view, TABLE *table);
 DROp MakeEagerSelectOp(QueryView select_view, TABLE *table);
+
+// R-JOIN: the single authorities for the kEagerJoin / kEagerProduct markers —
+// each marks ONE (pred_view -> join_view) PER-VISIT walk dispatch edge (never
+// the deferred once-per-join TABLEJOIN emission). `table` may be null (join
+// views are typically table-less; a model-shared join is table-backed).
+DROp MakeEagerJoinOp(QueryView join_view, TABLE *table);
+DROp MakeEagerProductOp(QueryView product_view, TABLE *table);
 
 // R4 (adjudicated option A): the single authority for a kNegateGate eager
 // forward gate — a mint RELOCATION from the old BuildDRInventory NEGATE_GATE

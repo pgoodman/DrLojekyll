@@ -740,7 +740,7 @@ void FindMonotoneNegatedTables(ProgramImpl *impl, Context &context,
   }
 }
 
-// The lazily created per-table delta vector of `kind` (one of the six
+// The lazily created per-table delta vector of `kind` (one of the eight
 // batch-skeleton kinds documented on `Context::table_delta_vecs`).
 VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
                          VectorKind kind) {
@@ -1237,6 +1237,29 @@ static void LowerRelStep_Negate(ProgramImpl *impl, Context &context,
   BuildEagerNegateRegion(impl, pred_view, negate, context, parent, last_table);
 }
 
+// R-JOIN (rjoin-design §4): the pivot-JOIN cut — record the PER-VISIT
+// dispatch (one marker per (pred_view -> join) walk edge), then CALL the
+// UNTOUCHED Join.cpp builder at the exact original walk site. The builder
+// defers the TABLEJOIN emission through the ContinueJoinWorkItem machinery
+// (drain-ordered); the marker records the dispatch edge, never the deferred
+// emission (owed to R-final).
+static void LowerRelStep_Join(ProgramImpl *impl, Context &context,
+                              const DROp &op, QueryView pred_view,
+                              QueryJoin join, OP *parent, TABLE *last_table) {
+  RecordEagerDispatch(context, op);
+  BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_table);
+}
+
+// R-JOIN: the zero-pivot @product cut (the acyclic arm; on-cycle differential
+// products reject upstream via ViewSelfReachable).
+static void LowerRelStep_Product(ProgramImpl *impl, Context &context,
+                                 const DROp &op, QueryView pred_view,
+                                 QueryJoin join, OP *parent,
+                                 TABLE *last_table) {
+  RecordEagerDispatch(context, op);
+  BuildEagerProductRegion(impl, pred_view, join, context, parent, last_table);
+}
+
 // Build an eager region.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                       Context &context, OP *parent, TABLE *last_table) {
@@ -1246,10 +1269,17 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
-      BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_table);
+      // R-JOIN: mint the effect-free kEagerJoin marker (a per-visit record
+      // of THIS dispatch edge; the TABLEJOIN emission stays deferred inside
+      // the untouched builder), then lower IN PLACE.
+      const DROp op = MakeEagerJoinOp(view, ModelTableOrNull(impl, view));
+      LowerRelStep_Join(impl, context, op, pred_view, join, parent,
+                        last_table);
     } else {
-      BuildEagerProductRegion(impl, pred_view, join, context, parent,
-                              last_table);
+      // R-JOIN: the zero-pivot @product analog.
+      const DROp op = MakeEagerProductOp(view, ModelTableOrNull(impl, view));
+      LowerRelStep_Product(impl, context, op, pred_view, join, parent,
+                           last_table);
     }
 
   } else if (view.IsMerge()) {

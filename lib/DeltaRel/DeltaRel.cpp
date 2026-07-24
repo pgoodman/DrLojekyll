@@ -1309,7 +1309,9 @@ static bool IsEagerMarkerKind(DROpKind kind) {
          kind == DROpKind::kEagerCompare ||
          kind == DROpKind::kEagerGenerate ||
          kind == DROpKind::kEagerUnion ||
-         kind == DROpKind::kEagerSelect;
+         kind == DROpKind::kEagerSelect ||
+         kind == DROpKind::kEagerJoin ||
+         kind == DROpKind::kEagerProduct;
 }
 
 // R2: the single authority for a kEagerCompare marker op (r2-design §A M2).
@@ -1355,6 +1357,29 @@ DROp MakeEagerSelectOp(QueryView select_view, TABLE *table) {
   DROp op(DROpKind::kEagerSelect);
   op.ctx = Ctx::kEager;
   op.eager_view = select_view;
+  op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
+  return op;
+}
+
+// R-JOIN (rjoin-design §4): the single authorities for the kEagerJoin /
+// kEagerProduct marker ops. Pure, NO effects, NO stored payload — each marks
+// ONE (pred_view -> join_view) walk dispatch edge (PER-VISIT, per M15 — never
+// the once-per-join TABLEJOIN emission, which stays hand-coded behind the
+// ContinueJoinWorkItem deferral). `table` is the merged model
+// (ModelTableOrNull — usually null, join views are typically table-less; a
+// model-SHARED join is table-backed, the E-107 shape).
+DROp MakeEagerJoinOp(QueryView join_view, TABLE *table) {
+  DROp op(DROpKind::kEagerJoin);
+  op.ctx = Ctx::kEager;
+  op.eager_view = join_view;
+  op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
+  return op;
+}
+
+DROp MakeEagerProductOp(QueryView product_view, TABLE *table) {
+  DROp op(DROpKind::kEagerProduct);
+  op.ctx = Ctx::kEager;
+  op.eager_view = product_view;
   op.table_op_table = table;  // may be null; table_op_sign stays 0 (signless)
   return op;
 }
@@ -2440,8 +2465,8 @@ DRFlowGraph BuildDRInventory(
   // COMPLETED before BuildStratumPhases — F-ORDER) is the reachability
   // authority; here we re-invoke the SAME single-authority ctor from each
   // recorded dispatch, in walk (DFS) order (deterministic, (F)-clean — a
-  // std::vector iterated by index, never a pointer-ordered container). The six
-  // MARKER kinds are EFFECT-FREE ⇒ no vec def-edge is recorded (there is no
+  // std::vector iterated by index, never a pointer-ordered container). The
+  // eight MARKER kinds are EFFECT-FREE ⇒ no vec def-edge is recorded (there is no
   // vec to define); the R4 kNegateGate is the ONE effect-BEARING kind in this
   // stream — its ctor reconstructs the kFlagRead identically here and at the
   // walk mint (M2' extended to an effect), and it still defines no vec.
@@ -2467,12 +2492,18 @@ DRFlowGraph BuildDRInventory(
       case DROpKind::kEagerSelect:  // R3
         flow.ops.push_back(MakeEagerSelectOp(*rec.view, rec.table));
         break;
+      case DROpKind::kEagerJoin:  // R-JOIN
+        flow.ops.push_back(MakeEagerJoinOp(*rec.view, rec.table));
+        break;
+      case DROpKind::kEagerProduct:  // R-JOIN
+        flow.ops.push_back(MakeEagerProductOp(*rec.view, rec.table));
+        break;
       case DROpKind::kNegateGate:  // R4: rec.view=gate_negate, rec.table=gate_table
         flow.ops.push_back(MakeEagerNegateOp(*rec.view, rec.table));
         break;
       default:
         // R2 (ADJ-R2-8a): a recorded eager dispatch can only be one of the
-        // six marker kinds or the R4 effect-bearing kNegateGate — anything
+        // eight marker kinds or the R4 effect-bearing kNegateGate — anything
         // else is a mint-site defect.
         fprintf(stderr, "DELTAREL: non-eager kind in emitted_eager_ops\n");
         abort();
@@ -3557,6 +3588,29 @@ void ValidateDROps(
       case DROpKind::kEagerSelect:  // strict view-kind arm (r3-design §F.3)
         if (!v.IsSelect()) {
           ValidatorFail("R3 A.6(c): a kEagerSelect op's view is not a SELECT");
+        }
+        break;
+      case DROpKind::kEagerJoin:
+        // R-JOIN (M10-STRENGTHENED arm, rjoin-design §5): re-check the mint's
+        // ACTUAL predicate — IsJoin AND NumPivotColumns()>0. The view-kind
+        // alone is AMBIGUOUS between the pivot-join and @product kinds (both
+        // are IsJoin; the dispatch splits on the pivot count).
+        if (!v.IsJoin()) {
+          ValidatorFail("R-JOIN A.6(c): a kEagerJoin op's view is not a JOIN");
+        }
+        if (!QueryJoin::From(v).NumPivotColumns()) {
+          ValidatorFail("R-JOIN A.6(c): a kEagerJoin op's join has no pivot "
+                        "columns (the @product arm must mint kEagerProduct)");
+        }
+        break;
+      case DROpKind::kEagerProduct:  // the M10-strengthened sibling arm
+        if (!v.IsJoin()) {
+          ValidatorFail("R-JOIN A.6(c): a kEagerProduct op's view is not a "
+                        "JOIN");
+        }
+        if (QueryJoin::From(v).NumPivotColumns()) {
+          ValidatorFail("R-JOIN A.6(c): a kEagerProduct op's join has pivot "
+                        "columns (the pivot arm must mint kEagerJoin)");
         }
         break;
       default:

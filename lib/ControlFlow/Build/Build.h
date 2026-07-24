@@ -240,7 +240,7 @@ class Context {
   // flow does not exist at walk time — the §12.6 walk-authority shape, shared
   // with emitted_ingest_folds). `BuildDRInventory`'s EAGER_WEB block iterates
   // this vector in walk (DFS) order, re-invoking the single-authority ctor per
-  // record. Enough to rebuild the op — the six effect-free markers AND the R4
+  // record. Enough to rebuild the op — the eight effect-free markers AND the R4
   // effect-bearing kNegateGate (whose ctor reconstructs its kFlagRead from
   // these same two identities): the view (re-invokes the ctor), the target
   // table (nullable), the sink discriminant, and the stream message.

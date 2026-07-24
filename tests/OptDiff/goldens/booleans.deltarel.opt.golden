@@ -1,24 +1,32 @@
 deltarel
 
-op.6 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+op.3 kEagerJoin sign=· ctx=eager stratum=0
+    args:
+op.5 kEagerJoin sign=· ctx=eager stratum=0
+    args:
+op.7 kEagerJoin sign=· ctx=eager stratum=0
+    args:
+op.12 kEagerJoin sign=· ctx=eager stratum=0
+    args:
+op.9 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:4
-op.7 kEagerSelect sign=· ctx=eager stratum=0
+op.10 kEagerSelect sign=· ctx=eager stratum=0
+    args: table=%table:4
+op.11 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:4
 op.8 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:4
-op.5 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:7
-op.9 kEagerForward sign=· ctx=eager stratum=0
+op.13 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:11
-op.10 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+op.14 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:11
-op.4 kEagerForward sign=· ctx=eager stratum=0
+op.6 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:14
 op.1 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:14, +, NonRecursive)}
     spine: —
     args: table=%table:14 message=log_in/1
-op.3 kEagerForward sign=· ctx=eager stratum=0
+op.4 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:17
 op.0 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:17, +, NonRecursive)}
@@ -31,4 +39,4 @@ rounds:
 
 deps:
 
-census: kCrossover=0 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=0 kRetire=0 kRederive=0 kFrontierFilter=0 kCommitSweep=0 kNegateGate=0 kPivotAssemble=0 kIngestFold=2 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=6 kEagerInsert=2 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=1
+census: kCrossover=0 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=0 kRetire=0 kRederive=0 kFrontierFilter=0 kCommitSweep=0 kNegateGate=0 kPivotAssemble=0 kIngestFold=2 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=6 kEagerInsert=2 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=1 kEagerJoin=4 kEagerProduct=0
