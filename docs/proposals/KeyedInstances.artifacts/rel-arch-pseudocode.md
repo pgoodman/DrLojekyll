@@ -103,6 +103,16 @@ slice scope a ritual-head ruling; the pivot-belt fold candidate is
 an EMISSION-shape change (structural gates, not byte-identity A/B).
 SINGLE-PASS: the next session's fleet re-verifies §4-§6 (incl.
 §4.3) against code before R-JOIN.
+RE-VERIFIED 2026-07-24 at tip f60379c3 by the R-JOIN-open fleet (3
+seed-unread derivation lanes + 3 seed-read verifiers + 1 mechanical
+lane + xhigh consolidator; KeyedInstances.md §20(R)): SOUND-WITH-
+ERRATA, zero code or design defects — the M1-M15 mold, the §5
+R-JOIN starting-state caveat, and the §6 partition facts hold
+exactly (the caveat is in fact UNDERSTATED: the in-place nested-loop
+alternative in Join.cpp is assert-disabled dead code). Errata
+E-117..E-121 applied IN PLACE below (anchor/arity/label drift only).
+The L2 JOIN/PRODUCT derivation lane doubles as the R-JOIN stage-(a)
+seed; its adjudicated digest is recorded in §20(R).
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -286,18 +296,19 @@ SINGLE-PASS: the next session's fleet re-verifies §4-§6 (incl.
 
     R1 (§20(H); contract r1-design.md): §2's dispatch table is AMENDED —
     the TUPLE and INSERT arms are now MODELED OPS. The dispatch
-    (Build.cpp BuildEagerRegion, mint sites :1294/:1303 — E-103/E-111:
-    R2 then R3 inserted arms ABOVE these; re-based at tip 1492adbf):
+    (Build.cpp BuildEagerRegion, mint sites :1316/:1325 — E-103/E-111/
+    E-118: R2, R3, then R4 inserted arms around these; re-based at tip
+    f60379c3):
 
       TUPLE  -> op = MakeEagerForwardOp(view, ModelTableOrNull(view))
-                LowerRelStep_Forward(op, ...)       # Build.cpp:1138
+                LowerRelStep_Forward(op, ...)       # Build.cpp:1145
       INSERT -> message = MessageOfInsertOrNull(insert)   # ONCE at the
-                # mint site (:1302 — E-103/E-111; helper :1113, ADJ-S13
-                # note :1088, Fable-[3] note :1092 — E-98/E-113; HELD
-                # through R3)
+                # mint site (:1324 — E-103/E-111/E-118; helper :1113,
+                # ADJ-S13 note :1088, Fable-[3] note :1092 — E-98/
+                # E-113; HELD through R4)
                 op = MakeEagerInsertOp(view, ModelTableOrNull(view),
                        ClassifyEagerSink(ctx, insert, message), message)
-                LowerRelStep_Insert(op, ...)        # Build.cpp:1146
+                LowerRelStep_Insert(op, ...)        # Build.cpp:1153
       all other arms -> unchanged hand-coded builders (§2 stands)
 
     THE MARKER-OP MOLD (established once by R1; every R2..Rk slice is a
@@ -323,11 +334,12 @@ SINGLE-PASS: the next session's fleet re-verifies §4-§6 (incl.
          table-less eager ops LEAD the dump; sign-0 eager before each
          table's sign-+1 ingest fold.
       M6 census DAY ONE + the structural recount appended after the
-         expect() lines (base batch DeltaRel.cpp:3443-3453; A.6(c)
-         recount :3486-3560, guard :3494, view-kind switch :3505,
-         table-match :3556 — E-104/E-111 re-based at tip 1492adbf;
-         E-112: ":3405" is the GROUP_UPDATE key setup, NOT inside the
-         count lambdas — count_kind :3425 / expect :3434):
+         expect() lines (base batch expect() calls ~DeltaRel.cpp:
+         3460-3470; A.6(c) recount guard :3511, view-kind switch
+         :3522, table-match :3573 — E-104/E-111/E-119 re-based at tip
+         f60379c3; E-112/E-117 re-anchored at f60379c3: the
+         GROUP_UPDATE key setup (add_gu_key) is :3424-3439, NOT
+         inside the count lambdas — count_kind :3442 / expect :3451):
          kind<->view-kind + table
          == the union-find MERGED model (DS-ADJ-7 — the RENDER AUTHORITY
          is view_to_model->FindAs, NEVER the .df per-view attribute); NO
@@ -348,14 +360,15 @@ SINGLE-PASS: the next session's fleet re-verifies §4-§6 (incl.
 ##      contracts r2-design.md ADJ-R2-0..8 + r2-desired-states.md
 ##      DS-R2-1..9 — anchors read at the R2 tip by the landing session)
 
-    The R2 dispatch cuts (Build.cpp): CMP :1276-1281 (wrapper :1157 —
+    The R2 dispatch cuts (Build.cpp): CMP mint :1301 (wrapper :1164 —
     forwards NEITHER pred_view NOR last_table, the builder's own
-    signature) and MAP :1260-1274 (wrapper :1166; mint in the IsPure()
+    signature) and MAP mint :1290 (wrapper :1173; mint in the IsPure()
     TRUE arm ONLY — impure maps reject upstream pre-walk, ADJ-R2-3).
-    Ctors DeltaRel.cpp:1319/:1330; EAGER_WEB switch (6-way at tip
-    after R3's union/select arms; was 4-way at the R2 tip) WITH loud-
-    abort default :2450-2478; render cases Format.cpp:903/:915;
-    ComparisonOperatorName :150. [E-111 re-based at tip 1492adbf.]
+    Ctors DeltaRel.cpp:1319/:1330; EAGER_WEB switch (7-way at tip
+    after R4's kNegateGate case :2470-2472 — E-120; was 4-way at the
+    R2 tip) WITH loud-abort default :2473-2478; render cases
+    Format.cpp:903/:915; ComparisonOperatorName :150. [E-111/E-118
+    re-based at tip f60379c3.]
     Mold deltas every future slice
     inherits:
 
@@ -370,8 +383,10 @@ SINGLE-PASS: the next session's fleet re-verifies §4-§6 (incl.
           construction.
       M6' ONE MEMBERSHIP PREDICATE: IsEagerMarkerKind
           (DeltaRel.cpp:1306) is the SOLE spelling of "is an eager
-          marker", shared by the A.6(c) guard (:3494) and the key_of
-          lead-0 branch (:4475). [E-111 re-based; :1306 HELD.] A new marker kind extends the
+          marker", shared by the A.6(c) guard (:3511) and the key_of
+          lead-0 branch (:4492). [E-111/E-119 re-based at f60379c3;
+          :1306 HELD; the predicate stays 6 kinds — the R4 gate is
+          excluded, E-120.] A new marker kind extends the
           PREDICATE and both sites follow. The A.6(c) kind->view-kind
           dispatch is a SWITCH with a loud-abort default (a fifth kind
           that reaches it un-handled aborts honestly) — mirroring the
@@ -404,19 +419,21 @@ SINGLE-PASS: the next session's fleet re-verifies §4-§6 (incl.
 ##      contracts r3-design.md ADJ-R3-1..10 + r3-desired-states.md
 ##      DS-R3-1..9 — anchors read at the R3 tip by the landing session)
 
-    The R3 dispatch cuts (Build.cpp): UNION mint :1243-1245 (inside
+    The R3 dispatch cuts (Build.cpp): UNION mint :1265-1267 (inside
     the IsMerge arm's not-owning-an-InductionGroupId else-leg; the
-    owning leg is Authority A, mint-free) and SELECT mint :1286-1288.
-    Wrappers :1200 (LowerRelStep_Union — forwards the builder's full
+    owning leg is Authority A, mint-free) and SELECT mint :1308-1310.
+    Wrappers :1207 (LowerRelStep_Union — forwards the builder's full
     6-arg signature; pred_view is never read by the builder, forwarded
-    for uniformity) and :1209 (LowerRelStep_Select). The extracted
-    builder BuildEagerSelectRegion :1183 (the inline rebind block
+    for uniformity) and :1216 (LowerRelStep_Select). The extracted
+    builder BuildEagerSelectRegion :1190 (the inline rebind block
     moved VERBATIM — assert(pred_view.IsInsert()) + the col rebind
     loop + the BuildEagerInsertionRegions recursion; a byte-move
     minting zero impl->next_id). Ctors DeltaRel.cpp:1342/:1354;
-    EAGER_WEB cases :2466-2471 (6-way + loud-abort); A.6(c) arms
-    :3526 (union, STRENGTHENED) / :3540 (select, strict);
-    IsEagerMarkerKind :1306 (6-way; callers :3494 + :4475); render
+    EAGER_WEB cases (7-way now + loud-abort — E-120; gate case
+    :2470-2472); A.6(c) arms ~:3543 (union, STRENGTHENED) / ~:3557
+    (select, strict);
+    IsEagerMarkerKind :1306 (6 kinds; callers :3511 + :4492 —
+    E-118/E-119/E-120 re-based at f60379c3); render
     Format.cpp:935/:945 (the kEagerForward shape exactly, no extra
     token); DROpKindName :120-121; kAllKinds :1040 (24); enum
     DeltaRel.h:190/:201. Mold deltas every future slice inherits:
@@ -801,8 +818,9 @@ SINGLE-PASS: the next session's fleet re-verifies §4-§6 (incl.
         stays INSERT-omitted) — a table-less view of a backed class
         shows its set membership in text (negate_1 select.0
         eqset=1 == tuple.4/%table:11), and an INSERT that is its
-        table's sole stamped block still links set<->table (tc
-        insert.19 eqset=10 into %table:4). The E-106/E-107 blind
+        table's sole stamped block still links set<->table
+        (demand_tc_witness insert.19 eqset=10 into %table:4 —
+        E-121, the shorthand spelled out). The E-106/E-107 blind
         shape no longer needs the M12 worktree probe.
 
     OD-13 AS A DIFF ON THE ABOVE (owner-directed; open decisions ->

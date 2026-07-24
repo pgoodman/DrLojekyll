@@ -3775,3 +3775,123 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     replica → R-final). NEXT: R-JOIN per §5 (the NOT-RULED
     pivot-equality-belt fold candidate rules at its head), then
     R-E42, R-final.
+
+(R) R-JOIN-OPEN RE-VERIFICATION RECORD (2026-07-24, tip f60379c3; the
+    session-open items (0)+(1) EXECUTED per §20(Q)'s NEXT).
+    (0) Frozen A/B baselines RE-SNAPSHOTTED from tip into the session
+        scratchpad BEFORE any code (debug 5f30847f… / release
+        e69068d0…; both presets rebuilt clean) — the b1c95bac-era
+        snapshots retired as STALE post-R4. ASAN cadence stands
+        per-diff (§19(F)/(J)); the tip is docs-only atop 2aa23b3f,
+        whose both-surface sweeps are the standing green.
+    (1) §20(P)/(Q) + rel-arch-pseudocode.md §4/§4.1/§4.2/§4.3/§5/§6
+        FLEET-RE-VERIFIED (house precedent): 3 seed-UNREAD opus
+        derivation lanes (the 7-kind walk-mint machinery incl. the
+        effect-bearing kNegateGate as landed; the JOIN/PRODUCT
+        subsystem Join.cpp + Product.cpp END TO END incl.
+        ContinueJoinWorkItem — the R-JOIN stage-(a) seed; the
+        eqset=/partition dump surfaces) + 3 seed-read adversarial
+        verifiers (§4-§4.3; §5+§6 incl. the R-JOIN anchors; §20(P)/
+        (Q)+contract banners) + 1 sonnet mechanical lane (16-surface
+        regen, census 24, hexdump pins, cross-knob compiles, the
+        DS-R4-4 9-case sweep) + 1 xhigh consolidator (8 agents,
+        ~762k tokens; every candidate adjudicated AT the code). The
+        E-62 tripwire re-grepped by the ORCHESTRATOR personally:
+        CLEAN (sole out-of-lib hits = the standing Stratum.cpp:1073
+        comment + the RAT-3 InstanceOrderTest fixture). The
+        carrier-golden referee EXECUTED by the orchestrator
+        personally: ALL SIXTEEN pinned golden surfaces regenerate
+        BYTE-IDENTICAL at tip (tc h/ir/df/deltarel, symrec
+        ir/df/deltarel, map_3/merge_2/booleans/elim-cond-cycle-
+        simple/negate_6/d5_recursive_negate deltarel, negate_1
+        df+deltarel, aggregate_1 df — the irgold sidecars are the
+        count authority). VERDICT: SOUND-WITH-ERRATA — zero code or
+        design defects; the M1-M15 mold, the M14 effect
+        byte-reconstruction, the §5 R-JOIN starting-state caveat,
+        and the §6 partition facts hold EXACTLY (mechanical: 16/16
+        surfaces, opt==nocf / nodf==none ×9 carriers, sign= c2 b7 +
+        cmp=eq + functor=add_i32/3, DS-R4-4 post-state exact —
+        disassemble=1 sole nonzero, corpus opt kNegateGate=18); five
+        errata, ALL anchor/arity/label drift, applied IN PLACE (each
+        site tagged):
+          E-117 MED  §4 M6: E-112's own correction anchors went
+                     stale AND slid onto the confusable add_gu_key
+                     region (:3424-3439) — count_kind :3442 /
+                     expect :3451 at tip.
+          E-118 LOW  §4/§4.1/§4.2 Build.cpp mint/wrapper anchors
+                     drifted +7..+22 (R4 insertions): mints
+                     Union :1265 / Generate :1290 / Compare :1301 /
+                     Select :1308 / Forward :1316 / Insert :1325 /
+                     Negate :1339; wrappers :1145/:1153/:1164/
+                     :1173/:1207/:1216/:1232. Helper anchors
+                     :1113/:1088/:1092/:1123 HELD.
+          E-119 LOW  DeltaRel.cpp recount/caller anchors drifted
+                     +17: A.6(c) guard :3511, switch :3522,
+                     table-match :3573, key_of caller :4492.
+          E-120 COSM EAGER_WEB switch is 7-WAY after R4 (gate case
+                     :2470-2472), not "6-way"; IsEagerMarkerKind
+                     itself stays 6 kinds (gate excluded).
+          E-121 COSM §6: "tc insert.19" spelled out to
+                     demand_tc_witness (the house shorthand made
+                     precise at the sole-stamped-INSERT witness).
+        REFUTED (held, grounds in the consolidation record): the
+        "per-op recount" naming candidate (house term, criterion
+        exact); the A.6(c) dead IsAggregate cut-check (code-
+        documented, Fable R1 [1]); the gate_table/negate_table
+        near-collision (two field families, op_table_id correctly
+        falls to 0); class= OR-fold + DOT non-reproducibility
+        (deliberate, code-commented, §6-recorded). R-JOIN STAGE-(a)
+        DIGEST (consolidator-adjudicated, L2==§5 with §5
+        UNDERSTATING the caveat; full record in the fleet
+        consolidation): (1) Build.cpp:1246-1253 dispatches JOIN/
+        PRODUCT with NO mint/wrapper — the only two walk arms (plus
+        E-42) with no DROp; BuildEagerJoinRegion (Join.cpp:707-783)
+        at the walk moment only InTryInsert's the PREDECESSOR
+        (:715-716, in place), mints pivot_vec + ContinueJoinWorkItem
+        on first visit (:759-764), and appends parent to
+        join_action->inserts (:767) — the in-place nested-loop else
+        (:774-777, BuildNestedLoopJoin :179-294) is DEAD behind
+        `true ||` (:744) + assert(false) (:775). (2) The TABLEJOIN
+        mints ONCE at ContinueJoinWorkItem::Run (Join.cpp:558-704,
+        BuildJoin :601 for_delta=false; TABLEJOIN Create :313) in
+        WORK-ITEM-DRAIN order — CompleteProcedure (Build.cpp:
+        1009-1022) stable_sorts by ContinueJoinOrder (Join.cpp:9-42;
+        kContinueJoinOrder Build.h:81, induction inversion :82-83)
+        every iteration — so join next_id fires in drain order, NOT
+        walk order; the M3 identity argument does not transfer (the
+        LEAD ruling = marker referent: per-visit dispatch record vs
+        once-per-join emission; a zero-next_id marker ctor is
+        id-stream-safe either way). (3) JOIN views are TABLE-LESS at
+        the model layer (join_1 verified) — a marker's table= would
+        be absent like the gate's lead-0; whether it carries
+        pred-table kFlagReads (M14 effect-bearing) is the R4-crux
+        analog. (4) The pivot-belt TUPLECMP (Join.cpp:317-321,
+        !for_delta only; filled :513-519) is TAUTOLOGICALLY
+        REDUNDANT — Index::First is exact full-key (Table.h:790-805
+        slot.key == key; Next :807-810 walks the per-exact-key
+        chain; the Join.cpp:513-516 "approximate" comment is STALE)
+        — BUT it is also the body anchor ({let,parent} chain) and
+        the provenance-hider (col_id_to_var remap :532-534); folding
+        relocates BOTH roles = an EMISSION-shape change (structural
+        gates, never byte A/B). (5) M13 sweep: BuildEagerJoinRegion/
+        BuildEagerProductRegion each have ONE caller (Build.cpp:
+        1249/:1251); ContinueJoinWorkItem is ALSO created at
+        Induction.cpp:726 (products :774); BuildJoin has TWO callers
+        — Join.cpp:601 (eager, for_delta=false) and Stratum.cpp:1532
+        (DR-round delta, for_delta=true) — the ONE region factory
+        SHARED by hand-coded and modeled paths (touching it risks
+        the modeled path). (6) CARRIERS: NO JOIN/PRODUCT marker
+        exists today (kPivotAssemble is SCC-only, 0 in all 9
+        goldens); join_1 = the clean acyclic pivot-join candidate
+        (2 joins, table-less views, table-backed sides); symrec/tc
+        witness the deferred/inductive interplay; NO existing
+        .deltarel golden covers a PRODUCT (an acyclic-@product
+        carrier must be ADDED); the DR-IR differential-join path
+        (kPivotAssemble/kFixpointFire) is entirely golden-
+        unwitnessed — flagged for the head. Full record: session
+        scratchpad fleet-rjoinopen/consolidated.md (disposable; THIS
+        entry is binding). Errata continue at E-122. NEXT: the
+        R-JOIN slice under the full ritual (stage-(a) pseudocode
+        build-out from the digest; ritual-head rulings: slice scope,
+        marker referent, effect-free vs effect-bearing (M14), and
+        the NOT-RULED pivot-equality-belt fold — an OWNER ruling).
