@@ -240,12 +240,14 @@ class Context {
   // flow does not exist at walk time — the §12.6 walk-authority shape, shared
   // with emitted_ingest_folds). `BuildDRInventory`'s EAGER_WEB block iterates
   // this vector in walk (DFS) order, re-invoking the single-authority ctor per
-  // record. Enough to rebuild the marker op: the view (re-invokes the ctor),
-  // the target table (nullable), the sink discriminant, and the stream message.
+  // record. Enough to rebuild the op — the six effect-free markers AND the R4
+  // effect-bearing kNegateGate (whose ctor reconstructs its kFlagRead from
+  // these same two identities): the view (re-invokes the ctor), the target
+  // table (nullable), the sink discriminant, and the stream message.
   struct EmittedEagerOp {
     uint8_t kind;                          // DROpKind cast (kEagerForward/Insert)
-    std::optional<QueryView> view;         // eager_view (re-invokes the ctor)
-    TABLE *table{nullptr};                 // table_op_table (nullable)
+    std::optional<QueryView> view;         // eager_view (gate: gate_negate)
+    TABLE *table{nullptr};                 // table_op_table (gate: gate_table)
     uint8_t sink{0};                       // EagerSink cast (kNone for forwards)
     std::optional<ParsedMessage> message;  // kEagerInsert stream sinks only
   };

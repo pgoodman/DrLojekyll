@@ -1005,6 +1005,13 @@ DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table);
 DROp MakeEagerUnionOp(QueryView merge_view, TABLE *table);
 DROp MakeEagerSelectOp(QueryView select_view, TABLE *table);
 
+// R4 (adjudicated option A): the single authority for a kNegateGate eager
+// forward gate — a mint RELOCATION from the old BuildDRInventory NEGATE_GATE
+// loop. EFFECT-BEARING (carries a kFlagRead of the negated table); populates
+// only the gate_* fields, NOT eager_view/table_op_table, so it stays OUT of
+// IsEagerMarkerKind (op_table_id(gate)=0, table-less lead-0).
+DROp MakeEagerNegateOp(QueryView negate_view, TABLE *negated_table);
+
 // R1: a `.find()`-guarded lookup of a view's model table (ADJ-S13/S14 — never
 // operator[], which default-inserts a null NODE and SIGSEGVs FindAs on a
 // table-less view). Returns null when the view has no model entry / no table.

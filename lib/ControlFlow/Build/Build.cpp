@@ -1127,6 +1127,13 @@ static void RecordEagerDispatch(Context &context, const DROp &op) {
   rec.table = op.table_op_table;
   rec.sink = static_cast<uint8_t>(op.eager_sink);
   rec.message = op.eager_message;
+  // R4 (option A): the kNegateGate op keeps its identity in the gate_* fields,
+  // NOT eager_view/table_op_table — source rec.view/table from those so the
+  // EAGER_WEB re-invocation feeds MakeEagerNegateOp(*rec.view, rec.table).
+  if (op.kind == DROpKind::kNegateGate) {
+    rec.view = op.gate_negate;
+    rec.table = op.gate_table;
+  }
   context.emitted_eager_ops.push_back(std::move(rec));
 }
 
@@ -1213,6 +1220,21 @@ static void LowerRelStep_Select(ProgramImpl *impl, Context &context,
   RecordEagerDispatch(context, op);
   BuildEagerSelectRegion(impl, pred_view, select_view, context, parent,
                          last_table);
+}
+
+// R4 (adjudicated option A): the NEGATE eager-gate cut — record the dispatch,
+// then CALL the UNTOUCHED Negate.cpp builder at the exact original walk site.
+// The mint sits in BuildEagerRegion's IsNegate arm; the walk only reaches
+// !CanReceiveDeletions negates (Build.cpp:970 cut), so the mint is
+// unconditional there. (BuildEagerRegion's second caller, Procedure.cpp:813,
+// passes only all-constant TUPLE views — the IsNegate arm is unreachable via
+// it, C2-F2.)
+static void LowerRelStep_Negate(ProgramImpl *impl, Context &context,
+                                const DROp &op, QueryView pred_view,
+                                QueryNegate negate, OP *parent,
+                                TABLE *last_table) {
+  RecordEagerDispatch(context, op);
+  BuildEagerNegateRegion(impl, pred_view, negate, context, parent, last_table);
 }
 
 // Build an eager region.
@@ -1309,8 +1331,14 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
 
   } else if (view.IsNegate()) {
     const auto negate = QueryNegate::From(view);
-    BuildEagerNegateRegion(impl, pred_view, negate, context, parent,
-                           last_table);
+    // R4 (option A): mint the effect-bearing kNegateGate op (its kFlagRead of
+    // the negated view's model table), then lower IN PLACE. The walk only
+    // reaches !CanReceiveDeletions negates, so the mint is unconditional.
+    TABLE *const negated_table =
+        impl->view_to_model[negate.NegatedView()]->FindAs<DataModel>()->table;
+    const DROp op = MakeEagerNegateOp(view, negated_table);
+    LowerRelStep_Negate(impl, context, op, pred_view, negate, parent,
+                        last_table);
 
   } else {
     assert(false);

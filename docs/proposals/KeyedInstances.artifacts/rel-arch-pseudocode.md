@@ -82,6 +82,13 @@ Fable review refuted the INSERT-omit recoverability premise on
 demand_tc_witness; four-way byte convergence on the pre-Q-C shape,
 the Q-C delta = the four INSERT lines, consistency-law verified;
 all four .df pins re-blessed via the ritual, twice).
+AMENDED 2026-07-23 (post R4, §20(Q)): §5's R4 block DONE — the
+option-(A) mint re-source landed (contracts r4-design.md +
+r4-desired-states.md; the effect-bearing mold delta recorded; the
+9-case over-enumeration dropped; three first-ever negate .deltarel
+goldens). Remaining hand-coded arms: JOIN-with-pivots,
+JOIN-product, MERGE-inductive FEED, the E-42 shim (R-JOIN next per
+§5 order, then R-E42, R-final).
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -485,7 +492,34 @@ all four .df pins re-blessed via the ritual, twice).
         Induction.cpp:996 dead second BuildEagerUnionRegion caller
         is a LABELED coverage hole outside the marker model (Fable
         review [1], re-visit at R-final).]
-      R4 NEGATE gate (a diff on the AMENDED mold M1-M13). Dispatch
+      R4 NEGATE — DONE (2026-07-23, §20(Q); contracts r4-design.md
+        + r4-desired-states.md DS-R4-1..10): the owner-ruled OPTION
+        (A) DIFF/RE-SOURCE executed — the kNegateGate mint MOVED
+        from the query.Negations() inventory loop to the Build.cpp
+        IsNegate walk dispatch (MakeEagerNegateOp single-authority
+        ctor + LowerRelStep_Negate thin wrapper calling the
+        UNTOUCHED BuildEagerNegateRegion); the 9-case
+        over-enumeration DROPPED (corpus census 30->18 opt;
+        disassemble the sole mixed 2->1); the FORCED MOLD DELTA:
+        the op is EFFECT-BEARING (kFlagRead reconstructed
+        identically at mint and re-invocation — M2' extended to an
+        effect) and stays OUT of IsEagerMarkerKind (gate_* payload;
+        op_table_id=0 table-less lead-0, the gate LEADS the dump);
+        M10 per-op recount at the V-NEG-CTX site
+        (!CanReceiveDeletions, the exact Build.cpp cut criterion);
+        V-NEG-CTX survives; @never renders IMPLICIT via reads:
+        Present vs InI (owner ruling — no token); the
+        differential-input @never shape is a LABELED latent gap
+        (owner ruling). Carriers: negate_1 + negate_6 (no gate
+        swap — walk-DFS order) + d5_recursive_negate (the
+        ZERO-MINT NEGATIVE guard, 1->0) — three FIRST-EVER negate
+        .deltarel goldens (RAT-8), three-way convergence
+        author==blind-worktree==implementation. The normative
+        count oracle: POST census == BENR dispatch count,
+        per-VISIT and emission-side (never a per-view count,
+        never same-graph re-derivation). [Historical
+        starting-state text retained below.]
+        THE ORIGINAL R4 BLOCK: dispatch
         arm Build.cpp:1310-1312 (IsNegate -> BuildEagerNegateRegion,
         Negate.cpp — 105 lines, a real builder file: NO M11
         extraction needed, the R1-shape thin wrapper suffices).

@@ -3684,4 +3684,94 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     ruled carrier trio negate_6 + negate_1 + d5_recursive_negate
     (the §20(O) R4-input nits stand: stale mint comments
     DeltaRel.cpp:2331/:2335, the kFlagRead effect asymmetry as
-    the crux, the d5 fixture header misattribution).
+    the crux, the d5 fixture header misattribution). [EXECUTED —
+    §20(Q).]
+
+(Q) R4 LANDED (2026-07-23) — THE FOURTH STEP-KIND MIGRATION: the
+    NEGATE gate, executed as the owner-ruled OPTION (A)
+    DIFF/RE-SOURCE (E-108/§20(M)/(O)). Binding contracts COMMITTED:
+    r4-design.md (stage-(a)-(c) adjudication verbatim + owner
+    rulings + Fable-review record + lane-file scoping note in
+    banner) + r4-desired-states.md (DS-R4-1..10 + the stage-(d)
+    three-way record). THE MECHANISM: the kNegateGate mint MOVED
+    from the query.Negations() inventory loop (DELETED, with its
+    stale E-108 comment block) to the Build.cpp IsNegate walk
+    dispatch — MakeEagerNegateOp single-authority ctor +
+    LowerRelStep_Negate thin wrapper calling the UNTOUCHED
+    BuildEagerNegateRegion; EAGER_WEB re-invocation case;
+    RecordEagerDispatch sources rec.view/table from the gate_*
+    fields. THE FORCED MOLD DELTA (the §20(O) crux, ruled):
+    kNegateGate is EFFECT-BEARING — the ctor reconstructs its
+    kFlagRead{negated_table, NegateGatePred(kEager,hint)}
+    identically at walk mint and re-invocation (M2' extended to an
+    effect); the op populates ONLY gate_* (never eager_view/
+    table_op_table) so it stays OUT of IsEagerMarkerKind —
+    REQUIRED, the marker recount would false-fire on null fields;
+    op_table_id=0 ⇒ table-less lead-0, the gate LEADS the dump;
+    dep edges are EFFECT-determined so the WAR set is byte-stable
+    under the ruled M4 tail-append (enrollment position need not
+    be preserved — no golden pinned any negate case). M10 per-op
+    recount at the V-NEG-CTX site: abort iff ctx==kEager &&
+    gate_negate->CanReceiveDeletions() (the EXACT Build.cpp:970
+    cut criterion, NOT InductionGroupId — F22; the ctx guard
+    scopes it off the reserved standalone seed/fixpoint forms —
+    Fable [1]). OWNER RULINGS: @never renders IMPLICIT via reads:
+    Present vs InI (a POSITIVE E-71 ruling — no token, no
+    dedicated render case, the generic fallback stands; the R2
+    "declined unwitnessed" basis was VOID once negate_6 entered
+    the carrier set); the differential-input @never shape stays a
+    LABELED LATENT GAP (DS-R4-10, no directed fence). THE 9-CASE
+    OVER-ENUMERATION DROPPED (orchestrator census referee, E-77,
+    full corpus ×4 modes vs frozen b1c95bac: EXACTLY the 9
+    predicted cases changed — 8 → 0 all modes, disassemble 2→1
+    the SOLE mixed case, merge_5 df-axis 3opt/4nodf → 0; corpus
+    opt total 30→18; the referee also caught the orchestrator's
+    own transient non-ASCII § in the d5 comment edit — the lexer
+    fence works). THE NORMATIVE COUNT ORACLE (DS-R4-5, the merged
+    C1-F1+C2-F3 correction): POST census == BuildEagerNegateRegion
+    DISPATCH count, per-VISIT (kEagerForward=12 vs 11 TUPLE views
+    proves per-visit≠per-view) and EMISSION-SIDE — verified by the
+    blind lane's lldb hit-counts 11/11. STAGE-(d) THREE-WAY
+    CONVERGENCE: author hand-prediction (labels/edges/census
+    re-derived under the order law; negate_6 two-gate order
+    derived from walk-DFS successor structure — NO SWAP) == blind
+    worktree prototype == pristine implementation, BYTE-IDENTICAL
+    ×3 carriers; generated C++ byte-identical to the pristine tip
+    on all 11 probe cases (ZERO emission change). CARRIERS:
+    negate_1 (1→1, the PIN-3 differential-table carrier) +
+    negate_6 (2→2, the @never carrier) + d5_recursive_negate
+    (1→0, the ZERO-MINT NEGATIVE guard) — three FIRST-EVER negate
+    .deltarel.opt goldens (RAT-8) + sidecars; the d5 fixture
+    header misattribution FIXED (CanReceiveDeletions, the §20(O)
+    nit). FABLE REVIEW (12-agent workflow, high): 4 verified
+    findings, ZERO live-today correctness — [1] the recount ctx
+    guard (latent false-abort on the reserved seed/fixpoint gate
+    forms) FIXED; [2] EAGER_WEB effect-free/six-kinds + Build.h
+    comments refreshed for the effect-bearing seventh kind; [3]
+    CLAUDE.md re-pointed (NINE .deltarel goldens; unmodeled arms
+    JOIN + E-42); [4] the r4-design.md lane-file scoping note;
+    1 REFUTED (the view_to_model[] mint idiom = the live :735
+    precedent). Fixes proven DUMP-NEUTRAL on all 16 pinned
+    surfaces + post-fix suite/A-B green. GATES (final tree):
+    SUITE pre-bless EXACTLY the 3 pre-registered IRGOLD-MISSING
+    reds → RAT-8 bless (sources byte-verified same-as-reviewed;
+    the other 6 rewrites byte-identical no-ops) → PASS (173) ×3 +
+    post-fix; A/B vs frozen b1c95bac (debug 49f23d78 / release
+    eed45d2e): 692 corpus + 4 nested + 144 data/ rows 0-DIVERGED
+    + post-fix subset clean (evm_array_parse identical-SIGABRT
+    stands); ctest 5/5 debug + 5/5 ASAN; ASAN BOTH surfaces SUITE
+    PASS (173) zero reports (+ final-tree re-run post-fix);
+    config-invariance SINGLE-HASH ×6 (trio × opt+none, 3-run
+    debug + release); E-62 re-grep CLEAN (LIVE this diff — same 5
+    sanctioned hits); Q5 progsize@128 release SAME-SESSION
+    INTERLEAVED ABABAB A warm {120,120,120} vs B {120,120,120} ms
+    (0.0% median, A1 cold discarded; generated headers
+    byte-identical). DOC DISCHARGES same-commit: rel-arch §5 R4
+    block DONE + banner; CLAUDE.md Rel-epoch paragraph. RESIDUALS: DS-R4-10 the
+    differential-input @never labeled gap; the R1-R3 residual
+    set carries unchanged (table-less kEagerUnion render,
+    Induction.cpp:996 dead caller, neq/lt/gt spellings,
+    publish-*/message=, eager count oracle + ClassifyEagerSink
+    replica → R-final). NEXT: R-JOIN per §5 (the NOT-RULED
+    pivot-equality-belt fold candidate rules at its head), then
+    R-E42, R-final.

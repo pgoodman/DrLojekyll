@@ -1,0 +1,593 @@
+deltarel
+
+vec $delete-queue.0 <ids %table:4> uniq=sort-unique-at-drain def=[op.7] use=[op.14]
+vec $add-queue.1 <ids %table:4> uniq=sort-unique-at-drain def=[op.8,op.9] use=[op.15]
+vec $overdelete-set.2 <ids %table:4> uniq=multiset def=[] use=[op.18,op.19]
+vec $addition-set.3 <ids %table:4> uniq=multiset def=[] use=[op.20]
+vec $net-removal.4 <ids %table:4> uniq=multiset def=[] use=[op.2,op.53]
+vec $net-addition.5 <ids %table:4> uniq=multiset def=[] use=[op.3,op.53]
+vec $claimed-del.6 <ids %table:4> uniq=multiset def=[] use=[op.12,op.16]
+vec $claimed-add.7 <ids %table:4> uniq=multiset def=[] use=[op.13,op.17]
+vec $delete-queue.8 <ids %table:11> uniq=sort-unique-at-drain def=[op.57] use=[op.21]
+vec $add-queue.9 <ids %table:11> uniq=sort-unique-at-drain def=[op.56] use=[op.22]
+vec $overdelete-set.10 <ids %table:11> uniq=multiset def=[] use=[op.23]
+vec $addition-set.11 <ids %table:11> uniq=multiset def=[] use=[op.24]
+vec $net-removal.12 <ids %table:11> uniq=multiset def=[] use=[op.1]
+vec $net-addition.13 <ids %table:11> uniq=multiset def=[] use=[op.0]
+vec $delete-queue.14 <ids %table:14> uniq=sort-unique-at-drain def=[op.12] use=[op.25]
+vec $add-queue.15 <ids %table:14> uniq=sort-unique-at-drain def=[op.13] use=[op.26]
+vec $overdelete-set.16 <ids %table:14> uniq=multiset def=[] use=[op.29,op.30]
+vec $addition-set.17 <ids %table:14> uniq=multiset def=[] use=[op.31]
+vec $net-removal.18 <ids %table:14> uniq=multiset def=[] use=[]
+vec $net-addition.19 <ids %table:14> uniq=multiset def=[] use=[]
+vec $claimed-del.20 <ids %table:14> uniq=multiset def=[] use=[op.5,op.27]
+vec $claimed-add.21 <ids %table:14> uniq=multiset def=[] use=[op.6,op.28]
+vec $delete-queue.22 <ids %table:18> uniq=sort-unique-at-drain def=[op.0,op.10] use=[op.32]
+vec $add-queue.23 <ids %table:18> uniq=sort-unique-at-drain def=[op.1,op.11] use=[op.33]
+vec $overdelete-set.24 <ids %table:18> uniq=multiset def=[] use=[op.36,op.37]
+vec $addition-set.25 <ids %table:18> uniq=multiset def=[] use=[op.38]
+vec $net-removal.26 <ids %table:18> uniq=multiset def=[] use=[]
+vec $net-addition.27 <ids %table:18> uniq=multiset def=[] use=[]
+vec $claimed-del.28 <ids %table:18> uniq=multiset def=[] use=[op.7,op.34]
+vec $claimed-add.29 <ids %table:18> uniq=multiset def=[] use=[op.8,op.35]
+vec $delete-queue.30 <ids %table:24> uniq=sort-unique-at-drain def=[op.5] use=[op.39]
+vec $add-queue.31 <ids %table:24> uniq=sort-unique-at-drain def=[op.6] use=[op.40]
+vec $overdelete-set.32 <ids %table:24> uniq=multiset def=[] use=[op.43,op.44]
+vec $addition-set.33 <ids %table:24> uniq=multiset def=[] use=[op.45]
+vec $net-removal.34 <ids %table:24> uniq=multiset def=[] use=[]
+vec $net-addition.35 <ids %table:24> uniq=multiset def=[] use=[]
+vec $claimed-del.36 <ids %table:24> uniq=multiset def=[] use=[op.10,op.41]
+vec $claimed-add.37 <ids %table:24> uniq=multiset def=[] use=[op.11,op.42]
+vec $join-pivots.38 <id-cols> uniq=sort-unique-at-drain def=[op.53] use=[op.12,op.13]
+
+branch.0 src=%table:4 -> join.0 ends_at_join=true
+branch.1 src=%table:7 -> join.0 ends_at_join=true
+branch.2 src=%table:14 -> tgt=%table:24 ends_at_join=false
+branch.3 src=%table:18 -> tgt=%table:4 ends_at_join=false
+branch.4 src=%table:21 -> tgt=%table:4 ends_at_join=false
+branch.5 src=%table:24 -> tgt=%table:18 ends_at_join=false
+
+join.0 view=<X,Y> pivot_vec=$join-pivots.38 targets=[%table:14]
+
+op.59 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:7
+op.55 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:7, +, NonRecursive), kVecAppend(%table:7, kNetAddition)}
+    spine: —
+    args: table=%table:7 message=edge/2
+op.57 kIngestFold sign=- ctx=eager stratum=0
+    effects: {kCounter(%table:11, -, NonRecursive), kVecAppend(%table:11, kDeleteQueue)}
+    spine: —
+    args: table=%table:11 message=dead/1
+op.56 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:11, +, NonRecursive), kVecAppend(%table:11, kAddQueue)}
+    spine: —
+    args: table=%table:11 message=dead/1
+op.58 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:21
+op.54 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:21, +, NonRecursive), kVecAppend(%table:21, kNetAddition)}
+    spine: —
+    args: table=%table:21 message=src/1
+op.21 kClaimDrain sign=- ctx=seed stratum=3 form=single-pass gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:11, kDeleteQueue), kFlagWrite(%table:11, -), kVecAppend(%table:11, kOverdeleteSet)}
+    args: table=%table:11
+op.22 kClaimDrain sign=+ ctx=seed stratum=3 form=single-pass gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:11, kAddQueue), kFlagWrite(%table:11, +), kVecAppend(%table:11, kAdditionSet)}
+    args: table=%table:11
+op.23 kFrontierFilter sign=- ctx=seed stratum=3 deferral=immediate
+    reads: NetDeleted(%table:11)
+    effects: {kVecDrain(%table:11, kOverdeleteSet), kVecAppend(%table:11, kNetRemoval)}
+    args: table=%table:11
+op.24 kFrontierFilter sign=+ ctx=seed stratum=3 deferral=immediate
+    reads: NetAdded(%table:11)
+    effects: {kVecDrain(%table:11, kAdditionSet), kVecAppend(%table:11, kNetAddition)}
+    args: table=%table:11
+op.2 kSeedFold sign=- ctx=seed stratum=6 src=%table:4 join_pivot
+    effects: {kVecDrain(%table:4, kNetRemoval), kVecAppend($join-pivots.38)}
+    spine: —
+    args: src=%table:4 pivots=$join-pivots.38
+op.3 kSeedFold sign=+ ctx=seed stratum=6 src=%table:4 join_pivot
+    effects: {kVecDrain(%table:4, kNetAddition), kVecAppend($join-pivots.38)}
+    spine: —
+    args: src=%table:4 pivots=$join-pivots.38
+op.4 kSeedFold sign=+ ctx=seed stratum=6 src=%table:7 join_pivot
+    effects: {kVecDrain(%table:7, kNetAddition), kVecAppend($join-pivots.38)}
+    spine: —
+    args: src=%table:7 pivots=$join-pivots.38
+op.53 kPivotAssemble sign=· ctx=seed stratum=6
+    effects: {kVecDrain(%table:4, kNetRemoval), kVecDrain(%table:4, kNetAddition), kVecDrain(%table:7, kNetRemoval), kVecDrain(%table:7, kNetAddition), kVecClear($join-pivots.38), kVecAppend($join-pivots.38)}
+    spine: —
+op.0 kCrossover sign=· ctx=seed stratum=6
+    reads: InNew(%table:24)
+    effects: {kVecDrain(%table:11, kNetAddition), kCounter(%table:18, -, Recursive), kInIReadFrozen(%table:18, InI, seed), kVecAppend(%table:18, kDeleteQueue)}
+    spine: —
+op.1 kCrossover sign=· ctx=seed stratum=6
+    reads: InNew(%table:24)
+    effects: {kVecDrain(%table:11, kNetRemoval), kCounter(%table:18, +, Recursive), kInIReadFrozen(%table:18, InI, seed), kVecAppend(%table:18, kAddQueue)}
+    spine: —
+op.12 kFixpointFire sign=· ctx=fixpoint stratum=6
+    reads: InNew(%table:7)
+    effects: {kVecDrain(%table:4, kClaimedDel), kCounter(%table:14, -, Recursive), kInIReadFrozen(%table:14, InI, fixpoint), kVecAppend(%table:14, kDeleteQueue)}
+    spine: kAccess(%table:7, section-walk) -> kFold(%table:14, -, Recursive)
+op.13 kFixpointFire sign=· ctx=fixpoint stratum=6
+    reads: InNew(%table:7)
+    effects: {kVecDrain(%table:4, kClaimedAdd), kCounter(%table:14, +, Recursive), kInIReadFrozen(%table:14, InI, fixpoint), kVecAppend(%table:14, kAddQueue)}
+    spine: kAccess(%table:7, section-walk) -> kFold(%table:14, +, Recursive)
+op.9 kSeedFold sign=+ ctx=seed stratum=8 src=%table:21 tgt=%table:4 class=NonRecursive
+    effects: {kVecDrain(%table:21, kNetAddition), kCounter(%table:4, +, NonRecursive), kInIReadFrozen(%table:4, InI, seed), kVecAppend(%table:4, kAddQueue)}
+    spine: kFold(%table:4, +, NonRecursive)
+    args: src=%table:21 tgt=%table:4
+op.14 kClaimDrain sign=- ctx=fixpoint stratum=8 form=in-round gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:4, kDeleteQueue), kFlagWrite(%table:4, -), kVecAppend(%table:4, kOverdeleteSet), kVecAppend(%table:4, kClaimedDel), kVecClear(%table:4, kDeleteQueue)}
+    args: table=%table:4
+op.15 kClaimDrain sign=+ ctx=fixpoint stratum=8 form=in-round gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:4, kAddQueue), kFlagWrite(%table:4, +), kVecAppend(%table:4, kAdditionSet), kVecAppend(%table:4, kClaimedAdd), kVecClear(%table:4, kAddQueue)}
+    args: table=%table:4
+op.25 kClaimDrain sign=- ctx=fixpoint stratum=8 form=in-round gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:14, kDeleteQueue), kFlagWrite(%table:14, -), kVecAppend(%table:14, kOverdeleteSet), kVecAppend(%table:14, kClaimedDel), kVecClear(%table:14, kDeleteQueue)}
+    args: table=%table:14
+op.26 kClaimDrain sign=+ ctx=fixpoint stratum=8 form=in-round gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:14, kAddQueue), kFlagWrite(%table:14, +), kVecAppend(%table:14, kAdditionSet), kVecAppend(%table:14, kClaimedAdd), kVecClear(%table:14, kAddQueue)}
+    args: table=%table:14
+op.32 kClaimDrain sign=- ctx=fixpoint stratum=8 form=in-round gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:18, kDeleteQueue), kFlagWrite(%table:18, -), kVecAppend(%table:18, kOverdeleteSet), kVecAppend(%table:18, kClaimedDel), kVecClear(%table:18, kDeleteQueue)}
+    args: table=%table:18
+op.33 kClaimDrain sign=+ ctx=fixpoint stratum=8 form=in-round gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:18, kAddQueue), kFlagWrite(%table:18, +), kVecAppend(%table:18, kAdditionSet), kVecAppend(%table:18, kClaimedAdd), kVecClear(%table:18, kAddQueue)}
+    args: table=%table:18
+op.39 kClaimDrain sign=- ctx=fixpoint stratum=8 form=in-round gate=kDelGateCnrNonPositive
+    effects: {kVecDrain(%table:24, kDeleteQueue), kFlagWrite(%table:24, -), kVecAppend(%table:24, kOverdeleteSet), kVecAppend(%table:24, kClaimedDel), kVecClear(%table:24, kDeleteQueue)}
+    args: table=%table:24
+op.40 kClaimDrain sign=+ ctx=fixpoint stratum=8 form=in-round gate=kAddGateTotalPositive
+    effects: {kVecDrain(%table:24, kAddQueue), kFlagWrite(%table:24, +), kVecAppend(%table:24, kAdditionSet), kVecAppend(%table:24, kClaimedAdd), kVecClear(%table:24, kAddQueue)}
+    args: table=%table:24
+op.5 kChainFold sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:14, kClaimedDel), kCounter(%table:24, -, Recursive), kInIReadFrozen(%table:24, InI, fixpoint), kVecAppend(%table:24, kDeleteQueue)}
+    spine: kFold(%table:24, -, Recursive)
+op.6 kChainFold sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:14, kClaimedAdd), kCounter(%table:24, +, Recursive), kInIReadFrozen(%table:24, InI, fixpoint), kVecAppend(%table:24, kAddQueue)}
+    spine: kFold(%table:24, +, Recursive)
+op.7 kChainFold sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:18, kClaimedDel), kCounter(%table:4, -, Recursive), kInIReadFrozen(%table:4, InI, fixpoint), kVecAppend(%table:4, kDeleteQueue)}
+    spine: kFold(%table:4, -, Recursive)
+op.8 kChainFold sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:18, kClaimedAdd), kCounter(%table:4, +, Recursive), kInIReadFrozen(%table:4, InI, fixpoint), kVecAppend(%table:4, kAddQueue)}
+    spine: kFold(%table:4, +, Recursive)
+op.10 kChainFold sign=· ctx=fixpoint stratum=8
+    reads: InNew(%table:11)
+    effects: {kVecDrain(%table:24, kClaimedDel), kCounter(%table:18, -, Recursive), kInIReadFrozen(%table:18, InI, fixpoint), kVecAppend(%table:18, kDeleteQueue)}
+    spine: kGate(%table:11, full-scan) -> kFold(%table:18, -, Recursive)
+op.11 kChainFold sign=· ctx=fixpoint stratum=8
+    reads: InNew(%table:11)
+    effects: {kVecDrain(%table:24, kClaimedAdd), kCounter(%table:18, +, Recursive), kInIReadFrozen(%table:18, InI, fixpoint), kVecAppend(%table:18, kAddQueue)}
+    spine: kGate(%table:11, full-scan) -> kFold(%table:18, +, Recursive)
+op.16 kRetire sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:4, kClaimedDel), kFlagWrite(%table:4, -)}
+    spine: —
+op.17 kRetire sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:4, kClaimedAdd), kFlagWrite(%table:4, +)}
+    spine: —
+op.27 kRetire sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:14, kClaimedDel), kFlagWrite(%table:14, -)}
+    spine: —
+op.28 kRetire sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:14, kClaimedAdd), kFlagWrite(%table:14, +)}
+    spine: —
+op.34 kRetire sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:18, kClaimedDel), kFlagWrite(%table:18, -)}
+    spine: —
+op.35 kRetire sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:18, kClaimedAdd), kFlagWrite(%table:18, +)}
+    spine: —
+op.41 kRetire sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:24, kClaimedDel), kFlagWrite(%table:24, -)}
+    spine: —
+op.42 kRetire sign=· ctx=fixpoint stratum=8
+    effects: {kVecDrain(%table:24, kClaimedAdd), kFlagWrite(%table:24, +)}
+    spine: —
+op.18 kRederive sign=· ctx=fixpoint stratum=8
+    reads: RecursivelySupported(%table:4)
+    effects: {kVecDrain(%table:4, kOverdeleteSet), kVecAppend(%table:4, kAddQueue)}
+    spine: —
+op.29 kRederive sign=· ctx=fixpoint stratum=8
+    reads: RecursivelySupported(%table:14)
+    effects: {kVecDrain(%table:14, kOverdeleteSet), kVecAppend(%table:14, kAddQueue)}
+    spine: —
+op.36 kRederive sign=· ctx=fixpoint stratum=8
+    reads: RecursivelySupported(%table:18)
+    effects: {kVecDrain(%table:18, kOverdeleteSet), kVecAppend(%table:18, kAddQueue)}
+    spine: —
+op.43 kRederive sign=· ctx=fixpoint stratum=8
+    reads: RecursivelySupported(%table:24)
+    effects: {kVecDrain(%table:24, kOverdeleteSet), kVecAppend(%table:24, kAddQueue)}
+    spine: —
+op.19 kFrontierFilter sign=- ctx=fixpoint stratum=8 deferral=add-loop-output
+    reads: NetDeleted(%table:4)
+    effects: {kVecDrain(%table:4, kOverdeleteSet), kVecAppend(%table:4, kNetRemoval)}
+    args: table=%table:4
+op.20 kFrontierFilter sign=+ ctx=fixpoint stratum=8 deferral=add-loop-output
+    reads: NetAdded(%table:4)
+    effects: {kVecDrain(%table:4, kAdditionSet), kVecAppend(%table:4, kNetAddition)}
+    args: table=%table:4
+op.30 kFrontierFilter sign=- ctx=fixpoint stratum=8 deferral=add-loop-output
+    reads: NetDeleted(%table:14)
+    effects: {kVecDrain(%table:14, kOverdeleteSet), kVecAppend(%table:14, kNetRemoval)}
+    args: table=%table:14
+op.31 kFrontierFilter sign=+ ctx=fixpoint stratum=8 deferral=add-loop-output
+    reads: NetAdded(%table:14)
+    effects: {kVecDrain(%table:14, kAdditionSet), kVecAppend(%table:14, kNetAddition)}
+    args: table=%table:14
+op.37 kFrontierFilter sign=- ctx=fixpoint stratum=8 deferral=add-loop-output
+    reads: NetDeleted(%table:18)
+    effects: {kVecDrain(%table:18, kOverdeleteSet), kVecAppend(%table:18, kNetRemoval)}
+    args: table=%table:18
+op.38 kFrontierFilter sign=+ ctx=fixpoint stratum=8 deferral=add-loop-output
+    reads: NetAdded(%table:18)
+    effects: {kVecDrain(%table:18, kAdditionSet), kVecAppend(%table:18, kNetAddition)}
+    args: table=%table:18
+op.44 kFrontierFilter sign=- ctx=fixpoint stratum=8 deferral=add-loop-output
+    reads: NetDeleted(%table:24)
+    effects: {kVecDrain(%table:24, kOverdeleteSet), kVecAppend(%table:24, kNetRemoval)}
+    args: table=%table:24
+op.45 kFrontierFilter sign=+ ctx=fixpoint stratum=8 deferral=add-loop-output
+    reads: NetAdded(%table:24)
+    effects: {kVecDrain(%table:24, kAdditionSet), kVecAppend(%table:24, kNetAddition)}
+    args: table=%table:24
+op.46 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
+    effects: {kInIReadFrozen(%table:4, InI, seed), kFlagWrite(%table:4)}
+    args: table=%table:4
+op.47 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
+    effects: {kFlagWrite(%table:7)}
+    args: table=%table:7
+op.48 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
+    effects: {kInIReadFrozen(%table:11, InI, seed), kFlagWrite(%table:11)}
+    args: table=%table:11
+op.49 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
+    effects: {kInIReadFrozen(%table:14, InI, seed), kFlagWrite(%table:14)}
+    args: table=%table:14
+op.50 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
+    effects: {kInIReadFrozen(%table:18, InI, seed), kFlagWrite(%table:18)}
+    args: table=%table:18
+op.51 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
+    effects: {kFlagWrite(%table:21)}
+    args: table=%table:21
+op.52 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
+    effects: {kInIReadFrozen(%table:24, InI, seed), kFlagWrite(%table:24)}
+    args: table=%table:24
+
+rounds:
+  scc=0 phase=overdelete body_ops=[op.12,op.14,op.25,op.32,op.39,op.5,op.7,op.10,op.16,op.27,op.34,op.41] output_ops=[op.18,op.29,op.36,op.43]
+  scc=0 phase=insert body_ops=[op.13,op.15,op.26,op.33,op.40,op.6,op.8,op.11,op.17,op.28,op.35,op.42] output_ops=[op.19,op.20,op.30,op.31,op.37,op.38,op.44,op.45]
+
+deps:
+  op.0 -> op.1 WAW epoch
+  op.0 -> op.5 WAR epoch
+  op.0 -> op.6 WAR epoch
+  op.0 -> op.10 WAW epoch
+  op.0 -> op.11 WAW epoch
+  op.0 -> op.32 RAW epoch
+  op.0 -> op.32 WAW epoch
+  op.0 -> op.33 WAW epoch
+  op.0 -> op.34 WAW epoch
+  op.0 -> op.35 WAW epoch
+  op.0 -> op.36 RAW epoch
+  op.0 -> op.37 RAW epoch
+  op.0 -> op.38 RAW epoch
+  op.0 -> op.39 WAR epoch
+  op.0 -> op.40 WAR epoch
+  op.0 -> op.41 WAR epoch
+  op.0 -> op.42 WAR epoch
+  op.0 -> op.50 WAW epoch
+  op.0 -> op.52 WAR epoch
+  op.1 -> op.5 WAR epoch
+  op.1 -> op.6 WAR epoch
+  op.1 -> op.10 WAW epoch
+  op.1 -> op.11 WAW epoch
+  op.1 -> op.32 WAW epoch
+  op.1 -> op.33 RAW epoch
+  op.1 -> op.33 WAW epoch
+  op.1 -> op.34 WAW epoch
+  op.1 -> op.35 WAW epoch
+  op.1 -> op.36 RAW epoch
+  op.1 -> op.36 WAW epoch
+  op.1 -> op.37 RAW epoch
+  op.1 -> op.38 RAW epoch
+  op.1 -> op.39 WAR epoch
+  op.1 -> op.40 WAR epoch
+  op.1 -> op.41 WAR epoch
+  op.1 -> op.42 WAR epoch
+  op.1 -> op.50 WAW epoch
+  op.1 -> op.52 WAR epoch
+  op.2 -> op.3 WAW epoch
+  op.2 -> op.4 WAW epoch
+  op.2 -> op.12 RAW epoch
+  op.2 -> op.13 RAW epoch
+  op.2 -> op.19 WAR epoch
+  op.2 -> op.53 WAW epoch
+  op.3 -> op.4 WAW epoch
+  op.3 -> op.12 RAW epoch
+  op.3 -> op.13 RAW epoch
+  op.3 -> op.20 WAR epoch
+  op.3 -> op.53 WAW epoch
+  op.4 -> op.12 RAW epoch
+  op.4 -> op.13 RAW epoch
+  op.4 -> op.53 WAW epoch
+  op.5 -> op.6 WAW round
+  op.5 -> op.39 RAW round loop-carried
+  op.5 -> op.41 WAW round
+  op.5 -> op.42 WAW round
+  op.5 -> op.43 RAW epoch
+  op.5 -> op.44 RAW epoch
+  op.5 -> op.45 RAW epoch
+  op.5 -> op.52 WAW epoch
+  op.6 -> op.40 RAW round loop-carried
+  op.6 -> op.41 WAW round
+  op.6 -> op.42 WAW round
+  op.6 -> op.43 RAW epoch
+  op.6 -> op.43 WAW epoch
+  op.6 -> op.44 RAW epoch
+  op.6 -> op.45 RAW epoch
+  op.6 -> op.52 WAW epoch
+  op.7 -> op.8 WAW round
+  op.7 -> op.14 RAW round loop-carried
+  op.7 -> op.16 WAW round
+  op.7 -> op.17 WAW round
+  op.7 -> op.18 RAW epoch
+  op.7 -> op.19 RAW epoch
+  op.7 -> op.20 RAW epoch
+  op.7 -> op.46 WAW epoch
+  op.8 -> op.15 RAW round loop-carried
+  op.8 -> op.16 WAW round
+  op.8 -> op.17 WAW round
+  op.8 -> op.18 RAW epoch
+  op.8 -> op.18 WAW epoch
+  op.8 -> op.19 RAW epoch
+  op.8 -> op.20 RAW epoch
+  op.8 -> op.46 WAW epoch
+  op.9 -> op.7 WAW epoch
+  op.9 -> op.8 WAW epoch
+  op.9 -> op.14 WAW epoch
+  op.9 -> op.15 RAW epoch
+  op.9 -> op.15 WAW epoch
+  op.9 -> op.16 WAW epoch
+  op.9 -> op.17 WAW epoch
+  op.9 -> op.18 RAW epoch
+  op.9 -> op.18 WAW epoch
+  op.9 -> op.19 RAW epoch
+  op.9 -> op.20 RAW epoch
+  op.9 -> op.46 WAW epoch
+  op.10 -> op.11 WAW round
+  op.10 -> op.32 RAW round loop-carried
+  op.10 -> op.34 WAW round
+  op.10 -> op.35 WAW round
+  op.10 -> op.36 RAW epoch
+  op.10 -> op.37 RAW epoch
+  op.10 -> op.38 RAW epoch
+  op.10 -> op.48 WAR epoch
+  op.10 -> op.50 WAW epoch
+  op.11 -> op.33 RAW round loop-carried
+  op.11 -> op.34 WAW round
+  op.11 -> op.35 WAW round
+  op.11 -> op.36 RAW epoch
+  op.11 -> op.36 WAW epoch
+  op.11 -> op.37 RAW epoch
+  op.11 -> op.38 RAW epoch
+  op.11 -> op.48 WAR epoch
+  op.11 -> op.50 WAW epoch
+  op.12 -> op.13 WAW round
+  op.12 -> op.14 WAR round
+  op.12 -> op.25 RAW round
+  op.12 -> op.25 WAW round
+  op.12 -> op.26 WAW round
+  op.12 -> op.27 WAW round
+  op.12 -> op.28 WAW round
+  op.12 -> op.29 RAW epoch
+  op.12 -> op.30 RAW epoch
+  op.12 -> op.31 RAW epoch
+  op.12 -> op.47 WAR epoch
+  op.12 -> op.49 WAW epoch
+  op.13 -> op.15 WAR round
+  op.13 -> op.25 WAW round
+  op.13 -> op.26 RAW round
+  op.13 -> op.26 WAW round
+  op.13 -> op.27 WAW round
+  op.13 -> op.28 WAW round
+  op.13 -> op.29 RAW epoch
+  op.13 -> op.29 WAW epoch
+  op.13 -> op.30 RAW epoch
+  op.13 -> op.31 RAW epoch
+  op.13 -> op.47 WAR epoch
+  op.13 -> op.49 WAW epoch
+  op.14 -> op.7 WAR round
+  op.14 -> op.7 WAW round
+  op.14 -> op.8 WAW round
+  op.14 -> op.12 RAW round loop-carried
+  op.14 -> op.15 WAW round
+  op.14 -> op.16 RAW round
+  op.14 -> op.16 WAW round
+  op.14 -> op.17 WAW round
+  op.14 -> op.18 RAW epoch
+  op.14 -> op.19 RAW epoch
+  op.14 -> op.20 RAW epoch
+  op.14 -> op.46 WAW epoch
+  op.15 -> op.7 WAW round
+  op.15 -> op.8 WAR round
+  op.15 -> op.8 WAW round
+  op.15 -> op.13 RAW round loop-carried
+  op.15 -> op.16 WAW round
+  op.15 -> op.17 RAW round
+  op.15 -> op.17 WAW round
+  op.15 -> op.18 RAW epoch
+  op.15 -> op.18 WAR epoch
+  op.15 -> op.18 WAW epoch
+  op.15 -> op.19 RAW epoch
+  op.15 -> op.20 RAW epoch
+  op.15 -> op.46 WAW epoch
+  op.16 -> op.17 WAW round
+  op.16 -> op.18 RAW epoch
+  op.16 -> op.19 RAW epoch
+  op.16 -> op.20 RAW epoch
+  op.16 -> op.46 WAW epoch
+  op.17 -> op.18 RAW epoch
+  op.17 -> op.19 RAW epoch
+  op.17 -> op.20 RAW epoch
+  op.17 -> op.46 WAW epoch
+  op.18 -> op.15 RAW epoch loop-carried
+  op.18 -> op.46 WAR epoch
+  op.19 -> op.2 RAW epoch loop-carried
+  op.19 -> op.46 WAR epoch
+  op.19 -> op.53 RAW epoch loop-carried
+  op.20 -> op.3 RAW epoch loop-carried
+  op.20 -> op.46 WAR epoch
+  op.20 -> op.53 RAW epoch loop-carried
+  op.21 -> op.10 RAW epoch
+  op.21 -> op.11 RAW epoch
+  op.21 -> op.22 WAW epoch
+  op.21 -> op.23 RAW epoch
+  op.21 -> op.24 RAW epoch
+  op.21 -> op.48 WAW epoch
+  op.22 -> op.10 RAW epoch
+  op.22 -> op.11 RAW epoch
+  op.22 -> op.23 RAW epoch
+  op.22 -> op.24 RAW epoch
+  op.22 -> op.48 WAW epoch
+  op.23 -> op.1 RAW epoch
+  op.23 -> op.48 WAR epoch
+  op.24 -> op.0 RAW epoch
+  op.24 -> op.48 WAR epoch
+  op.25 -> op.5 RAW round
+  op.25 -> op.26 WAW round
+  op.25 -> op.27 RAW round
+  op.25 -> op.27 WAW round
+  op.25 -> op.28 WAW round
+  op.25 -> op.29 RAW epoch
+  op.25 -> op.30 RAW epoch
+  op.25 -> op.31 RAW epoch
+  op.25 -> op.49 WAW epoch
+  op.26 -> op.6 RAW round
+  op.26 -> op.27 WAW round
+  op.26 -> op.28 RAW round
+  op.26 -> op.28 WAW round
+  op.26 -> op.29 RAW epoch
+  op.26 -> op.29 WAR epoch
+  op.26 -> op.29 WAW epoch
+  op.26 -> op.30 RAW epoch
+  op.26 -> op.31 RAW epoch
+  op.26 -> op.49 WAW epoch
+  op.27 -> op.28 WAW round
+  op.27 -> op.29 RAW epoch
+  op.27 -> op.30 RAW epoch
+  op.27 -> op.31 RAW epoch
+  op.27 -> op.49 WAW epoch
+  op.28 -> op.29 RAW epoch
+  op.28 -> op.30 RAW epoch
+  op.28 -> op.31 RAW epoch
+  op.28 -> op.49 WAW epoch
+  op.29 -> op.26 RAW epoch loop-carried
+  op.29 -> op.49 WAR epoch
+  op.30 -> op.49 WAR epoch
+  op.31 -> op.49 WAR epoch
+  op.32 -> op.7 RAW round
+  op.32 -> op.10 WAR round
+  op.32 -> op.10 WAW round
+  op.32 -> op.11 WAW round
+  op.32 -> op.33 WAW round
+  op.32 -> op.34 RAW round
+  op.32 -> op.34 WAW round
+  op.32 -> op.35 WAW round
+  op.32 -> op.36 RAW epoch
+  op.32 -> op.37 RAW epoch
+  op.32 -> op.38 RAW epoch
+  op.32 -> op.50 WAW epoch
+  op.33 -> op.8 RAW round
+  op.33 -> op.10 WAW round
+  op.33 -> op.11 WAR round
+  op.33 -> op.11 WAW round
+  op.33 -> op.34 WAW round
+  op.33 -> op.35 RAW round
+  op.33 -> op.35 WAW round
+  op.33 -> op.36 RAW epoch
+  op.33 -> op.36 WAR epoch
+  op.33 -> op.36 WAW epoch
+  op.33 -> op.37 RAW epoch
+  op.33 -> op.38 RAW epoch
+  op.33 -> op.50 WAW epoch
+  op.34 -> op.35 WAW round
+  op.34 -> op.36 RAW epoch
+  op.34 -> op.37 RAW epoch
+  op.34 -> op.38 RAW epoch
+  op.34 -> op.50 WAW epoch
+  op.35 -> op.36 RAW epoch
+  op.35 -> op.37 RAW epoch
+  op.35 -> op.38 RAW epoch
+  op.35 -> op.50 WAW epoch
+  op.36 -> op.33 RAW epoch loop-carried
+  op.36 -> op.50 WAR epoch
+  op.37 -> op.50 WAR epoch
+  op.38 -> op.50 WAR epoch
+  op.39 -> op.5 WAR round
+  op.39 -> op.5 WAW round
+  op.39 -> op.6 WAW round
+  op.39 -> op.10 RAW round
+  op.39 -> op.40 WAW round
+  op.39 -> op.41 RAW round
+  op.39 -> op.41 WAW round
+  op.39 -> op.42 WAW round
+  op.39 -> op.43 RAW epoch
+  op.39 -> op.44 RAW epoch
+  op.39 -> op.45 RAW epoch
+  op.39 -> op.52 WAW epoch
+  op.40 -> op.5 WAW round
+  op.40 -> op.6 WAR round
+  op.40 -> op.6 WAW round
+  op.40 -> op.11 RAW round
+  op.40 -> op.41 WAW round
+  op.40 -> op.42 RAW round
+  op.40 -> op.42 WAW round
+  op.40 -> op.43 RAW epoch
+  op.40 -> op.43 WAR epoch
+  op.40 -> op.43 WAW epoch
+  op.40 -> op.44 RAW epoch
+  op.40 -> op.45 RAW epoch
+  op.40 -> op.52 WAW epoch
+  op.41 -> op.42 WAW round
+  op.41 -> op.43 RAW epoch
+  op.41 -> op.44 RAW epoch
+  op.41 -> op.45 RAW epoch
+  op.41 -> op.52 WAW epoch
+  op.42 -> op.43 RAW epoch
+  op.42 -> op.44 RAW epoch
+  op.42 -> op.45 RAW epoch
+  op.42 -> op.52 WAW epoch
+  op.43 -> op.40 RAW epoch loop-carried
+  op.43 -> op.52 WAR epoch
+  op.44 -> op.52 WAR epoch
+  op.45 -> op.52 WAR epoch
+  op.53 -> op.12 RAW epoch
+  op.53 -> op.13 RAW epoch
+  op.53 -> op.19 WAR epoch
+  op.53 -> op.20 WAR epoch
+  op.54 -> op.51 WAW epoch
+  op.55 -> op.12 RAW epoch
+  op.55 -> op.13 RAW epoch
+  op.55 -> op.47 WAW epoch
+  op.56 -> op.10 RAW epoch
+  op.56 -> op.11 RAW epoch
+  op.56 -> op.21 WAW epoch
+  op.56 -> op.22 RAW epoch
+  op.56 -> op.22 WAW epoch
+  op.56 -> op.23 RAW epoch
+  op.56 -> op.24 RAW epoch
+  op.56 -> op.48 WAW epoch
+  op.57 -> op.10 RAW epoch
+  op.57 -> op.11 RAW epoch
+  op.57 -> op.21 RAW epoch
+  op.57 -> op.21 WAW epoch
+  op.57 -> op.22 WAW epoch
+  op.57 -> op.23 RAW epoch
+  op.57 -> op.24 RAW epoch
+  op.57 -> op.48 WAW epoch
+  op.57 -> op.56 WAW epoch
+
+census: kCrossover=2 kProductArm=0 kSeedFold=4 kFixpointFire=2 kChainFold=6 kClaimDrain=10 kRetire=8 kRederive=4 kFrontierFilter=10 kCommitSweep=7 kNegateGate=0 kPivotAssemble=1 kIngestFold=4 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=2 kEagerInsert=0 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0

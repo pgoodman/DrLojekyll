@@ -229,31 +229,42 @@ exact signatures before writing a driver.
   the PRINCIPAL (not the only) remaining hand-coded emission surface — the
   table-less monotone receive also hand-mints a VECTORLOOP shim in
   `ExtendEagerProcedure` (`Procedure.cpp`) via no DR-IR op (E-42). Since
-  the R1/R2/R3 slices of the Rel epoch, the descent's TUPLE-forward,
-  terminal-INSERT, CMP-filter, MAP functor-call, MERGE-union and
-  SELECT-rebind arms are MODELED: effect-free, knob-independent
+  the R1/R2/R3/R4 slices of the Rel epoch, the descent's TUPLE-forward,
+  terminal-INSERT, CMP-filter, MAP functor-call, MERGE-union,
+  SELECT-rebind and NEGATE-gate arms are MODELED: the six effect-free,
+  knob-independent
   `kEagerForward`/`kEagerInsert`/`kEagerCompare`/`kEagerGenerate`/
-  `kEagerUnion`/`kEagerSelect` marker ops minted at the dispatch
-  site and lowered in place by `LowerRelStep_*` wrappers calling the
-  untouched region builders (zero emission change; the walk is the
-  reachability authority, enrollment tail-appends after the ingest
-  folds so they keep op.0/op.1; render `table=` comes from the
-  union-find MERGED model — a `.df class=table-less` merge is typically
-  model-table-BACKED, E-107; the CMP operator / MAP functor carry NO
-  stored payload — `cmp=`/`functor=` re-derive from the stored
-  `eager_view` at render time; `IsEagerMarkerKind` (DeltaRel.cpp) is
-  the ONE membership predicate for the marker family; the union mint
+  `kEagerUnion`/`kEagerSelect` marker ops plus the R4 EFFECT-BEARING
+  `kNegateGate` (a mint RELOCATION: it carries a real kFlagRead of the
+  negated view's model table, reconstructed identically at mint and
+  re-invocation; every minted gate is eager-walk-reached — the
+  walk-cut `CanReceiveDeletions` negates mint nothing), all minted at
+  the dispatch site and lowered in place by `LowerRelStep_*` wrappers
+  calling the untouched region builders (zero emission change; the
+  walk is the reachability authority, enrollment tail-appends after
+  the ingest folds so they keep op.0/op.1; render `table=` comes from
+  the union-find MERGED model — a `.df class=table-less` merge is
+  typically model-table-BACKED, E-107; the CMP operator / MAP functor
+  carry NO stored payload — `cmp=`/`functor=` re-derive from the
+  stored `eager_view` at render time; `IsEagerMarkerKind`
+  (DeltaRel.cpp) is the ONE membership predicate for the marker family
+  and EXCLUDES the gate — the gate keeps its own gate_* payload,
+  table-less lead-0 key, and V-READY/render branches; the union mint
   fires ONLY on a merge that does not OWN an InductionGroupId — the
   owning-merge leg is Authority A round shells; the SELECT arm lowers
-  via the extracted `BuildEagerSelectRegion`). Every program's
-  `.deltarel` shows its eager markers; SIX `.deltarel` goldens pin
+  via the extracted `BuildEagerSelectRegion`; @never negates render
+  IMPLICIT via `reads: Present` vs `InI`, no token). Every program's
+  `.deltarel` shows its eager markers; NINE `.deltarel` goldens pin
   the surface (`demand_tc_witness` + `symrec_tie_1` + `map_3` — the
   table-less-ingest carrier witnessing `cmp=`/`functor=` — plus the R3
   trio: `merge_2` (table-BACKED union markers), `booleans` (select with
   `table=`), `elim-cond-cycle-simple` (the induction-skip NEGATIVE
-  guard — its induction-owned merge mints zero unions); all opt-mode
-  via their `.irgold` sidecars). The remaining unmodeled arms
-  (JOIN/NEGATE + E-42) migrate one slice at a time
+  guard — its induction-owned merge mints zero unions), plus the R4
+  trio: `negate_1`, `negate_6` (the @never carrier), and
+  `d5_recursive_negate` (the zero-mint NEGATIVE guard — its walk-cut
+  recursive negate mints no gate); all opt-mode via their `.irgold`
+  sidecars). The remaining unmodeled arms
+  (JOIN + E-42) migrate one slice at a time
   (see KeyedInstances.artifacts/rel-arch-pseudocode.md §4-§5).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,

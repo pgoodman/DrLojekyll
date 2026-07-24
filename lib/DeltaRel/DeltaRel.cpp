@@ -1359,6 +1359,35 @@ DROp MakeEagerSelectOp(QueryView select_view, TABLE *table) {
   return op;
 }
 
+// R4 (adjudicated option A): the single authority for a kNegateGate eager
+// forward gate — a mint RELOCATION from the old BuildDRInventory NEGATE_GATE
+// loop. UNLIKE the R1-R3 markers this op is EFFECT-BEARING: it carries a real
+// kFlagRead{negated_table, (context,hint)-derived pred, kEager}. It populates
+// ONLY the gate_* fields + the effect — NEVER eager_view/table_op_table — so it
+// stays OUT of IsEagerMarkerKind and on its own key_of/V-READY/render branches
+// (op_table_id(gate)=0, table-less lead-0). The hint re-derives from the view
+// (HasNeverHint), pred from (kEager, hint) — M2' extended to an effect,
+// identical at walk-time and at the EAGER_WEB re-invocation.
+DROp MakeEagerNegateOp(QueryView negate_view, TABLE *negated_table) {
+  const NegateHint hint = QueryNegate::From(negate_view).HasNeverHint()
+                              ? NegateHint::kNever
+                              : NegateHint::kNormal;
+  const Pred gate_pred = NegateGatePred(Ctx::kEager, hint);
+  DROp op(DROpKind::kNegateGate);
+  op.ctx = Ctx::kEager;
+  op.gate_negate = negate_view;
+  op.gate_table = negated_table;
+  op.gate_pred = gate_pred;
+  op.gate_hint = hint;
+  DREffect read;
+  read.kind = EffKind::kFlagRead;
+  read.read_table = negated_table;
+  read.pred = gate_pred;
+  read.ctx = Ctx::kEager;
+  op.effects.push_back(read);
+  return op;
+}
+
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map) {
@@ -2286,40 +2315,6 @@ DRFlowGraph BuildDRInventory(
     flow.vecs[jn.pivot_vec].defs.push_back(op_idx);
   }
 
-  // -------------------------------------------------------- eager NEGATE_GATE
-  // One standalone eager negate forward gate per negate (spec §2.1 NEGATE_GATE,
-  // F-5 eager cells): context=eager, pred DERIVED from the hint — normal→kInI,
-  // @never→kPresent (Negate.cpp:91-94 / `BuildEagerNegateRegion`). Every negate
-  // reached by the eager insertion walk emits exactly one such gate
-  // (Build.cpp:1048-1051 for every negate view). This is one cleanly-derivable
-  // half of the eager web; the other, the eager INGEST_FOLD family, is
-  // populated in P2/R1e below (deletion-capable receives stage-1; the
-  // monotone/descent surface lowered via LowerIngestFold since §6 —
-  // subgraphs/demand P1).
-  for (QueryNegate negate : query.Negations()) {
-    const QueryView negate_view(negate);
-    const QueryView negated_view = negate.NegatedView();
-    TABLE *const negated_table =
-        impl->view_to_model[negated_view]->FindAs<DataModel>()->table;
-    const NegateHint hint =
-        negate.HasNeverHint() ? NegateHint::kNever : NegateHint::kNormal;
-    const Pred gate_pred = NegateGatePred(Ctx::kEager, hint);
-
-    DROp op(DROpKind::kNegateGate);
-    op.ctx = Ctx::kEager;
-    op.gate_negate = negate_view;
-    op.gate_table = negated_table;
-    op.gate_pred = gate_pred;
-    op.gate_hint = hint;
-    DREffect read;
-    read.kind = EffKind::kFlagRead;
-    read.read_table = negated_table;
-    read.pred = gate_pred;
-    read.ctx = Ctx::kEager;
-    op.effects.push_back(read);
-    flow.ops.push_back(std::move(op));
-  }
-
   // --------------------------------------------------------------- INGEST_FOLD
   // P2/R1e (p2-ingest-inventory-target.md §2/§3a): one op per (io × receive ×
   // polarity), derived from `query.IOs()` — NEVER by copying the eager walk.
@@ -2445,8 +2440,11 @@ DRFlowGraph BuildDRInventory(
   // COMPLETED before BuildStratumPhases — F-ORDER) is the reachability
   // authority; here we re-invoke the SAME single-authority ctor from each
   // recorded dispatch, in walk (DFS) order (deterministic, (F)-clean — a
-  // std::vector iterated by index, never a pointer-ordered container). The ops
-  // are EFFECT-FREE ⇒ no vec def-edge is recorded (there is no vec to define).
+  // std::vector iterated by index, never a pointer-ordered container). The six
+  // MARKER kinds are EFFECT-FREE ⇒ no vec def-edge is recorded (there is no
+  // vec to define); the R4 kNegateGate is the ONE effect-BEARING kind in this
+  // stream — its ctor reconstructs the kFlagRead identically here and at the
+  // walk mint (M2' extended to an effect), and it still defines no vec.
   for (const Context::EmittedEagerOp &rec : context.emitted_eager_ops) {
     switch (static_cast<DROpKind>(rec.kind)) {
       case DROpKind::kEagerForward:
@@ -2469,9 +2467,13 @@ DRFlowGraph BuildDRInventory(
       case DROpKind::kEagerSelect:  // R3
         flow.ops.push_back(MakeEagerSelectOp(*rec.view, rec.table));
         break;
+      case DROpKind::kNegateGate:  // R4: rec.view=gate_negate, rec.table=gate_table
+        flow.ops.push_back(MakeEagerNegateOp(*rec.view, rec.table));
+        break;
       default:
         // R2 (ADJ-R2-8a): a recorded eager dispatch can only be one of the
-        // six marker kinds — anything else is a mint-site defect.
+        // six marker kinds or the R4 effect-bearing kNegateGate — anything
+        // else is a mint-site defect.
         fprintf(stderr, "DELTAREL: non-eager kind in emitted_eager_ops\n");
         abort();
     }
@@ -3068,6 +3070,21 @@ void ValidateDROps(
         }
         if (op.gate_hint == NegateHint::kNever && op.ctx != Ctx::kEager) {
           ValidatorFail("V-NEG-CTX: @never negate outside eager context");
+        }
+        // R4 (M10 strengthened recount): under option A a standalone EAGER gate
+        // is minted ONLY at the walk dispatch, which the cut (Build.cpp:970)
+        // skips for a deletion-capable negate. Every enrolled EAGER gate's
+        // negate is therefore walk-uncut. Predicate = the EXACT Build.cpp:970
+        // cut criterion (!CanReceiveDeletions), NOT InductionGroupId (F22).
+        // The ctx guard scopes the recount to eager gates only — the reserved
+        // standalone seed/fixpoint forms (DeltaRel.h + the :414-420 NOTE) sit
+        // on deletion-capable negates BY DEFINITION and must not trip it
+        // (Fable-review R4 [1]; the sibling key_of/V-READY sites carry the
+        // same guard).
+        if (op.ctx == Ctx::kEager && op.gate_negate &&
+            op.gate_negate->CanReceiveDeletions()) {
+          ValidatorFail("R4 A.6(c): eager negate gate's negate is walk-cut "
+                        "(CanReceiveDeletions) — must not mint under option A");
         }
         break;
       }

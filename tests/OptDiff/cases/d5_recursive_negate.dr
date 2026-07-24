@@ -2,8 +2,10 @@
 ;
 ; A negate lives INSIDE a recursive SCC: reach's inductive rule carries
 ; !dead(Y). This is the shape the D5' deletion argument claims is
-; unreachable through BuildEagerNegateRegion (the negate CanProduceDeletions,
-; so the eager walk cuts before it) and instead exercises:
+; unreachable through BuildEagerNegateRegion (the negate CanReceiveDeletions,
+; the exact Build.cpp cut criterion, the KeyedInstances 20(O) R4-input nit;
+; it also CanProduceDeletions, but the cut keys on receive, so the eager
+; walk cuts before it) and instead exercises:
 ;   - the R2 fixpoint-context negate gate (kInNew both signs on refire), and
 ;   - the recursive crossover class (RuleClass over the negate's own table,
 ;     folded from the differential `dead` frontier),
