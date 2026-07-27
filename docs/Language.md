@@ -259,6 +259,7 @@ The full set of `@` pragmas the lexer accepts, and where each is legal:
 | `@first` | `#query` decl; query clause body | first-match-only query; in a body, `@first msg(...)` sends a forcing message before reading |
 | `@never` | clause body | monotone negation: once satisfied, always satisfied |
 | `@barrier` | clause body | join everything before the barrier before joining what follows |
+| `:-` (separator) | clause | strict-order body: an implicit `@barrier` between every two conjuncts |
 
 ## Clauses
 
@@ -268,6 +269,14 @@ or named constants (a literal argument `one(1).` becomes an equality
 constraint on a fresh variable). Anonymous variables are not allowed in
 heads. Head pragmas (`@highlight`, `@product`) sit between the argument list
 and the `:` or `.`.
+
+Writing `:-` instead of `:` gives the *strict-order* body form: it parses
+exactly as though `@barrier` were written between every two body conjuncts,
+forcing the join order to be exactly and only the order as written (the
+canonical printed form is the explicit-`@barrier` desugar). Everywhere a `:`
+can introduce a clause body — the embedded-clause declaration forms and the
+multi-body form included — `:-` may appear instead, and in a multi-body
+clause each body is governed by the separator that introduces it.
 
 Body conjuncts, separated by commas:
 
@@ -309,7 +318,9 @@ Body conjuncts, separated by commas:
   the condition instead.
 
 - **`@barrier`** splits the body into join groups (must be followed by a
-  comma).
+  comma). A group joins everything it can before its leftovers carry into
+  the next group, so barriers *stage* joins in written order; the `:-`
+  separator is sugar for a barrier between every two conjuncts.
 - **`@first msg(A, ...)`** (query clause bodies only) sends the message
   before reading the materialized view — an "unlocking" send; at most one per
   body, and it must name a message.

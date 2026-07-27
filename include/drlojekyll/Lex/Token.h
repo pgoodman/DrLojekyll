@@ -230,6 +230,12 @@ enum class Lexeme : uint8_t {
   kPuncPeriod,
   kPuncComma,
   kPuncColon,
+
+  // The `:-` clause separator. Same role as `:`, but the clause parser
+  // rewrites the body it introduces so that an implicit `@barrier` sits
+  // between every two top-level body conjuncts, i.e. the join order is
+  // forced to be exactly the order as written.
+  kPuncColonHyphen,
   kPuncQuestion,
   kPuncPlus,
   kPuncStar,

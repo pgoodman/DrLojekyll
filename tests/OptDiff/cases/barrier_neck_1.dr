@@ -1,0 +1,53 @@
+; barrier_neck_1: the `:-` strict-order clause separator. `head :- b1, b2.`
+; parses exactly as `head : b1, @barrier, b2.` -- an implicit @barrier
+; between every two top-level body conjuncts, forcing the join order to be
+; exactly and only the order as written. Witnessed here: the shared-pivot
+; triple p/q/r, where the plain form builds ONE 3-way join but `:-` stages
+; TWO binary joins, (p JOIN q) JOIN r (the df.opt golden pins that shape);
+; the explicit-@barrier twin tb (answer-identical to t by construction);
+; a zero-arity strict head; and the mixed multi-body form (a `:` body then
+; a `:-` body in one statement, each governed by its own separator).
+
+#message mp(i32 A, i32 B).
+#message mq(i32 B).
+#message mr(i32 B).
+
+#local p(i32 A, i32 B).
+#local q(i32 B).
+#local r(i32 B).
+#local t(i32 A).
+#local tb(i32 A).
+#local tp(i32 A).
+#local s(i32 A).
+
+p(A, B) : mp(A, B).
+q(B) : mq(B).
+r(B) : mr(B).
+
+; Strict order: (p JOIN q) first, its result JOIN r second.
+t(A) :- p(A, B), q(B), r(B).
+
+; The explicit-@barrier spelling of the same body; must derive the same rows.
+tb(A) : p(A, B), @barrier, q(B), @barrier, r(B).
+
+; The PLAIN spelling of the same body: one 3-way join on the shared pivot B
+; (the df.opt golden pins the contrast against t's staged binary joins).
+tp(A) : p(A, B), q(B), r(B).
+
+; Zero-arity strict head.
+both :- q(X), r(X).
+
+; Mixed multi-body: the first body is plain, the second strict.
+s(A) : t(A), both :- tb(A), both.
+
+#query t_all(free i32 A).
+t_all(A) : t(A).
+
+#query tb_all(free i32 A).
+tb_all(A) : tb(A).
+
+#query tp_all(free i32 A).
+tp_all(A) : tp(A).
+
+#query s_all(free i32 A).
+s_all(A) : s(A).

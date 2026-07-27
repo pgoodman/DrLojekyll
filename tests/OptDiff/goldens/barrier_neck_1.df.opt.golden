@@ -1,0 +1,119 @@
+dataflow
+
+select ^select.0 (A:i32, B:i32)                    ; recv #message mp/2
+  ATTRIBUTES eqset=1 class=table-less stratum=0
+  => ^tuple.6 (A, B)
+
+select ^select.1 (B:i32)                           ; recv #message mq/1
+  ATTRIBUTES eqset=2 class=table-less stratum=1
+  => ^tuple.7 (X=B)
+
+select ^select.2 (B:i32)                           ; recv #message mr/1
+  ATTRIBUTES eqset=3 class=table-less stratum=2
+  => ^tuple.8 (X=B)
+
+select ^select.3 (c5:bool)
+  ATTRIBUTES eqset=4 class=table-less stratum=3
+
+select ^select.4 (c6:bool)                         ; relation pred_18446742974197924863/0
+  ATTRIBUTES eqset=5 class=table-less stratum=9
+  => ^tuple.15 (c21=c6)
+
+tuple ^tuple.5 (A:i32, c8:bool)
+  ATTRIBUTES table=%table:37 eqset=6 class=monotone stratum=14
+  => ^join.20 .in0(A)
+
+tuple ^tuple.6 (A:i32, B:i32)
+  ATTRIBUTES table=%table:26 eqset=1 class=monotone stratum=10
+  => ^join.16 .in1(B, A)
+  => ^join.18 .in0(B, A)
+
+tuple ^tuple.7 (X:i32)
+  ATTRIBUTES table=%table:23 eqset=2 class=monotone stratum=5
+  => ^join.16 .in0(X)
+  => ^join.18 .in1(X)
+  => ^join.19 .in1(X)
+
+tuple ^tuple.8 (X:i32)
+  ATTRIBUTES table=%table:30 eqset=3 class=monotone stratum=4
+  => ^join.17 .in0(X)
+  => ^join.18 .in2(X)
+  => ^join.19 .in0(X)
+
+tuple ^tuple.9 (c13:bool, X:i32)
+  ATTRIBUTES table=%table:7 eqset=10 class=monotone stratum=7
+
+tuple ^tuple.10 (A:i32)
+  ATTRIBUTES eqset=11 class=table-less stratum=15
+  => ^insert.22 (A)
+
+tuple ^tuple.11 (A:i32)
+  ATTRIBUTES eqset=12 class=table-less stratum=16
+  => ^insert.23 (A)
+
+tuple ^tuple.12 (A:i32)
+  ATTRIBUTES eqset=13 class=table-less stratum=18
+  => ^insert.24 (A)
+
+tuple ^tuple.13 (A:i32)
+  ATTRIBUTES eqset=14 class=table-less stratum=21
+  => ^insert.25 (A)
+
+tuple ^tuple.14 (B:i32, A:i32)
+  ATTRIBUTES table=%table:33 eqset=15 class=monotone stratum=12
+  => ^join.17 .in1(B, A)
+
+tuple ^tuple.15 (c21:bool)
+  ATTRIBUTES table=%table:4 eqset=5 class=monotone stratum=19
+  => ^join.20 .in1(c21)
+
+join ^join.16 (B:i32, A:i32) {
+  pivot B:i32 <- .in0.X, .in1.B
+  out A:i32 <- .in1.A
+}
+  ATTRIBUTES eqset=15 class=table-less stratum=11
+  => ^tuple.14 (B, A)
+
+join ^join.17 (B:i32, A:i32) {
+  pivot B:i32 <- .in0.X, .in1.B
+  out A:i32 <- .in1.A
+}
+  ATTRIBUTES eqset=18 class=table-less stratum=13
+  => ^tuple.5 (A)
+  => ^tuple.10 (A)
+  => ^tuple.11 (A)
+
+join ^join.18 (B:i32, A:i32) {
+  pivot B:i32 <- .in0.B, .in1.X, .in2.X
+  out A:i32 <- .in0.A
+}
+  ATTRIBUTES eqset=19 class=table-less stratum=17
+  => ^tuple.12 (A)
+
+join ^join.19 (X:i32) {
+  pivot X:i32 <- .in0.X, .in1.X
+}
+  ATTRIBUTES eqset=20 class=table-less stratum=6
+  => ^tuple.9 (X)
+
+join ^join.20 (c29:bool, A:i32) {
+  pivot c29:bool <- .in0.c8, .in1.c21
+  out A:i32 <- .in0.A
+}
+  ATTRIBUTES eqset=21 class=table-less stratum=20
+  => ^tuple.13 (A)
+
+insert ^insert.21 (c13:bool) into %table:4
+  ATTRIBUTES eqset=5 class=monotone stratum=8
+
+insert ^insert.22 (A:i32) into %table:11
+  ATTRIBUTES eqset=11 class=monotone stratum=22
+
+insert ^insert.23 (A:i32) into %table:14
+  ATTRIBUTES eqset=12 class=monotone stratum=23
+
+insert ^insert.24 (A:i32) into %table:17
+  ATTRIBUTES eqset=13 class=monotone stratum=24
+
+insert ^insert.25 (A:i32) into %table:20
+  ATTRIBUTES eqset=14 class=monotone stratum=25

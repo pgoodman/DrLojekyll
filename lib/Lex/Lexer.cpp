@@ -312,8 +312,24 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
 
     case ':': {
       auto &basic = ret.As<lex::BasicToken>();
-      basic.Store<Lexeme>(Lexeme::kPuncColon);
-      basic.Store<lex::SpellingWidth>(1);
+
+      // `:-` is the strict-order clause separator (an implicit `@barrier`
+      // between every body conjunct).
+      if (impl->reader.TryReadChar(&ch)) {
+        if (ch == '-') {
+          basic.Store<Lexeme>(Lexeme::kPuncColonHyphen);
+          basic.Store<lex::SpellingWidth>(2);
+
+        } else {
+          impl->reader.UnreadChar();
+          basic.Store<Lexeme>(Lexeme::kPuncColon);
+          basic.Store<lex::SpellingWidth>(1);
+        }
+      } else {
+        basic.Store<Lexeme>(Lexeme::kPuncColon);
+        basic.Store<lex::SpellingWidth>(1);
+      }
+
       return true;
     }
 

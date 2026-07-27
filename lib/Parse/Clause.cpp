@@ -179,11 +179,88 @@ static void FindUnrelatedConditions(ParsedClauseImpl *clause,
   }
 }
 
+// The `:-` clause separator: `head :- b1, b2, ..., bN.` parses exactly as
+// `head : b1, @barrier, b2, @barrier, ..., bN.` — an implicit `@barrier`
+// between every two top-level body conjuncts, forcing the join order to be
+// exactly and only the order as written. It desugars here by token rewriting
+// (the inline-aggregate synthetic-token precedent): each `:-` at paren/brace
+// depth zero becomes a synthetic `:`, and every depth-zero comma in the body
+// it introduces gains a synthetic `@barrier` + `,` pair after it. A depth-zero
+// `:` (the multi-body separator) ends the strict region and a `:-` one starts
+// it, so in a multi-body clause each body is governed by the separator that
+// introduces it, and the multi-clause re-parse (which re-reads the rewritten
+// tokens) inherits the right form per body with no extra bookkeeping. The
+// state machine below never sees `:-`.
+static void RewriteStrictOrderBodies(std::vector<Token> &toks, size_t begin) {
+  auto has_colon_hyphen = false;
+  for (auto i = begin; i < toks.size(); ++i) {
+    if (Lexeme::kPuncColonHyphen == toks[i].Lexeme()) {
+      has_colon_hyphen = true;
+      break;
+    }
+  }
+  if (!has_colon_hyphen) {
+    return;
+  }
+
+  std::vector<Token> out;
+  out.reserve(toks.size() * 2u);
+  out.insert(out.end(), toks.begin(),
+             toks.begin() + static_cast<ptrdiff_t>(begin));
+
+  auto paren_depth = 0;
+  auto brace_depth = 0;
+  auto strict = false;
+  for (auto i = begin; i < toks.size(); ++i) {
+    const Token tok = toks[i];
+    const auto at_top_level = !paren_depth && !brace_depth;
+    switch (tok.Lexeme()) {
+      case Lexeme::kPuncOpenParen: ++paren_depth; break;
+      case Lexeme::kPuncCloseParen: --paren_depth; break;
+      case Lexeme::kPuncOpenBrace: ++brace_depth; break;
+      case Lexeme::kPuncCloseBrace: --brace_depth; break;
+      case Lexeme::kPuncColonHyphen:
+        if (at_top_level) {
+          strict = true;
+          out.push_back(
+              Token::Synthetic(Lexeme::kPuncColon, tok.SpellingRange()));
+          continue;
+        }
+        break;
+      case Lexeme::kPuncColon:
+      case Lexeme::kPuncPeriod:
+        if (at_top_level) {
+          strict = false;
+        }
+        break;
+      case Lexeme::kPuncComma:
+        if (strict && at_top_level) {
+          out.push_back(tok);
+          out.push_back(Token::Synthetic(Lexeme::kPragmaPerfBarrier,
+                                         tok.SpellingRange()));
+          out.push_back(
+              Token::Synthetic(Lexeme::kPuncComma, tok.SpellingRange()));
+          continue;
+        }
+        break;
+      default: break;
+    }
+    out.push_back(tok);
+  }
+
+  toks.swap(out);
+}
+
 }  // namespace
 
 // Try to parse `sub_range` as a clause.
 void ParserImpl::ParseClause(ParsedModuleImpl *module,
                              ParsedDeclarationImpl *decl) {
+
+  // Desugar any `:-` strict-order body before the state machine runs; it
+  // only ever sees `:` and `@barrier`. Re-entrant parses (the multi-body
+  // form) see already-rewritten tokens, so this is a no-op there.
+  RewriteStrictOrderBodies(sub_tokens, next_sub_tok_index);
 
   ParsedClauseImpl *clause = module->clauses.Create(module);
   clause->declaration = decl;

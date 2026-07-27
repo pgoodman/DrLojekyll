@@ -801,8 +801,10 @@ void ParserImpl::ParseLocalExport(
 
         // We've declared a local or export, and instead of the declaration
         // immediatel ending in a period, instead in ends in a colon, marking
-        // it as containing trailing/embedded clauses.
-        } else if (Lexeme::kPuncColon == lexeme) {
+        // it as containing trailing/embedded clauses. (`:-` is the strict-
+        // order form; ParseClause desugars it.)
+        } else if (Lexeme::kPuncColon == lexeme ||
+                   Lexeme::kPuncColonHyphen == lexeme) {
           has_embedded_clauses = true;
           clause_toks.push_back(tok);
           for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {

@@ -204,7 +204,8 @@ void ParserImpl::ParseMessage(ParsedModuleImpl *module) {
             continue;
           }
 
-        } else if (Lexeme::kPuncColon == lexeme) {
+        } else if (Lexeme::kPuncColon == lexeme ||
+                   Lexeme::kPuncColonHyphen == lexeme) {
           clause_toks.push_back(tok);
           has_embedded_clauses = true;
           message->last_tok = tok;

@@ -224,7 +224,8 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
           state = 7;
           continue;
 
-        } else if (Lexeme::kPuncColon == lexeme) {
+        } else if (Lexeme::kPuncColon == lexeme ||
+                   Lexeme::kPuncColonHyphen == lexeme) {
           has_embedded_clauses = true;
           clause_toks.push_back(tok);
           for (; ReadNextSubToken(tok); next_pos = tok.NextPosition()) {
