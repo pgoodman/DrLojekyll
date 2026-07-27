@@ -31,6 +31,11 @@ class ErrorImpl {
   size_t post_source_len{0};
   std::vector<bool> is_error;
   uint64_t hightlight_line{0};
+
+  // Advisory severity: rendered with a `warning:` category, never counted
+  // toward the log's error size (ErrorLog::AppendWarning).
+  bool is_warning{false};
+
   uint64_t line{0};
   uint64_t column{0};
 };

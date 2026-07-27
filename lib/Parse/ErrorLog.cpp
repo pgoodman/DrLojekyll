@@ -16,6 +16,10 @@ class ErrorLog::Impl {
 
   const DisplayManager dm;
   std::vector<Error> errors;
+
+  // Advisory warnings: rendered after the errors, never counted by
+  // `Size()`/`IsEmpty()` (a warning never fails a compile).
+  std::vector<Error> warnings;
 };
 
 ErrorLog::ErrorLog(const DisplayManager &dm_)
@@ -64,6 +68,21 @@ Error ErrorLog::Append(void) const {
   return err;
 }
 
+Error ErrorLog::AppendWarning(const DisplayRange &range) const {
+  Error err(impl->dm, range);
+  err.impl->is_warning = true;
+  impl->warnings.push_back(err);
+  return err;
+}
+
+Error ErrorLog::AppendWarning(const DisplayRange &range,
+                              const DisplayRange &sub_range) const {
+  Error err(impl->dm, range, sub_range);
+  err.impl->is_warning = true;
+  impl->warnings.push_back(err);
+  return err;
+}
+
 bool ErrorLog::IsEmpty(void) const {
   return impl->errors.empty();
 }
@@ -76,6 +95,14 @@ void ErrorLog::Render(std::ostream &os,
                       const ErrorColorScheme &color_scheme) const {
   for (auto &error : impl->errors) {
     error.Render(os, color_scheme);
+  }
+  RenderWarnings(os, color_scheme);
+}
+
+void ErrorLog::RenderWarnings(std::ostream &os,
+                              const ErrorColorScheme &color_scheme) const {
+  for (auto &warning : impl->warnings) {
+    warning.Render(os, color_scheme);
   }
 }
 

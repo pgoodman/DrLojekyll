@@ -349,6 +349,14 @@ Body conjuncts, separated by commas:
   preserving) and never drops aggregated or config columns, so a fully
   named `over` list is counted exactly as written in every mode.
 
+  The compiler emits an ADVISORY warning (never an error) on the trap
+  shape: a single-use body variable or wildcard inside an aggregated
+  body whose column the `over` projection drops. The warning is
+  epistemically honest rather than minimal -- it also fires on the
+  row-counting recipe's deliberately dropped columns (the compiler
+  cannot prove a carried column uniquifies rows). The corpus witness is
+  `tests/OptDiff/cases/agg_distinct_1`.
+
 **Multiple bodies** for one head can be chained with `:`; the clause
 `f(A) : e(A, 1) : e(2, A).` is exactly two clauses.
 

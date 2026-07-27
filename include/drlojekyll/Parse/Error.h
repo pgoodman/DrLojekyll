@@ -41,6 +41,7 @@ struct ErrorColorScheme {
   Color line_color;
   Color column_color;
   Color error_category_color;
+  Color warning_category_color;
   Color note_category_color;
   Color message_color;
   Color source_line_color;
@@ -207,6 +208,8 @@ class Error {
                     const DisplayPosition &pos_in_sub_range) const;
 
  private:
+  friend class ErrorLog;  // Sets the warning severity on AppendWarning.
+
   ErrorStream Stream(void) const;
 
   std::shared_ptr<ErrorImpl> impl;

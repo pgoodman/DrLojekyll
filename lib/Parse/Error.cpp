@@ -89,6 +89,7 @@ const ErrorColorScheme Error::kDefaultColorScheme = {
     Color::kWhite,  // `line_color`.
     Color::kWhite,  // `column_color`.
     Color::kRed,  // `error_category_color`.
+    Color::kYellow,  // `warning_category_color`.
     Color::kGreen,  // `note_category_color`.
     Color::kWhite,  // `message_color`.
     Color::kYellow,  // `source_line_color`.
@@ -326,8 +327,10 @@ Error::Error(const DisplayManager &dm, const DisplayRange &range,
 // Render the formatted error to a stream, along with any attached notes.
 void Error::Render(std::ostream &os,
                    const ErrorColorScheme &color_scheme) const {
-  auto category_color = color_scheme.error_category_color;
-  auto category_name = "error: ";
+  auto category_color = impl->is_warning
+                            ? color_scheme.warning_category_color
+                            : color_scheme.error_category_color;
+  const char *category_name = impl->is_warning ? "warning: " : "error: ";
   auto highlight_color = color_scheme.error_source_line_color;
   auto highlight_bgcolor = color_scheme.error_background_color;
   std::stringstream ss;

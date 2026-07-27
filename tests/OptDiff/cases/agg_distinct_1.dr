@@ -1,0 +1,43 @@
+; agg_distinct_1: the aggregate MULTIPLICITY-SEMANTICS witness (owner-directed
+; 2026-07-27; docs/Language.md "Aggregation"). Aggregates fold over the
+; DISTINCT tuples of the over() projection -- projected COLUMNS, not projected
+; rows -- and @invertible vs @recompute is a lowering selector, never a
+; semantics change. Pins, via the stdout golden:
+;   (1) same-weight collapse: two edges into X carrying the same weight count
+;       as ONE under the (X, W) projection (cnt_inv / cnt_rec agree);
+;   (2) the count-unique shape: counting ew(_, X2, _) yields the number of
+;       UNIQUE X2 values, not the number of rows (cnt_ux);
+;   (3) the row-counting recipe: carrying the key column B2 in the over()
+;       list counts exact rows (cnt_rows).
+; This case DELIBERATELY carries the projected-column lint shape (the _B/_
+; wildcards) -- the compiler emits advisory warnings on stderr; the compile
+; succeeds and only stdout is golden-compared.
+#functor cinv(aggregate i32 Val, summary i32 N) @invertible.
+#functor crec(aggregate i32 Val, summary i32 N) @recompute.
+#message edge(i32 B, i32 X, i32 W).
+#local ew(i32 B, i32 X, i32 W).
+#local cnt_inv(i32 X, i32 N).
+#local cnt_rec(i32 X, i32 N).
+#local cnt_ux(i32 K, i32 N).
+#local cnt_rows(i32 X, i32 N).
+#query get_inv(free i32 X, free i32 N).
+#query get_rec(free i32 X, free i32 N).
+#query get_ux(free i32 K, free i32 N).
+#query get_rows(free i32 X, free i32 N).
+
+ew(B, X, W) : edge(B, X, W).
+
+; (1) the trap shape: the edge id _B is projected away by the over() list.
+cnt_inv(X, N) : cinv(W2, N) over (i32 X, i32 W2) { ew(_B, X, W2) }.
+cnt_rec(X, N) : crec(W2, N) over (i32 X, i32 W2) { ew(_B, X, W2) }.
+
+; (2) count-unique: both remaining columns wildcarded; K = 1 pins the group.
+cnt_ux(K, N) : cinv(X2, N) over (i32 K, i32 X2) { ew(_, X2, _), K = 1 }.
+
+; (3) the recipe: aggregate over the key column B2; counts exact rows.
+cnt_rows(X, N) : cinv(B2, N) over (i32 X, i32 B2) { ew(B2, X, _) }.
+
+get_inv(X, N) : cnt_inv(X, N).
+get_rec(X, N) : cnt_rec(X, N).
+get_ux(K, N) : cnt_ux(K, N).
+get_rows(X, N) : cnt_rows(X, N).

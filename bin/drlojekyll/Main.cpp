@@ -574,6 +574,7 @@ extern "C" int main(int argc, const char *argv[]) {
     error_log.Render(std::cerr);
   } else {
     assert(error_log.IsEmpty());
+    error_log.RenderWarnings(std::cerr);
   }
 
   return code;

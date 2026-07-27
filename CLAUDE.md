@@ -48,9 +48,10 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 173 corner-case programs as of the
-keyed-instances D2.c landing — symrec_tie_1 is the standing determinism
-witness) has one committed expected output in
+(`<name>.dr` + `<name>.main.cpp`, 174 corner-case programs as of the
+aggregate-semantics witness landing — symrec_tie_1 is the standing
+determinism witness; agg_distinct_1 pins the aggregate multiplicity
+semantics + carries the projected-column lint shape) has one committed expected output in
 `tests/OptDiff/goldens/<name>.stdout`, and the 4 optimization modes are
 just execution variants — EVERY mode's stdout is byte-compared against the
 same golden (cross-mode agreement is implied). A case with a
@@ -354,7 +355,10 @@ aggregating a constant (the count(*) idiom) yields 1 per group; a
 wildcard/dropped body column silently dedups. Aggregate canonicalization
 drops only constant and duplicate group-by columns (identity-preserving)
 and never drops aggregated/config columns, so a fully named over list is
-counted as written in every mode. User-facing statement: docs/Language.md
+counted as written in every mode. The parse-layer ADVISORY lint
+(LintAggregateProjection, lib/Parse/Aggregate.cpp; ErrorLog::AppendWarning
+— warnings render but never fail a compile) fires on the trap shape;
+agg_distinct_1 is the corpus witness. User-facing statement: docs/Language.md
 (Aggregation bullet); data/examples/average_weight.dr + its corpus twin
 compute sum/count over DISTINCT (X, Weight) pairs (edge ids projected
 away), documented in-file.
