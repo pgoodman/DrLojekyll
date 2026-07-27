@@ -342,6 +342,22 @@ per-group rescan) is a lowering selector. The aggregate/KV view is a
 BRANCH CHAIN-BREAKER (`SuffixesOf`/`CollectSectionTargetsDR`, DR.cpp; the
 eager walk stops at it, Build.cpp) — no branch traverses one; its monotone
 message input is provisioned a net-additions frontier as a cut successor.
+MULTIPLICITY SEMANTICS (normative; verified empirically 2026-07-27, both
+algebras × all 4 modes): an aggregate folds over the DISTINCT tuples of
+its `over(...)` projection — projected COLUMNS, not projected rows. The
+over column list IS the subquery's projection; set semantics collapse
+colliding tuples before band (a) sees them (folds fire on presence
+transitions, so the @recompute counts[] multiset holds only 0/1 today —
+each input-table row maps injectively to a (group, value) slot). Counting
+ROWS requires carrying a key of the summarized relation in the over list;
+aggregating a constant (the count(*) idiom) yields 1 per group; a
+wildcard/dropped body column silently dedups. Aggregate canonicalization
+drops only constant and duplicate group-by columns (identity-preserving)
+and never drops aggregated/config columns, so a fully named over list is
+counted as written in every mode. User-facing statement: docs/Language.md
+(Aggregation bullet); data/examples/average_weight.dr + its corpus twin
+compute sum/count over DISTINCT (X, Weight) pairs (edge ids projected
+away), documented in-file.
 REDUCTION BODIES are C-5 driver-supplied FREE FUNCTIONS (forward-declared in
 the header, defined out-of-line, NAMED AFTER THE FUNCTOR): for a functor `f`,
 `f_identity()/f_combine(w, v)/f_uncombine(w, v)` for `@invertible`,

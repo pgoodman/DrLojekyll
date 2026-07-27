@@ -316,8 +316,38 @@ Body conjuncts, separated by commas:
 - **Aggregation** `agg_functor(...) over pred(...)` applies an
   `aggregate`/`summary` functor over a predicate, grouping by the predicate
   variables not bound by the functor application; `over (params) { body }`
-  aggregates over an inline anonymous predicate. This *parses and builds
-  dataflow* but does not compile to a runnable program (see gaps).
+  aggregates over an inline anonymous predicate. Compiles end-to-end since
+  the delta-relational-IR epoch; the reduction bodies are driver-supplied
+  free functions (see `docs/RuntimeAndCodegen.md`). An `@invertible`
+  functor maintains the summary via O(1) combine/uncombine; `@recompute`
+  (the default when no algebra is declared) rescans the group's live
+  members.
+
+  **Aggregates fold over the DISTINCT tuples of the `over(...)`
+  projection -- projected columns, not projected rows.** The `over`
+  column list IS the summarized subquery's projection; relations are
+  sets, so tuples that collide after projection collapse BEFORE the
+  aggregate sees them. This is projection semantics, not an optimizer
+  artifact: `@invertible` and `@recompute` agree, and all four
+  optimization modes agree (verified empirically). Consequences:
+
+  - `count_f(X2, N) over (i32 K, i32 X2) { foo(X2, _), K = 1 }` counts
+    the UNIQUE first columns of `foo`, not its rows -- the wildcard
+    column is projected away, so duplicates collapse silently. Any
+    unnamed or temp-named body column that is absent from the `over`
+    list has this effect.
+  - Aggregating a constant (`over (i32 A, i32 C) { foo(A, _), C = 1 }`,
+    the `count(*)` idiom from other Datalogs) always yields 1 per group:
+    every row collapses to the single tuple `(A, 1)`. There is no
+    `count(*)`.
+  - To count ROWS, carry a key of the summarized relation in the `over`
+    list and aggregate over it: `count_f(B, N) over (i32 X, i32 B) {
+    edge(B, X, _) }` counts edges per `X` because `B` uniquifies rows.
+
+  Naming every column is safe: aggregate canonicalization drops only
+  constant and duplicate group-by columns (both group-identity-
+  preserving) and never drops aggregated or config columns, so a fully
+  named `over` list is counted exactly as written in every mode.
 
 **Multiple bodies** for one head can be chained with `:`; the clause
 `f(A) : e(A, 1) : e(2, A).` is exactly two clauses.
@@ -341,8 +371,11 @@ These forms parse and pass semantic analysis but are rejected by
 `Program::Build`'s pre-pass with a clean diagnostic, so no program using
 them compiles end-to-end:
 
-- **Aggregates** (`aggregate`/`summary` functors, `over`).
-- **KV indices** — `mutable(merge_functor)` parameters on locals/exports.
+- **Unstratified aggregation** — an aggregate or KV index over its own
+  recursive result (aggregates and KV indices otherwise compile
+  end-to-end since the delta-relational-IR epoch); aggregates/KV over
+  induction-owned (recursively-derived) inputs; and a `mutable()` merge
+  functor with no declared `@invertible`/`@recompute` algebra.
 - Cross-products over deletable data **inside recursive cycles** (a
   `@product` body atom recursively derived from the product's own result).
   Acyclic differential cross-products — including `@differential @product`

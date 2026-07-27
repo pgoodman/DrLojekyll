@@ -1,6 +1,14 @@
 ; The purpose of this example is to see how two related but independent
 ; aggregates behave w.r.t. joins of their inner selects, and joins of their
 ; results.
+;
+; NOTE (multiplicity semantics, docs/Language.md): each aggregate below folds
+; over the DISTINCT (X, Weight) tuples of its over() projection -- the edge
+; source _A/_B is projected away, so two incoming edges of X carrying the
+; same (merged) weight collapse to ONE tuple. These aggregates therefore
+; compute the sum/count of DISTINCT incoming weight VALUES per X, not
+; per-edge sums; to count/sum per edge, carry the edge source in the over()
+; column list.
 
 #functor div_i32(bound i32 LHS, bound i32 RHS, free i32 Res) @range(.).
 #functor sum_i32(aggregate i32 Val, summary i32 Sum) @invertible.

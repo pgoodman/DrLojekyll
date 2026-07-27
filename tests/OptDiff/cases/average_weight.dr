@@ -5,6 +5,14 @@
 ; (twice-nested-in-strata), exercised with KV value-churn (a re-keyed edge
 ; retracts the old summary and asserts the new one: the emit_touched change
 ; arm / @recompute retraction).
+;
+; NOTE (multiplicity semantics, docs/Language.md): the two aggregates fold
+; over the DISTINCT (X, Weight) tuples of their over() projections -- the
+; edge source _A/_B is projected away, so two incoming edges of X carrying
+; the same (merged) weight collapse to ONE tuple. The fixture computes the
+; sum/count of DISTINCT incoming weight VALUES per X (its golden pins that
+; semantics); to count/sum per edge, carry the edge source in the over()
+; column list.
 
 #functor div_i32(bound i32 LHS, bound i32 RHS, free i32 Res) @range(.).
 #functor sum_i32(aggregate i32 Val, summary i32 Sum) @invertible.
