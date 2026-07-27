@@ -124,22 +124,12 @@ static void CollectSectionTargetsDR(ProgramImpl *impl, Context &context,
   }
 }
 
-// Replicate the cut-successor test (Build.cpp:857-858) EXACTLY: a deletion-
-// capable / aggregate / KV-index successor is fed by phases or its
-// GROUP_UPDATE, never by the eager walk.
+// Replicate the cut-successor test (Build.cpp:969) EXACTLY: quantify the SD-1
+// single-view authority (IsCutSuccessorDR, defined at hyde scope below) over
+// this view's successors.
 static bool AnyCutSuccessorDR(Context &context, QueryView view) {
   for (QueryView succ : view.Successors()) {
-    if (succ.CanReceiveDeletions() || succ.IsAggregate() || succ.IsKVIndex()) {
-      return true;
-    }
-    // Keyed instances (GT-5 / OD-4): under -demand-instance, a recognized-
-    // subgraph guard JOIN successor is fed by its SUBGRAPH_INSTANTIATE op, never
-    // the eager walk — treat it as a cut successor so this monotone boundary
-    // input is provisioned a net-additions frontier (BOTH the demand and edge
-    // boundaries). Symmetric with Build.cpp so the §7d role/walk cross-check
-    // never diverges.
-    if (context.demand_instance_enabled &&
-        succ.GuardAnnotationIndex() != QueryView::kNoGuardAnnotation) {
+    if (IsCutSuccessorDR(context, succ)) {
       return true;
     }
   }
@@ -1271,6 +1261,9 @@ DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
 // `ingest_message` drives render, `ingest_receive` gives `.Columns()` for the
 // VARs. Invoked from BOTH the walk (ExtendEagerProcedure Arm C) AND the
 // tail-appended enrollment, so the two payloads cannot diverge (§12.6).
+// Forward decl: defined file-static below (the flip closed the header seam).
+static TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view);
+
 // R-final (MED-1): the file-scope (hyde-scope, header-declared external)
 // extraction of the Stratum.cpp:1451 `all_sides_same_scc` lambda (SccOf ==
 // RecursiveSCC, byte-identical bodies) so the delta lowering skip, the delta
@@ -1374,7 +1367,7 @@ JoinEmitKey JoinEmitKeyOf(const DROp &op) {
 
 // R1: a `.find()`-guarded model-table lookup (ADJ-S13/S14). Null when the view
 // has no model entry (a table-less TUPLE forward), never a crash.
-TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view) {
+static TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view) {
   const auto it = impl->view_to_model.find(view);
   if (it == impl->view_to_model.end()) {
     return nullptr;
@@ -1386,7 +1379,7 @@ TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view) {
 // no ids, NO effects (the central §A.2 choice: an effect-free op contributes no
 // vec/flag access, hence no dep edge, hence is invisible to V-LINEAR/
 // V-BAND-HAZARD/V-READY/V-LOOP). `table` may be null (table-less TUPLE).
-DROp MakeEagerForwardOp(QueryView tuple_view, TABLE *table) {
+static DROp MakeEagerForwardOp(QueryView tuple_view, TABLE *table) {
   DROp op(DROpKind::kEagerForward);
   op.ctx = Ctx::kEager;
   op.eager_view = tuple_view;
@@ -1397,7 +1390,7 @@ DROp MakeEagerForwardOp(QueryView tuple_view, TABLE *table) {
 // R1: the single authority for a kEagerInsert marker op (design §A.3). Pure, NO
 // effects. `sink`/`message` record the terminal shape for render only (the
 // untouched BuildEagerInsertRegion still owns the actual emission branch).
-DROp MakeEagerInsertOp(QueryView insert_view, TABLE *table, EagerSink sink,
+static DROp MakeEagerInsertOp(QueryView insert_view, TABLE *table, EagerSink sink,
                        std::optional<ParsedMessage> message) {
   DROp op(DROpKind::kEagerInsert);
   op.ctx = Ctx::kEager;
@@ -1428,7 +1421,7 @@ static bool IsEagerMarkerKind(DROpKind kind) {
 // Pure, NO effects. The comparison operator is NOT stored — it re-derives from
 // `eager_view` at Format time (ADJ-R2-1). `table` may be null (a filter CMP is
 // usually table-less).
-DROp MakeEagerCompareOp(QueryView cmp_view, TABLE *table) {
+static DROp MakeEagerCompareOp(QueryView cmp_view, TABLE *table) {
   DROp op(DROpKind::kEagerCompare);
   op.ctx = Ctx::kEager;
   op.eager_view = cmp_view;
@@ -1439,7 +1432,7 @@ DROp MakeEagerCompareOp(QueryView cmp_view, TABLE *table) {
 // R2: the single authority for a kEagerGenerate marker op (r2-design §A M2).
 // Pure, NO effects. Minted only for pure functors (ADJ-R2-3); the functor
 // identity re-derives from `eager_view` at Format time (ADJ-R2-2).
-DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table) {
+static DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table) {
   DROp op(DROpKind::kEagerGenerate);
   op.ctx = Ctx::kEager;
   op.eager_view = map_view;
@@ -1451,7 +1444,7 @@ DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table) {
 // Pure, NO effects, NO stored payload (a plain union carries no operator or
 // functor — M2'). `table` is the merged-model table, typically NON-null even
 // for a `.df class=table-less` merge (the DataModel equivalence-set, E-107).
-DROp MakeEagerUnionOp(QueryView merge_view, TABLE *table) {
+static DROp MakeEagerUnionOp(QueryView merge_view, TABLE *table) {
   DROp op(DROpKind::kEagerUnion);
   op.ctx = Ctx::kEager;
   op.eager_view = merge_view;
@@ -1463,7 +1456,7 @@ DROp MakeEagerUnionOp(QueryView merge_view, TABLE *table) {
 // Pure, NO effects, NO stored payload (unit-condition-ness re-derives from
 // `eager_view` if ever rendered — M2'). `table` is the merged model, shared
 // with the pred INSERT via the SELECT<->INSERT model-union rule.
-DROp MakeEagerSelectOp(QueryView select_view, TABLE *table) {
+static DROp MakeEagerSelectOp(QueryView select_view, TABLE *table) {
   DROp op(DROpKind::kEagerSelect);
   op.ctx = Ctx::kEager;
   op.eager_view = select_view;
@@ -1478,7 +1471,7 @@ DROp MakeEagerSelectOp(QueryView select_view, TABLE *table) {
 // ContinueJoinWorkItem deferral). `table` is the merged model
 // (ModelTableOrNull — usually null, join views are typically table-less; a
 // model-SHARED join is table-backed, the E-107 shape).
-DROp MakeEagerJoinOp(QueryView join_view, TABLE *table) {
+static DROp MakeEagerJoinOp(QueryView join_view, TABLE *table) {
   DROp op(DROpKind::kEagerJoin);
   op.ctx = Ctx::kEager;
   op.eager_view = join_view;
@@ -1486,7 +1479,7 @@ DROp MakeEagerJoinOp(QueryView join_view, TABLE *table) {
   return op;
 }
 
-DROp MakeEagerProductOp(QueryView product_view, TABLE *table) {
+static DROp MakeEagerProductOp(QueryView product_view, TABLE *table) {
   DROp op(DROpKind::kEagerProduct);
   op.ctx = Ctx::kEager;
   op.eager_view = product_view;
@@ -1501,9 +1494,10 @@ DROp MakeEagerProductOp(QueryView product_view, TABLE *table) {
 // ONLY the gate_* fields + the effect — NEVER eager_view/table_op_table — so it
 // stays OUT of IsEagerMarkerKind and on its own key_of/V-READY/render branches
 // (op_table_id(gate)=0, table-less lead-0). The hint re-derives from the view
-// (HasNeverHint), pred from (kEager, hint) — M2' extended to an effect,
-// identical at walk-time and at the EAGER_WEB re-invocation.
-DROp MakeEagerNegateOp(QueryView negate_view, TABLE *negated_table) {
+// (HasNeverHint), pred from (kEager, hint) — M2' extended to an effect;
+// post-flip the DR-side enrollment is the ONE construction site (the walk
+// mint and the EAGER_WEB replay are retired).
+static DROp MakeEagerNegateOp(QueryView negate_view, TABLE *negated_table) {
   const NegateHint hint = QueryNegate::From(negate_view).HasNeverHint()
                               ? NegateHint::kNever
                               : NegateHint::kNormal;
@@ -1521,6 +1515,264 @@ DROp MakeEagerNegateOp(QueryView negate_view, TABLE *negated_table) {
   read.ctx = Ctx::kEager;
   op.effects.push_back(read);
   return op;
+}
+
+// R-final SD-1: the SINGLE authority for the single-view eager cut test (the
+// real live test is Build.cpp:969). A deletion-capable / aggregate / KV-index
+// successor is fed by the stratum phases / its GROUP_UPDATE, never by the eager
+// walk. Keyed instances (GT-5 / OD-4): under -demand-instance, a recognized-
+// subgraph guard JOIN successor is fed by its SUBGRAPH_INSTANTIATE op, never the
+// eager walk — treat it as a cut successor so this monotone boundary input is
+// provisioned a net-additions frontier. Symmetric with Build.cpp so the §7d
+// role/walk cross-check never diverges. The flip's SET derivation uses this as
+// the sole cut authority (SD-3). Defined at hyde scope (matching the header
+// decl) so both Build.cpp and the anon-namespace AnyCutSuccessorDR call it.
+// R-final flip (Fable-review flip-[1]): the ONE all-constant-TUPLE spelling,
+// shared by the walk's constant-fact dispatch root (Procedure.cpp) and the
+// DR derivation's Root 1.
+bool IsAllConstantTupleDR(QueryTuple tuple) {
+  for (QueryColumn in_col : tuple.InputColumns()) {
+    if (!in_col.IsConstant()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool IsCutSuccessorDR(Context &context, QueryView succ) {
+  if (succ.CanReceiveDeletions() || succ.IsAggregate() || succ.IsKVIndex()) {
+    return true;
+  }
+  return context.demand_instance_enabled &&
+         succ.GuardAnnotationIndex() != QueryView::kNoGuardAnnotation;
+}
+
+// R-final SD-2: relocated verbatim from Build.cpp — the sink discriminant of a
+// terminal INSERT (render-only) and its stream message identity. Reads only
+// Context maps fully populated before BuildDRInventory runs. ADJ-S13 (BINDING):
+// NEVER operator[] on publish_vecs (a default-insert would later mint next_id
+// per non-null entry — the classifier must not mutate the map); use find.
+EagerSink ClassifyEagerSinkDR(Context &context, QueryInsert insert,
+                              const std::optional<ParsedMessage> &message_opt) {
+  if (insert.IsStream()) {
+    const ParsedMessage message = *message_opt;
+    if (context.commit_published_view.count(message)) {
+      return EagerSink::kCommitPublished;
+    }
+    const auto it = context.publish_vecs.find(message);
+    if (it != context.publish_vecs.end() && it->second != nullptr) {
+      return EagerSink::kPublishVec;
+    }
+    return EagerSink::kPublishNow;
+  }
+  assert(insert.IsRelation());
+  return EagerSink::kRelation;
+}
+
+std::optional<ParsedMessage> MessageOfInsertOrNullDR(QueryInsert insert) {
+  if (insert.IsStream()) {
+    return ParsedMessage::From(QueryIO::From(insert.Stream()).Declaration());
+  }
+  return std::nullopt;
+}
+
+// R-final SD-3 (THE FLIP): the marker kind a reached, marker-BEARING view
+// dispatches to — MIRRORS BuildEagerRegion's dispatch EXACTLY (the ONE authority
+// for kind <-> view-shape). Inductive merges (marker-SILENT) and aggregate/
+// KV-index views (cut) never reach here (the caller filters them out); an impure
+// MAP is rejected upstream, so IsMap => kEagerGenerate.
+static DROpKind MarkerKindOfDR(QueryView v) {
+  if (v.IsJoin()) {
+    return QueryJoin::From(v).NumPivotColumns() ? DROpKind::kEagerJoin
+                                                : DROpKind::kEagerProduct;
+  }
+  if (v.IsMerge()) {  // non-inductive (the caller excludes inductive merges)
+    return DROpKind::kEagerUnion;
+  }
+  if (v.IsMap()) {
+    return DROpKind::kEagerGenerate;
+  }
+  if (v.IsCompare()) {
+    return DROpKind::kEagerCompare;
+  }
+  if (v.IsSelect()) {
+    return DROpKind::kEagerSelect;
+  }
+  if (v.IsTuple()) {
+    return DROpKind::kEagerForward;
+  }
+  if (v.IsInsert()) {
+    return DROpKind::kEagerInsert;
+  }
+  if (v.IsNegate()) {
+    return DROpKind::kNegateGate;
+  }
+  fprintf(stderr, "DELTAREL: MarkerKindOfDR reached an unhandled view kind\n");
+  abort();
+}
+
+// R-final SD-3: build ONE marker DROp for a derived (kind, view), re-invoking the
+// SAME single-authority ctor with payloads re-derived DR-side (never from a walk
+// record — the FLIP): table = ModelTableOrNull (E-107); the kEagerInsert sink +
+// message from ClassifyEagerSinkDR / MessageOfInsertOrNullDR (SD-2); the
+// kNegateGate effect-bearing kFlagRead over the negated view's model table (the
+// identical reconstruction the walk mint used).
+static DROp MakeMarkerForDR(ProgramImpl *impl, Context &context, DROpKind kind,
+                            QueryView view) {
+  switch (kind) {
+    case DROpKind::kEagerForward:
+      return MakeEagerForwardOp(view, ModelTableOrNull(impl, view));
+    case DROpKind::kEagerCompare:
+      return MakeEagerCompareOp(view, ModelTableOrNull(impl, view));
+    case DROpKind::kEagerGenerate:
+      return MakeEagerGenerateOp(view, ModelTableOrNull(impl, view));
+    case DROpKind::kEagerUnion:
+      return MakeEagerUnionOp(view, ModelTableOrNull(impl, view));
+    case DROpKind::kEagerSelect:
+      return MakeEagerSelectOp(view, ModelTableOrNull(impl, view));
+    case DROpKind::kEagerJoin:
+      return MakeEagerJoinOp(view, ModelTableOrNull(impl, view));
+    case DROpKind::kEagerProduct:
+      return MakeEagerProductOp(view, ModelTableOrNull(impl, view));
+    case DROpKind::kEagerInsert: {
+      const auto insert = QueryInsert::From(view);
+      const auto message = MessageOfInsertOrNullDR(insert);
+      return MakeEagerInsertOp(view, ModelTableOrNull(impl, view),
+                               ClassifyEagerSinkDR(context, insert, message),
+                               message);
+    }
+    case DROpKind::kNegateGate: {
+      const auto negate = QueryNegate::From(view);
+      TABLE *const negated_table =
+          impl->view_to_model[negate.NegatedView()]->FindAs<DataModel>()->table;
+      return MakeEagerNegateOp(view, negated_table);
+    }
+    default:
+      fprintf(stderr, "DELTAREL: MakeMarkerForDR given a non-marker kind\n");
+      abort();
+  }
+}
+
+// R-final SD-3 (THE FLIP CORE): derive the eager MARKER SET graph-side (receive-
+// successor + all-constant-TUPLE roots, cut at IsCutSuccessorDR, transparent
+// through inductive merges — Correction 1 + flip-HIGH-1), then enroll one marker
+// per (derived view x walk-census multiplicity) in the CANONICAL Depth (tiebreak
+// DeterministicOrder) order. Replaces the walk-order EAGER_WEB replay switch. The
+// SET is the DR side's authority (SD-4 cross-checks it against the walk census);
+// the multiplicity is walk-sourced (Correction 2). ID-NEUTRAL (marker ctors mint
+// no next_id). `flow` grows by the enrolled markers (tail-appended in place).
+static void BuildDREagerInventory(ProgramImpl *impl, Context &context,
+                                  Query query, DRFlowGraph &flow) {
+  // (a) SET derivation. `dispatched` = the views passed to BuildEagerRegion as
+  // the `view` arg (the marker-candidate set); receives are propagation roots but
+  // NOT themselves dispatched (the walk calls BuildEagerInsertionRegions on their
+  // Successors(), Procedure.cpp:121). Reachability propagates THROUGH every
+  // non-cut view including inductive merges (marker-SILENT but transparent).
+  std::unordered_set<QueryView> dispatched;
+  std::vector<QueryView> worklist;
+  const auto push = [&](QueryView v) {
+    if (dispatched.insert(v).second) {
+      worklist.push_back(v);
+    }
+  };
+
+  // Root 1 (flip-HIGH-1): all-constant-input TUPLEs — dispatched DIRECTLY at
+  // Procedure.cpp:826 (BuildEagerRegion(view, view)), NOT downstream of any
+  // receive, so receive-rooted reachability can never reach them. Mirror the
+  // walk's all-constant test (Procedure.cpp:801-808) verbatim.
+  for (QueryTuple tuple : query.Tuples()) {
+    if (IsAllConstantTupleDR(tuple)) {
+      push(QueryView(tuple));
+    }
+  }
+
+  // Root 2: the non-cut successors of every receive (the receive itself is a
+  // propagation root only; its successors are the first dispatched views).
+  for (QueryIO io : query.IOs()) {
+    for (QueryView receive : io.Receives()) {
+      for (QueryView succ : receive.Successors()) {
+        if (!IsCutSuccessorDR(context, succ)) {
+          push(succ);
+        }
+      }
+    }
+  }
+
+  // Propagate: every dispatched view walks its non-cut successors (matches
+  // BuildEagerInsertionRegions on each dispatched view's Successors()).
+  while (!worklist.empty()) {
+    const QueryView p = worklist.back();
+    worklist.pop_back();
+    for (QueryView succ : p.Successors()) {
+      if (!IsCutSuccessorDR(context, succ)) {
+        push(succ);
+      }
+    }
+  }
+
+  // (b) The MARKER SET: dispatched views that mint a marker — i.e. every
+  // dispatched view EXCEPT inductive merges (marker-silent, Authority A). Sort
+  // by (Depth, DeterministicOrder) — the canonical enrollment order (R2(b)).
+  std::vector<QueryView> marker_views;
+  marker_views.reserve(dispatched.size());
+  for (QueryView v : dispatched) {
+    if (v.IsMerge() && v.InductionGroupId().has_value()) {
+      continue;  // inductive merge: reachability-transparent, marker-silent.
+    }
+    marker_views.push_back(v);
+  }
+  std::sort(marker_views.begin(), marker_views.end(),
+            [](QueryView a, QueryView b) {
+              if (a.Depth() != b.Depth()) {
+                return a.Depth() < b.Depth();
+              }
+              return a.DeterministicOrder() < b.DeterministicOrder();
+            });
+
+  // (c) Enroll census[(kind, view)] copies of each derived marker, in canonical
+  // order. Multiplicity is WALK-sourced (Correction 2 — the scheduler artifact).
+  for (QueryView v : marker_views) {
+    const DROpKind kind = MarkerKindOfDR(v);
+    const auto it = context.eager_marker_census.find(
+        {static_cast<uint8_t>(kind), v});
+    const unsigned n = (it == context.eager_marker_census.end()) ? 0u
+                                                                  : it->second;
+    for (unsigned i = 0u; i < n; ++i) {
+      flow.ops.push_back(MakeMarkerForDR(impl, context, kind, v));
+    }
+  }
+
+  // ------------------------------------------ SD-4: THE EAGER SET ORACLE (M15)
+  // Because multiplicity is walk-sourced, the census is the emission-side TRUTH
+  // by construction; the genuinely INDEPENDENT check the flip owes is SET
+  // agreement — the graph-DERIVED marker SET (kind, view) must EQUAL the
+  // walk-OBSERVED census key set. This is the compensating control that replaces
+  // the retired replay's implicit set-fidelity guarantee. Order-free ⇒
+  // insensitive to the SD-3 enrollment order. (The per-view COUNT is NOT
+  // independently re-derivable — Correction 2 — so it is not cross-checked here;
+  // its standing controls are the co-located census increment + the HARD
+  // emission byte-identity A/B.) A mismatch means the derivation dropped or
+  // over-produced a view vs the walk (the flip-HIGH-1 constant-fact-root defect
+  // reds HERE) — a loud abort, always-on (survives NDEBUG).
+  {
+    std::vector<std::pair<uint8_t, uintptr_t>> derived_keys;
+    derived_keys.reserve(marker_views.size());
+    for (QueryView v : marker_views) {
+      derived_keys.emplace_back(static_cast<uint8_t>(MarkerKindOfDR(v)),
+                                v.UniqueId());
+    }
+    std::vector<std::pair<uint8_t, uintptr_t>> walk_keys;
+    walk_keys.reserve(context.eager_marker_census.size());
+    for (const auto &kv : context.eager_marker_census) {
+      walk_keys.emplace_back(kv.first.first, kv.first.second.UniqueId());
+    }
+    std::sort(derived_keys.begin(), derived_keys.end());
+    std::sort(walk_keys.begin(), walk_keys.end());
+    if (derived_keys != walk_keys) {
+      ValidatorFail("SD-4/ADJ-S12: derived eager marker SET != walk dispatch "
+                    "SET (a dropped or over-produced marker view)");
+    }
+  }
 }
 
 DRFlowGraph BuildDRInventory(
@@ -2458,7 +2710,7 @@ DRFlowGraph BuildDRInventory(
   // LowerIngestFold folds (Stratum.cpp, ex-build_explicit_loop); fold body = counter± +
   // queue append, nothing nested below). A MONOTONE receive with a table
   // yields ONE stage1=false walk-metadata op: its role re-runs the boundary
-  // predicate (Build.cpp:857-858 cut successors + :886-889 monotone-negated ∨
+  // predicate (Build.cpp:969 cut successors + :886-889 monotone-negated ∨
   // cut ⇒ kNetAddition, else kEmpty) over EVERY member view of the receive
   // table — NOT the receive's own successors alone, a deliberate deviation
   // from the artifact's §2 rule: the walk's append sits inside the table's
@@ -2566,63 +2818,22 @@ DRFlowGraph BuildDRInventory(
     }
   }
 
-  // ------------------------------------------------------------- EAGER_WEB (R1)
-  // Enroll the monotone eager web's TUPLE-forward / terminal-INSERT dispatches
-  // (design §A.4). STRICTLY AFTER every PRE-EXISTING flow.ops enrollment
-  // family (ADJ-S2 BINDING PIN: the two ingest folds MUST keep construction
-  // indices 0/1 so their `op.0`/`op.1 kIngestFold` headers stay
-  // byte-identical) — this block shifts no earlier op's construction index.
-  // Since R-E42 it is NO LONGER the tail: the INGEST_LOOP family
-  // tail-appends after it under the same pin (Fable review [0]) — a NEW
-  // enrollment family appends after the CURRENT tail, never between blocks. Walk-authoritative (§A.4): `BuildDRInventory` cannot cheaply
-  // re-derive the eager reachability set, so the walk (which already ran and
-  // COMPLETED before BuildStratumPhases — F-ORDER) is the reachability
-  // authority; here we re-invoke the SAME single-authority ctor from each
-  // recorded dispatch, in walk (DFS) order (deterministic, (F)-clean — a
-  // std::vector iterated by index, never a pointer-ordered container). The
-  // eight MARKER kinds are EFFECT-FREE ⇒ no vec def-edge is recorded (there is no
-  // vec to define); the R4 kNegateGate is the ONE effect-BEARING kind in this
-  // stream — its ctor reconstructs the kFlagRead identically here and at the
-  // walk mint (M2' extended to an effect), and it still defines no vec.
-  for (const Context::EmittedEagerOp &rec : context.emitted_eager_ops) {
-    switch (static_cast<DROpKind>(rec.kind)) {
-      case DROpKind::kEagerForward:
-        flow.ops.push_back(MakeEagerForwardOp(*rec.view, rec.table));
-        break;
-      case DROpKind::kEagerCompare:
-        flow.ops.push_back(MakeEagerCompareOp(*rec.view, rec.table));
-        break;
-      case DROpKind::kEagerGenerate:
-        flow.ops.push_back(MakeEagerGenerateOp(*rec.view, rec.table));
-        break;
-      case DROpKind::kEagerInsert:
-        flow.ops.push_back(MakeEagerInsertOp(*rec.view, rec.table,
-                                             static_cast<EagerSink>(rec.sink),
-                                             rec.message));
-        break;
-      case DROpKind::kEagerUnion:  // R3
-        flow.ops.push_back(MakeEagerUnionOp(*rec.view, rec.table));
-        break;
-      case DROpKind::kEagerSelect:  // R3
-        flow.ops.push_back(MakeEagerSelectOp(*rec.view, rec.table));
-        break;
-      case DROpKind::kEagerJoin:  // R-JOIN
-        flow.ops.push_back(MakeEagerJoinOp(*rec.view, rec.table));
-        break;
-      case DROpKind::kEagerProduct:  // R-JOIN
-        flow.ops.push_back(MakeEagerProductOp(*rec.view, rec.table));
-        break;
-      case DROpKind::kNegateGate:  // R4: rec.view=gate_negate, rec.table=gate_table
-        flow.ops.push_back(MakeEagerNegateOp(*rec.view, rec.table));
-        break;
-      default:
-        // R2 (ADJ-R2-8a): a recorded eager dispatch can only be one of the
-        // eight marker kinds or the R4 effect-bearing kNegateGate — anything
-        // else is a mint-site defect.
-        fprintf(stderr, "DELTAREL: non-eager kind in emitted_eager_ops\n");
-        abort();
-    }
-  }
+  // --------------------------------------------------- EAGER_WEB (R-final flip)
+  // THE DIRECTION FLIP (SD-3): the eager marker SET + payloads + canonical order
+  // are now DERIVED graph-side (BuildDREagerInventory), no longer replayed from a
+  // walk-order per-op payload stream. STRICTLY AFTER every PRE-EXISTING flow.ops
+  // enrollment family (ADJ-S2 BINDING PIN: the two ingest folds MUST keep
+  // construction indices 0/1 so their `op.0`/`op.1 kIngestFold` headers stay
+  // byte-identical) — this block shifts no earlier op's construction index, and
+  // the INGEST_LOOP + JOIN_EMIT families tail-append after it (a NEW enrollment
+  // family appends after the CURRENT tail). The enrollment ORDER is now
+  // (Depth, DeterministicOrder) — a PURE GRAPH function — so the dump's op.N
+  // labels + intra-band order move (the 11-pin re-bless); emission bytes DO NOT
+  // (key_of is validator/dump-only). Multiplicity is walk-sourced
+  // (eager_marker_census — Correction 2); SD-4 cross-checks the derived SET
+  // against the walk census key set. The eight MARKER kinds are EFFECT-FREE
+  // (no vec def-edge); the kNegateGate reconstructs its kFlagRead DR-side.
+  BuildDREagerInventory(impl, context, query, flow);
 
   // -------------------------------------------------------------- INGEST_LOOP
   // R-E42 (design §D4 / RH-4): the table-LESS monotone receives — the
@@ -3267,10 +3478,11 @@ void ValidateDROps(
         if (op.gate_hint == NegateHint::kNever && op.ctx != Ctx::kEager) {
           ValidatorFail("V-NEG-CTX: @never negate outside eager context");
         }
-        // R4 (M10 strengthened recount): under option A a standalone EAGER gate
-        // is minted ONLY at the walk dispatch, which the cut (Build.cpp:970)
-        // skips for a deletion-capable negate. Every enrolled EAGER gate's
-        // negate is therefore walk-uncut. Predicate = the EXACT Build.cpp:970
+        // R4 (M10 strengthened recount), post-flip: a standalone EAGER gate
+        // is enrolled ONLY for a derived-reachable negate, and the shared cut
+        // authority (IsCutSuccessorDR; the walk's call is Build.cpp:969)
+        // excludes deletion-capable negates from that set. Every enrolled
+        // EAGER gate's negate is therefore walk-uncut. Predicate = the EXACT
         // cut criterion (!CanReceiveDeletions), NOT InductionGroupId (F22).
         // The ctx guard scopes the recount to eager gates only — the reserved
         // standalone seed/fixpoint forms (DeltaRel.h + the :414-420 NOTE) sit
@@ -3783,10 +3995,13 @@ void ValidateDROps(
   expect(DROpKind::kInstanceDeath, exp_death, "instance deaths");
   expect(DROpKind::kInstanceSeal, exp_instance, "instance seals");  // 1:1 w/ inst
 
-  // R1 (A.6(c)): STRUCTURAL well-formedness of the eager-web ops. Walk-
-  // authoritative enrollment (§A.4) declines the reachability oracle, so there
-  // is NO exp_eager COUNT expect() (ADJ-S12; the bless-time structural read is
-  // the compensating control, ADJ-S10). Instead each enrolled eager op's
+  // R1 (A.6(c)), REFRAMED at the flip (Fable-review flip-[2]): STRUCTURAL
+  // well-formedness of the eager-web ops. Post-SD-3 the reachability oracle
+  // EXISTS — BuildDREagerInventory's tail SET-agreement check (SD-4/ADJ-S12)
+  // is the set-fidelity control, and the marker COUNT is construction-paired
+  // (CensusEagerMarkerAndBuild couples every census increment to its builder
+  // call; enrollment reads that census, so no independent count source
+  // exists to expect() against). Each enrolled eager op's
   // payload is checked against the Query view-kind it claims — genuinely
   // independent of the walk (it checks view-kinds + the model-table routing,
   // not the walk's count). Catches payload corruption / mis-kinded enrollment.

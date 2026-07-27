@@ -800,14 +800,11 @@ PROC *BuildEntryProcedure(ProgramImpl *impl, Context &context, Query query) {
     //            that can take all constants.
     for (auto tuple : impl->query.Tuples()) {
       const QueryView view(tuple);
-      bool all_const = true;
-      for (auto in_col : tuple.InputColumns()) {
-        if (!in_col.IsConstant()) {
-          all_const = false;
-        }
-      }
 
-      if (!all_const) {
+      // The ONE all-constant spelling, shared with the DR derivation's
+      // Root 1 (IsAllConstantTupleDR — the flip's SD-1 one-authority
+      // pattern; a divergence here is an SD-4 abort on every compile).
+      if (!IsAllConstantTupleDR(tuple)) {
         continue;
       }
 

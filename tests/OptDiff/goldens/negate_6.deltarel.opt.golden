@@ -7,7 +7,7 @@ vec $addition-set.3 <ids %table:4> uniq=multiset def=[] use=[op.4]
 vec $net-removal.4 <ids %table:4> uniq=multiset def=[] use=[]
 vec $net-addition.5 <ids %table:4> uniq=multiset def=[] use=[]
 
-op.11 kNegateGate sign=· ctx=eager stratum=0
+op.12 kNegateGate sign=· ctx=eager stratum=0
     reads: InI(%table:10)
     effects: {}
     spine: —
@@ -27,7 +27,7 @@ op.7 kIngestFold sign=+ ctx=eager stratum=0
     args: table=%table:10 message=unsee/1
 op.10 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:13
-op.12 kEagerForward sign=· ctx=eager stratum=0
+op.11 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:13
 op.8 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:13, +, NonRecursive)}
@@ -78,8 +78,8 @@ deps:
   op.4 -> op.5 WAR epoch
   op.7 -> op.6 WAW epoch
   op.8 -> op.0 RAW epoch
-  op.11 -> op.6 WAR epoch
-  op.11 -> op.7 WAR epoch
+  op.12 -> op.6 WAR epoch
+  op.12 -> op.7 WAR epoch
   op.13 -> op.6 WAR epoch
   op.13 -> op.7 WAR epoch
 

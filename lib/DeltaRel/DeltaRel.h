@@ -232,8 +232,10 @@ enum class DROpKind : uint8_t {
                          //   op). An INGEST-family sibling of kIngestFold
                          //   (NOT an eager marker: it ALLOCATES 1+arity ids
                          //   at the walk position, so it is OUT of
-                         //   IsEagerMarkerKind and the EAGER_WEB switch, and
-                         //   keeps kIngestFold's count law intact — the quad
+                         //   IsEagerMarkerKind (the EAGER_WEB replay switch is
+                         //   retired — the flip; membership is the predicate
+                         //   alone now), and keeps kIngestFold's count law
+                         //   intact — the quad
                          //   stays kIngestFold=0). EFFECT-FREE (the shim only
                          //   READS the param vec — no counter, no queue
                          //   append), table-LESS by construction (its head is
@@ -249,7 +251,7 @@ enum class DROpKind : uint8_t {
                          //   (LowerJoinEmit = BuildJoin at the DRAIN) allocates
                          //   1 + |pivots| + Σout ids (+ shared-CSE indices,
                          //   CARVE-3 OUTSIDE the contract). NOT an eager marker
-                         //   (out of IsEagerMarkerKind / EAGER_WEB) — its own
+                         //   (out of IsEagerMarkerKind; EAGER_WEB is retired) — its own
                          //   family, its own emit_* payload + drain-order key.
                          //   Two forms: eager (Join.cpp Run) + delta
                          //   (Stratum.cpp LowerDRFlow, for_delta=true).
@@ -956,6 +958,30 @@ class DRFlowGraph {
 // computed `ComputeRecursiveSCCs` output, passed in so the RuleClass derivation
 // matches bit-for-bit. Strata are DERIVED by `DeriveDRStrata` (R2 family #3;
 // B-13's old-lift seeding is retired).
+// R-final SD-1: the SINGLE authority for the single-view eager cut test — a
+// deletion-capable / aggregate / KV-index / (demand-instance) recognized-guard
+// successor is fed by the stratum phases / GROUP_UPDATE / SUBGRAPH_INSTANTIATE,
+// never by the eager walk. De-duplicated from the two verbatim copies at
+// Build.cpp:969 (the walk) and the old AnyCutSuccessorDR body — both now call
+// this. The flip's SET derivation (BuildDRInventory) uses it as the sole cut
+// authority.
+bool IsCutSuccessorDR(Context &context, QueryView succ);
+
+// R-final flip (Fable-review flip-[1], the SD-1 one-authority pattern): the
+// ONE spelling of "this TUPLE takes only constant inputs" — the walk's
+// constant-fact dispatch root (Procedure.cpp) and the DR derivation's Root 1
+// must agree or the SD-4 oracle aborts every affected compile.
+bool IsAllConstantTupleDR(QueryTuple tuple);
+
+// R-final SD-2: relocated from Build.cpp — the sink discriminant of a terminal
+// INSERT (render-only) and the stream message identity. Read only Context maps
+// fully populated before BuildDRInventory runs (the walk completes before
+// BuildStratumPhases), so they are computable DR-side. ADJ-S13: NEVER
+// operator[] on publish_vecs (use find).
+EagerSink ClassifyEagerSinkDR(Context &context, QueryInsert insert,
+                              const std::optional<ParsedMessage> &message_opt);
+std::optional<ParsedMessage> MessageOfInsertOrNullDR(QueryInsert insert);
+
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map);
@@ -1118,45 +1144,12 @@ bool AllSidesSameScc(ProgramImpl *impl,
                      const std::unordered_map<TABLE *, unsigned> &scc_map,
                      QueryView join_view);
 
-// R1: the two single-authority ctors for the eager-web marker ops (design
-// §A.3). Pure functions (no ids, no effects). `table` may be null (a table-less
-// TUPLE). The walk-position mint (Build.cpp LowerRelStep_*) and the inventory
-// re-invocation (BuildDRInventory's EAGER_WEB block) both build their op here,
-// so the recorded payload and the enrolled payload cannot diverge.
-DROp MakeEagerForwardOp(QueryView tuple_view, TABLE *table);
-DROp MakeEagerInsertOp(QueryView insert_view, TABLE *table, EagerSink sink,
-                       std::optional<ParsedMessage> message);
-
-// R2: the two single-authority ctors for the CMP-filter / MAP-call marker ops
-// (r2-design §A M2). Same discipline: pure functions (no ids, no effects);
-// `table` may be null (a filter CMP / interior MAP is usually table-less). The
-// operator/functor are NOT taken — they re-derive from the view at Format time
-// (ADJ-R2-1/2).
-DROp MakeEagerCompareOp(QueryView cmp_view, TABLE *table);
-DROp MakeEagerGenerateOp(QueryView map_view, TABLE *table);
-DROp MakeEagerUnionOp(QueryView merge_view, TABLE *table);
-DROp MakeEagerSelectOp(QueryView select_view, TABLE *table);
-
-// R-JOIN: the single authorities for the kEagerJoin / kEagerProduct markers —
-// each marks ONE (pred_view -> join_view) PER-VISIT walk dispatch edge (never
-// the deferred once-per-join TABLEJOIN emission). `table` may be null (join
-// views are typically table-less; a model-shared join is table-backed).
-DROp MakeEagerJoinOp(QueryView join_view, TABLE *table);
-DROp MakeEagerProductOp(QueryView product_view, TABLE *table);
-
-// R4 (adjudicated option A): the single authority for a kNegateGate eager
-// forward gate — a mint RELOCATION from the old BuildDRInventory NEGATE_GATE
-// loop. EFFECT-BEARING (carries a kFlagRead of the negated table); populates
-// only the gate_* fields, NOT eager_view/table_op_table, so it stays OUT of
-// IsEagerMarkerKind (op_table_id(gate)=0, table-less lead-0).
-DROp MakeEagerNegateOp(QueryView negate_view, TABLE *negated_table);
-
-// R1: a `.find()`-guarded lookup of a view's model table (ADJ-S13/S14 — never
-// operator[], which default-inserts a null NODE and SIGSEGVs FindAs on a
-// table-less view). Returns null when the view has no model entry / no table.
-// Shared by the eager ctors' callers and the A.6(c) recount so both see the
-// same table. FindAs path-compression is (F)-safe (no id-minting reads it).
-TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view);
+// R-final flip (Fable-review flip-[3]): the nine MakeEager*Op single-
+// authority ctors and ModelTableOrNull are DeltaRel.cpp-INTERNAL now (file
+// static). They were exported precisely so the walk's retired LowerRelStep_*
+// mints could call them; post-flip the DR-side enrollment is their sole
+// caller, and closing the seam makes a walk-side re-mint (the two-authority
+// defect class the flip retired) a compile error rather than a hazard.
 
 // Emit ONE ingest fold from the DROp payload — VECTORLOOP over `loop_vec` →
 // UPDATECOUNT± → (deletion-capable only) VECTORAPPEND into the receive table's

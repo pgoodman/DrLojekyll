@@ -1073,6 +1073,30 @@ owes); kNegateGate rides the generic render (no dedicated case).
       check: census == an emission-side count (builder dispatch /
       generated-code idiom counts), per-VISIT for markers (M15),
       per-RECEIVE for the ingest layer (M17).
+      [DONE (2026-07-27, ledger §20(Z); the ruled R2 shape as amended
+      flip-HIGH-1 + flip-corr-note): SD-1 IsCutSuccessorDR is the ONE
+      cut authority (S2's replication RETIRED); SD-2 ClassifyEagerSink
+      relocated DR-side (the ADJ-S4 replica retired); SD-3 the FLIP —
+      RecordEagerDispatch/emitted_eager_ops/the EAGER_WEB replay
+      RETIRED; BuildDREagerInventory derives the eager marker SET
+      flow-side (roots = receive successors + all-constant TUPLEs,
+      cut at the one authority, transparent through inductive
+      merges), enrolls in (Depth, DeterministicOrder) with the slim
+      walk-census multiplicity (the sanctioned counted-consume
+      residue), and the walk CONSUMES with a loud mismatch abort; the
+      kJoinEmit event capture + INGEST_LOOP/JOIN_EMIT enrollment +
+      §7d + A.6(c) + key_of survive; SD-4 the always-on SET-agreement
+      oracle, proven LIVE by worktree perturbation (drop the
+      constant-root → exit-134 abort on elim-cond-cycle-simple →
+      revert → green). ALL ELEVEN pins re-blessed under the ruled
+      STRUCT gate (emission byte-identity 642/642 across 4 modes +
+      census-line byte-equality ×11 + the per-band order-free
+      multiset referee: 7 pure-relabel / 4 band-reorder EMPIRICAL,
+      superseding the a3 coarse estimate — the band's (table_id, oi)
+      sort hides enrollment-order changes after canonical relabel;
+      CONTENT-DIVERGE 0). The dump order is now a pure graph
+      function — the work-list schedule is retired from the
+      observable surface.]
       (2) THE PER-JOIN EMISSION OP (the ADJ-RJ-14 debt). The
       kEagerJoin/kEagerProduct markers are per-visit reachability
       records ONLY; the once-per-join TABLEJOIN mints in

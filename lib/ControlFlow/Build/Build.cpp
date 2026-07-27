@@ -964,11 +964,9 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
     // input's net-additions frontier (OD-4 mechanism-natural — BOTH the demand
     // and edge boundary inputs). Symmetric with AnyCutSuccessorDR so the §7d
     // role/walk cross-check never diverges.
-    const bool is_recog_guard =
-        context.demand_instance_enabled &&
-        succ_view.GuardAnnotationIndex() != QueryView::kNoGuardAnnotation;
-    if (succ_view.CanReceiveDeletions() || succ_view.IsAggregate() ||
-        succ_view.IsKVIndex() || is_recog_guard) {
+    // R-final SD-1: the single-view cut test is the DR-side shared authority
+    // (de-duplicated from the verbatim copy in AnyCutSuccessorDR).
+    if (IsCutSuccessorDR(context, succ_view)) {
       any_cut_succ = true;
       continue;
     }
@@ -1092,90 +1090,36 @@ void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
 // Fable-review R1 [3]: the message identity is extracted ONCE at the mint
 // site (MessageOfInsertOrNull) and passed in — a second in-body extraction
 // could silently diverge the dump's eager_message from the classification.
-static EagerSink ClassifyEagerSink(Context &context, QueryInsert insert,
-                                   const std::optional<ParsedMessage> &message_opt) {
-  if (insert.IsStream()) {
-    const ParsedMessage message = *message_opt;
-    if (context.commit_published_view.count(message)) {
-      return EagerSink::kCommitPublished;
-    }
-    const auto it = context.publish_vecs.find(message);
-    if (it != context.publish_vecs.end() && it->second != nullptr) {
-      return EagerSink::kPublishVec;
-    }
-    return EagerSink::kPublishNow;
-  }
-  assert(insert.IsRelation());
-  return EagerSink::kRelation;
-}
+// R-final SD-2: ClassifyEagerSink / MessageOfInsertOrNull RELOCATED to the DR
+// side (ClassifyEagerSinkDR / MessageOfInsertOrNullDR, DeltaRel.cpp), where
+// enrollment — their sole post-flip caller — derives the kEagerInsert sink/
+// message payload. The walk-side originals are deleted; the R1/ADJ-S13 notes
+// above describe the DR-side spellings' contract.
 
-// R1: the stream terminal's message identity (null for a relation insert).
-static std::optional<ParsedMessage> MessageOfInsertOrNull(QueryInsert insert) {
-  if (insert.IsStream()) {
-    return ParsedMessage::From(QueryIO::From(insert.Stream()).Declaration());
-  }
-  return std::nullopt;
-}
-
-// R1 (design §B.2): record one eager dispatch into the walk-order Context list,
-// in walk (DFS) order — enough to re-invoke the single-authority ctor at
-// inventory time (BuildDRInventory's EAGER_WEB block).
-static void RecordEagerDispatch(Context &context, const DROp &op) {
-  Context::EmittedEagerOp rec;
-  rec.kind = static_cast<uint8_t>(op.kind);
-  rec.view = op.eager_view;
-  rec.table = op.table_op_table;
-  rec.sink = static_cast<uint8_t>(op.eager_sink);
-  rec.message = op.eager_message;
-  // R4 (option A): the kNegateGate op keeps its identity in the gate_* fields,
-  // NOT eager_view/table_op_table — source rec.view/table from those so the
-  // EAGER_WEB re-invocation feeds MakeEagerNegateOp(*rec.view, rec.table).
-  if (op.kind == DROpKind::kNegateGate) {
-    rec.view = op.gate_negate;
-    rec.table = op.gate_table;
-  }
-  context.emitted_eager_ops.push_back(std::move(rec));
-}
-
-// R1 (design §B): the strangler-fig cut — record the dispatch, then CALL the
-// UNTOUCHED region builder at the exact original walk site. Because the builder
-// is entered with the identical arguments at the identical walk moment, every
-// impl->next_id++ inside it (and inside the descent it drives) fires in the
-// identical order → id-stream identity is mechanical, not argued (§B.3).
-static void LowerRelStep_Forward(ProgramImpl *impl, Context &context,
-                                 const DROp &op, QueryView pred_view,
-                                 QueryTuple tuple, OP *parent,
-                                 TABLE *last_table) {
-  RecordEagerDispatch(context, op);
-  BuildEagerTupleRegion(impl, pred_view, tuple, context, parent, last_table);
-}
-
-static void LowerRelStep_Insert(ProgramImpl *impl, Context &context,
-                                const DROp &op, QueryView pred_view,
-                                QueryInsert insert, OP *parent,
-                                TABLE *last_table) {
-  RecordEagerDispatch(context, op);
-  BuildEagerInsertRegion(impl, pred_view, insert, context, parent, last_table);
-}
-
-// R2 (r2-design §A M3): the CMP-filter cut. NOTE the builder's own signature —
-// BuildEagerCompareRegions takes neither pred_view nor last_table (a compare
-// never shares its predecessor's data model; successors restart at null).
-static void LowerRelStep_Compare(ProgramImpl *impl, Context &context,
-                                 const DROp &op, QueryCompare cmp,
-                                 OP *parent) {
-  RecordEagerDispatch(context, op);
-  BuildEagerCompareRegions(impl, cmp, context, parent);
-}
-
-// R2 (r2-design §A M3): the MAP functor-call cut (pure functors only —
-// ADJ-R2-3; the impure else never reaches here, rejected upstream).
-static void LowerRelStep_Generate(ProgramImpl *impl, Context &context,
-                                  const DROp &op, QueryView pred_view,
-                                  QueryMap map, OP *parent,
-                                  TABLE *last_table) {
-  RecordEagerDispatch(context, op);
-  BuildEagerGenerateRegion(impl, pred_view, map, context, parent, last_table);
+// R-final SD-3 (THE FLIP): record ONE eager marker dispatch into the walk-side
+// (kind, view) census, co-located with the untouched region-builder call in
+// BuildEagerRegion. The old RecordEagerDispatch payload stream + the nine
+// LowerRelStep_* strangler wrappers are RETIRED: the DR side now DERIVES the
+// marker SET + payloads + canonical order (BuildDREagerInventory); this census
+// supplies only the per-view MULTIPLICITY (the scheduler artifact not graph-
+// derivable — Correction 2). The key VIEW is the BuildEagerRegion `view` (for a
+// kNegateGate the negate view — the SAME identity RecordEagerDispatch stored in
+// rec.view=gate_negate), so the derived SET and this census's key set agree
+// (SD-4). The increment is at the dispatch that drives emission ⇒ census ==
+// emission multiplicity BY CONSTRUCTION.
+// The census increment and the region-builder call are ONE operation BY
+// CONSTRUCTION (Fable-review flip-[0]): the flow enrolls each marker's
+// MULTIPLICITY from this census, so a censused-but-unbuilt (or built-but-
+// uncensused) dispatch would silently mis-count the dump — no runtime
+// check can catch it (the SD-4 oracle guards the SET; enrollment reads
+// the census, so the count has no independent second source). Pairing
+// the increment and the builder call in one helper makes that
+// decoupling structurally impossible.
+template <typename BuildFn>
+static inline void CensusEagerMarkerAndBuild(Context &context, DROpKind kind,
+                                             QueryView view, BuildFn &&build) {
+  context.eager_marker_census[{static_cast<uint8_t>(kind), view}] += 1u;
+  build();
 }
 
 // R3 (r3-design §A.2, owner-ruled §F.5 extract-and-wrap): the SELECT-rebind
@@ -1202,64 +1146,6 @@ static void BuildEagerSelectRegion(ProgramImpl *impl, QueryView pred_view,
                              select_view.Successors(), last_table);
 }
 
-// R3 (r3-design §A.1): the MERGE-union cut — only a merge that does NOT own
-// an InductionGroupId reaches here (the owning-merge leg is Authority A).
-static void LowerRelStep_Union(ProgramImpl *impl, Context &context,
-                               const DROp &op, QueryView pred_view,
-                               QueryMerge merge, OP *parent,
-                               TABLE *last_table) {
-  RecordEagerDispatch(context, op);
-  BuildEagerUnionRegion(impl, pred_view, merge, context, parent, last_table);
-}
-
-// R3 (r3-design §A.2): the SELECT-rebind cut.
-static void LowerRelStep_Select(ProgramImpl *impl, Context &context,
-                                const DROp &op, QueryView pred_view,
-                                QueryView select_view, OP *parent,
-                                TABLE *last_table) {
-  RecordEagerDispatch(context, op);
-  BuildEagerSelectRegion(impl, pred_view, select_view, context, parent,
-                         last_table);
-}
-
-// R4 (adjudicated option A): the NEGATE eager-gate cut — record the dispatch,
-// then CALL the UNTOUCHED Negate.cpp builder at the exact original walk site.
-// The mint sits in BuildEagerRegion's IsNegate arm; the walk only reaches
-// !CanReceiveDeletions negates (Build.cpp:970 cut), so the mint is
-// unconditional there. (BuildEagerRegion's second caller, Procedure.cpp:813,
-// passes only all-constant TUPLE views — the IsNegate arm is unreachable via
-// it, C2-F2.)
-static void LowerRelStep_Negate(ProgramImpl *impl, Context &context,
-                                const DROp &op, QueryView pred_view,
-                                QueryNegate negate, OP *parent,
-                                TABLE *last_table) {
-  RecordEagerDispatch(context, op);
-  BuildEagerNegateRegion(impl, pred_view, negate, context, parent, last_table);
-}
-
-// R-JOIN (rjoin-design §4): the pivot-JOIN cut — record the PER-VISIT
-// dispatch (one marker per (pred_view -> join) walk edge), then CALL the
-// UNTOUCHED Join.cpp builder at the exact original walk site. The builder
-// defers the TABLEJOIN emission through the ContinueJoinWorkItem machinery
-// (drain-ordered); the marker records the dispatch edge, never the deferred
-// emission (owed to R-final).
-static void LowerRelStep_Join(ProgramImpl *impl, Context &context,
-                              const DROp &op, QueryView pred_view,
-                              QueryJoin join, OP *parent, TABLE *last_table) {
-  RecordEagerDispatch(context, op);
-  BuildEagerJoinRegion(impl, pred_view, join, context, parent, last_table);
-}
-
-// R-JOIN: the zero-pivot @product cut (the acyclic arm; on-cycle differential
-// products reject upstream via ViewSelfReachable).
-static void LowerRelStep_Product(ProgramImpl *impl, Context &context,
-                                 const DROp &op, QueryView pred_view,
-                                 QueryJoin join, OP *parent,
-                                 TABLE *last_table) {
-  RecordEagerDispatch(context, op);
-  BuildEagerProductRegion(impl, pred_view, join, context, parent, last_table);
-}
-
 // Build an eager region.
 void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
                       Context &context, OP *parent, TABLE *last_table) {
@@ -1269,17 +1155,19 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
   if (view.IsJoin()) {
     const auto join = QueryJoin::From(view);
     if (join.NumPivotColumns()) {
-      // R-JOIN: mint the effect-free kEagerJoin marker (a per-visit record
-      // of THIS dispatch edge; the TABLEJOIN emission stays deferred inside
-      // the untouched builder), then lower IN PLACE.
-      const DROp op = MakeEagerJoinOp(view, ModelTableOrNull(impl, view));
-      LowerRelStep_Join(impl, context, op, pred_view, join, parent,
-                        last_table);
+      // R-JOIN / SD-3: census the per-visit kEagerJoin marker (a record of THIS
+      // dispatch edge; the TABLEJOIN emission stays deferred inside the untouched
+      // builder), then lower IN PLACE. The marker SET + payload are DR-derived.
+      CensusEagerMarkerAndBuild(context, DROpKind::kEagerJoin, view, [&] {
+        BuildEagerJoinRegion(impl, pred_view, join, context, parent,
+                             last_table);
+      });
     } else {
-      // R-JOIN: the zero-pivot @product analog.
-      const DROp op = MakeEagerProductOp(view, ModelTableOrNull(impl, view));
-      LowerRelStep_Product(impl, context, op, pred_view, join, parent,
-                           last_table);
+      // R-JOIN / SD-3: the zero-pivot @product analog.
+      CensusEagerMarkerAndBuild(context, DROpKind::kEagerProduct, view, [&] {
+        BuildEagerProductRegion(impl, pred_view, join, context, parent,
+                                last_table);
+      });
     }
 
   } else if (view.IsMerge()) {
@@ -1288,13 +1176,14 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
       BuildEagerInductiveRegion(impl, pred_view, merge, context, parent,
                                 last_table);
     } else {
-      // R3: mint the effect-free kEagerUnion marker (no stored payload —
-      // a union carries no operator/functor), then lower IN PLACE by
-      // calling the untouched BuildEagerUnionRegion. The inductive leg
-      // above stays mint-free (Authority A round shells).
-      const DROp op = MakeEagerUnionOp(view, ModelTableOrNull(impl, view));
-      LowerRelStep_Union(impl, context, op, pred_view, merge, parent,
-                         last_table);
+      // R3 / SD-3: census the kEagerUnion marker, then lower IN PLACE via the
+      // untouched BuildEagerUnionRegion. The inductive leg above stays
+      // census-free (Authority A round shells — marker-silent, but the DR
+      // derivation propagates reachability THROUGH it, Correction 1).
+      CensusEagerMarkerAndBuild(context, DROpKind::kEagerUnion, view, [&] {
+        BuildEagerUnionRegion(impl, pred_view, merge, context, parent,
+                              last_table);
+      });
     }
 
   } else if (view.IsAggregate() || view.IsKVIndex()) {
@@ -1312,63 +1201,63 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
   } else if (view.IsMap()) {
     auto map = QueryMap::From(view);
     if (map.Functor().IsPure()) {
-      // R2: mint the effect-free kEagerGenerate marker (functor identity
-      // re-derives from the view at Format time — ADJ-R2-2), then lower IN
-      // PLACE by calling the untouched BuildEagerGenerateRegion. The impure
-      // else stays mint-free (ADJ-R2-3: impure functors reject upstream,
-      // before the eager walk).
-      const DROp op = MakeEagerGenerateOp(view, ModelTableOrNull(impl, view));
-      LowerRelStep_Generate(impl, context, op, pred_view, map, parent,
-                            last_table);
+      // R2 / SD-3: census the kEagerGenerate marker (functor identity
+      // re-derives DR-side from the view — ADJ-R2-2), then lower IN PLACE via
+      // the untouched BuildEagerGenerateRegion. The impure else stays
+      // census-free (ADJ-R2-3: impure functors reject upstream).
+      CensusEagerMarkerAndBuild(context, DROpKind::kEagerGenerate, view, [&] {
+        BuildEagerGenerateRegion(impl, pred_view, map, context, parent,
+                                 last_table);
+      });
 
     } else {
       assert(false && "TODO(pag): Impure functors");
     }
 
   } else if (view.IsCompare()) {
-    // R2: mint the effect-free kEagerCompare marker (the VIEW's operator
-    // re-derives at Format time — ADJ-R2-1), then lower IN PLACE.
-    const DROp op = MakeEagerCompareOp(view, ModelTableOrNull(impl, view));
-    LowerRelStep_Compare(impl, context, op, QueryCompare::From(view), parent);
+    // R2 / SD-3: census the kEagerCompare marker (the operator re-derives
+    // DR-side — ADJ-R2-1), then lower IN PLACE.
+    CensusEagerMarkerAndBuild(context, DROpKind::kEagerCompare, view, [&] {
+      BuildEagerCompareRegions(impl, QueryCompare::From(view), context, parent);
+    });
 
   } else if (view.IsSelect()) {
-    // R3: mint the effect-free kEagerSelect marker (no stored payload —
-    // unit-condition-ness re-derives from the view), then lower IN PLACE
-    // via the extracted-verbatim BuildEagerSelectRegion.
-    const DROp op = MakeEagerSelectOp(view, ModelTableOrNull(impl, view));
-    LowerRelStep_Select(impl, context, op, pred_view, view, parent,
-                        last_table);
+    // R3 / SD-3: census the kEagerSelect marker, then lower IN PLACE via the
+    // extracted-verbatim BuildEagerSelectRegion.
+    CensusEagerMarkerAndBuild(context, DROpKind::kEagerSelect, view, [&] {
+      BuildEagerSelectRegion(impl, pred_view, view, context, parent,
+                             last_table);
+    });
 
   } else if (view.IsTuple()) {
-    // R1: mint the effect-free kEagerForward marker, then lower IN PLACE by
-    // calling the untouched BuildEagerTupleRegion (design §B.1). Zero id-stream
-    // change — the op ctor/record mint no impl->next_id.
-    const DROp op = MakeEagerForwardOp(view, ModelTableOrNull(impl, view));
-    LowerRelStep_Forward(impl, context, op, pred_view, QueryTuple::From(view),
-                         parent, last_table);
+    // R1 / SD-3: census the kEagerForward marker, then lower IN PLACE via the
+    // untouched BuildEagerTupleRegion (design §B.1).
+    CensusEagerMarkerAndBuild(context, DROpKind::kEagerForward, view, [&] {
+      BuildEagerTupleRegion(impl, pred_view, QueryTuple::From(view), context,
+                            parent, last_table);
+    });
 
   } else if (view.IsInsert()) {
     const auto insert = QueryInsert::From(view);
-    // R1: mint the effect-free kEagerInsert marker (with its sink discriminant
-    // + stream message recorded for render), then lower IN PLACE.
-    const auto message = MessageOfInsertOrNull(insert);
-    const DROp op = MakeEagerInsertOp(view, ModelTableOrNull(impl, view),
-                                      ClassifyEagerSink(context, insert,
-                                                        message),
-                                      message);
-    LowerRelStep_Insert(impl, context, op, pred_view, insert, parent,
-                        last_table);
+    // R1 / SD-3: census the kEagerInsert marker, then lower IN PLACE. The sink
+    // discriminant + stream message are DR-derived at enrollment now
+    // (ClassifyEagerSinkDR / MessageOfInsertOrNullDR, SD-2), not stored here.
+    CensusEagerMarkerAndBuild(context, DROpKind::kEagerInsert, view, [&] {
+      BuildEagerInsertRegion(impl, pred_view, insert, context, parent,
+                             last_table);
+    });
 
   } else if (view.IsNegate()) {
     const auto negate = QueryNegate::From(view);
-    // R4 (option A): mint the effect-bearing kNegateGate op (its kFlagRead of
-    // the negated view's model table), then lower IN PLACE. The walk only
-    // reaches !CanReceiveDeletions negates, so the mint is unconditional.
-    TABLE *const negated_table =
-        impl->view_to_model[negate.NegatedView()]->FindAs<DataModel>()->table;
-    const DROp op = MakeEagerNegateOp(view, negated_table);
-    LowerRelStep_Negate(impl, context, op, pred_view, negate, parent,
-                        last_table);
+    // R4 / SD-3: census the kNegateGate marker (keyed on the negate view —
+    // the SAME identity the old record stored in gate_negate), then lower IN
+    // PLACE via the untouched Negate.cpp builder. The walk only reaches
+    // !CanReceiveDeletions negates, so the census is unconditional; the
+    // effect-bearing gate's kFlagRead is reconstructed DR-side at enrollment.
+    CensusEagerMarkerAndBuild(context, DROpKind::kNegateGate, view, [&] {
+      BuildEagerNegateRegion(impl, pred_view, negate, context, parent,
+                             last_table);
+    });
 
   } else {
     assert(false);

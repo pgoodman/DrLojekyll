@@ -1,32 +1,32 @@
 deltarel
 
-op.3 kEagerJoin sign=· ctx=eager stratum=0
+op.6 kEagerForward sign=· ctx=eager stratum=0
     args:
-op.5 kEagerJoin sign=· ctx=eager stratum=0
+op.8 kEagerJoin sign=· ctx=eager stratum=0
     args:
-op.11 kEagerForward sign=· ctx=eager stratum=0
+op.9 kEagerJoin sign=· ctx=eager stratum=0
     args:
-op.13 kEagerJoin sign=· ctx=eager stratum=0
+op.13 kEagerForward sign=· ctx=eager stratum=0
     args:
-op.18 kEagerForward sign=· ctx=eager stratum=0
+op.14 kEagerJoin sign=· ctx=eager stratum=0
     args:
-op.19 kEagerForward sign=· ctx=eager stratum=0
+op.15 kEagerJoin sign=· ctx=eager stratum=0
     args:
-op.21 kEagerJoin sign=· ctx=eager stratum=0
+op.16 kEagerForward sign=· ctx=eager stratum=0
     args:
 op.24 kJoinEmit sign=· ctx=eager stratum=0 form=eager
     args: order=1073872905 seq=1
 op.25 kJoinEmit sign=· ctx=eager stratum=0 form=eager
     args: order=1073872903 seq=2
-op.7 kEagerJoin sign=· ctx=eager stratum=0
+op.18 kEagerJoin sign=· ctx=eager stratum=0
     args: table=%table:4
-op.9 kEagerForward sign=· ctx=eager stratum=0
+op.19 kEagerJoin sign=· ctx=eager stratum=0
     args: table=%table:4
-op.10 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+op.20 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:4
-op.17 kEagerJoin sign=· ctx=eager stratum=0
+op.21 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:4
-op.22 kEagerForward sign=· ctx=eager stratum=0
+op.22 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:4
 op.23 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:4
@@ -34,15 +34,15 @@ op.26 kJoinEmit sign=· ctx=eager stratum=0 form=eager
     args: table=%table:4 order=12 seq=3
 op.28 kJoinEmit sign=· ctx=eager stratum=0 form=eager
     args: table=%table:4 order=12 seq=5
-op.15 kEagerForward sign=· ctx=eager stratum=0
+op.17 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:8
-op.12 kEagerForward sign=· ctx=eager stratum=0
+op.7 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:12
-op.14 kEagerJoin sign=· ctx=eager stratum=0
+op.10 kEagerJoin sign=· ctx=eager stratum=0
     args: table=%table:15
-op.16 kEagerJoin sign=· ctx=eager stratum=0
+op.11 kEagerJoin sign=· ctx=eager stratum=0
     args: table=%table:15
-op.20 kEagerForward sign=· ctx=eager stratum=0
+op.12 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:15
 op.27 kJoinEmit sign=· ctx=eager stratum=0 form=eager
     args: table=%table:15 order=6 seq=4
@@ -54,9 +54,9 @@ op.0 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:19, +, NonRecursive)}
     spine: —
     args: table=%table:19 message=edge_2/2
-op.6 kEagerForward sign=· ctx=eager stratum=0
+op.3 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:23
-op.8 kEagerForward sign=· ctx=eager stratum=0
+op.5 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:23
 op.1 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:23, +, NonRecursive)}

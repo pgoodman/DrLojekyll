@@ -4568,4 +4568,83 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     noise. RESIDUALS: the standing set + Fold C. NEXT: the flip
     SD-1..SD-4 (rfinal-design.md §4 as amended flip-HIGH-1 — the
     constant-TUPLE second SET root), then the rename (§5, NARROW +
-    .rel lockstep).
+    .rel lockstep). [EXECUTED — §20(Z).]
+
+(Z) R-FINAL SLICE 4 — THE DIRECTION FLIP LANDED (2026-07-27): the
+    §19(H) SEAM DELETION is substantively COMPLETE — SD-1
+    IsCutSuccessorDR is the ONE cut authority (S2's replication
+    retired; the walk and the DR derivation call the same function);
+    SD-2 ClassifyEagerSink/MessageOfInsertOrNull relocated DR-side
+    (the ADJ-S4 replica retired; enrollment is their sole caller);
+    SD-3 the FLIP CORE — RecordEagerDispatch, emitted_eager_ops, the
+    nine LowerRelStep_* wrappers, the walk-side MakeEager*Op mints,
+    and the EAGER_WEB replay switch ALL RETIRED; BuildDREagerInventory
+    derives the eager marker SET flow-side (roots = receive
+    successors + all-constant TUPLEs per flip-HIGH-1, cut at the one
+    authority, transparent through inductive merges) and enrolls in
+    (Depth, DeterministicOrder) — THE DUMP ORDER IS NOW A PURE GRAPH
+    FUNCTION, the work-list schedule retired from the observable
+    surface; the kJoinEmit event capture + INGEST_LOOP/JOIN_EMIT
+    enrollment + §7d (KEPT this slice per the ruling) + A.6(c) +
+    key_of survive; SD-4 the always-on SET-agreement oracle
+    (ADJ-S12 discharged at the set layer), proven LIVE by worktree
+    perturbation (drop the constant root → exit-134 with the
+    SD-4/ADJ-S12 abort text on elim-cond-cycle-simple → revert →
+    green). COUNTED-CONSUME, honestly recorded: the ruled R2(d)
+    protocol is realized as a CONSTRUCTION-PAIRED census — the
+    Fable-review-hardened CensusEagerMarkerAndBuild couples every
+    census increment to its region-builder call in one helper, and
+    enrollment reads that census for multiplicity; post-flip no
+    independent second count source exists to check at runtime (the
+    SET has the SD-4 oracle; the COUNT has the pairing + the eleven
+    pins). ALL ELEVEN pins re-blessed under the ruled STRUCT gate:
+    emission byte-identity 642/642 across ALL FOUR modes (worktree)
+    + 0/175 (pristine opt) vs frozen d3f5746a; census-line
+    byte-equality ×11; the per-band order-free multiset referee
+    CONTENT-DIVERGE=0, EMPIRICALLY 7 pure-relabel / 4 band-reorder —
+    ADJUDICATED over the a3 4/7 coarse estimate (the band's
+    (table_id, oi) sort hides enrollment-order changes after
+    canonical relabel; prediction granularity, not correctness).
+    STAGE-(d) THREE-WAY: the dump-blind author (four substrate facts
+    F-KEY/F-SORT/F-COUNT/F-ORDER; a FULL map_3 hand-derivation whose
+    block sequence is byte-identical post-relabel) == the blind
+    worktree prototype (4 files +376/−294; per-sub-diff BYTE gates;
+    the perturbation-liveness proof) == pristine, 11/11 dumps
+    BYTE-IDENTICAL (orchestrator cmp, E-77). FABLE REVIEW (26-agent,
+    high): 10 findings, none a live miscompile — [0] the count-copy-
+    not-counted-consume gap FIXED by the pairing helper (+ the honest
+    ledger framing above); [1] the duplicated all-constant-root
+    predicate EXTRACTED (IsAllConstantTupleDR, the SD-1 one-authority
+    pattern, both callers rewired); [2] the stale A.6(c)
+    "declines-the-oracle" header REFRAMED; [3] the dead cross-TU
+    ctor seam CLOSED (the nine MakeEager*Op decls + ModelTableOrNull
+    removed from the header, definitions file-static — a walk-side
+    re-mint is now a compile error); [4]-[8] retirement doc-drift
+    fixed (the SD-2 "walk still calls them" falsehood, the
+    MakeEagerNegateOp EAGER_WEB tail, the kIngestLoop/kJoinEmit
+    membership phrasings, the M10 recount comment); [9] six
+    Build.cpp:970→:969 off-by-one anchors fixed. INCIDENT (recorded):
+    the first post-fix verification ran against a STALE binary (the
+    seam-closing edit broke the build — ModelTableOrNull used before
+    its now-static definition — and the green suite lines were
+    invalid evidence); caught by reading the build output, fixed
+    with a forward decl, and the ENTIRE post-fix battery re-run
+    against the genuinely rebuilt binaries: 21/21 dump-neutral,
+    SUITE PASS(175) debug + ASAN (rebuilt, 0 errors), ctest 5/5.
+    GATES (final tree): E-62 re-grep CLEAN (LIVE); pre-bless reds
+    EXACTLY the eleven .deltarel IRGOLD-DIVERGE → bless (11/11
+    sources byte-verified same-as-converged; git-verified 11 goldens
+    only) → SUITE PASS(175) ×3 + post-fix; emission byte-identity +
+    data/ 0 diverged; ctest 5/5 debug + 5/5 ASAN; ASAN both surfaces
+    PASS(175); config-invariance SINGLE-HASH (map_3 + join_1, 3-run
+    debug + release); Q5 progsize@128 ABABAB A warm {147,147} vs B
+    {149,149,150} ms (~1.4% median — within the session's observed
+    same-binary variance band; MEASURED, ADJ-S8). SEAM ACCEPTANCE
+    (§19(H)): S1 retired (R-E42-era hole contract now interior), S2
+    retired (one cut authority), S3 interior (both Site-5 multisets
+    are one-path invariants), S4 retired (R-E42) — the two-authority
+    seam is DELETED; ONE mint+lower path; §7d retained as a
+    belt-not-authority cross-check per the ruling. RESIDUALS: Fold C;
+    the standing spelling/witness set. NEXT: the RENAME ritual (§5
+    ruling R6 — NARROW + the .deltarel→.rel lockstep, its own
+    commit, LAST).

@@ -121,6 +121,40 @@ PASS(175); config-invariance SINGLE-HASH (join_1 + d5 deltarel, 3-run
 debug + release); Q5 progsize@128 ABABAB ~1% noise (A1 cold discarded).
 Fable review record in §20(Y).
 
+## SLICE 4 — THE DIRECTION FLIP (SD-1..SD-4)
+
+STAGE-(d) THREE-WAY (both lanes xhigh): the DUMP-BLIND AUTHOR
+(flip-d/author-predictions.md — the four sub-diffs' source design from
+re-verified anchors; the four code-verified substrate facts F-KEY/F-SORT/
+F-COUNT/F-ORDER; a FULL hand-derivation of map_3's post-flip label
+permutation with a byte-identical block sequence; the pre-bless red set;
+the SD-4 perturbation designs) == the BLIND WORKTREE PROTOTYPE (4 files
++376/−294; per-sub-diff gates: SD-1/SD-2 BYTE 642/642; SD-3+SD-4 the
+HARD gate emission 642/642 byte-identical across ALL FOUR modes vs
+frozen d3f5746a; census byte-equal ×11; the rigorous whole-dump
+consistent-relabel referee: CONTENT-DIVERGE 0, 7 PURE-RELABEL / 4
+BAND-REORDER; the SD-4 oracle proven LIVE: drop-the-constant-root
+perturbation → exit 134 with the SD-4/ADJ-S12 abort text on
+elim-cond-cycle-simple → revert → green + emission restored) == the
+PRISTINE implementation: 11/11 post-flip dumps BYTE-IDENTICAL
+pristine==proto (orchestrator cmp, E-77). ADJUDICATION: the empirical
+7/4 relabel/reorder split SUPERSEDES the stage-(a) a3 4/7 estimate —
+the band's (table_id, oi) sort hides enrollment-order changes after
+canonical relabel; a prediction-granularity artifact, not a
+correctness question (multisets preserved, census equal, emission
+identical).
+
+GATES RECORD (binding copy = ledger §20(Z)): E-62 CLEAN (live);
+pre-bless reds EXACTLY the eleven .deltarel IRGOLD-DIVERGE → bless
+(11/11 sources byte-verified same-as-converged; git-verified 11
+goldens only) → SUITE PASS(175) ×3; emission byte-identity 0/175
+diverged (pristine, opt) atop the worktree's 642/642 ×4-mode proof;
+data/ 0 diverged; ctest 5/5 debug + 5/5 ASAN; ASAN both surfaces
+PASS(175); config-invariance SINGLE-HASH (map_3 + join_1, 3-run debug
++ release); Q5 progsize@128 ABABAB A warm {147,147} vs B {149,149,150}
+ms (~1.4% median — within the session's observed same-binary variance
+band; MEASURED, ADJ-S8). Fable review record in §20(Z).
+
 ## SLICE 1 GATES RECORD (as landed; the binding copy is ledger §20(W)): pre-bless
 reds EXACTLY the 3 pre-registered IRGOLD-DIVERGE → bless (sources
 byte-verified same-as-converged; 8 sibling rewrites no-ops) → SUITE

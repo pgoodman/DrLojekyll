@@ -49,7 +49,7 @@ branch.5 src=%table:24 -> tgt=%table:18 ends_at_join=false
 
 join.0 view=<X,Y> pivot_vec=$join-pivots.38 targets=[%table:14]
 
-op.59 kEagerForward sign=· ctx=eager stratum=0
+op.58 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:7
 op.55 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:7, +, NonRecursive), kVecAppend(%table:7, kNetAddition)}
@@ -65,7 +65,7 @@ op.56 kIngestFold sign=+ ctx=eager stratum=0
     args: table=%table:11 message=dead/1
 op.60 kJoinEmit sign=· ctx=eager stratum=6 form=delta
     args: table=%table:14
-op.58 kEagerForward sign=· ctx=eager stratum=0
+op.59 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:21
 op.54 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:21, +, NonRecursive), kVecAppend(%table:21, kNetAddition)}

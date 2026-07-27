@@ -1,8 +1,8 @@
 deltarel
 
-op.2 kEagerJoin sign=· ctx=eager stratum=0
+op.5 kEagerJoin sign=· ctx=eager stratum=0
     args:
-op.4 kEagerJoin sign=· ctx=eager stratum=0
+op.6 kEagerJoin sign=· ctx=eager stratum=0
     args:
 op.7 kEagerJoin sign=· ctx=eager stratum=0
     args:
@@ -16,7 +16,7 @@ op.13 kJoinEmit sign=· ctx=eager stratum=0 form=eager
     args: order=1073872901 seq=1
 op.14 kJoinEmit sign=· ctx=eager stratum=0 form=eager
     args: order=1073872901 seq=2
-op.6 kEagerForward sign=· ctx=eager stratum=0
+op.4 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:4
 op.11 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:4
@@ -24,9 +24,9 @@ op.12 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:4
 op.1 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:8
-op.3 kEagerForward sign=· ctx=eager stratum=0
+op.2 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:8
-op.5 kEagerForward sign=· ctx=eager stratum=0
+op.3 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:8
 op.0 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:8, +, NonRecursive)}

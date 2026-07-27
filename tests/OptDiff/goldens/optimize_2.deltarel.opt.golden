@@ -1,26 +1,26 @@
 deltarel
 
-op.3 kEagerProduct sign=· ctx=eager stratum=0
+op.3 kEagerForward sign=· ctx=eager stratum=0
     args:
-op.6 kEagerProduct sign=· ctx=eager stratum=0
+op.8 kEagerProduct sign=· ctx=eager stratum=0
     args:
-op.7 kEagerForward sign=· ctx=eager stratum=0
+op.9 kEagerProduct sign=· ctx=eager stratum=0
     args:
-op.13 kEagerCompare sign=· ctx=eager stratum=0 cmp=neq
+op.10 kEagerCompare sign=· ctx=eager stratum=0 cmp=neq
     args:
-op.14 kEagerForward sign=· ctx=eager stratum=0
+op.11 kEagerForward sign=· ctx=eager stratum=0
     args:
 op.18 kProductEmit sign=· ctx=eager stratum=0 form=eager
     args: order=4 seq=0
-op.8 kEagerUnion sign=· ctx=eager stratum=0
+op.12 kEagerUnion sign=· ctx=eager stratum=0
     args: table=%table:4
-op.9 kEagerForward sign=· ctx=eager stratum=0
+op.13 kEagerUnion sign=· ctx=eager stratum=0
     args: table=%table:4
-op.10 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+op.14 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:4
-op.15 kEagerUnion sign=· ctx=eager stratum=0
+op.15 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:4
-op.16 kEagerForward sign=· ctx=eager stratum=0
+op.16 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:4
 op.17 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:4
@@ -32,9 +32,9 @@ op.4 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:8
 op.5 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:8
-op.11 kEagerForward sign=· ctx=eager stratum=0
+op.6 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:8
-op.12 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+op.7 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:8
 op.0 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:8, +, NonRecursive)}

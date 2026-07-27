@@ -15,6 +15,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "../Program.h"
@@ -262,23 +263,21 @@ class Context {
   };
   std::vector<EmittedInstanceOp> emitted_instance_ops;
 
-  // R1 (design §A.4/§B.2): the eager-web dispatch stream recorded at walk time
-  // (the eager walk runs BEFORE the flow is built at BuildStratumPhases, so the
-  // flow does not exist at walk time — the §12.6 walk-authority shape, shared
-  // with emitted_ingest_folds). `BuildDRInventory`'s EAGER_WEB block iterates
-  // this vector in walk (DFS) order, re-invoking the single-authority ctor per
-  // record. Enough to rebuild the op — the eight effect-free markers AND the R4
-  // effect-bearing kNegateGate (whose ctor reconstructs its kFlagRead from
-  // these same two identities): the view (re-invokes the ctor), the target
-  // table (nullable), the sink discriminant, and the stream message.
-  struct EmittedEagerOp {
-    uint8_t kind;                          // DROpKind cast (kEagerForward/Insert)
-    std::optional<QueryView> view;         // eager_view (gate: gate_negate)
-    TABLE *table{nullptr};                 // table_op_table (gate: gate_table)
-    uint8_t sink{0};                       // EagerSink cast (kNone for forwards)
-    std::optional<ParsedMessage> message;  // kEagerInsert stream sinks only
-  };
-  std::vector<EmittedEagerOp> emitted_eager_ops;
+  // R-final SD-3 (THE FLIP): the walk-side eager MARKER census — a per-(kind,
+  // view) count incremented AT the marker dispatch in BuildEagerRegion (co-
+  // located with the untouched region-builder call). It REPLACES the ordered
+  // per-op payload stream `emitted_eager_ops` + the EAGER_WEB replay switch (the
+  // DR side now DERIVES the marker SET + payloads + canonical Depth order graph-
+  // side; this census supplies only the MULTIPLICITY, which is a scheduler
+  // artifact NOT graph-derivable — flip Correction 2 / R2(d) counted-consume).
+  // `BuildDRInventory`'s BuildDREagerInventory block enrolls census[(k,v)] copies
+  // of the derived marker for each derived view v. Keyed on a uint8_t DROpKind
+  // cast (avoids pulling DeltaRel.h into Build.h — the EmittedEagerOp precedent)
+  // and the QueryView (the SAME identity RecordEagerDispatch stored — for a
+  // kNegateGate the negate view, since the gate keeps identity in gate_negate).
+  // The key ORDER (pointer-based QueryView operator<) never reaches the dump: it
+  // is queried by key and its key SET is the SD-4 order-free SET oracle.
+  std::map<std::pair<uint8_t, QueryView>, unsigned> eager_marker_census;
 
   // R-final (§2.2): the per-(proc, join/product view) EMISSION events recorded
   // at work-item CREATION (the eager walk runs BEFORE BuildStratumPhases builds

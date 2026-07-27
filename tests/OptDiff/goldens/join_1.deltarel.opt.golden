@@ -1,14 +1,14 @@
 deltarel
 
-op.2 kEagerJoin sign=· ctx=eager stratum=0
-    args:
-op.5 kEagerJoin sign=· ctx=eager stratum=0
-    args:
 op.8 kEagerJoin sign=· ctx=eager stratum=0
+    args:
+op.9 kEagerJoin sign=· ctx=eager stratum=0
     args:
 op.11 kEagerJoin sign=· ctx=eager stratum=0
     args:
-op.14 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
+op.12 kEagerJoin sign=· ctx=eager stratum=0
+    args:
+op.13 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
     args:
 op.15 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
     args:
@@ -20,9 +20,9 @@ op.18 kIngestLoop sign=+ ctx=eager stratum=0
     args: message=t1/2
 op.19 kIngestLoop sign=+ ctx=eager stratum=0
     args: message=t2/1
-op.12 kEagerForward sign=· ctx=eager stratum=0
+op.10 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:6
-op.13 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+op.14 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:6
 op.16 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:9
@@ -30,19 +30,19 @@ op.17 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:9
 op.0 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
     args: table=%table:12
-op.1 kEagerForward sign=· ctx=eager stratum=0
+op.2 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:12
-op.6 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
+op.1 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
     args: table=%table:16
-op.7 kEagerForward sign=· ctx=eager stratum=0
+op.3 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:16
-op.3 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
+op.4 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
     args: table=%table:19
-op.4 kEagerForward sign=· ctx=eager stratum=0
+op.6 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:19
-op.9 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
+op.5 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
     args: table=%table:23
-op.10 kEagerForward sign=· ctx=eager stratum=0
+op.7 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:23
 
 rounds:

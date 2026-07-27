@@ -2,23 +2,23 @@ deltarel
 
 op.0 kEagerGenerate sign=· ctx=eager stratum=0
     args: functor=add_i32/3
-op.3 kEagerGenerate sign=· ctx=eager stratum=0
+op.1 kEagerGenerate sign=· ctx=eager stratum=0
     args: functor=add_i32/3
-op.6 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
+op.2 kEagerCompare sign=· ctx=eager stratum=0 cmp=eq
     args:
-op.7 kEagerGenerate sign=· ctx=eager stratum=0
+op.5 kEagerGenerate sign=· ctx=eager stratum=0
     args: functor=add_i32/3
 op.10 kIngestLoop sign=+ ctx=eager stratum=0
     args: message=m/2
-op.1 kEagerForward sign=· ctx=eager stratum=0
+op.3 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:6
-op.2 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+op.7 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:6
 op.4 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:10
-op.5 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
+op.8 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:10
-op.8 kEagerForward sign=· ctx=eager stratum=0
+op.6 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:15
 op.9 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
     args: table=%table:15
