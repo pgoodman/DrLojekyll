@@ -4016,3 +4016,152 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     retires), then R-final (direction flip + the emission op + the
     fold + count oracle + ClassifyEagerSink replica retirement +
     the DeltaRel→Rel rename ritual).
+
+(T) R-E42-OPEN RE-VERIFICATION RECORD (2026-07-24, tip 429f14f4; the
+    session-open items (0)+(1) EXECUTED per §20(S)'s NEXT).
+    (0) Frozen A/B baselines RE-SNAPSHOTTED from tip into the session
+        scratchpad BEFORE any code (debug e6eb2e3e… / release
+        035720ac…; both presets rebuilt clean) — the 5f30847f/
+        e69068d0-era snapshots retired as STALE post-R-JOIN. ASAN
+        cadence stands per-diff (§19(F)/(J)); the tip is docs-only
+        atop 18026049, whose both-surface sweeps are the standing
+        green.
+    (1) §20(R)/(S) + rel-arch-pseudocode.md §4-§6 (incl. §4.4 and the
+        §5 R-E42 block) FLEET-RE-VERIFIED (house precedent): 3
+        seed-UNREAD opus derivation lanes (the 9-kind walk-mint
+        machinery incl. kEagerJoin/kEagerProduct as landed; the
+        INGEST subsystem END TO END — ExtendEagerProcedure,
+        MakeStageOneIngestFolds, MakeMonotoneIngestFold,
+        LowerIngestFold, V-INGEST-XCHECK Site 5, the table-less
+        VECTORLOOP arm — doubling as the R-E42 stage-(a) seed; the
+        dump/census surfaces) + 3 seed-read adversarial verifiers
+        (§4-§4.4; §5 incl. the R-E42 block + §6; §20(R)/(S) +
+        rjoin-design/desired-states) + 1 sonnet mechanical lane
+        (18-surface regen, census 26, marker counts, hexdump pins,
+        cross-knob compiles, the kIngestFold=0 quad, the demand_tc
+        four-table-backed check) + 1 xhigh consolidator (8 agents,
+        ~710k tokens; every candidate adjudicated AT the code). ONE
+        lane death (the §20(R)/(S) verifier, at the structured-output
+        cap) — RECOVERED FROM ITS DISK FILE per the R-JOIN precedent,
+        never respawned: its written verdict was SOUND with every
+        mechanism/carrier/anchor claim confirmed (four frozen-tip
+        rjoin-design interior anchors noted COSM, correct-as-pinned);
+        the consolidator independently swept §20(R)/(S) and found no
+        gap. The E-62 tripwire re-grepped by the ORCHESTRATOR
+        personally: CLEAN (sole out-of-lib hits = the standing
+        Stratum.cpp:1073 comment + the RAT-3 InstanceOrderTest
+        fixture; zero out-of-lib body_ops/output_ops readers). The
+        carrier-golden referee EXECUTED by the orchestrator
+        personally: ALL EIGHTEEN pinned golden surfaces regenerate
+        BYTE-IDENTICAL at tip (tc h/ir/df/deltarel, symrec
+        ir/df/deltarel, negate_1 df+deltarel, aggregate_1 df, map_3/
+        merge_2/booleans/elim-cond-cycle-simple/negate_6/
+        d5_recursive_negate/join_1/optimize_2 deltarel — the irgold
+        sidecars are the count authority). VERDICT: SOUND-WITH-ERRATA
+        — zero code or design defects; the M1-M16 mold, BOTH §5
+        R-E42 starting-state caveats, and the §6 partition facts hold
+        EXACTLY (§5 R-E42 + §6 drew ZERO candidates); seven errata,
+        ALL anchor/arity/count drift in the §4-§4.3 mold bodies
+        (last re-based at f60379c3 = pre-R-JOIN), applied IN PLACE
+        (each site tagged):
+          E-123 MED  §4.1 M6'/§4.2: IsEagerMarkerKind is 8 KINDS
+                     after R-JOIN (kEagerJoin/kEagerProduct joined;
+                     the R4 gate stays excluded). Def :1306 HELD;
+                     callers now :3542/:4546.
+          E-124 MED  §4.1/§4.2/§4.3: EAGER_WEB switch is 9-WAY
+                     (Join :2495 / Product :2498; gate case
+                     :2501-2503; loud-abort default :2504-2509); the
+                     M4 enrollment region is :2457-2510.
+          E-125 MED  §4.3: MakeEagerNegateOp ctor is :1396 (decl
+                     .h:1041) — the old ":1371" anchor now COLLIDES
+                     with MakeEagerJoinOp (R-JOIN inserted Join:1371/
+                     Product:1379 between Select and Negate).
+          E-126 MED  §4.2: kAllKinds is Format.cpp:1054 with 26
+                     kinds (was ":1040 (24)"); totality guard :1077.
+          E-127 LOW  §4/§4.1/§4.2/§4.3: every Build.cpp MINT anchor
+                     +30 (R-JOIN inserted LowerRelStep_Join/_Product
+                     :1246/:1255 + the IsJoin arm :1269-1283): Union
+                     :1295, Generate :1320, Compare :1331, Select
+                     :1338, Forward :1346, Insert :1355, Negate arm
+                     :1361-1371 (mint :1369). Wrappers (:1145/:1153/
+                     :1164/:1173/:1207/:1216/:1232/:1246/:1255),
+                     helpers (:1088/:1092/:1113/:1123), and
+                     BuildEagerSelectRegion :1190 all HELD.
+          E-128 LOW  DeltaRel.cpp recount region +31 / key_of+V-READY
+                     +54: add_gu_key :3455ff, count_kind :3473,
+                     expect :3483, base batch :3491-3497, A.6(c)
+                     guard :3542, switch :3554, union :3574, select
+                     :3588, join :3593, product :3606, table-match
+                     :3628, kNegateGate recount :3090, key_of gate
+                     :4527, key_of marker :4546, V-READY skips
+                     :5063/:5067.
+          E-129 COSM Format.cpp render/name anchors +2: EagerSinkName
+                     :132, ComparisonOperatorName :152, render
+                     Compare :905 / Generate :917 / Union :937 /
+                     Select :947. DROpKindName def HELD.
+        NON-DEFECT CODE NOTE (recorded, no erratum; a future
+        code-comment sweep or the R-E42 diff itself may fix it):
+        Stratum.cpp:2099's Site-5 header comment reads
+        "V-PRED-XCHECK Site 5" while the :2150 abort string and the
+        docs say V-INGEST-XCHECK — the doc matches the authoritative
+        abort string. R-E42 STAGE-(a) SEED DIGEST (consolidator-
+        adjudicated at code; full record in the fleet consolidation):
+        (1) ARM SELECTION (Procedure.cpp:39-110): Arm A
+        deletion-capable :50-60 (two stage-1 folds, no descent); Arm
+        B monotone table-bearing :70-93 (one fold, UPDATECOUNT
+        descent cursor, INGEST-CURSOR-SHAPE guard :87-93); Arm C =
+        E-42, table-less monotone :94-106 (hand VECTORLOOP + VARs,
+        no fold, no table touch), descent :108 with table=null; sole
+        caller BuildEntryProcedure :820. (2) THE ID-ALLOC CRUX: Arm
+        C allocates EXACTLY 1+arity next_ids (VECTORLOOP :96, then
+        one VAR per receive column :101) — IDENTICAL in shape and
+        order to LowerIngestFold's monotone arm (Stratum.cpp:1941/
+        :1951; UPDATECOUNT and VECTORAPPEND consume NO next_id), so
+        the hole-contract lower-in-place shape reproduces the id
+        stream mechanically; the marker zero-next_id trick does NOT
+        apply (M16 pin-the-referent). (3) WHY TABLE-LESS (in-code
+        :62-69): the receive head is induction-owned — the descent's
+        InTryInsert emits the fold under an induction; FillDataModel
+        forces no table on a plain monotone receive. (4) EFFECTS:
+        vec-only (no table, no kCounter; MonotoneIngestRoleDR/
+        EmissionDerivClass both NEED a table and do not apply).
+        (5) EXTENSION POINTS: enrollment currently enrolls NOTHING
+        table-less (guard DeltaRel.cpp:2400, ack comment :2365-2366);
+        count-expect += 0 (:3423/:3429); Site 5's enrolled-filter
+        SKIP (:2130-2132) is defensively DEAD today and becomes live
+        coverage under a modeled op; LowerIngestFold hard-asserts
+        table!=nullptr (:1930) — structurally incapable of Arm C
+        today (relax vs sibling lowering = a stage-(b) decision).
+        (6) RITUAL-HEAD RULINGS OWED: op FAMILY (ingest-fold sibling
+        vs marker — the :2366 comment already says "not an ingest
+        fold"; the layer is INGEST, not a walk-dispatch arm), payload
+        (message stored vs re-derived, M2'), the PER-RECEIVE
+        count-law referent (M15 re-derived for the ingest layer), and
+        the Site-5/count-expect/key-multiset extension. (7) M9
+        CARRIERS: the kIngestFold=0 quad (map_3, merge_2,
+        elim-cond-cycle-simple, join_1) are the candidates; census
+        26->27 churns ALL ELEVEN .deltarel pins; whether each quad
+        member actually HAS a table-less receive is re-verified at
+        stage (a) at the walk/model layers per M12. VERIFIED-CLEAN
+        (held; compressed): IsEagerMarkerKind 8 kinds excl. gate;
+        EAGER_WEB 9-way tail-append (folds keep op.0/op.1); all nine
+        ctors id-neutral, single-authority; the M14 gate kFlagRead
+        reconstruction; A.6(c) strengthened arms (union
+        !InductionGroupId, join pivots>0, product pivots==0);
+        kAllKinds 26 + totality; MECH 25/25 checks PASS (18-surface
+        regen, census lines, marker counts incl. join_1 kEagerJoin=4
+        / optimize_2 kEagerProduct=2 / d5 zero-mint kPivotAssemble=1
+        kFixpointFire=2, hexdump pins sign=· c2 b7 + cmp=eq +
+        functor=add_i32/3, demand_tc four table-backed join blocks
+        op.7/op.17=%table:4 + op.14/op.16=%table:15, cross-knob
+        opt==nocf / nodf==none ×11 carriers); §5 R-E42 anchors EXACT
+        (Procedure.cpp:14-111/:820/:96/:101/:62-69, DeltaRel.cpp
+        :1191/.h:996, :1235/.h:1006, :2369/:2366, :3403, :3633,
+        Stratum.cpp:1909/:1930/:1980/:2101ff). Full record: session
+        scratchpad fleet-re42open/consolidated.md +
+        R-E42-seed-digest.md (disposable; THIS entry is binding).
+        Errata continue at E-130. NEXT: the R-E42 slice under the
+        full ritual (stage-(a) pseudocode build-out from the seed
+        digest; ritual-head rulings: op family, payload/effects, the
+        PER-RECEIVE count law, the Site-5 extension, and the
+        id-stream argument — the hole-contract lower-in-place shape).
