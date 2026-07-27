@@ -4259,3 +4259,106 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     the fold + the eager count oracle + ClassifyEagerSink
     retirement + the DeltaRel→Rel rename ritual). Errata continue
     at E-130.
+
+(V) R-FINAL-OPEN RE-VERIFICATION RECORD (2026-07-27, tip a7dde012; the
+    session-open items (0)+(1) EXECUTED per §20(U)'s NEXT).
+    (0) Frozen A/B baselines RE-SNAPSHOTTED from tip into the session
+        scratchpad BEFORE any code (debug 04c759c9… / release
+        b3e3cd58…; both presets rebuilt clean) — the c8888e44-era
+        snapshots retired as STALE post-R-E42. ASAN cadence stands
+        per-diff (§19(F)/(J)); the tip is docs-only atop 535a6621,
+        whose ×2 both-surface sweeps are the standing green.
+    (1) §20(T)/(U) + rel-arch-pseudocode.md §4-§6 (incl. §4.5/M17 and
+        the §5 R-FINAL block) FLEET-RE-VERIFIED (house precedent): 3
+        seed-UNREAD opus derivation lanes (the walk-mint/record/
+        EAGER_WEB machinery + the S2 replicas + §7d — the direction-
+        flip stage-(a) seed; the ContinueJoinWorkItem deferral
+        subsystem END TO END — the emission-op seed; the dump/census/
+        key_of + ingest surfaces at census 27) + 3 seed-read
+        adversarial verifiers (§4-§4.5 mold; §5 R-final block + §6;
+        §20(T)/(U) + re42 contracts) + 1 sonnet mechanical lane
+        (18-surface regen, census 27, kIngestLoop quad 1/3/1/2,
+        hexdump pins, cross-knob ×11, the demand_tc four-table-backed
+        check — 6/6 checks PASS) + 1 xhigh consolidator (8 agents,
+        ~858k tokens; every candidate adjudicated AT the code). One
+        lane digest degenerated at the structured-output layer (L2);
+        its DISK file was complete and the consolidator used it (the
+        R-E42 recovery precedent — never respawned). The E-62
+        tripwire re-grepped by the ORCHESTRATOR personally: CLEAN
+        (sole out-of-lib hits = the standing Stratum.cpp:1073 comment
+        + the RAT-3 InstanceOrderTest fixture). The carrier-golden
+        referee EXECUTED by the orchestrator personally: ALL EIGHTEEN
+        pinned golden surfaces regenerate BYTE-IDENTICAL at tip.
+        VERDICT: SOUND-WITH-ERRATA — zero code or design defects; the
+        M1-M17 mold, the §5 R-FINAL block's five head items, and the
+        §6 partition facts hold EXACTLY; eight errata, ALL anchor/
+        count drift from the R-E42 insertions (last re-base 429f14f4
+        = pre-R-E42), applied IN PLACE (each site tagged):
+          E-130 MED  §4.2: kAllKinds is Format.cpp:1075 with 27 kinds
+                     (the one COUNT drift; guard msg reads "28th").
+          E-131 LOW  §4 M2 (+§4.1/§4.2/§4.3): marker ctors +32
+                     (MakeIngestLoopOp:1274/IngestLoopKeyOf:1290
+                     inserted above; Forward:1311…Negate:1428,
+                     decl .h:1075).
+          E-132 LOW  §4 M6 (+M6'): census/recount +99..+100 (base
+                     expect 3590-3601, A.6(c) guard 3642, switch
+                     3653, table-match 3727); IsEagerMarkerKind
+                     :1306→:1338, callers :3642/:4697 (still 8 kinds,
+                     2 callers).
+          E-133 LOW  §4 M4: EAGER_WEB enrollment ~2491-2547; the
+                     ABSOLUTE tail is now the INGEST_LOOP block
+                     :2549-2578 (M4's tail-append HOLDS; EAGER_WEB no
+                     longer the final family).
+          E-134 LOW  §4.3: kNegateGate recount :3155; key_of gate
+                     :4669; V-READY skips :5214/:5218.
+          E-135 LOW  §4.1/§4.2: renders Format.cpp:926/:938 +
+                     :958/:968; ComparisonOperatorName :153;
+                     EagerSinkName :133.
+          E-136 LOW  §6: ModelTableOrNull DeltaRel.cpp:1267→:1299.
+          E-137 COSM §5 head item (4): the identifier-sweep rename
+                     bucket names tests/DeltaRelValidators/ (ctest
+                     target, #include "DeltaRel.h").
+        STAGE-(a) SEED DIGESTS (consolidator-adjudicated at code;
+        recorded in the rel-arch banner + the fleet consolidation;
+        they SHARPEN the §5 head items): (A) FLIP — walk op.N order
+        is a WORK-LIST SCHEDULER artifact (CompleteProcedure
+        stable_sort DESC + pop_back LIFO), NOT a graph DFS: order-
+        reproduction means scheduler replay, so the structural-gate
+        re-bless of the eleven pins is the realistic path; the
+        recorded eager identity is VIEW-valued while the op referent
+        is the per-visit EDGE (EmittedEagerOp has no pred_view) —
+        walk-consume needs a counted key or a NEW per-edge key, a
+        head ruling §5 does not yet name; the flip retires
+        RecordEagerDispatch/emitted_eager_ops/EAGER_WEB-replay/§7d
+        and RELOCATES ClassifyEagerSink (walk-only, no DR replica);
+        NOTE the stale AnyCutSuccessorDR code comments (DeltaRel.cpp
+        :127/:2383 cite "Build.cpp:857-858"; the cut test is :970) —
+        code hygiene for the flip diff. (B) EMISSION OP — the
+        deferred TABLEJOIN mints once per (proc, join_view,
+        path-form) in the SHARED BuildJoin (Join.cpp:313; eager
+        :601 for_delta=false / delta Stratum.cpp:1532); drain order
+        = (ContinueJoinOrder ASC, REVERSE walk-insertion index) —
+        the order key ALONE collides (equal depth/induction-class,
+        and vs products), so the op must ALSO carry the walk-
+        insertion seq; the per-join next_id budget is NOT a
+        structural constant (TABLEINDEX mints only for NEW column
+        specs — cross-join REUSE makes the count emission-ORDER-
+        sensitive), so any id-stream contract must carve the index
+        stream out or canonicalize provisioning. (C) CENSUS/INGEST —
+        kIngestLoop is the ONE effect-free lead-0 op NOT id-neutral
+        at lower (mints 1+arity; the load-bearing ground it stays
+        out of IsEagerMarkerKind); the 8 markers still have NO
+        scalar count expect (the M15/ADJ-S12 oracle R-final owes);
+        kNegateGate rides the generic render, no dedicated case
+        (surface-rework input). MID-SESSION OWNER DIVERGENCE (landed
+        between (1) and R-final stage (a), its own commit): the `:-`
+        strict-order clause separator (owner-directed 2026-07-27) —
+        suite 174→175 (barrier_neck_1), all gates in that commit's
+        record. Full fleet record: session scratchpad
+        fleet-rfinalopen/ (disposable; THIS entry is binding).
+        Errata continue at E-138. NEXT: R-final stage (a) per §5 as
+        sharpened by the three seed digests (ritual-head rulings:
+        order-of-diffs; flip order-reproduction-vs-rebless + gate
+        families + the per-edge identity question; emission-op
+        referent/payload/count law + the id-budget carve; the two
+        fold adopt-vs-defer rulings; rename scope + surface name).

@@ -175,6 +175,36 @@ the MakeEagerNegateOp ":1371" anchor now COLLIDES with
 MakeEagerJoinOp — E-125). The L2 INGEST derivation lane doubles as
 the R-E42 stage-(a) seed; its adjudicated digest is recorded in
 §20(T).
+RE-VERIFIED 2026-07-27 at tip a7dde012 by the R-final-open fleet (3
+seed-unread derivation lanes + 3 seed-read verifiers + 1 mechanical
+lane + xhigh consolidator; 8 agents; the ledger record lands with
+the R-final session's §20 entry): SOUND-WITH-ERRATA, zero code or
+design defects — the M1-M17 mold, the §5 R-FINAL block's five head
+items, and the §6 partition facts hold exactly. Errata E-130..E-137
+applied IN PLACE below (all anchor/count drift in the §4-§4.4/§6
+bodies from the R-E42 insertions: kAllKinds is 27 at Format.cpp:1075
+— E-130 the one count drift; marker ctors +32, census/recount
++99..+100, IsEagerMarkerKind :1338 w/ callers :3642/:4697, EAGER_WEB
+~2491-2547 with the INGEST_LOOP block :2549-2578 now the absolute
+tail, R4 recount :3155 / key_of :4669 / V-READY :5214/:5218, Format
+renders +21, ModelTableOrNull :1299 — and E-137 COSM: the rename
+bucket names tests/DeltaRelValidators/). The three derivation lanes
+double as the R-final stage-(a) seeds: their consolidator-adjudicated
+digests SHARPEN §5's head items — (1) walk op.N order is a WORK-LIST
+SCHEDULER artifact (CompleteProcedure stable_sort DESC + pop_back
+LIFO), not a graph DFS, so flip order-reproduction means scheduler
+replay and the structural-gate re-bless is the realistic path; the
+recorded eager identity is VIEW-valued while the op is per-VISIT
+EDGE-valued (no pred_view) — consume needs a counted key or a NEW
+per-edge key, a head ruling §5 does not yet name; (2) the per-join
+emission event key is (proc, join_view, path-form) and drain order =
+(ContinueJoinOrder ASC, reverse walk-insertion index) — the order
+key ALONE collides, and the per-join next_id budget is NOT constant
+(TABLEINDEX reuse is cross-join order-sensitive); (3) kIngestLoop is
+the one effect-free lead-0 op that is NOT id-neutral at lower — the
+load-bearing ground it stays out of IsEagerMarkerKind; the 8 markers
+still lack a scalar count expect (the M15/ADJ-S12 oracle R-final
+owes); kNegateGate rides the generic render (no dedicated case).
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -379,7 +409,13 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
          V-LINEAR/V-READY/V-BAND-HAZARD never see them (the kIngestFold
          exclusion, generalized).
       M2 ONE single-authority ctor (DeltaRel.cpp:1279/:1290) invoked
-         from BOTH the walk mint and inventory enrollment.
+         from BOTH the walk mint and inventory enrollment. [E-131 LOW:
+         R-E42 inserted MakeIngestLoopOp:1274/IngestLoopKeyOf:1290
+         (+32); at a7dde012 the marker ctors are Forward:1311/
+         Insert:1322, Compare:1353/Generate:1364, Union:1376/
+         Select:1388, Join:1403/Product:1411, Negate:1428 (decl
+         DeltaRel.h:1075) — subsumes §4.1 :1321/:1332, §4.2
+         :1344/:1356, §4.3 :1396/.h:1041 + Join/Product :1371/:1379.]
       M3 walk-time: mint -> RecordEagerDispatch (Context::
          emitted_eager_ops, walk/DFS order — Build.cpp:1123) -> CALL the
          UNTOUCHED region builder at the original site; id-stream
@@ -387,7 +423,13 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
       M4 inventory enrollment: BuildDRInventory re-invokes the ctor from
          the recorded stream, TAIL-APPENDED strictly after the ingest
          folds (DeltaRel.cpp:2457-2510 — E-102/E-111/E-124 re-based
-         at tip 429f14f4; the pre-R2 ":2389-2396"
+         at tip 429f14f4; E-133 LOW: at a7dde012 the enrollment is the
+         EAGER_WEB block ~2491-2547 (Join :2532/Product :2535/
+         kNegateGate case :2537/loud-abort default :2540-2545), and
+         the ABSOLUTE tail is now the INGEST_LOOP block :2549-2578
+         (§4.5) — M4's "tail-append after the ingest folds" HOLDS but
+         EAGER_WEB is no longer the final family; the pre-R2
+         ":2389-2396"
          now lands in the UNRELATED DRRound test_vec build; ADJ-S2
          BINDING — folds keep
          op.0/op.1; the walk is the reachability authority until the
@@ -401,7 +443,12 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
          :3554, table-match :3628 — E-104/E-111/E-119/E-128 re-based
          at tip 429f14f4 (+31); E-112/E-117/E-128: the GROUP_UPDATE
          key setup (add_gu_key) is :3455ff, NOT inside the count
-         lambdas — count_kind :3473 / expect :3483):
+         lambdas — count_kind :3473 / expect :3483) [E-132 LOW: at
+         a7dde012 (post-R-E42, +99..+100): base expect() 3590-3601,
+         A.6(c) guard 3642, view-kind switch 3653, table-match 3727,
+         add_gu_key 3554, count_kind 3572, expect 3581. §4.1/§4.2
+         M6': IsEagerMarkerKind def :1306→:1338, callers
+         :3542/:4546→:3642/:4697 (still 8 kinds, 2 callers)]:
          kind<->view-kind + table
          == the union-find MERGED model (DS-ADJ-7 — the RENDER AUTHORITY
          is view_to_model->FindAs, NEVER the .df per-view attribute); NO
@@ -432,7 +479,11 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
     E-120/E-124; the R4 kNegateGate case is :2501-2503) WITH
     loud-abort default :2504-2509; render cases Format.cpp:905/:917;
     ComparisonOperatorName :152. [E-111/E-118/E-127/E-128/E-129
-    re-based at tip 429f14f4.]
+    re-based at tip 429f14f4.] [E-135 LOW: at a7dde012 render cases
+    are Format.cpp:926 (kEagerCompare)/:938 (kEagerGenerate); §4.2
+    Union/Select renders :937/:947→:958/:968; ComparisonOperatorName
+    :150/:152→:153; EagerSinkName Format.cpp:132→:133 (doc-comment
+    :129-131→:130-132).]
     Mold deltas every future slice
     inherits:
 
@@ -502,7 +553,12 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
     :4546 — E-118/E-119/E-120/E-123/E-128 re-based at 429f14f4);
     render Format.cpp:937/:947 (the kEagerForward shape exactly, no
     extra token); DROpKindName :120-121; kAllKinds Format.cpp:1054
-    (26) [E-126]; enum DeltaRel.h:190/:201. Mold deltas every future
+    (26) [E-126]; enum DeltaRel.h:190/:201. [E-130 MED: at a7dde012
+    (post-R-E42) kAllKinds is Format.cpp:1075 and the array holds 27
+    kinds — R-E42 added kIngestLoop(26), so the (26) count is now
+    stale; totality-guard msg at :1099 reads "28th DROpKind".
+    DROpKindName kEagerUnion:120/kEagerSelect:121 HELD.] Mold deltas
+    every future
     slice inherits:
 
       M10 STRENGTHENED-RECOUNT PRECEDENT (ADJ-R3-2): when the mint
@@ -572,7 +628,10 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
     E-124); the M10
     recount at the V-NEG-CTX op-site :3090ff (ctx==kEager &&
     CanReceiveDeletions -> abort); key_of gate branch :4527;
-    V-READY eager-gate skips :5063/:5067 [E-128: +54]. Mold deltas
+    V-READY eager-gate skips :5063/:5067 [E-128: +54] [E-134 LOW: at
+    a7dde012 the kNegateGate recount case is :3155 (abort
+    ~:3178-3184); key_of gate branch :4527→:4669; V-READY eager-gate
+    skips :5063/:5067→:5214/:5218]. Mold deltas
     every future slice inherits:
 
       M14 EFFECT-BEARING RE-SOURCE PRECEDENT (the §20(O) crux,
@@ -1049,7 +1108,11 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
       DeltaRel->Rel. SCOPE is a head ruling: dir+library+flag
       (-deltarel-out, SetDeltaRelDumpStream —
       ControlFlow/Format.h:17) vs the full identifier sweep
-      (DROp/DRFlowGraph/DR*). NOTE the dump-surface tail: renaming
+      (DROp/DRFlowGraph/DR* — E-137 COSM: this bucket includes the
+      tests/DeltaRelValidators/ target [CMakeLists.txt +
+      InstanceOrderTest.cpp, #include "DeltaRel.h", DRFlowGraph/DROp/
+      CheckInstanceOrder, ctest NAME DeltaRelValidators] the
+      dir+library rename ripples into). NOTE the dump-surface tail: renaming
       the `.deltarel` surface renames ELEVEN golden files + the
       irgold sidecar surface tokens + runall.sh's surface list —
       its own mini-bless, or the surface name stays `.deltarel`
@@ -1097,7 +1160,9 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
         commented out) — present only when the class got a table AND
         the view got the stamp; a table-less view of a table-BACKED
         class is exactly the E-106/E-107 blind shape.
-      ModelTableOrNull (DeltaRel.cpp:1267) = view_to_model->FindAs
+      ModelTableOrNull (DeltaRel.cpp:1299 — E-136 LOW: §6 stamped at
+        the PIN-3 tip, not re-anchored post-R-E42, which pushed the
+        def down ~32 lines from :1267) = view_to_model->FindAs
         <DataModel>()->table — the render/recount authority (M12).
 
     THE DOT EMITTER (Format.cpp:40ff, per-view label cell):
