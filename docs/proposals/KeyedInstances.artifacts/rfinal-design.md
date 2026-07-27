@@ -168,6 +168,15 @@ non-redundant. Downgrade "proven" → **"proven modulo the distinct-pivot-per-co
 invariant"**; that invariant is EMPIRICALLY true across all 28 delta cases (every
 key-eq column maps to a unique pivot var), and the 28×4 A/B stdout sweep is the
 backstop.
+[CORRECTED at the Fold B landing (the Fable review's finding [1]): the
+sentence "there one key_eq conjunct would be non-redundant" MIS-MODELED the
+pre-fold code — the deleted loop resolved each column via FIRST-MATCH
+pivot_for_col, so in the duplicate-column corner it emitted the FIRST
+pivot's equality TWICE and never the second pivot's constraint: the old
+belt NEVER protected that corner, and reverting Fold B would NOT restore
+protection there. The corner is now guarded STRUCTURALLY instead: EmitJoin
+carries an always-on JOIN-KEY-DUP abort (indexed key columns pairwise
+distinct per side), converting the empirical qualifier into a gate.]
 
 **WITNESS PICK — cf16_2 (ratified R5-empirical, owner-ruling-brief.md:274).**
 Enumerated all 28 delta cases; cf16_2 is the ONLY case exercising the MULTI-COLUMN

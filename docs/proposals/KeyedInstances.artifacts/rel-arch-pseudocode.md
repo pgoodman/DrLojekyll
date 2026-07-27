@@ -1111,9 +1111,24 @@ owes); kNegateGate rides the generic render (no dedicated case).
       under the foldA-F1 last-write-wins pin and the {let,parent}
       chain re-anchored on the join itself); the Runtime contract
       pin landed at Table.h:789ff (operator== value-equality
-      spelling per the Fable review). The side_key_eqs delta fold
-      is NEXT (ruled ADOPT gated on the cf16_2 witness —
-      rfinal-design.md §2).]
+      spelling per the Fable review).]
+      [FOLD B DONE (2026-07-27, ledger §20(X); ruled R5
+      ADOPT-gated-on-witness): side_key_eqs is RETIRED — the
+      differential join sections emit NO per-side key-equality
+      conjuncts (the Database.cpp :2791/:2862/:2896 anchors above
+      are DEAD); cf16_2 is the seeded-then-re-blessed witness (the
+      only multi-column crossed-key carrier); the Table.h contract
+      NOTE now claims full generality over JOIN emission (body +
+      sections) — within join emission the probe is the one
+      equality authority, guarded by the new always-on JOIN-KEY-DUP
+      abort in EmitJoin (indexed key columns pairwise distinct per
+      side, the foldB-F3 invariant made structural). SCAN-side
+      re-checks REMAIN and are not all redundant: EmitTableScan's
+      full-scan fallback re-checks are LOAD-BEARING (no probe on
+      that path — never fold them), while BuildMaybeScanPartial's
+      TUPLECMP scan belt IS probe-redundant by the same argument —
+      the discovered FOLD C candidate, its own witness + gate
+      family owed (Fable review, Fold B round).]
       (4) THE RENAME RITUAL (LAST; its own commit; zero semantic
       churn in the same diff — the lib/DR->lib/DeltaRel precedent):
       DeltaRel->Rel. SCOPE is a head ruling: dir+library+flag

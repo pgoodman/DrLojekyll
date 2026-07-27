@@ -52,7 +52,42 @@ foldA-F1..F4) vs OUTCOME:
   [BYTE]   VAR ids stable (the folded TUPLECMP mints no next_id) ..... MATCHED
            (clean-dedent diffs only; no renumbering anywhere).
 
-GATES RECORD (as landed; the binding copy is ledger §20(W)): pre-bless
+## SLICE 2 — FOLD B (side_key_eqs retirement; codegen-only)
+
+STAGE-(d) THREE-WAY (compact form — the design §2 carried the byte-level
+after-shape): the ORCHESTRATOR-authored dump-blind predictions
+(foldB/author-predictions.md: the 3-cut Database.cpp diff; cf16_2.h.opt =
+EXACTLY 2 predicate lines rewritten in place, both post-fold lines given
+verbatim; DONT-CHANGE = every other pinned surface; churn EXACTLY 28/175;
+pre-bless red EXACTLY `cf16_2 irgold h.opt IRGOLD-DIVERGE`) == the BLIND
+worktree prototype (Database.cpp only, 5+/22−; churn 28 EXACT after the
+lane itself caught and corrected a stale-baseline confound — first count
+85 = FoldA+FoldB compound, rebuilt the Fold-A-only reference; 19/19
+worktree-pinned surfaces identical; e2e cf16_2 4/4 modes + oracle +
+monotone identical) == the PRISTINE implementation (converged patch +
+the three comment riders Fold B obligates: Table.h NOTE lifted to full
+generality, both Program.h "sections still conjoin" clauses updated) —
+cf16_2's header BYTE-IDENTICAL pristine==proto, and the author's two
+predicted post-fold predicate lines match VERBATIM (orchestrator cmp,
+E-77). WITNESS-FIRST: cf16_2's h.opt pin was seeded PRE-fold in its own
+commit (RAT-8; red EXACTLY `IRGOLD-MISSING`; bless source byte-verified
+against the orchestrator-reviewed dump) so the fold's churn landed as a
+reviewed IRGOLD-DIVERGE re-bless.
+
+GATES RECORD (binding copy = ledger §20(X)): pre-bless red EXACTLY the
+one pre-registered IRGOLD-DIVERGE → bless (source byte-verified
+same-as-converged; 3 sibling rewrites no-ops) → SUITE PASS(175) ×3;
+data/ 144 rows behavior-identical vs frozen ea72d97a; ctest 5/5 debug +
+5/5 ASAN; ASAN both surfaces PASS(175); config-invariance SINGLE-HASH
+(cf16_2 h, 3-run debug + release); Q5 progsize@128 ABABAB noise (~0.7%)
++ tc_random engine medians 0.0-0.1% noise — tc_random's header
+byte-identical: its joins are INDUCTIVE (round-shell emission), outside
+the acyclic differential-section surface this fold touches; NEITHER fold
+has a bench flagship carrier (honest ADJ-S8 note; a future acyclic-
+differential-join workload would be the witness). Fable review record in
+§20(X).
+
+## SLICE 1 GATES RECORD (as landed; the binding copy is ledger §20(W)): pre-bless
 reds EXACTLY the 3 pre-registered IRGOLD-DIVERGE → bless (sources
 byte-verified same-as-converged; 8 sibling rewrites no-ops) → SUITE
 PASS(175) ×3 + post-fix; data/ 144 rows behavior-identical vs frozen

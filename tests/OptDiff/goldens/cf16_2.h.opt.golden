@@ -232,7 +232,7 @@ inline bool flow_84(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4
         const auto r53_1 = table_4.RowAt(j53_1);
         const auto v59 = r53_1.f;
         const auto v57 = r53_1.c1;
-        if (r53_0.f == v54 && r53_0.c1 == v55 && table_4.InNew(j53_0) && r53_1.c1 == v54 && r53_1.f == v55 && table_4.InNew(j53_1) && (table_4.NetAdded(j53_0) || table_4.NetAdded(j53_1))) {
+        if (table_4.InNew(j53_0) && table_4.InNew(j53_1) && (table_4.NetAdded(j53_0) || table_4.NetAdded(j53_1))) {
           {
             const auto d6 = symmetric_8.AddDerivation({v54, v55}, ::hyde::rt::DerivClass::kNonRecursive);
             if (d6.crossed) {
@@ -240,7 +240,7 @@ inline bool flow_84(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4
             }
           }
         }
-        if (r53_0.f == v54 && r53_0.c1 == v55 && table_4.InI(j53_0) && r53_1.c1 == v54 && r53_1.f == v55 && table_4.InI(j53_1) && (table_4.NetDeleted(j53_0) || table_4.NetDeleted(j53_1))) {
+        if (table_4.InI(j53_0) && table_4.InI(j53_1) && (table_4.NetDeleted(j53_0) || table_4.NetDeleted(j53_1))) {
           {
             const auto d7 = symmetric_8.SubDerivation({v54, v55}, ::hyde::rt::DerivClass::kNonRecursive);
             if (d7.crossed) {

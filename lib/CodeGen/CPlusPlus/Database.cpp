@@ -2784,14 +2784,6 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
   // ids the scans below hold in scope.
   std::vector<std::string> side_reads;
 
-  // Per-side pivot-equality re-checks for the delta sections: a joined
-  // combination requires every side's scanned key columns to equal the
-  // pivot, and the sections conjoin that equality directly into their
-  // emitted predicates. (The index probe is full-key exact — Table.h
-  // `First`/`Next` — so the monotone body path emits no such re-check;
-  // retiring THESE conjuncts likewise is the separate side_key_eqs fold.)
-  std::vector<std::string> side_key_eqs;
-
   // Pivot loop.
   cc << cc.Indent() << "for (auto [" << JoinExprs(pivot_vars, ", ") << "] : "
      << VecName(region.PivotVector()) << ") {\n";
@@ -2805,6 +2797,29 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
     const auto member = table_member[table.Id()];
     const auto &fields = col_field[table.Id()];
     const auto indexed_cols = region.IndexedColumns(i);
+
+    // The side_key_eqs fold's soundness invariant, made structural
+    // (rfinal-design.md §2 foldB-F3): each side's indexed key columns are
+    // pairwise DISTINCT. `pivot_for_col` below is first-match, so a
+    // repeated key column would silently bind every repeat to the FIRST
+    // pivot's variable (the retired per-side key-equality belt never
+    // guarded this corner either — it emitted the first pivot's equality
+    // twice). Always-on: survives NDEBUG.
+    {
+      std::vector<unsigned> seen_key_col_ids;
+      for (DataColumn used_col : indexed_cols) {
+        for (const auto seen_id : seen_key_col_ids) {
+          if (seen_id == used_col.Id()) {
+            fprintf(stderr,
+                    "JOIN-KEY-DUP: join table %u repeats indexed key "
+                    "column %u\n",
+                    table.Id(), used_col.Id());
+            abort();
+          }
+        }
+        seen_key_col_ids.push_back(used_col.Id());
+      }
+    }
 
     // The pivot variable expression for a given indexed column.
     const auto pivot_for_col = [&](DataColumn col) -> std::string {
@@ -2854,15 +2869,6 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
     side_reads.push_back(member + ".InI(" + cursor + ")");
     side_reads.push_back(member + ".NetDeleted(" + cursor + ")");
 
-    std::string key_eq;
-    for (DataColumn col : indexed_cols) {
-      if (!key_eq.empty()) {
-        key_eq += " && ";
-      }
-      key_eq += row + "." + fields[col.Index()] + " == " + pivot_for_col(col);
-    }
-    side_key_eqs.push_back(key_eq.empty() ? "true" : key_eq);
-
     // Bind this table's output variables to the scanned row, positionally
     // in table column order (the IR's guard regions rely on this).
     const auto out_vars = region.OutputVariables(i);
@@ -2887,16 +2893,16 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
   }
 
   // Delta sections: each per-combination predicate is a conjunction of the
-  // sides' pivot-equality re-checks and snapshot reads, and a disjunction
-  // of their net-change reads — one-byte flag reads (differential sides) or
-  // watermark id comparisons (monotone sides) on the ids already in scope.
+  // sides' snapshot reads, and a disjunction of their net-change reads —
+  // one-byte flag reads (differential sides) or watermark id comparisons
+  // (monotone sides) on the ids already in scope. (No pivot-equality
+  // re-check: the index probe is full-key exact — Table.h `First`/`Next`.)
   const auto num_sides = tables.size();
   const auto emit_section = [&](ProgramRegion section, unsigned all_of,
                                 unsigned one_of) {
     cc << cc.Indent() << "if (";
     for (auto i = 0u; i < num_sides; ++i) {
-      cc << side_key_eqs[i] << " && " << side_reads[i * 4u + all_of]
-         << " && ";
+      cc << side_reads[i * 4u + all_of] << " && ";
     }
     auto sep = "(";
     for (auto i = 0u; i < num_sides; ++i) {

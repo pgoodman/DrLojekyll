@@ -426,8 +426,13 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     scan->in_vars.AddUse(in_var);
   }
 
-  // Scans are funny. Even though we're looking into an index, we permit the
-  // index to be slightly faulty, and so we double check all results.
+  // Every partial index scan emits this TUPLECMP belt re-checking the
+  // scanned results against the requested key. The index probe is in fact
+  // full-key exact (Table.h `First`/`Next` — the contract the join folds
+  // pinned), so the belt is probe-REDUNDANT by the same argument that
+  // retired the join belts — but retiring it is its OWN fold with its own
+  // witness and gate family (the R-final Fold C candidate); until that
+  // lands, the belt stays, deliberately.
   TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
       scan, ComparisonOperator::kEqual);
   scan->body.Emplace(scan, cmp);

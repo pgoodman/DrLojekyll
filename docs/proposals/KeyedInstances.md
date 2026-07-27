@@ -4440,3 +4440,60 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     seeding is the gate precondition, rfinal-design.md §2); the
     R1..R-E42 residual set carries unchanged. NEXT: Fold B, then the
     emission op, the flip, the rename — per rfinal-design.md §2-§5.
+    [EXECUTED — §20(X).]
+
+(X) R-FINAL SLICE 2 — FOLD B LANDED (2026-07-27): side_key_eqs RETIRED —
+    the differential join sections emit NO per-side key-equality
+    conjuncts (codegen-only; Database.cpp: the vector decl + comment, the
+    key_eq build loop, and the `side_key_eqs[i] << " && "` conjunct
+    prefix all deleted; indexed_cols/side_reads/scan arms stay). The
+    ruled R5 ADOPT-gated-on-witness: cf16_2's h.opt pin was SEEDED
+    PRE-FOLD in its own commit (RAT-8; red EXACTLY IRGOLD-MISSING; the
+    only corpus carrier of the MULTI-COLUMN crossed-key conjunction —
+    r53_1.c1==v54 && r53_1.f==v55 against the swapped Find({v55,v54})
+    key), so the fold landed as a reviewed IRGOLD-DIVERGE re-bless.
+    Fold B also LIFTS the Table.h contract NOTE to full join generality
+    (body + sections) and updates both Program.h "sections still
+    conjoin" clauses — the Fable-review-[0]-anticipated riders.
+    STAGE-(d) THREE-WAY (compact — the design §2 carried the after-shape):
+    ORCHESTRATOR-authored dump-blind predictions (the 3-cut source diff;
+    cf16_2 = EXACTLY 2 predicate lines rewritten in place, both post-fold
+    lines given VERBATIM; churn EXACTLY 28/175; the one pre-bless red) ==
+    blind worktree prototype (Database.cpp only; churn 28 EXACT — the
+    lane itself caught a stale-baseline confound, first count 85 =
+    FoldA+B compound, rebuilt the Fold-A-only reference; e2e cf16_2 4/4
+    modes + oracle + monotone identical) == pristine implementation —
+    cf16_2's header BYTE-IDENTICAL, the author's predicted lines matched
+    VERBATIM (orchestrator cmp, E-77). FABLE REVIEW (13-agent, high): 4
+    findings, ZERO live correctness in the fold — [0] the rel-arch
+    "anywhere" claim OVERBROAD (EmitTableScan's full-scan fallback
+    re-checks are LOAD-BEARING — never fold them; sentence re-scoped to
+    join emission); [1] the design F3 corner-model WRONG (first-match
+    pivot_for_col: the old belt emitted the first pivot's equality TWICE
+    and never protected the duplicate-column corner — reverting Fold B
+    would NOT restore protection; design corrected in place); [2] the
+    foldB-F3 invariant made STRUCTURAL — a new always-on JOIN-KEY-DUP
+    fprintf+abort in EmitJoin (indexed key columns pairwise distinct per
+    side; survives NDEBUG); [3] BuildMaybeScanPartial's TUPLECMP scan
+    belt DISCOVERED as the same probe-redundant pattern — the FOLD C
+    candidate, its own witness + gate family owed (the "slightly faulty"
+    comment replaced with the honest contract + deferral note). Fixes
+    proven emission-NEUTRAL (21/21 pinned surfaces byte-identical
+    post-fix) + post-fix SUITE PASS(175). GATES (final tree): pre-bless
+    red EXACTLY the 1 pre-registered IRGOLD-DIVERGE → bless (source
+    byte-verified same-as-converged; 3 sibling rewrites no-ops) → SUITE
+    PASS(175) ×3 + post-fix; churn EXACTLY 28/175 delta-carrying .h-only
+    (133/161 compiled byte-identical, 14 diagnostics headerless); data/
+    144 rows behavior-identical vs frozen ea72d97a; ctest 5/5 debug +
+    5/5 ASAN; ASAN BOTH surfaces SUITE PASS(175) zero reports;
+    config-invariance SINGLE-HASH (cf16_2 h, 3-run debug + release); Q5
+    progsize@128 ABABAB ~0.7% noise + tc_random engine medians 0.0-0.1%
+    noise — tc_random's header BYTE-IDENTICAL under Fold B too (its
+    joins are INDUCTIVE round-shell emission, not the acyclic
+    differential sections): NEITHER fold has a bench flagship carrier
+    (honest ADJ-S8 note; an acyclic-differential-join workload is the
+    future witness). RESIDUALS OPENED: Fold C (the scan-partial belt) +
+    the standing set. NEXT: the per-join EMISSION op (kJoinEmit/
+    kProductEmit per rfinal-design.md §3 as amended emit-HIGH-1/2 +
+    MED-1/2 — the E-71 grammar lane for form=/order=/seq= rules
+    pre-code), then the flip SD-1..SD-4, then the rename.
