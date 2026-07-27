@@ -225,6 +225,20 @@ class Context {
   };
   std::vector<EmittedIngestFold> emitted_ingest_folds;
 
+  // R-E42 V-INGEST-XCHECK Site 5 sibling: the payload each `LowerIngestLoop`
+  // emission produced, recorded at emission time (same walk-authority shape as
+  // emitted_ingest_folds — the flow does not exist at walk time). A closing
+  // check in BuildStratumPhases compares this multiset against the flow's
+  // kIngestLoop op multiset. The key OMITS the table (a kIngestLoop is
+  // table-less by construction): (sign, is_explicit, role, message-id).
+  struct EmittedIngestLoop {
+    int sign;            // +1 (the monotone arrival)
+    bool is_explicit;    // false (never a message-support toggle)
+    uint8_t role;        // VecRole cast (kEmpty)
+    uint64_t message;    // ParsedMessage::Id()
+  };
+  std::vector<EmittedIngestLoop> emitted_ingest_loops;
+
   // V-INST-EMITTED (D2.b, HP-1): the (store_id, kind) of every keyed-instance
   // region emitted, cross-checked against the flow's {kSubgraphInstantiate,
   // kInstanceDeath, kInstanceSeal} enrollment. Enrolls ALL THREE kinds (a

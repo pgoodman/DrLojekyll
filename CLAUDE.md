@@ -227,9 +227,19 @@ exact signatures before writing a driver.
   V-INGEST-XCHECK Site 5 multiset-compares every emitted fold against
   the flow's kIngestFold enrollment — the eager web is in the
   cross-checked model). The descent itself (`BuildEagerRegion`ff) is
-  the PRINCIPAL (not the only) remaining hand-coded emission surface — the
-  table-less monotone receive also hand-mints a VECTORLOOP shim in
-  `ExtendEagerProcedure` (`Procedure.cpp`) via no DR-IR op (E-42). Since
+  now the ONLY remaining hand-coded emission surface — since the R-E42
+  slice the table-less monotone receive's VECTORLOOP shim in
+  `ExtendEagerProcedure` (`Procedure.cpp`) is ALSO modeled: the
+  ingest-family `kIngestLoop` op (id-neutral effect-free ctor,
+  tail-append enrollment via its own IOs-x-Receives re-derivation, a
+  per-RECEIVE count law + its own Site-5 sibling multiset over
+  `Context::emitted_ingest_loops`) lowers via the sibling
+  `LowerIngestLoop` — the byte-move of the old shim (VECTORLOOP + one
+  VAR per receive column at the original walk position), returning the
+  loop as the descent cursor under its own always-on INGEST-LOOP
+  cursor-shape guard; render is marker-shape (`message=<name>/<arity>`,
+  no `table=`) but the kind is NEVER an eager marker (stays out of
+  `IsEagerMarkerKind`/EAGER_WEB). Since
   the R1/R2/R3/R4/R-JOIN slices of the Rel epoch, the descent's
   TUPLE-forward, terminal-INSERT, CMP-filter, MAP functor-call,
   MERGE-union, SELECT-rebind, NEGATE-gate, pivot-JOIN and @product
@@ -273,8 +283,10 @@ exact signatures before writing a driver.
   the R-JOIN pair: `join_1` (the acyclic pivot-join carrier,
   `kEagerJoin=4` over 2 table-less join views) and `optimize_2` (the
   first @product carrier, `kEagerProduct=2`); all opt-mode via their
-  `.irgold` sidecars). The remaining unmodeled arm
-  (E-42) migrates as its own slice
+  `.irgold` sidecars; census 27 kinds since R-E42 — every pin's census
+  line carries `kIngestLoop=`, and the kIngestFold=0 quad map_3/merge_2/
+  elim-cond-cycle-simple/join_1 carries real kIngestLoop blocks).
+  NO unmodeled arm remains; the descent's interior migrates at R-final
   (see KeyedInstances.artifacts/rel-arch-pseudocode.md §4-§5).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,

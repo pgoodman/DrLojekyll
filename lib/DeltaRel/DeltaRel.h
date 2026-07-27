@@ -226,6 +226,22 @@ enum class DROpKind : uint8_t {
                          //   product arm (on-cycle differential products
                          //   reject upstream via ViewSelfReachable).
                          //   EFFECT-FREE; NO stored payload.
+  kIngestLoop,           // (26) R-E42: a table-LESS monotone receive's
+                         //   ingest VECTORLOOP shim (ExtendEagerProcedure
+                         //   Arm C — the last emission surface with no model
+                         //   op). An INGEST-family sibling of kIngestFold
+                         //   (NOT an eager marker: it ALLOCATES 1+arity ids
+                         //   at the walk position, so it is OUT of
+                         //   IsEagerMarkerKind and the EAGER_WEB switch, and
+                         //   keeps kIngestFold's count law intact — the quad
+                         //   stays kIngestFold=0). EFFECT-FREE (the shim only
+                         //   READS the param vec — no counter, no queue
+                         //   append), table-LESS by construction (its head is
+                         //   induction-owned; the descent's InTryInsert emits
+                         //   the fold under an induction). Reuses the ingest_*
+                         //   payload: `ingest_message` (render) +
+                         //   `ingest_receive` (.Columns() for the VARs); all
+                         //   table pointers null ⇒ op_table_id 0 ⇒ lead-0.
 };
 
 // R3 aggregate provenance (spec §2.2): whether a GROUP_UPDATE came from an
@@ -1007,6 +1023,24 @@ DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
                             ParsedMessage message, QueryView receive,
                             TABLE *table);
 
+// R-E42: the single authority for a table-LESS monotone receive's kIngestLoop
+// op (design §D3 / RH-3). Sibling to MakeMonotoneIngestFold; shared by
+// BuildDRInventory's tail-appended enrollment and the ExtendEagerProcedure →
+// LowerIngestLoop walk-position lowering (§12.6 single-authority discipline).
+// ID-NEUTRAL and EFFECT-FREE: sets only `ingest_message` + `ingest_receive`
+// (`ingest_table` stays null — the table-less discriminant), sign +1, no
+// effects. Pure function of its inputs (no ids).
+DROp MakeIngestLoopOp(ParsedMessage message, QueryView receive);
+
+// R-E42 (Fable review [4]): the ONE flow-side spelling of a kIngestLoop op's
+// census/Site-5 key — shared by the ValidateDROps key multiset and the
+// Site-5 sibling check in Stratum.cpp so the two extractions cannot drift.
+// The derivation-side constructions (the census recount's expected keys; the
+// walk-time emitted record) build the same 4-tuple field-for-field and cite
+// this helper at their sites.
+using IngestLoopKey = std::tuple<int, bool, uint8_t, uint64_t>;
+IngestLoopKey IngestLoopKeyOf(const DROp &op);
+
 // R1: the two single-authority ctors for the eager-web marker ops (design
 // §A.3). Pure functions (no ids, no effects). `table` may be null (a table-less
 // TUPLE). The walk-position mint (Build.cpp LowerRelStep_*) and the inventory
@@ -1056,6 +1090,19 @@ TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view);
 // EMPTY body — the descent fills the hole). RETURNS the UPDATECOUNT fold body
 // cursor (E-34 (iii): the caller threads it as `next_parent`).
 OP *LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
+                    PARALLEL *parent, VECTOR *loop_vec);
+
+// R-E42 (design §D2): the SIBLING of LowerIngestFold for a table-less monotone
+// receive's kIngestLoop op. The byte-move of the old hand-minted Arm-C shim —
+// VECTORLOOP over `loop_vec` + one VAR per receive column, minting 1+arity ids
+// at the ORIGINAL walk position (the id-stream contract) — with NO UPDATECOUNT
+// and NO queue append (effect-free). RETURNS the VECTORLOOP as the descent
+// cursor (the caller threads it as `next_parent`; BuildEagerInsertionRegions
+// Emplaces into loop->body). Records the emitted loop's (sign, is_explicit,
+// role, message) into `context.emitted_ingest_loops` for the V-INGEST-XCHECK
+// Site 5 sibling coverage check. Keeps LowerIngestFold's fold-invariant asserts
+// PRISTINE (never relaxes its table!=null assert).
+OP *LowerIngestLoop(ProgramImpl *impl, Context &context, const DROp &op,
                     PARALLEL *parent, VECTOR *loop_vec);
 
 // T2b — the `-deltarel-out` sink. `SetDeltaRelDumpStream` (also declared on the

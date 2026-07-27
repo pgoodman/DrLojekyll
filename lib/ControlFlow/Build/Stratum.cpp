@@ -1985,6 +1985,50 @@ OP *LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
   return fold;
 }
 
+// INGEST-LOOP LOWERING (dr → cf). R-E42 (family #4, stage 2): the SIBLING of
+// LowerIngestFold for a table-LESS monotone receive's kIngestLoop op. The
+// byte-move of the old hand-minted Arm-C shim (ExtendEagerProcedure): a
+// VECTORLOOP over `loop_vec` + one VAR per receive column — NO UPDATECOUNT, NO
+// queue append (effect-free; the shim only reads the param vec). The id stream
+// is exactly 1+arity (VECTORLOOP then VAR-per-col), minted at the ORIGINAL walk
+// position in the shared `impl->next_id` stream so byte-identity holds (the
+// stage-a §5 id-stream contract). RETURNS the VECTORLOOP as the descent cursor
+// (the exact analog of the hand-coded arm's `next_parent = loop`): the caller
+// threads it as `next_parent` and BuildEagerInsertionRegions Emplaces the
+// insertion subtree INTO loop->body.
+//
+// Records the emitted loop's (sign, is_explicit, role, message) into
+// `context.emitted_ingest_loops` for the V-INGEST-XCHECK Site 5 sibling
+// coverage check (Fact 1's walk-vs-enrollment 1:1 identity is the guarded
+// invariant). Keeps LowerIngestFold's fold-invariant asserts PRISTINE — the D2
+// sibling never enters the fold path.
+OP *LowerIngestLoop(ProgramImpl *impl, Context &context, const DROp &op,
+                    PARALLEL *parent, VECTOR *loop_vec) {
+  assert(op.kind == DROpKind::kIngestLoop);
+  assert(op.ingest_table == nullptr);  // table-less by construction (§D3)
+  assert(op.effects.empty());          // vec-only, no counter/append (§D3)
+  const QueryView receive = *op.ingest_receive;
+
+  const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
+      impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
+  parent->AddRegion(loop);
+  loop->vector.Emplace(loop, loop_vec);
+  for (auto col : receive.Columns()) {
+    VAR *const var = loop->defined_vars.Create(impl->next_id++,
+                                               VariableRole::kVectorVariable);
+    var->query_column = col;
+    loop->col_id_to_var.emplace(col.Id(), var);
+  }
+
+  // V-INGEST-XCHECK Site 5 sibling: record the emitted loop. Table-less, so the
+  // key omits it (mirrors the emitted_ingest_folds push, minus table/klass).
+  context.emitted_ingest_loops.push_back(
+      {op.ingest_sign, op.ingest_is_explicit,
+       static_cast<uint8_t>(op.ingest_role), op.ingest_message->Id()});
+
+  return loop;
+}
+
 // R2 FAMILY #3 — COMMIT-SWEEP BAND LOWERING (dr → cf).
 //
 // Replaces the hand-coded end-of-batch sweep band (the deleted
@@ -2096,7 +2140,7 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   ValidateDROps(dr_flow, impl, context, query, recursive_sccs);
   LinearizeAndValidateDRFlow(dr_flow, impl, context, query, recursive_sccs);
 
-  // V-PRED-XCHECK Site 5 — INGEST FOLD-OP COVERAGE + PAYLOAD (subgraphs/demand
+  // V-INGEST-XCHECK Site 5 — INGEST FOLD-OP COVERAGE + PAYLOAD (subgraphs/demand
   // P1, §5). Ties the folds LowerIngestFold actually EMITTED (recorded at
   // emission time into `context.emitted_ingest_folds`, since the flow does not
   // exist at walk time — the §12.6 authority shape) back to the flow's
@@ -2124,12 +2168,11 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       if (op.kind != DROpKind::kIngestFold) {
         continue;
       }
-      // Only the EMITTABLE flow ops: a deletion-capable pair (stage1) and a
-      // monotone table-bearing op (stage1==false, table!=null). A table-less
-      // monotone receive enrolls no ingest op (DR.cpp), so none appears here.
-      if (!op.ingest_stage1 && op.ingest_table == nullptr) {
-        continue;
-      }
+      // Every enrolled kIngestFold is emittable: a deletion-capable pair
+      // (stage1) or a monotone table-bearing op (stage1==false, table!=null).
+      // A table-less monotone receive is its OWN kind (kIngestLoop, R-E42),
+      // already excluded by the kind filter above — so no table-less op ever
+      // reaches this fold loop.
       // Both authorities push the kCounter effect first; its klass is the
       // payload field LowerIngestFold consumed (R-KLASS closed).
       assert(!op.effects.empty() &&
@@ -2157,6 +2200,41 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     }
   }
 
+  // V-INGEST-XCHECK Site 5 (R-E42) — INGEST LOOP-OP COVERAGE, the table-less
+  // sibling of the fold check above. Ties the loops LowerIngestLoop actually
+  // EMITTED (recorded into `context.emitted_ingest_loops`) to the flow's
+  // kIngestLoop ops. A table-less (sign, is_explicit, role, message) 4-tuple
+  // multiset — every emitted loop must have an enrolled op and vice versa
+  // (Fact 1's walk-vs-enrollment 1:1 identity; the E-22 completeness half).
+  {
+    // The emitted side is the walk-time record (built field-for-field with
+    // IngestLoopKeyOf — Fable review [4]); the enrolled side IS the helper.
+    std::vector<IngestLoopKey> emitted;
+    emitted.reserve(context.emitted_ingest_loops.size());
+    for (const auto &e : context.emitted_ingest_loops) {
+      emitted.emplace_back(e.sign, e.is_explicit, e.role, e.message);
+    }
+    std::vector<IngestLoopKey> enrolled;
+    for (const DROp &op : dr_flow.ops) {
+      if (op.kind != DROpKind::kIngestLoop) {
+        continue;
+      }
+      enrolled.push_back(IngestLoopKeyOf(op));
+    }
+    std::sort(emitted.begin(), emitted.end());
+    std::sort(enrolled.begin(), enrolled.end());
+    if (emitted != enrolled) {
+      std::fprintf(
+          stderr,
+          "error: V-INGEST-XCHECK (Site 5) failed: the emitted ingest loops' "
+          "(sign, is_explicit, role, message) multiset disagrees with the "
+          "flow's kIngestLoop enrollment — a MakeIngestLoopOp-vs-walk coverage "
+          "divergence (%zu emitted vs %zu enrolled)\n",
+          emitted.size(), enrolled.size());
+      std::abort();
+    }
+  }
+
   // ALWAYS stash the flow graph (before any early return) so
   // `PublishDifferentialMessageVectors` can lower the commit-sweep band from its
   // kCommitSweep ops even when there is no per-stratum phase work — the old code
@@ -2167,7 +2245,7 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   const DRFlowGraph &flow = *context.dr_flow;
 
   // T2b — the `-deltarel-out` dump. PRE-guarded (no-op when no stream is set);
-  // drains here (past LinearizeAndValidateDRFlow + the V-PRED-XCHECK/Site-5
+  // drains here (past LinearizeAndValidateDRFlow + the V-INGEST-XCHECK Site-5
   // block) reading the stashed `flow` ref, BEFORE the no-phase early return
   // below so no-phase programs still emit a dump (spec §2.1-2.2).
   DumpDeltaRelIfEnabled(flow);

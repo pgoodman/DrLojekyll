@@ -121,6 +121,7 @@ static const char *DROpKindName(DROpKind k) {
     case DROpKind::kEagerSelect: return "kEagerSelect";
     case DROpKind::kEagerJoin: return "kEagerJoin";
     case DROpKind::kEagerProduct: return "kEagerProduct";
+    case DROpKind::kIngestLoop: return "kIngestLoop";
   }
   fprintf(stderr, "DELTAREL-DUMP: unhandled enum value in a spelling table\n");
   abort();
@@ -757,6 +758,26 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         break;
       }
 
+      // R-E42 (design §D7 / RH-7): the table-LESS monotone receive's ingest
+      // LOOP. MARKER-SHAPE (header + `args:` line ONLY; NO reads/effects/spine
+      // sublines — effect-free like the eager markers, §D3, and it sorts INTO
+      // the subline-free lead-0 band). NEVER the kIngestFold case verbatim:
+      // that prints `tid(op.ingest_table)` UNCONDITIONALLY and `tid()` has no
+      // null guard, so it would CRASH on this table-less op — there is NO
+      // `table=` token here. `message=` reuses the kIngestFold spelling (RH-8:
+      // no new token, no E-71 lane; it names the drained receive's add-vec).
+      case DROpKind::kIngestLoop: {
+        os << " sign=" << SignGlyph(op.ingest_sign) << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op) << "\n";
+        os << "    args:";
+        if (op.ingest_message.has_value()) {
+          os << " message=" << std::string(op.ingest_message->NameAsString())
+             << "/" << op.ingest_message->Arity();
+        }
+        os << "\n";
+        break;
+      }
+
       case DROpKind::kSeedFold: {
         os << " sign=" << SignGlyph(op.seed_sign) << " ctx=" << CtxName(op.ctx)
            << " stratum=" << DROpStratum(flow, op) << " src=" << tid(op.seed_source);
@@ -1042,7 +1063,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << "\n";
   }
 
-  // ---- census (26 DROpKind counts, enum order, one line; grammar R-10) ----
+  // ---- census (27 DROpKind counts, enum order, one line; grammar R-10) ----
   os << "\n";
   const auto count_kind = [&](DROpKind k) -> unsigned {
     unsigned n = 0u;
@@ -1065,7 +1086,8 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       DROpKind::kEagerForward, DROpKind::kEagerInsert,
       DROpKind::kEagerCompare, DROpKind::kEagerGenerate,
       DROpKind::kEagerUnion,   DROpKind::kEagerSelect,
-      DROpKind::kEagerJoin,    DROpKind::kEagerProduct};
+      DROpKind::kEagerJoin,    DROpKind::kEagerProduct,
+      DROpKind::kIngestLoop};
   os << "census:";
   unsigned census_total = 0u;
   for (DROpKind k : kAllKinds) {
@@ -1074,7 +1096,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << " " << DROpKindName(k) << "=" << n;
   }
   os << "\n";
-  if (census_total != flow.ops.size()) {  // a 27th DROpKind not in kAllKinds
+  if (census_total != flow.ops.size()) {  // a 28th DROpKind not in kAllKinds
     fprintf(stderr,
             "DELTAREL-DUMP: census covers %u of %zu ops (kAllKinds is "
             "missing a DROpKind)\n",

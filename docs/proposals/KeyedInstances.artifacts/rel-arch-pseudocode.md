@@ -137,6 +137,18 @@ the ritual head. M13 pre-swept (sole caller Procedure.cpp:820); M9:
 four committed kIngestFold=0 goldens (map_3/merge_2/elim/join_1)
 are candidate carriers. SINGLE-PASS: the next session's fleet
 re-verifies §4-§6 (incl. §4.4 and THIS block) before R-E42.
+AMENDED 2026-07-27 (post R-E42, §20(U)): §5's R-E42 block DONE —
+kIngestLoop(26) landed as the owner-ruled INGEST-family sibling kind
+(contracts re42-design.md RH-1..RH-10 + re42-desired-states.md;
+census 26->27; all ELEVEN .deltarel pins re-blessed; S4 RETIRED);
+§4.5 = the M17 ingest-family lower-in-place precedent. §2's Arm-C
+pseudocode and the S4 seam-artifact line are SUPERSEDED by §4.5 (the
+E-42 else-arm now mints kIngestLoop and lowers via LowerIngestLoop;
+left as-written for lineage). Remaining hand-coded surface: the
+descent itself (R-final — direction flip + the per-join emission op
++ the fold + count oracle + ClassifyEagerSink retirement + the
+DeltaRel->Rel rename ritual). SINGLE-PASS: the next session's fleet
+re-verifies §4-§6 (incl. §4.5) before R-final.
 RE-VERIFIED 2026-07-24 at tip 429f14f4 by the R-E42-open fleet (3
 seed-unread derivation lanes + 3 seed-read verifiers + 1 mechanical
 lane + xhigh consolidator; KeyedInstances.md §20(T)): SOUND-WITH-
@@ -601,6 +613,44 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
           the R-final substrate: the direction flip owes a SEPARATE
           per-emission op carrying the deferral's order key.
 
+## §4.5 R-E42 AS-LANDED MOLD DELTAS (2026-07-27; §20(U); contracts
+##      re42-design.md (RH-1..RH-10 ratified) + re42-desired-states.md —
+##      anchors read at the landing tip by the landing session)
+
+    The R-E42 cut is NOT a walk-dispatch arm: ExtendEagerProcedure's
+    table-less monotone else-arm (Arm C) now mints kIngestLoop(26) — the
+    27th kind, an INGEST-FAMILY sibling of kIngestFold, NOT an eager
+    marker (stays OUT of IsEagerMarkerKind and the EAGER_WEB switch) —
+    via the id-neutral effect-free MakeIngestLoopOp (payload =
+    ingest_message + ingest_receive; no table, no effects) and lowers it
+    IN PLACE via the sibling LowerIngestLoop (Stratum.cpp): the byte-move
+    of the old hand-minted shim — VECTORLOOP next_id++ then one VAR per
+    receive column — returning the loop as the descent cursor under a
+    new always-on INGEST-LOOP cursor-shape guard (the Arm-B guard's
+    mirror). Enrollment TAIL-APPENDS after EAGER_WEB via a dedicated
+    query.IOs()xReceives() re-derivation (Arm C is not reachability-
+    gated, so enrollment re-derives with no walk stream; every existing
+    op.N label stays byte-stable). Census: a SEPARATE per-RECEIVE count
+    law (exp counter + expect(kIngestLoop) + a table-less sibling key
+    multiset — never absorbed into exp_ingest, so kIngestFold=0 pins
+    stand); Site 5 gains a SIBLING emitted-vs-enrolled multiset over the
+    new Context::emitted_ingest_loops (the old dead table-less filter
+    DELETED; the block header renamed to V-INGEST-XCHECK). Render =
+    MARKER-SHAPE (header + args: message=<name>/<arity>; no table=, no
+    empty sublines); key_of = a dedicated lead-0 arm (sign=+1, oi).
+    S4 IS RETIRED. Mold delta every future slice inherits:
+
+      M17 INGEST-FAMILY LOWER-IN-PLACE PRECEDENT: an op whose lowering
+          ALLOCATES ids reproduces the replaced surface's id stream by
+          construction — the lowering is the byte-move of the replaced
+          mint at the original call position (the LowerIngestFold
+          hole-contract trick, now generalized to a second op kind); the
+          ctor stays id-neutral, the count law keys on the op's OWN
+          discovery inputs (per-RECEIVE here, per-visit for walk
+          markers — M15's referent is per-surface), and the render/
+          key_of/validator treatment follows the op's FAMILY (ingest),
+          not its shape (marker-rendered but never IsEagerMarkerKind).
+
 ## §5. THE PATH FORWARD AS DIFFS ON THE MOLD (§3's R1..Rk, updated)
 
     R2 — DONE (2026-07-22, §20(J); contracts r2-design.md ADJ-R2-0..8 +
@@ -834,7 +884,19 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
       forwards; whether an existing .deltarel carrier witnesses a
       JOIN marker or a new carrier is needed is a stage-(a)
       deliverable, walk/model-layer per M12).
-    R-E42 (NEXT after R-JOIN): the table-less monotone receive's
+    R-E42 — DONE (2026-07-27, §20(U); contracts re42-design.md
+      (RH-1..RH-10) + re42-desired-states.md): kIngestLoop(26) landed
+      per §4.5 — the ingest-family sibling kind, the sibling
+      LowerIngestLoop byte-move lowering, tail-append enrollment, the
+      per-RECEIVE count law + sibling Site-5 multiset, marker-shape
+      render with message=, lead-0 sign=+1 key. S4 RETIRED; census
+      26->27; ALL ELEVEN .deltarel pins re-blessed (the kIngestFold=0
+      quad gained real blocks +1/+3/+1/+2 at opt); three-way
+      convergence 11/11 (the sixth slice). The descent
+      (BuildEagerInsertionRegions ff) is now the ONLY remaining
+      hand-coded emission surface. [Historical starting-state text
+      retained below.]
+      THE ORIGINAL R-E42 BLOCK: the table-less monotone receive's
       VECTORLOOP shim minted from an op — S4 retires (the LAST
       emission surface with ZERO model representation).
       ORCHESTRATOR-READ ANCHORS AT TIP 18026049 (the R-JOIN-landing

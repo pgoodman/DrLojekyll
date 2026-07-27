@@ -1262,6 +1262,38 @@ DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
   return op;
 }
 
+// R-E42: the single authority for a table-LESS monotone receive's kIngestLoop
+// op (design §D3 / RH-3). Sibling to MakeMonotoneIngestFold, but ID-NEUTRAL and
+// EFFECT-FREE: the shim only READS the message param vec (no counter, no queue
+// append — kVecAppend would model a producer, kFlagRead an internal vec read
+// like kEagerForward's TABLESCAN), so it carries NO DR effect and hence NO dep
+// edge. `ingest_table` stays null (THE discriminant → op_table_id 0 → lead-0);
+// `ingest_message` drives render, `ingest_receive` gives `.Columns()` for the
+// VARs. Invoked from BOTH the walk (ExtendEagerProcedure Arm C) AND the
+// tail-appended enrollment, so the two payloads cannot diverge (§12.6).
+DROp MakeIngestLoopOp(ParsedMessage message, QueryView receive) {
+  assert(!receive.CanReceiveDeletions());
+  DROp op(DROpKind::kIngestLoop);
+  op.ctx = Ctx::kEager;
+  op.ingest_message = message;
+  op.ingest_receive = receive;
+  op.ingest_table = nullptr;
+  op.ingest_sign = 1;
+  op.ingest_is_explicit = false;
+  op.ingest_stage1 = false;
+  op.ingest_role = VecRole::kEmpty;
+  return op;  // no effects, no next_id
+}
+
+// R-E42 (Fable review [4]): see the header note — the one flow-side key
+// extraction for the loop family's order-free multiset checks.
+IngestLoopKey IngestLoopKeyOf(const DROp &op) {
+  assert(op.kind == DROpKind::kIngestLoop);
+  return IngestLoopKey(op.ingest_sign, op.ingest_is_explicit,
+                       static_cast<uint8_t>(op.ingest_role),
+                       op.ingest_message->Id());
+}
+
 // R1: a `.find()`-guarded model-table lookup (ADJ-S13/S14). Null when the view
 // has no model entry (a table-less TUPLE forward), never a crash.
 TABLE *ModelTableOrNull(ProgramImpl *impl, QueryView view) {
@@ -2363,7 +2395,9 @@ DRFlowGraph BuildDRInventory(
   // enrolls — and the descent's INSERT-stream publish / net-additions append
   // is a WALK effect emitted INTO the returned UPDATECOUNT's hole, never an
   // ingest-seed effect. A table-less monotone receive mints no counter fold
-  // (ExtendEagerProcedure's monotone else-branch) and is not an ingest fold.
+  // (ExtendEagerProcedure's monotone else-branch) and is not an ingest fold —
+  // since R-E42 it enrolls as its OWN kind (kIngestLoop) in the dedicated
+  // INGEST_LOOP block after EAGER_WEB below (Fable review [6]).
   // Construction is ID-NEUTRAL (no region/vector ids); the queue-vec ids are
   // minted at LOWER time in the same (message, receive, polarity) order (§4).
   for (QueryIO io : query.IOs()) {
@@ -2456,11 +2490,13 @@ DRFlowGraph BuildDRInventory(
 
   // ------------------------------------------------------------- EAGER_WEB (R1)
   // Enroll the monotone eager web's TUPLE-forward / terminal-INSERT dispatches
-  // (design §A.4). STRICTLY AFTER every other flow.ops enrollment family
-  // (ADJ-S2 BINDING PIN): the two ingest folds MUST keep construction indices
-  // 0/1 so their `op.0`/`op.1 kIngestFold` headers stay byte-identical — this
-  // block appends at the TAIL and shifts no pre-existing op's construction
-  // index. Walk-authoritative (§A.4): `BuildDRInventory` cannot cheaply
+  // (design §A.4). STRICTLY AFTER every PRE-EXISTING flow.ops enrollment
+  // family (ADJ-S2 BINDING PIN: the two ingest folds MUST keep construction
+  // indices 0/1 so their `op.0`/`op.1 kIngestFold` headers stay
+  // byte-identical) — this block shifts no earlier op's construction index.
+  // Since R-E42 it is NO LONGER the tail: the INGEST_LOOP family
+  // tail-appends after it under the same pin (Fable review [0]) — a NEW
+  // enrollment family appends after the CURRENT tail, never between blocks. Walk-authoritative (§A.4): `BuildDRInventory` cannot cheaply
   // re-derive the eager reachability set, so the walk (which already ran and
   // COMPLETED before BuildStratumPhases — F-ORDER) is the reachability
   // authority; here we re-invoke the SAME single-authority ctor from each
@@ -2507,6 +2543,35 @@ DRFlowGraph BuildDRInventory(
         // else is a mint-site defect.
         fprintf(stderr, "DELTAREL: non-eager kind in emitted_eager_ops\n");
         abort();
+    }
+  }
+
+  // -------------------------------------------------------------- INGEST_LOOP
+  // R-E42 (design §D4 / RH-4): the table-LESS monotone receives — the
+  // ExtendEagerProcedure Arm-C shim, now a modeled kIngestLoop op. A DEDICATED
+  // re-derivation over query.IOs()×Receives() (never by copying the eager walk;
+  // Fact 1 — Arm C is not reachability-gated, so re-derivation == the walk set
+  // 1:1). TAIL-APPENDED, STRICTLY AFTER the EAGER_WEB block: kIngestLoop gets
+  // the HIGHEST construction index so every pre-existing `op.N` label stays
+  // byte-stable (the diff is additive), and pinned_order re-sorts it into the
+  // lead-0 band regardless (key_of). Construction is ID-NEUTRAL and the ctor is
+  // shared with the walk lowering, so the enrolled and lowered payloads cannot
+  // diverge (§12.6). NO def-edge — the op is effect-free (reads only the param
+  // vec, whose ids are minted at LOWER time).
+  for (QueryIO io : query.IOs()) {
+    const auto io_receives = io.Receives();
+    if (io_receives.empty()) {
+      continue;
+    }
+    const ParsedMessage message = ParsedMessage::From(io.Declaration());
+    for (QueryView receive : io_receives) {
+      if (receive.CanReceiveDeletions()) {
+        continue;
+      }
+      if (impl->view_to_model[receive]->FindAs<DataModel>()->table != nullptr) {
+        continue;
+      }
+      flow.ops.push_back(MakeIngestLoopOp(message, receive));
     }
   }
 
@@ -3254,6 +3319,26 @@ void ValidateDROps(
         }
         break;
       }
+
+      // R-E42 (Fable review [2]): the loop's ALWAYS-ON shape check — the
+      // MakeIngestLoopOp ctor contract validated per-op like its siblings
+      // (the kIngestFold arm above; the markers' A.6(c)). The payload
+      // discriminants are load-bearing: a non-null table would key the op
+      // OUT of the lead-0 band (key_of) and a stray effect would mint dep
+      // edges — both silent mis-sorts, not crashes, and the ctor's own
+      // asserts compile out under NDEBUG, so only a loud per-op check
+      // catches them in a release build.
+      case DROpKind::kIngestLoop: {
+        if (op.ctx != Ctx::kEager || !op.ingest_message.has_value() ||
+            !op.ingest_receive.has_value() || op.ingest_table != nullptr ||
+            !op.effects.empty() || op.ingest_sign != 1 ||
+            op.ingest_is_explicit || op.ingest_stage1 ||
+            op.ingest_role != VecRole::kEmpty) {
+          ValidatorFail("V-INGEST: a kIngestLoop op violates its ctor "
+                        "contract (table-less, effect-free, +1 eager)");
+        }
+        break;
+      }
       default:
         break;
     }
@@ -3410,6 +3495,16 @@ void ValidateDROps(
   unsigned exp_ingest = 0u;
   using IngestKey = std::tuple<uintptr_t, int, bool, uint8_t, uint64_t>;
   std::vector<IngestKey> exp_ingest_keys;
+  // R-E42: the table-less monotone (kIngestLoop) recount rides the SAME
+  // IOs×Receives loop as a THIRD arm, under a SEPARATE counter — never absorbed
+  // into `exp_ingest`, so the kIngestFold count law and the four kIngestFold=0
+  // pins stand. Its key OMITS the table (null by construction): (sign,
+  // is_explicit, role, message).
+  unsigned exp_ingest_loop = 0u;
+  // (IngestLoopKey lives in the header; the expected keys below are the
+  // DERIVATION-side construction of the same 4-tuple — field-for-field with
+  // IngestLoopKeyOf, Fable review [4].)
+  std::vector<IngestLoopKey> exp_ingest_loop_keys;
   for (QueryIO io : query.IOs()) {
     const auto io_receives = io.Receives();
     if (io_receives.empty()) {
@@ -3431,6 +3526,10 @@ void ValidateDROps(
         const VecRole role = MonotoneIngestRoleDR(context, table);
         exp_ingest_keys.emplace_back(tid, 1, false,
                                      static_cast<uint8_t>(role), mid);
+      } else {  // R-E42: a table-less monotone receive → one kIngestLoop op.
+        exp_ingest_loop += 1u;
+        exp_ingest_loop_keys.emplace_back(
+            1, false, static_cast<uint8_t>(VecRole::kEmpty), mid);
       }
     }
   }
@@ -3497,6 +3596,7 @@ void ValidateDROps(
   expect(DROpKind::kFrontierFilter, exp_filter, "frontier filters");
   expect(DROpKind::kCommitSweep, exp_sweep, "commit sweeps");
   expect(DROpKind::kIngestFold, exp_ingest, "ingest folds");
+  expect(DROpKind::kIngestLoop, exp_ingest_loop, "ingest loops");  // R-E42
   expect(DROpKind::kGroupUpdate, exp_group_update, "group updates");
   expect(DROpKind::kStateSeal, exp_group_update, "state seals");
 
@@ -3652,6 +3752,31 @@ void ValidateDROps(
       std::fprintf(stderr,
                    "error: DR-IR op census mismatch (ingest fold keys): the "
                    "derived (table, sign, is_explicit, role, message) multiset "
+                   "disagrees with the independent recount\n");
+      std::abort();
+    }
+  }
+
+  // The INGEST_LOOP per-op key multiset (order-free; R-E42): the sibling of the
+  // INGEST_FOLD check above, table-LESS (a kIngestLoop carries no table). The
+  // recomputed (sign, is_explicit, role, message) keys must equal the multiset
+  // read off `flow`'s kIngestLoop ops — the E-22 completeness half of the
+  // table-less recount (a dropped or double-inventoried table-less receive
+  // mismatches here even when the count agrees).
+  {
+    std::vector<IngestLoopKey> got_ingest_loop_keys;
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kIngestLoop) {
+        continue;
+      }
+      got_ingest_loop_keys.push_back(IngestLoopKeyOf(op));  // [4]: one spelling
+    }
+    std::sort(exp_ingest_loop_keys.begin(), exp_ingest_loop_keys.end());
+    std::sort(got_ingest_loop_keys.begin(), got_ingest_loop_keys.end());
+    if (exp_ingest_loop_keys != got_ingest_loop_keys) {
+      std::fprintf(stderr,
+                   "error: DR-IR op census mismatch (ingest loop keys): the "
+                   "derived (sign, is_explicit, role, message) multiset "
                    "disagrees with the independent recount\n");
       std::abort();
     }
@@ -4047,6 +4172,23 @@ void ValidateDROps(
                       "(message, receive, polarity) key");
       }
       mask |= bit;
+    }
+
+    // R-E42 (Fable review [1]): the LOOP-family sibling — no table-less
+    // monotone receive owns two kIngestLoop ops. Unlike every other loop
+    // check (the census recount, the key multiset, Site 5 — all re-derived
+    // from the same query.IOs()×Receives() the enrollment walks), this
+    // guard reads the ENROLLED ops alone, so a future duplicated receive
+    // (the exact shape the fold half above catches) aborts here instead of
+    // shipping a doubled-VECTORLOOP miscompile with every validator green.
+    std::unordered_set<QueryView> loop_receives;
+    for (const DROp &op : flow.ops) {
+      if (op.kind != DROpKind::kIngestLoop) {
+        continue;
+      }
+      if (!loop_receives.insert(*op.ingest_receive).second) {
+        ValidatorFail("V-INGEST: two ingest loops share one receive");
+      }
     }
   }
 
@@ -4532,7 +4674,16 @@ void LinearizeAndValidateDRFlow(
     // query.IOs()×Receives()×(+before−) construction order, artifact §4).
     // Lead 0 puts every ingest→drain RAW forward in the key (ingest seeds the
     // queue the lead-1 phase drain reads — seed_before_drain).
-    if (op.kind == DROpKind::kIngestFold) {
+    // R-E42 (design §D8 / RH-9; merged per Fable review [3]): the table-less
+    // ingest LOOP shares the fold's EXACT key expression (its op_table_id
+    // resolves 0 — all table ptrs null; sign +1; oi ties multiple loops in
+    // the walk's IOs×Receives order), so one arm serves both ingest kinds.
+    // The arm is still REQUIRED versus the default, which returns a lead-1
+    // PHASE key that would mis-sort the loop out of the lead band. The loop
+    // is effect-free ⇒ never a dep-edge endpoint ⇒ invisible to V-READY/
+    // V-LINEAR/V-BAND-HAZARD.
+    if (op.kind == DROpKind::kIngestFold ||
+        op.kind == DROpKind::kIngestLoop) {
       return Key{0u, 0u, 0u, op_table_id(op), op.ingest_sign, oi};
     }
     // R1 (design §A.6(a)): the eager forwards/inserts ARE the pre-phase monotone

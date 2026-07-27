@@ -4165,3 +4165,97 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         digest; ritual-head rulings: op family, payload/effects, the
         PER-RECEIVE count law, the Site-5 extension, and the
         id-stream argument — the hole-contract lower-in-place shape).
+        [EXECUTED — §20(U).]
+
+(U) R-E42 LANDED (2026-07-27) — THE SIXTH SLICE and the FIRST
+    INGEST-LAYER migration: the table-less monotone receive's
+    VECTORLOOP shim (Arm C, S4 — the LAST emission surface with zero
+    model representation) is a MODELED DR-IR op. Binding contracts
+    COMMITTED: re42-design.md (the stage-(b)/(c) adjudicated design,
+    A1-A6, + the TEN ritual-head OWNER RULINGS RH-1..RH-10 ratified
+    2026-07-27) + re42-desired-states.md (the stage-(a) record + the
+    author predictions + the three-way/gates/Fable records). OWNER
+    RULINGS (all ten ratified as recommended): RH-1 kIngestLoop(26),
+    a new INGEST-FAMILY sibling kind (the 27th; NEVER an eager
+    marker — out of IsEagerMarkerKind and EAGER_WEB; the marker
+    family was REJECTED-BY-CONSTRUCTION: markers mint zero next_id,
+    Arm C MUST mint 1+arity); RH-2 the sibling LowerIngestLoop (the
+    byte-move of Arm C — VECTORLOOP next_id++ then one VAR per
+    receive column, returning the loop as the descent cursor) + a
+    new always-on INGEST-LOOP cursor-shape guard mirroring Arm B's;
+    RH-3 payload = ingest_message + ingest_receive, EFFECT-FREE
+    (vec-only read; zero kCounter-first edits — the A1 adjudication
+    struck the draft's false ":3177 REQUIRED edit"); RH-4 TAIL-APPEND
+    enrollment via a dedicated query.IOs()×Receives() re-derivation
+    AFTER EAGER_WEB (Arm C is not reachability-gated, so per-receive
+    == per-visit == per-emission and enrollment needs no walk
+    stream; every existing op.N label stays byte-stable — the
+    in-loop alternative would have renumbered the four quad goldens
+    wholesale); RH-5 the PER-RECEIVE count law under a SEPARATE
+    counter + expect(kIngestLoop) + a table-less sibling key
+    multiset (never absorbed into exp_ingest — the kIngestFold=0
+    quad stands); RH-6 Site 5 gains a SIBLING emitted-vs-enrolled
+    multiset over the new Context::emitted_ingest_loops, WITH both
+    hygiene riders (the dead table-less filter DELETED; the
+    V-PRED-XCHECK header renamed V-INGEST-XCHECK); RH-7 MARKER-SHAPE
+    render (header + args: only); RH-8 message=<name>/<arity>
+    reused — NO new spelling, NO E-71 lane (the referent shift
+    documented in the ruling); RH-9 a dedicated lead-0 key_of arm
+    (sign=+1, oi; merged with the fold arm post-review); RH-10 NO
+    new carrier — the kIngestFold=0 quad (map_3 +1 / merge_2 +3 /
+    elim-cond-cycle-simple +1 / join_1 +2) gains real blocks, all
+    ELEVEN pins re-blessed. §4.5 = the M17 ingest-family
+    lower-in-place precedent. MID-SLICE EVENTS (all recorded):
+    TWO owner-directed diffs landed BETWEEN stages (c) and (d) —
+    the aggregate multiplicity-semantics documentation (1ccc9be3)
+    and the projected-column LINT + agg_distinct_1 witness
+    (c8888e44, SUITE 173→174, ErrorLog gains the first-class
+    advisory-warning arm) — so the frozen A/B baselines were
+    re-snapshotted mid-slice (debug 0ed9cb3a / release e238bb17)
+    and every gate arithmetic moved to 174; the FIRST stage-(d)
+    prototype dispatch was REFUSED BY ITS OWN LANE (the
+    auto-provisioned worktree materialized 99 commits stale; the
+    lane stopped at its verify-the-tip step — the ritual working)
+    and was re-dispatched on a hand-provisioned worktree verified
+    at c8888e44; the AUTHOR lane died at its structured-output cap
+    and was RECOVERED FROM ITS COMPLETE DISK FILE (the R-JOIN
+    precedent, never respawned); the ASAN gate lane returned a
+    placeholder and was ORCHESTRATOR-EXECUTED. STAGE-(d) THREE-WAY
+    CONVERGENCE (the SIXTH slice): author hand-prediction
+    (dump-blind; full predicted bodies for the quad + census-append
+    diffs for the seven) == blind worktree prototype == pristine
+    implementation, BYTE-IDENTICAL 11/11 (orchestrator-executed cmp,
+    E-77). FABLE REVIEW (15-agent workflow): 6 findings, ZERO live
+    correctness — [1] a §7b-sibling duplicate-receive guard was
+    MISSING for the loop family (every other check re-derives from
+    the same IOs×Receives; FIXED, a new always-on enrolled-side
+    guard) and [2] kIngestLoop fell to the per-op validation
+    default (FIXED, a new always-on ctor-contract arm) — both
+    validator ADDITIONS; [0]/[6] comment drift FIXED (the ADJ-S2
+    tail-position wording; the INGEST_FOLD cross-ref); [3] key_of
+    arm merged; [4] IngestLoopKeyOf minted as the one flow-side key
+    spelling; 2 REFUTED. Fixes proven DUMP-NEUTRAL (18/18) +
+    post-fix suite/ctest/A-B/ASAN green. GATES (final tree): suite
+    pre-bless EXACTLY the 11 pre-registered IRGOLD-DIVERGE
+    (single-hash ×3, 0 MISSING, agg_distinct_1 green) → bless
+    (11/11 sources byte-verified same-as-converged BEFORE bless) →
+    PASS(174) ×3 + post-fix; A/B vs frozen c8888e44: 844 rows
+    (696+4+144) 0-DIVERGED + 64-row post-fix subset
+    (evm_array_parse identical-SIGABRT stands); ctest 5/5 debug +
+    5/5 ASAN; ASAN BOTH surfaces SUITE PASS(174) zero reports ×2;
+    config-invariance SINGLE-HASH ×22; E-62 re-grep CLEAN (live);
+    M15 count oracle 44/44 per-RECEIVE + emission-side (lldb
+    LowerIngestLoop == census; the cross-knob law held ×11 incl.
+    the four nodf B→C flips); Q5 progsize@128 release ABABAB A warm
+    {154,157,153} vs B {155,155,153,155} ms (~0.6% median, noise;
+    headers byte-identical). DOC DISCHARGES same-commit: rel-arch
+    §4.5 (M17) + §5 R-E42 DONE + banner; CLAUDE.md re-point (NO
+    unmodeled arm remains; the descent is the ONLY hand-coded
+    emission surface; census 27). RESIDUALS: the R1..R-JOIN set
+    carries unchanged (per-join emission op + pivot-belt fold +
+    side_key_eqs fold + count oracle + ClassifyEagerSink replica →
+    R-final; DS-R4-10; dead BuildNestedLoopJoin; spellings). NEXT:
+    R-final per §5 (the direction flip + the per-join emission op +
+    the fold + the eager count oracle + ClassifyEagerSink
+    retirement + the DeltaRel→Rel rename ritual). Errata continue
+    at E-130.

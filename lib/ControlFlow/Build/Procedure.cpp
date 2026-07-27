@@ -66,7 +66,9 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
     // (E-34 (iii); the pre-§6 arm set `next_parent = insert`). A table-LESS
     // monotone receive mints no counter fold (its head is induction-owned; the
     // descent's InTryInsert emits the fold under an induction) — NOT an ingest
-    // fold (DR.cpp), so it keeps the hand-coded VECTORLOOP-only path.
+    // fold (DR.cpp). Since R-E42 it is MODELED by a kIngestLoop op (the last
+    // emission surface with no DR representation retires): LowerIngestLoop
+    // (Stratum.cpp) mints the VECTORLOOP shim in place.
     DataModel *const model = impl->view_to_model[receive]->FindAs<DataModel>();
     TABLE *const table = model->table;
 
@@ -92,17 +94,28 @@ static void ExtendEagerProcedure(ProgramImpl *impl, QueryIO io,
         std::abort();
       }
     } else {
-      const auto loop = impl->operation_regions.CreateDerived<VECTORLOOP>(
-          impl->next_id++, parent, ProgramOperation::kLoopOverInputVector);
-      parent->AddRegion(loop);
-      loop->vector.Emplace(loop, vec);
-      for (auto col : receive.Columns()) {
-        VAR *const var = loop->defined_vars.Create(
-            impl->next_id++, VariableRole::kVectorVariable);
-        var->query_column = col;
-        loop->col_id_to_var.emplace(col.Id(), var);
+      // R-E42: the table-less monotone receive is NOW modeled — a kIngestLoop
+      // op, lowered IN PLACE by LowerIngestLoop (the byte-move of the old
+      // hand-minted shim, minting 1+arity ids at THIS walk position and
+      // returning the VECTORLOOP as the descent cursor). The op's provenance
+      // replaces "no op"; the emission is unchanged.
+      const DROp op = MakeIngestLoopOp(message, receive);
+      next_parent = LowerIngestLoop(impl, context, op, parent, vec);
+
+      // §6 INGEST-LOOP-SHAPE validator (R-E42; symmetry with the Arm-B
+      // INGEST-CURSOR-SHAPE guard above). LowerIngestLoop must return a
+      // VECTORLOOP over the message add-vector — the descent will Emplace the
+      // insertion subtree INTO loop->body, and a wrong-cursor hand-off would
+      // silently mis-parent it or abort inside Emplace with no context.
+      // ALWAYS-ON (fprintf+abort, survives NDEBUG).
+      VECTORLOOP *const chk = next_parent->AsVectorLoop();
+      if (!chk || chk->vector.get() != vec) {
+        std::fprintf(stderr,
+                     "error: §6 INGEST-LOOP-SHAPE: LowerIngestLoop returned a "
+                     "non-loop or wrong-vector cursor for a table-less "
+                     "monotone ingest\n");
+        std::abort();
       }
-      next_parent = loop;
     }
 
     BuildEagerInsertionRegions(impl, receive, context, next_parent,
