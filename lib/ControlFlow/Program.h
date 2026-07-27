@@ -1506,10 +1506,10 @@ class ProgramTableJoinRegionImpl final : public OP {
 
   // Delta sections, alongside the plain `body` (which runs per joined
   // combination of currently stored rows). A joined combination requires
-  // every side's scanned key columns to equal the pivot: the index scans
-  // are approximate, and where the body path re-checks through its
-  // TUPLECMP, the sections conjoin the key equality into their emitted
-  // predicates. Each section runs per joined combination under a named
+  // every side's scanned key columns to equal the pivot: the index probe is
+  // full-key exact, so the body path emits no re-check, while the sections
+  // still conjoin the key equality into their emitted predicates. Each
+  // section runs per joined combination under a named
   // batch-delta discipline that codegen evaluates directly on the scanned
   // row ids:
   //

@@ -499,18 +499,17 @@ GENERATOR *CreateGeneratorCall(ProgramImpl *impl, QueryMap view,
                                ParsedFunctor functor, Context &context,
                                REGION *parent, bool bottom_up);
 
-// Build a join region given a JOIN view and a pivot vector. In the monotone
-// form (`for_delta` is `false`) the join's body is a TUPLECMP re-checking
-// the approximately-indexed scans against the pivot, and unit (condition)
-// sides contribute no scan arm. In the delta form the join has no body (the
-// caller wires the `added_body`/`removed_body` sections, whose emission
-// re-checks scanned keys against the pivot itself) and unit sides are
-// ordinary scan arms, so that the sections' per-side membership reads see
-// the unit row's id; the returned TUPLECMP is null.
-std::pair<TABLEJOIN *, TUPLECMP *> BuildJoin(ProgramImpl *impl,
-                                             QueryJoin join_view,
-                                             VECTOR *pivot_vec, SERIES *seq,
-                                             bool for_delta);
+// Build a join region given a JOIN view and a pivot vector. Each non-pivot
+// side is scanned through a full-key-exact index probe, so the scanned key
+// columns already equal the pivot and no per-row re-check is emitted. In the
+// monotone form (`for_delta` is `false`) unit (condition) sides contribute
+// no scan arm and the join's `body` is filled by the caller's descent. In
+// the delta form the join has no body (the caller wires the
+// `added_body`/`removed_body` sections) and unit sides are ordinary scan
+// arms, so that the sections' per-side membership reads see the unit row's
+// id.
+TABLEJOIN *BuildJoin(ProgramImpl *impl, QueryJoin join_view,
+                     VECTOR *pivot_vec, SERIES *seq, bool for_delta);
 
 // Build the per-stratum differential phases into the entry procedure: for
 // each stratum in ascending order, the seed enumeration over lower strata's

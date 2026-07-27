@@ -787,6 +787,21 @@ class Index {
   }
 
   // First row id for `key`, or `kNoRow`. Iterate with `Next`.
+  //
+  // NOTE(contract): this probe is FULL-KEY EXACT — a slot matches only on
+  //                 `slot.used && slot.hash == hash && slot.key == key` (the
+  //                 generated Key's memberwise `operator==` over every key
+  //                 column — VALUE equality, the same equality the key's
+  //                 hash groups by; for float/double key columns that is
+  //                 IEEE `==`, not byte comparison), and `Next` walks the
+  //                 per-key `Add`-chain, so every id this iterator yields
+  //                 has key columns equal to `key` under that operator.
+  //                 The monotone TABLEJOIN body therefore emits NO per-row
+  //                 re-check of scanned key columns against the pivot — the
+  //                 probe is the equality authority there, not an
+  //                 approximation. (The differential join sections still
+  //                 conjoin their own key-equality re-checks; retiring
+  //                 those is the separate side_key_eqs fold.)
   uint32_t First(const Key &key) const noexcept {
     HYDE_RT_BENCH_COUNT(idx_first);
     if (!slot_capacity) {

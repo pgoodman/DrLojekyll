@@ -2784,10 +2784,12 @@ void Generator::EmitJoin(ProgramTableJoinRegion region) {
   // ids the scans below hold in scope.
   std::vector<std::string> side_reads;
 
-  // Per-side pivot-equality re-checks for the delta sections: the index
-  // scans are approximate, so a joined combination requires every side's
-  // scanned key columns to equal the pivot. The body path re-checks through
-  // its TUPLECMP; the sections conjoin the equality directly.
+  // Per-side pivot-equality re-checks for the delta sections: a joined
+  // combination requires every side's scanned key columns to equal the
+  // pivot, and the sections conjoin that equality directly into their
+  // emitted predicates. (The index probe is full-key exact — Table.h
+  // `First`/`Next` — so the monotone body path emits no such re-check;
+  // retiring THESE conjuncts likewise is the separate side_key_eqs fold.)
   std::vector<std::string> side_key_eqs;
 
   // Pivot loop.

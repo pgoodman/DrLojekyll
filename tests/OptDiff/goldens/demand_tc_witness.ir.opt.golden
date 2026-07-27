@@ -122,12 +122,10 @@ proc ^flow:110($induction_pivots:33<u64>, $induction_in:35<u64>, $induction_pivo
                 vector-loop {@M:88} over $induction_pivots_swap:34<u64>
                 select {%col:16 as @From:92, %col:17 as @To:90} from %table:15[u64,u64] using %index:89[_,u64] where %col:17 = @M:88
                 select {%col:20 as @M:91, %col:21 as @T:93} from %table:19[u64,u64] using %index:83[u64,_] where %col:20 = @M:88
-                  if-compare {@M:88, @M:88} = {@To:90, @M:91}
-                    if-true
-                      update-count +recursive {@From:92, @T:93} in %table:8[u64,u64]
-                        if-crossed
-                          hash {@From:92, @T:93} into @64
-                            vector-append {@From:92, @T:93} into $induction_in:37<u64,u64> of-worker @64
+                  update-count +recursive {@From:92, @T:93} in %table:8[u64,u64]
+                    if-crossed
+                      hash {@From:92, @T:93} into @64
+                        vector-append {@From:92, @T:93} into $induction_in:37<u64,u64> of-worker @64
               vector-clear $induction_pivots_swap:34<u64>
             seq
               vector-clear $induction_swap:36<u64>
@@ -158,33 +156,27 @@ proc ^flow:110($induction_pivots:33<u64>, $induction_in:35<u64>, $induction_pivo
                 vector-loop {@F:82} over $induction_pivots_swap:40<u64>
                 select {%col:13 as @84} from %table:12[u64] using %index:14[u64] where %col:13 = @F:82
                 select {%col:20 as @F:85, %col:21 as @T:86} from %table:19[u64,u64] using %index:83[u64,_] where %col:20 = @F:82
-                  if-compare {@F:82, @F:82} = {@84, @F:85}
-                    if-true
-                      update-count +recursive {@F:85, @T:86} in %table:8[u64,u64]
-                        if-crossed
-                          hash {@F:85, @T:86} into @69
-                            vector-append {@F:85, @T:86} into $induction_in:37<u64,u64> of-worker @69
+                  update-count +recursive {@F:85, @T:86} in %table:8[u64,u64]
+                    if-crossed
+                      hash {@F:85, @T:86} into @69
+                        vector-append {@F:85, @T:86} into $induction_in:37<u64,u64> of-worker @69
               vector-clear $induction_pivots_swap:40<u64>
           vector-unique $pivots:66<u64>
           join-tables
             vector-loop {@From:71} over $pivots:66<u64>
             select {%col:13 as @72} from %table:12[u64] using %index:14[u64] where %col:13 = @From:71
             select {%col:9 as @From:73, %col:10 as @To:74} from %table:8[u64,u64] using %index:50[u64,_] where %col:9 = @From:71
-              if-compare {@From:71, @From:71} = {@72, @From:73}
-                if-true
-                  update-count +nonrecursive {@From:73, @To:74} in %table:15[u64,u64]
-                    if-crossed
-                      hash {@To:74} into @75
-                        vector-append {@To:74} into $induction_pivots:33<u64> of-worker @75
+              update-count +nonrecursive {@From:73, @To:74} in %table:15[u64,u64]
+                if-crossed
+                  hash {@To:74} into @75
+                    vector-append {@To:74} into $induction_pivots:33<u64> of-worker @75
           vector-clear $pivots:66<u64>
           vector-unique $pivots:67<u64>
           join-tables
             vector-loop {@From:77} over $pivots:67<u64>
             select {%col:24 as @78} from %table:23[u64] using %index:25[u64] where %col:24 = @From:77
             select {%col:9 as @From:79, %col:10 as @To:80} from %table:8[u64,u64] using %index:50[u64,_] where %col:9 = @From:77
-              if-compare {@From:77, @From:77} = {@78, @From:79}
-                if-true
-                  update-count +nonrecursive {@From:79, @To:80} in %table:4[u64,u64]
+              update-count +nonrecursive {@From:79, @To:80} in %table:4[u64,u64]
           vector-clear $pivots:67<u64>
       output
         par
@@ -201,9 +193,7 @@ proc ^flow:110($induction_pivots:33<u64>, $induction_in:35<u64>, $induction_pivo
       vector-loop {@From:49} over $pivots:46<u64>
       select {%col:24 as @51} from %table:23[u64] using %index:25[u64] where %col:24 = @From:49
       select {%col:9 as @From:52, %col:10 as @To:53} from %table:8[u64,u64] using %index:50[u64,_] where %col:9 = @From:49
-        if-compare {@From:49, @From:49} = {@51, @From:52}
-          if-true
-            update-count +nonrecursive {@From:52, @To:53} in %table:4[u64,u64]
+        update-count +nonrecursive {@From:52, @To:53} in %table:4[u64,u64]
     vector-clear $pivots:46<u64>
     return-true
 

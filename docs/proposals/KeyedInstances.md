@@ -4362,3 +4362,81 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         families + the per-edge identity question; emission-op
         referent/payload/count law + the id-budget carve; the two
         fold adopt-vs-defer rulings; rename scope + surface name).
+        [EXECUTED same-session: stages (a)-(c) ran as three fleets
+        (stage-(a) build-out ~838k tokens; stages (b)/(c) design+
+        critique+adjudication ~1.30M tokens, 22 findings adjudicated,
+        4 HIGH amended, zero escalations); the owner RATIFIED R1-R6
+        as recommended (rfinal-ruling-brief.md ratification record);
+        Fold A landed — §20(W).]
+
+(W) R-FINAL SLICE 1 — FOLD A LANDED (2026-07-27): the pivot-belt TUPLECMP
+    RETIRED — the first R-final diff under the ratified R1-R6 rulings
+    (rfinal-ruling-brief.md, owner "ratify all" in-session; ruled order
+    Fold A → Fold B → emission op → flip SD-1..SD-4 → rename). Binding
+    contracts COMMITTED: rfinal-design.md (the stages-(b)/(c) adjudicated
+    design for ALL FIVE slices — 22 critique findings adjudicated at code,
+    4 HIGH all amended pre-implementation: the flip's constant-TUPLE second
+    SET root, the delta kJoinEmit enrollment-after-DeriveDRStrata move, the
+    join Site-5 closing-block placement, the CMake live-line rename catch)
+    + rfinal-ruling-brief.md (R1-R6 + the ratification record) +
+    rfinal-desired-states.md (the per-slice DS ledger; the Fold A three-way
+    record). THE MECHANISM (design §1, amended foldA-F1..F4): BuildJoin's
+    eager arm no longer mints the TUPLECMP that re-checked each scanned
+    side's key columns against the pivot — Index::First/Next is FULL-KEY
+    EXACT (slot.key == key over every key column; Next walks the per-key
+    Add-chain), so the belt re-checked what the probe guarantees; the
+    TUPLECMP's two other roles re-home: body-anchor → the TABLEJOIN itself
+    (callers set parent=join), provenance-hider col_id_to_var →
+    join->col_id_to_var (the foldA-F1 INTENTIONAL same-key last-write-wins
+    over the pivot-loop write — write-order byte-correct, pinned
+    in-comment; never convert to insert-if-absent); BuildJoin returns bare
+    TABLEJOIN* (pair signature + the vacuous delta cmp==nullptr assert
+    dropped); the delta path emission-UNTOUCHED (side_key_eqs stays until
+    Fold B); the Runtime CONTRACT PIN lands at Table.h:789ff (full-key
+    exactness under the Key's memberwise operator== — VALUE equality, the
+    Fable-review re-wording — scoped to the monotone body path until Fold
+    B; stale "approximate" comments retired across Join.cpp/Build.h/
+    Program.h/Database.cpp incl. the review-caught PUBLIC-API reader).
+    STAGE-(d) THREE-WAY CONVERGENCE (the SEVENTH slice): dump-blind author
+    hand-predictions (source diff + full unified golden diffs + the
+    DONT-CHANGE set + exact red vocabulary) == blind worktree prototype
+    (5 files; churn EXACTLY the pre-registered 58/175 opt headers;
+    19-surface regen = 3 changed + 16 identical; e2e stdout 12/12) ==
+    pristine implementation (converged patch orchestrator-applied; 3
+    surfaces BYTE-IDENTICAL to the prototype outputs, 16 pinned surfaces
+    byte-identical to committed goldens — orchestrator-executed cmp, E-77);
+    the author's hand-predicted hunks byte-match the empirical diffs.
+    FABLE REVIEW (18-agent workflow, high): 13 confirmed findings
+    collapsing to SIX root causes, ZERO live correctness — the Table.h
+    NOTE re-scoped (the no-re-check claim is body-path-only until Fold B)
+    and re-worded to operator== VALUE equality (the float −0.0/NaN
+    byte-equality catch); the missed PUBLIC-API reader
+    include/ControlFlow/Program.h:977; EmitJoin's side_key_eqs eager
+    clause; the Join.cpp comparison-guard rationale; the rel-arch §5
+    fold-block discharge (dead :317-321 anchors) — ALL FIXED PRE-COMMIT,
+    proven DUMP-NEUTRAL (19/19 pinned surfaces) + post-fix SUITE
+    PASS(175). GATES (final tree): pre-bless suite reds EXACTLY the 3
+    pre-registered IRGOLD-DIVERGE (demand_tc h.opt + ir.opt, symrec
+    ir.opt; zero stdout/oracle/eqgate reds anywhere) → bless (3 goldens
+    changed, 8 sibling rewrites byte-identical no-ops; sources
+    byte-verified same-as-converged BEFORE bless) → SUITE PASS(175) ×3 +
+    post-fix; ANSWER IDENTITY: the whole corpus's stdout goldens stand
+    unchanged under the folded compiler (the 175×4 suite IS the answer
+    A/B) + data/ 144 rows behavior-identical vs frozen a7dde012 (exit
+    codes + diagnostics; evm_array_parse identical-SIGABRT stands); ctest
+    5/5 debug (MiniDisassembler/PointsTo re-verify real join programs
+    end-to-end) + 5/5 ASAN; ASAN BOTH surfaces SUITE PASS(175) zero
+    reports; config-invariance SINGLE-HASH ×4 surfaces (3-run debug +
+    release on tc ir/h + symrec ir/h); Q5 progsize@128 release
+    SAME-SESSION INTERLEAVED ABABAB A warm {161,160} vs B {166,162,162}
+    ms (~0.6% median, noise; A1 cold discarded; progsize headers
+    byte-identical — a chain program, no joins) + the tc_random engine
+    A/B (per-epoch medians ~200.5µs vs ~200.7µs, noise; its header ALSO
+    byte-identical — tc_random's joins are DELTA-path, outside this
+    fold's eager surface, itself confirming the churn analysis; the
+    fold's eager-join engine win has NO bench flagship carrier — honest
+    note, ADJ-S8 MEASURED). RESIDUALS: Fold B NEXT (cf16_2 the ruled
+    witness — the only multi-column side_key_eq carrier; its irgold
+    seeding is the gate precondition, rfinal-design.md §2); the
+    R1..R-E42 residual set carries unchanged. NEXT: Fold B, then the
+    emission op, the flip, the rename — per rfinal-design.md §2-§5.

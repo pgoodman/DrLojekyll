@@ -73,12 +73,10 @@ proc ^entry:12($param:14<u64,u64>)
                     vector-loop {@X:54} over $induction_pivots_swap:23<u64>
                     select {%col:5 as @A:59, %col:6 as @B:57} from %table:4[u64,u64] using %index:55[_,u64] where %col:6 = @X:54
                     select {%col:9 as @A:58, %col:10 as @X:60} from %table:8[u64,u64] using %index:56[u64,_] where %col:9 = @X:54
-                      if-compare {@X:54, @X:54} = {@B:57, @A:58}
-                        if-true
-                          update-count +recursive {@A:59, @X:60} in %table:4[u64,u64]
-                            if-crossed
-                              hash {@A:59, @X:60} into @43
-                                vector-append {@A:59, @X:60} into $induction_in:19<u64,u64> of-worker @43
+                      update-count +recursive {@A:59, @X:60} in %table:4[u64,u64]
+                        if-crossed
+                          hash {@A:59, @X:60} into @43
+                            vector-append {@A:59, @X:60} into $induction_in:19<u64,u64> of-worker @43
                   vector-clear $induction_pivots_swap:23<u64>
                 seq
                   vector-clear $induction_pivots_swap:25<u64>
@@ -88,12 +86,10 @@ proc ^entry:12($param:14<u64,u64>)
                     vector-loop {@X:46} over $induction_pivots_swap:25<u64>
                     select {%col:5 as @A:50, %col:6 as @B:52} from %table:4[u64,u64] using %index:47[u64,_] where %col:5 = @X:46
                     select {%col:9 as @A:51, %col:10 as @X:49} from %table:8[u64,u64] using %index:48[_,u64] where %col:10 = @X:46
-                      if-compare {@X:46, @X:46} = {@X:49, @A:50}
-                        if-true
-                          update-count +recursive {@A:51, @B:52} in %table:4[u64,u64]
-                            if-crossed
-                              hash {@A:51, @B:52} into @44
-                                vector-append {@A:51, @B:52} into $induction_in:19<u64,u64> of-worker @44
+                      update-count +recursive {@A:51, @B:52} in %table:4[u64,u64]
+                        if-crossed
+                          hash {@A:51, @B:52} into @44
+                            vector-append {@A:51, @B:52} into $induction_in:19<u64,u64> of-worker @44
                   vector-clear $induction_pivots_swap:25<u64>
             output
               seq

@@ -1529,10 +1529,8 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
     unique->vector.Emplace(unique, pivot_vec);
     stratum_seq->AddRegion(unique);
 
-    auto [join, cmp] = BuildJoin(impl, QueryJoin::From(join_view), pivot_vec,
-                                 stratum_seq, true /* for_delta */);
-    assert(cmp == nullptr);
-    (void) cmp;
+    auto * const join = BuildJoin(impl, QueryJoin::From(join_view), pivot_vec,
+                                  stratum_seq, true /* for_delta */);
 
     DataModel *const join_model =
         impl->view_to_model[join_view]->FindAs<DataModel>();

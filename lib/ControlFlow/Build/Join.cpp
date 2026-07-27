@@ -295,15 +295,17 @@ BuildNestedLoopJoin(ProgramImpl *impl, QueryJoin join, QueryView pred_view,
 
 }  // namespace
 
-// Build a join region given a JOIN view and a pivot vector. In the monotone
-// form (`for_delta` is `false`) the join's body is a TUPLECMP re-checking
-// the approximately-indexed scans against the pivot, and unit (condition)
-// sides contribute no scan arm. In the delta form the join has no body (the
-// caller wires the `added_body`/`removed_body` sections, whose emission
-// re-checks scanned keys against the pivot itself) and unit sides are
+// Build a join region given a JOIN view and a pivot vector. Each non-pivot
+// side is scanned through a full-key-exact index probe (`Table.h` `First`/
+// `Next` walk the same-key chain over the full pivot set), so the scanned
+// key columns already equal the pivot by construction and no per-row
+// re-check is emitted. In the monotone form (`for_delta` is `false`) unit
+// (condition) sides contribute no scan arm and the join's `body` is filled
+// by the caller's descent. In the delta form the join has no body (the
+// caller wires the `added_body`/`removed_body` sections) and unit sides are
 // ordinary scan arms, so that the sections' per-side membership reads see
-// the unit row's id; the returned TUPLECMP is null.
-std::pair<TABLEJOIN *, TUPLECMP *>
+// the unit row's id.
+TABLEJOIN *
 BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
           SERIES *seq, bool for_delta) {
 
@@ -313,13 +315,6 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
   TABLEJOIN * const join = impl->join_regions.Create(
       seq, join_view, impl->next_id++);
   seq->AddRegion(join);
-
-  TUPLECMP *cmp = nullptr;
-  if (!for_delta) {
-    cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
-        join, ComparisonOperator::kEqual);
-    join->body.Emplace(join, cmp);
-  }
 
   // The JOIN internalizes the loop over its pivot vector. This is so that
   // it can have visibility into the sortedness, and choose what to do based
@@ -435,13 +430,13 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
 
   // Figure out which input relation is "most represented" in the outputs,
   // in terms of non-pivot columns. The way JOINs get emitted is as a loop
-  // over a pivot vector, followed by some index scans, and then comparing
-  // the scanned results against the records from the pivot vector. We want
-  // to make sure that code contained inside of this comparison guard ends
-  // up using variables derived from one of the index scans, rather than from
-  // the pivot vector iteration. This is so that we can maintain better
-  // provenance between downstream writes to tables that can reference upstream
-  // records.
+  // over a pivot vector followed by full-key-exact index scans. We want
+  // code in the join body to end up using variables derived from one of
+  // the index scans, rather than from the pivot vector iteration (the
+  // re-homed col_id_to_var binding below hides the pivot-loop variable
+  // behind the most-represented side's scanned variable). This is so that
+  // we can maintain better provenance between downstream writes to tables
+  // that can reference upstream records.
 
   std::vector<unsigned> num_non_pivot_outputs;
   num_non_pivot_outputs.resize(view_to_index.size());
@@ -505,32 +500,14 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     if (InputColumnRole::kJoinPivot == role) {
       var = out_vars.Create(impl->next_id++, VariableRole::kJoinPivot);
 
-      // The delta form has no TUPLECMP: its sections re-check scanned keys
-      // against the pivot in their emitted predicates, and child regions
-      // read pivot outputs through the pivot-vector variables.
-      if (for_delta) {
-
-      // If we're using an index for this JOIN, then we want to double check
-      // that what we've selected is indeed what we asked for (from the
-      // pivot vector). This may seem redundant but it permits index scans to
-      // be approximate.
-      } else if (join->index_of_index[pred_view_idx]) {
-        cmp->lhs_vars.AddUse(join->pivot_vars[*(out_col->Index())]);
-        cmp->rhs_vars.AddUse(var);
-
-      // NOTE(pag): We're currently operating with always having indices. If we
-      //            don't have indices, then it requires that the codegen do
-      //            point lookups instead of scans. If we switch back to a
-      //            possibly indexless approach, then we should revisit the
-      //            above code.
-      } else {
-        assert(false);
-      }
-
-      // For child nodes, this "hides" the variable from the pivot vector
-      // iteration.
+      // The scanned pivot column is bound by a full-key-exact index probe, so
+      // its scanned value already equals the pivot-vector value — no re-check
+      // is emitted. For child nodes, this "hides" the pivot output variable
+      // from the pivot-vector iteration by binding it to the scanned var of
+      // the most-represented side (last write wins over the pivot-loop write
+      // at the same key, which is authoritative for the descent).
       if (!for_delta && pred_view_idx == most_represented_pred_view_idx) {
-        cmp->col_id_to_var[out_col->Id()] = var;
+        join->col_id_to_var[out_col->Id()] = var;
       }
 
     } else {
@@ -552,7 +529,7 @@ BuildJoin(ProgramImpl *impl, QueryJoin join_view, VECTOR *pivot_vec,
     });
   }
 
-  return {join, cmp};
+  return join;
 }
 
 void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
@@ -598,9 +575,9 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     seq->AddRegion(unique);
   }
 
-  auto [join, cmp] = BuildJoin(impl, join_view, swap_pivot_vec, seq,
-                               false /* for_delta */);
-  OP *parent = cmp;
+  auto * const join = BuildJoin(impl, join_view, swap_pivot_vec, seq,
+                                false /* for_delta */);
+  OP *parent = join;
 
   // Figure out if any of the joined views is backed by a unit (condition)
   // table. Such views are not scan sources of the join (`BuildJoin` excludes

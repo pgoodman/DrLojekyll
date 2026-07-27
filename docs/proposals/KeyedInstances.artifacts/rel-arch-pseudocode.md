@@ -1103,6 +1103,17 @@ owes); kNegateGate rides the generic render (no dedicated case).
       permcheck + bench A/B, never byte-identity; adopting either
       pins Index::First/Next exactness as a documented Runtime
       contract. Rule adopt-vs-defer per fold at the head.
+      [FOLD A DONE (2026-07-27, ledger §20(W); ruled ADOPT per the
+      ratified R4 ruling, rfinal-ruling-brief.md): the pivot-belt
+      TUPLECMP is RETIRED — BuildJoin's eager arm mints no
+      TUPLECMP (the :317-321/:513-519/:532-534 anchors above are
+      DEAD; the fold re-homed col_id_to_var onto the TABLEJOIN
+      under the foldA-F1 last-write-wins pin and the {let,parent}
+      chain re-anchored on the join itself); the Runtime contract
+      pin landed at Table.h:789ff (operator== value-equality
+      spelling per the Fable review). The side_key_eqs delta fold
+      is NEXT (ruled ADOPT gated on the cf16_2 witness —
+      rfinal-design.md §2).]
       (4) THE RENAME RITUAL (LAST; its own commit; zero semantic
       churn in the same diff — the lib/DR->lib/DeltaRel precedent):
       DeltaRel->Rel. SCOPE is a head ruling: dir+library+flag

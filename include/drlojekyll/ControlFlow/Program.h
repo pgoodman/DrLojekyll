@@ -974,8 +974,9 @@ class ProgramTableJoinRegion
   // batch-delta discipline that codegen evaluates directly on the scanned
   // row ids; variable bindings are applied as for `Body()`. A joined
   // combination requires every side's scanned key columns to equal the
-  // pivot (the index scans are approximate; the sections conjoin the key
-  // equality that the body path re-checks through its TUPLECMP).
+  // pivot: the index probe is full-key exact, so the body path emits no
+  // re-check, while the sections still conjoin the key equality into
+  // their emitted predicates.
   //
   // `AddedBody()`: every side is in the batch-final state (InNew) and at
   // least one side is a net addition of this batch — a combination that
