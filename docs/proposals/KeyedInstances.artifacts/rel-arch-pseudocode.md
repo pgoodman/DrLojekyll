@@ -149,6 +149,18 @@ descent itself (R-final — direction flip + the per-join emission op
 + the fold + count oracle + ClassifyEagerSink retirement + the
 DeltaRel->Rel rename ritual). SINGLE-PASS: the next session's fleet
 re-verifies §4-§6 (incl. §4.5) before R-final.
+RE-AMENDED 2026-07-27 (the R-E42-landing session, post-commit): §5's
+R-FINAL BLOCK BUILT OUT with orchestrator-read anchors at tip
+535a6621 and FIVE head items the R-final fleet must lead with — (1)
+the direction flip's ORDER CAVEAT (derivation-ordered enrollment
+either reproduces walk order or re-blesses all eleven pins under a
+structural gate while emission stays byte-identical — the first
+surface-split A/B story); (2) the per-join emission op is the FIRST
+deferred LOWERING (drain-order anchored, not walk-position); (3) the
+two owner-declined folds re-open (emission-shape gates); (4) the
+rename ritual's scope + the .deltarel-surface-name question; (5)
+order-of-diffs is itself a ruling. SINGLE-PASS: the next session's
+fleet re-verifies §4-§6 (incl. §4.5 and THIS block) before R-final.
 RE-VERIFIED 2026-07-24 at tip 429f14f4 by the R-E42-open fleet (3
 seed-unread derivation lanes + 3 seed-read verifiers + 1 mechanical
 lane + xhigh consolidator; KeyedInstances.md §20(T)): SOUND-WITH-
@@ -958,18 +970,94 @@ the R-E42 stage-(a) seed; its adjudicated digest is recorded in
       DOT-comparator == implementation). R4's fleet now has
       partition visibility without worktree probes (the M12
       fprintf ritual retires for THIS question).
-    R-final (the §19(H) acceptance, unchanged from §3): the DIRECTION
-      FLIP — inventory becomes the reachability authority and the walk
-      CONSUMES ops instead of recording them; then S1 (hole contract) /
-      S2 (cut predicates + §7d cross-check) / S3 (V-INGEST-XCHECK) /
-      S4 retire as interior invariants; the eager COUNT ORACLE lands
-      (owed, ADJ-S12); the ClassifyEagerSink replica retires (ADJ-S4);
+    R-final (the §19(H) acceptance; S4 ALREADY RETIRED at R-E42 —
+      §4.5): the DIRECTION FLIP — inventory becomes the reachability
+      authority and the walk CONSUMES ops instead of recording them;
+      then S1 (hole contract) / S2 (cut predicates + §7d cross-check) /
+      S3 (V-INGEST-XCHECK, both fold and loop siblings) retire as
+      interior invariants; the eager COUNT ORACLE lands (owed,
+      ADJ-S12); the ClassifyEagerSink replica retires (ADJ-S4);
       eager-vs-frontier becomes a lowering choice; THEN the DeltaRel->
       Rel rename ritual. R1 RESIDUALS CARRIED LOUD: publish-* sink
       spellings + the stream message= arm are corpus-UNWITNESSED
       (ADJ-S5 — a publishing-demanded-insert corpus case is the cheap
       witness); DS-ADJ-1: census counts are mode-stable ONLY across the
       controlflow axis (df-axis growth is EXPECTED).
+      THE R-FINAL BLOCK, BUILT OUT — ORCHESTRATOR-READ ANCHORS AT TIP
+      535a6621 (the R-E42-landing session; SINGLE-PASS — the
+      R-final-open fleet re-verifies §4-§6 incl. §4.5 and THIS block
+      first):
+      (1) THE DIRECTION FLIP. Today the WALK is the reachability
+      authority: BuildEagerRegion (Build.cpp:1264) mints per dispatch
+      and RecordEagerDispatch (:1123) appends to
+      Context::emitted_eager_ops (Build.h:268); BuildDRInventory
+      RE-INVOKES the ctors from that recorded stream (the EAGER_WEB
+      9-way tail-append, DeltaRel.cpp:2473ff) because the flow graph
+      post-dates the walk (F-ORDER). The flip: BuildDRInventory
+      derives the eager set ITSELF (the S2 cut/boundary replicas —
+      AnyCutSuccessorDR DeltaRel.cpp:130, kept lock-step with
+      Build.cpp:934-1002 by the §7d cross-check :4195 — become the
+      ONE authority) and the walk CONSUMES enrolled ops. Retires:
+      RecordEagerDispatch + emitted_eager_ops + the EAGER_WEB
+      re-invocation switch + the ClassifyEagerSink replica
+      (Build.cpp:1095) + the §7d cross-check itself (one decision,
+      nothing to diverge). THE ORDER CAVEAT (lead with this): op
+      construction indices today mirror walk-DFS dispatch order; a
+      derivation-ordered enrollment CHANGES every op.N label and
+      possibly pinned_order ties -> either the derivation REPRODUCES
+      walk order exactly (a design obligation to state and check) or
+      ALL ELEVEN .deltarel pins re-bless under a structural gate
+      (permcheck family) while EMISSION stays byte-identical — the
+      first slice whose A/B story may legitimately split by surface;
+      pre-register which gate family each sub-diff uses. The eager
+      COUNT ORACLE (ADJ-S12) lands here as the flip's independent
+      check: census == an emission-side count (builder dispatch /
+      generated-code idiom counts), per-VISIT for markers (M15),
+      per-RECEIVE for the ingest layer (M17).
+      (2) THE PER-JOIN EMISSION OP (the ADJ-RJ-14 debt). The
+      kEagerJoin/kEagerProduct markers are per-visit reachability
+      records ONLY; the once-per-join TABLEJOIN mints in
+      ContinueJoinWorkItem::Run (Join.cpp:558; BuildJoin :307,
+      called :601 with for_delta=false; TABLEJOIN Create :313) in
+      WORK-ITEM DRAIN ORDER — CompleteProcedure (Build.cpp:1010)
+      stable_sorts context.work_list by ContinueJoinOrder
+      (kContinueJoinOrder Join.cpp:38; induction-aware inversion
+      :32-33) every iteration. The new op is ONCE-PER-JOIN and
+      carries the drain-order key; its lowering fires at the DRAIN
+      moment, not its mint's walk position — the FIRST deferred
+      LOWERING (M16 pinned the referent for a deferred EMISSION
+      behind an untouched builder; here the builder itself becomes
+      the lowering). Id-stream identity needs a NEW argument (the
+      walk position no longer anchors it — the drain order does).
+      M13: BuildJoin is SHARED with the DR delta path
+      (Stratum.cpp:1532, for_delta=true) — touching it risks the
+      modeled path. Carriers: join_1/optimize_2/demand_tc_witness
+      (+ symrec for the induction interplay).
+      (3) THE GATED FOLD FOLLOW-UPS (owner-DECLINED at R-JOIN;
+      re-open at THIS head): the pivot-equality-belt TUPLECMP
+      (mint Join.cpp:317-321, filled :513-519; body-anchor
+      {let,parent} chain + provenance-hider col_id_to_var
+      :532-534; redundancy HOLDS — Index::First exact full-key
+      Table.h:801) and the side_key_eqs delta fold
+      (Database.cpp:2791 decl / :2862 push / :2896 use). BOTH are
+      EMISSION-SHAPE changes: structural gates + irgold re-bless +
+      permcheck + bench A/B, never byte-identity; adopting either
+      pins Index::First/Next exactness as a documented Runtime
+      contract. Rule adopt-vs-defer per fold at the head.
+      (4) THE RENAME RITUAL (LAST; its own commit; zero semantic
+      churn in the same diff — the lib/DR->lib/DeltaRel precedent):
+      DeltaRel->Rel. SCOPE is a head ruling: dir+library+flag
+      (-deltarel-out, SetDeltaRelDumpStream —
+      ControlFlow/Format.h:17) vs the full identifier sweep
+      (DROp/DRFlowGraph/DR*). NOTE the dump-surface tail: renaming
+      the `.deltarel` surface renames ELEVEN golden files + the
+      irgold sidecar surface tokens + runall.sh's surface list —
+      its own mini-bless, or the surface name stays `.deltarel`
+      (also a legitimate ruling).
+      (5) ORDER-OF-DIFFS is itself a head ruling: the emission op
+      before the flip (the flip then consumes it) vs flip first;
+      the folds slot independently. Suite is 174 (agg_distinct_1);
+      census 27; baselines re-snapshot at session open.
 
 ## §6. THE OBSERVABILITY SURFACES + THE TABLE-SHARING PARTITION AS
 ##     PSEUDOCODE — and OD-13 AS A DIFF (2026-07-23, tip 57aef93d+;
