@@ -87,6 +87,40 @@ has a bench flagship carrier (honest ADJ-S8 note; a future acyclic-
 differential-join workload would be the witness). Fable review record in
 §20(X).
 
+## SLICE 3 — THE PER-JOIN EMISSION OPS (kJoinEmit(27)/kProductEmit(28))
+
+STAGE-(d) THREE-WAY (the full blind pair): the DUMP-BLIND AUTHOR
+(emitop-d/author-predictions.md — the full source diff across 8 files;
+per-pin census tails EXACT for all 11; the 7 block-gaining carriers' op.N
+labels EXACT (join_1 op.20/21, optimize_2 op.18, demand_tc op.24-28,
+symrec op.13/14, booleans op.15/16, elim op.12, d5 op.60 the DELTA
+carrier); band placement via key_of lead-0; render shape exact with an
+honest E-F residual ledger naming the only empirical-fill integers
+(order=/seq= values, demand_tc's table= assignment)) == the BLIND
+WORKTREE PROTOTYPE (full implementation, +465/−22 across 8 files, all
+six adjudication amendments honored; 21-surface regen = EXACTLY the 11
+.deltarel DIVERGE + all h/ir/df byte-identical; 175-case generated-.h
+vs frozen 6107fd3d = 0 DIVERGED — the [BYTE-1] hard constraint; census
+== blocks on every pin; cross-knob law on 3 carriers; DeltaRelValidators
+ctest green; one self-caught build fix (AllSidesSameScc linkage) and
+four design-truth adaptations, all adjudicated consistent: post-Fold-A
+TABLEJOIN* signature, LowerProductEmit as the Site-5 recorder at the
+inline TABLEPRODUCT mint, ctor-stored table= via ModelTableOrNull (the
+marker precedent — Format has no impl), work_seq naming) == the PRISTINE
+implementation (converged patch): 11/11 .deltarel dumps BYTE-IDENTICAL
+pristine==proto (orchestrator cmp, E-77).
+
+GATES RECORD (binding copy = ledger §20(Y)): E-62 re-grep CLEAN (LIVE
+this diff); pre-bless reds EXACTLY the eleven .deltarel IRGOLD-DIVERGE →
+bless (UNFILTERED — git-verified EXACTLY the 11 sanctioned goldens
+changed, 276 other rewrites byte-identical no-ops; sources 11/11
+byte-verified same-as-converged) → SUITE PASS(175) ×3; EMISSION
+BYTE-IDENTITY 175/175 opt headers vs frozen 6107fd3d + data/ 144 rows
+behavior-identical; ctest 5/5 debug + 5/5 ASAN; ASAN both surfaces
+PASS(175); config-invariance SINGLE-HASH (join_1 + d5 deltarel, 3-run
+debug + release); Q5 progsize@128 ABABAB ~1% noise (A1 cold discarded).
+Fable review record in §20(Y).
+
 ## SLICE 1 GATES RECORD (as landed; the binding copy is ledger §20(W)): pre-bless
 reds EXACTLY the 3 pre-registered IRGOLD-DIVERGE → bless (sources
 byte-verified same-as-converged; 8 sibling rewrites no-ops) → SUITE

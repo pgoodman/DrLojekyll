@@ -1375,7 +1375,8 @@ void BuildEagerRegion(ProgramImpl *impl, QueryView pred_view, QueryView view,
   }
 }
 
-WorkItem::WorkItem(Context &context, unsigned order_) : order(order_) {}
+WorkItem::WorkItem(Context &context, unsigned order_)
+    : order(order_), work_seq(context.work_item_seq++) {}
 
 WorkItem::~WorkItem(void) {}
 

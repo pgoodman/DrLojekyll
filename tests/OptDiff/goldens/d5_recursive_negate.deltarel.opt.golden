@@ -63,6 +63,8 @@ op.56 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:11, +, NonRecursive), kVecAppend(%table:11, kAddQueue)}
     spine: —
     args: table=%table:11 message=dead/1
+op.60 kJoinEmit sign=· ctx=eager stratum=6 form=delta
+    args: table=%table:14
 op.58 kEagerForward sign=· ctx=eager stratum=0
     args: table=%table:21
 op.54 kIngestFold sign=+ ctx=eager stratum=0
@@ -590,4 +592,4 @@ deps:
   op.57 -> op.48 WAW epoch
   op.57 -> op.56 WAW epoch
 
-census: kCrossover=2 kProductArm=0 kSeedFold=4 kFixpointFire=2 kChainFold=6 kClaimDrain=10 kRetire=8 kRederive=4 kFrontierFilter=10 kCommitSweep=7 kNegateGate=0 kPivotAssemble=1 kIngestFold=4 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=2 kEagerInsert=0 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0 kEagerJoin=0 kEagerProduct=0 kIngestLoop=0
+census: kCrossover=2 kProductArm=0 kSeedFold=4 kFixpointFire=2 kChainFold=6 kClaimDrain=10 kRetire=8 kRederive=4 kFrontierFilter=10 kCommitSweep=7 kNegateGate=0 kPivotAssemble=1 kIngestFold=4 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=0 kInstanceDeath=0 kInstanceSeal=0 kEagerForward=2 kEagerInsert=0 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0 kEagerJoin=0 kEagerProduct=0 kIngestLoop=0 kJoinEmit=1 kProductEmit=0

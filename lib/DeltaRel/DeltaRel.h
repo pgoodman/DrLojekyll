@@ -242,7 +242,30 @@ enum class DROpKind : uint8_t {
                          //   payload: `ingest_message` (render) +
                          //   `ingest_receive` (.Columns() for the VARs); all
                          //   table pointers null ⇒ op_table_id 0 ⇒ lead-0.
+  kJoinEmit,             // (27) R-final: the once-per-join TABLEJOIN emission
+                         //   (BuildJoin Join.cpp). DEFERRED-LOWERING family
+                         //   (the M17 hole-contract shape, drain-anchored):
+                         //   the ctor is ID-NEUTRAL + EFFECT-FREE; the LOWERING
+                         //   (LowerJoinEmit = BuildJoin at the DRAIN) allocates
+                         //   1 + |pivots| + Σout ids (+ shared-CSE indices,
+                         //   CARVE-3 OUTSIDE the contract). NOT an eager marker
+                         //   (out of IsEagerMarkerKind / EAGER_WEB) — its own
+                         //   family, its own emit_* payload + drain-order key.
+                         //   Two forms: eager (Join.cpp Run) + delta
+                         //   (Stratum.cpp LowerDRFlow, for_delta=true).
+  kProductEmit,          // (28) R-final: the once-per-product TABLEPRODUCT
+                         //   emission (Product.cpp Run). EAGER-ONLY (no delta
+                         //   caller, no M13 shared-caller hazard). Same
+                         //   id-neutral ctor / lower-in-place shape as
+                         //   kJoinEmit; the TABLEPRODUCT is minted INLINE at
+                         //   the product Run so LowerProductEmit is the Site-5
+                         //   recorder (emission byte-unchanged).
 };
+
+// R-final: the per-join(product) emission-op form. Eager = the walk-drain
+// once-per-(proc,view) TABLEJOIN (Join.cpp Run); delta = the section-walk
+// for_delta=true BuildJoin (Stratum.cpp). Surfaced as `form=eager|delta`.
+enum class JoinEmitForm : uint8_t { kEager, kDelta };
 
 // R3 aggregate provenance (spec §2.2): whether a GROUP_UPDATE came from an
 // over(){} aggregate (defaults @recompute if undeclared) or a desugared
@@ -716,6 +739,28 @@ class DROp {
   EagerSink eager_sink{EagerSink::kNone};
   std::optional<ParsedMessage> eager_message;
 
+  // ---- JOIN_EMIT / PRODUCT_EMIT data (kind == kJoinEmit | kProductEmit) -----
+  // The DEFERRED once-per-join(product) TABLEJOIN(PRODUCT) emission (R-final /
+  // ADJ-RJ-14). EFFECT-FREE at the flow layer (no counter/append/flag — the
+  // TABLEJOIN reads pred tables + writes its own table INSIDE the untouched
+  // BuildJoin, below the op boundary); NOT id-neutral at LOWER (M17). The
+  // model `table=` is RESOLVED at ctor via ModelTableOrNull(emit_join_view) and
+  // stored in the EXISTING `table_op_table` (the eager-marker precedent — the
+  // dump's EmitDRFlow carries no ProgramImpl, so render reads the stored
+  // pointer; render still OMITS `table=` when null, E-107). The drain-order key
+  // (order + walk_seq) CANNOT be re-derived flow-side (a3 PROVED 0/11) → STORED.
+  std::optional<QueryView> emit_join_view;          // the QueryJoin / QueryProduct
+  JoinEmitForm emit_form{JoinEmitForm::kEager};     // selects for_delta;
+                                                    //   kProductEmit is kEager
+  unsigned emit_order_key{0u};                      // ContinueJoin/ProductOrder
+                                                    //   (the DRAIN priority int)
+  unsigned emit_walk_seq{0u};                       // the WorkItem base-ctor
+                                                    //   monotone seq — the
+                                                    //   drain-order tie-break
+                                                    //   the priority int LACKS
+                                                    //   (0 for delta)
+  unsigned emit_stratum{0u};                        // delta only: join_stratum
+
   // The per-arm structure (A-3). A FIXPOINT_FIRE has one arm per same-SCC delta
   // position; a SEED_FOLD/CHAIN_FOLD has exactly one. Empty for the per-table
   // families (claim/retire/rederive/filter/sweep) and the negate gate.
@@ -1041,6 +1086,38 @@ DROp MakeIngestLoopOp(ParsedMessage message, QueryView receive);
 using IngestLoopKey = std::tuple<int, bool, uint8_t, uint64_t>;
 IngestLoopKey IngestLoopKeyOf(const DROp &op);
 
+// R-final: the single authorities for the per-join / per-product EMISSION ops
+// (the deferred once-per-join(product) TABLEJOIN(PRODUCT) emission). ID-NEUTRAL
+// + EFFECT-FREE (the LOWERING LowerJoinEmit/BuildJoin allocates the ids; the
+// ctor only records identity + the drain-order key). The model `table=` is
+// resolved here via ModelTableOrNull(impl, view) and stored in table_op_table
+// (the eager-marker precedent — the dump carries no impl). Invoked from the
+// eager enrollment replay (BuildDRInventory), the eager drain (Join.cpp Run),
+// the delta enrollment (BuildStratumPhases) AND the delta lowering
+// (Stratum.cpp) — all build the same payload (§12.6 single-authority).
+DROp MakeJoinEmitOp(ProgramImpl *impl, QueryView join_view, JoinEmitForm form,
+                    unsigned order_key, unsigned walk_seq, unsigned stratum);
+DROp MakeProductEmitOp(ProgramImpl *impl, QueryView product_view,
+                       unsigned order_key, unsigned walk_seq);
+
+// R-final: the ONE flow-side spelling of a join/product emission op's
+// census/Site-5 key (the IngestLoopKeyOf precedent). EAGER key is a SET
+// (walk_seq unique per event); DELTA key uses emit_stratum in the third
+// slot and the join VIEW's identity in the fourth (model-sharing
+// distinct-but-equal join views at one stratum must key apart —
+// pointer-derived is fine, the key never renders and the multiset compares
+// within one process). PURE — reads the STORED fields (no impl).
+using JoinEmitKey = std::tuple<uintptr_t, uint8_t, unsigned, uintptr_t>;
+JoinEmitKey JoinEmitKeyOf(const DROp &op);
+
+// R-final (MED-1): the file-scope authority for "every joined side shares the
+// join's recursive SCC" — extracted from the Stratum.cpp:1451 lambda so the
+// delta lowering skip, the delta enrollment, and the delta expect() cannot
+// drift. SccOf == the Stratum.cpp RecursiveSCC (byte-identical bodies).
+bool AllSidesSameScc(ProgramImpl *impl,
+                     const std::unordered_map<TABLE *, unsigned> &scc_map,
+                     QueryView join_view);
+
 // R1: the two single-authority ctors for the eager-web marker ops (design
 // §A.3). Pure functions (no ids, no effects). `table` may be null (a table-less
 // TUPLE). The walk-position mint (Build.cpp LowerRelStep_*) and the inventory
@@ -1104,6 +1181,20 @@ OP *LowerIngestFold(ProgramImpl *impl, Context &context, const DROp &op,
 // PRISTINE (never relaxes its table!=null assert).
 OP *LowerIngestLoop(ProgramImpl *impl, Context &context, const DROp &op,
                     PARALLEL *parent, VECTOR *loop_vec);
+
+// R-final: the byte-move wrapper of BuildJoin at the DRAIN / delta site (the
+// M17 lower-in-place, drain-anchored). BuildJoin stays the SHARED mint (M13);
+// this thin pass-through adds ONLY the Site-5 record push, so both callers
+// (Join.cpp Run eager + Stratum.cpp LowerDRFlow delta) stay byte-identical.
+// Returns the TABLEJOIN the caller threads (added_body/removed_body / descent).
+TABLEJOIN *LowerJoinEmit(ProgramImpl *impl, Context &context, const DROp &op,
+                         QueryJoin join_view, VECTOR *pivot_vec, SERIES *seq);
+
+// R-final: the product sibling. The TABLEPRODUCT is minted INLINE at the sole
+// Product.cpp Run site (no BuildProduct function to wrap), so this is the
+// Site-5 RECORDER only — it pushes the emission key and emits NOTHING (the
+// product emission is byte-unchanged). EAGER-ONLY (no delta product path).
+void LowerProductEmit(Context &context, const DROp &op);
 
 // T2b — the `-deltarel-out` sink. `SetDeltaRelDumpStream` (also declared on the
 // public ControlFlow/Format.h surface so Main.cpp can wire it) installs the

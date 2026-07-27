@@ -249,11 +249,19 @@ exact signatures before writing a driver.
   dispatch arms are MODELED: the eight effect-free, knob-independent
   `kEagerForward`/`kEagerInsert`/`kEagerCompare`/`kEagerGenerate`/
   `kEagerUnion`/`kEagerSelect`/`kEagerJoin`/`kEagerProduct` marker ops
-  (the JOIN/PRODUCT pair are PER-VISIT dispatch-edge records — the
-  once-per-join TABLEJOIN emission stays hand-coded behind the
-  `ContinueJoinWorkItem` drain-order deferral, owed to R-final; a join
-  marker's `table=` is usually absent but a model-SHARED join renders
-  it, the E-107 shape) plus the R4 EFFECT-BEARING
+  (the JOIN/PRODUCT pair are PER-VISIT dispatch-edge records; the
+  once-per-join TABLEJOIN emission is ALSO modeled since R-final slice
+  3 — the `kJoinEmit`/`kProductEmit` EMISSION ops, one per (proc,
+  join_view, form∈{eager,delta}) event, payload carrying the
+  ContinueJoinOrder drain key + the WorkItem `work_seq` tie-break,
+  recorded at work-item creation, delta-enrolled after DeriveDRStrata,
+  cross-checked by the V-JOIN-EMIT-XCHECK Site-5 multiset (run on BOTH
+  BuildStratumPhases exits), lowered by `LowerJoinEmit` wrapping the
+  untouched `BuildJoin` at both callers — emission byte-identical,
+  TABLEINDEX excluded from the id contract (CARVE-3), render surfaces
+  `form=`/`order=`/`seq=` (order/seq eager-only); a join marker's
+  `table=` is usually absent but a model-SHARED join renders it, the
+  E-107 shape) plus the R4 EFFECT-BEARING
   `kNegateGate` (a mint RELOCATION: it carries a real kFlagRead of the
   negated view's model table, reconstructed identically at mint and
   re-invocation; every minted gate is eager-walk-reached — the
@@ -286,11 +294,15 @@ exact signatures before writing a driver.
   the R-JOIN pair: `join_1` (the acyclic pivot-join carrier,
   `kEagerJoin=4` over 2 table-less join views) and `optimize_2` (the
   first @product carrier, `kEagerProduct=2`); all opt-mode via their
-  `.irgold` sidecars; census 27 kinds since R-E42 — every pin's census
-  line carries `kIngestLoop=`, and the kIngestFold=0 quad map_3/merge_2/
-  elim-cond-cycle-simple/join_1 carries real kIngestLoop blocks).
-  NO unmodeled arm remains; the descent's interior migrates at R-final
-  (see KeyedInstances.artifacts/rel-arch-pseudocode.md §4-§5).
+  `.irgold` sidecars; census 29 kinds since R-final slice 3
+  (kJoinEmit/kProductEmit) — every pin's census line carries
+  `kIngestLoop=` and `kJoinEmit=`, the kIngestFold=0 quad map_3/merge_2/
+  elim-cond-cycle-simple/join_1 carries real kIngestLoop blocks, and
+  the 7 join/product carriers carry real kJoinEmit/kProductEmit blocks
+  incl. d5's DELTA join-emit). NO unmodeled arm remains; the R-final
+  direction flip + rename remain (see
+  KeyedInstances.artifacts/rel-arch-pseudocode.md §4-§5 +
+  rfinal-design.md).
 - Core invariants (dataflow): no view is ever its own direct user (asserted
   in `RelabelGroupIDs`); a source-less forwarding cycle is unsatisfiable,
   collected by dead-flow elimination; `QueryImpl` owns no conditions —

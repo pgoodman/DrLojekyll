@@ -3,6 +3,8 @@
 
 #include "Induction.h"
 
+#include "DeltaRel.h"  // R-final: MakeProductEmitOp / LowerProductEmit
+
 namespace hyde {
 namespace {
 
@@ -48,7 +50,14 @@ ContinueProductWorkItem::ContinueProductWorkItem(Context &context,
                                                  INDUCTION *induction_)
     : WorkItem(context, ContinueProductOrder(view_)),
       view(view_),
-      induction(induction_) {}
+      induction(induction_) {
+  // R-final (§2.2a): record the per-(proc, product_view) EMISSION event at
+  // creation (the kProductEmit sibling of the join event). Rides the SAME
+  // emitted_join_events stream, discriminated by kind. 1:1 with the sole
+  // TABLEPRODUCT mint at Run. EAGER-only (no delta product path).
+  context.emitted_join_events.push_back(
+      {static_cast<uint8_t>(DROpKind::kProductEmit), view_, order, work_seq});
+}
 
 // Find the common ancestor of all insert regions.
 REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
@@ -108,10 +117,17 @@ REGION *ContinueProductWorkItem::FindCommonAncestorOfAppendRegions(void) const {
 void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
 
   // There should be at least one vector append, even in the inductive case,
-  // such that the APPEND relates to the non-inductive predecessor.
+  // such that the APPEND relates to the non-inductive predecessor. Loud and
+  // always-on (Fable-review [1]): this work item's creation already recorded
+  // its kProductEmit emission event, so silently bailing here (the old
+  // NDEBUG behavior) would leave an enrolled-but-never-emitted op and a
+  // guaranteed V-JOIN-EMIT-XCHECK mismatch — if this state is ever
+  // reachable it must abort HERE, at the cause, not at the cross-check.
   if (appends.empty()) {
-    assert(false);
-    return;
+    fprintf(stderr,
+            "error: PRODUCT-EMPTY-APPENDS: a product work item ran with no "
+            "vector appends\n");
+    abort();
   }
 
   const auto join_view = QueryJoin::From(view);
@@ -148,6 +164,15 @@ void ContinueProductWorkItem::Run(ProgramImpl *impl, Context &context) {
   const auto product = impl->operation_regions.CreateDerived<TABLEPRODUCT>(
       seq, join_view, impl->next_id++);
   seq->AddRegion(product);
+
+  // R-final: record the once-per-product EMISSION for Site-5 (the TABLEPRODUCT
+  // is minted inline here, so LowerProductEmit is the RECORDER — it emits
+  // nothing). MED-2 tripwire: the stored order_key must equal a fresh
+  // ContinueProductOrder(view) re-derivation.
+  const DROp product_emit_op =
+      MakeProductEmitOp(impl, view, order, work_seq);
+  assert(product_emit_op.emit_order_key == ContinueProductOrder(view));
+  LowerProductEmit(context, product_emit_op);
 
   // Clear out the input vectors that might have been filled up before the
   // cross-product.

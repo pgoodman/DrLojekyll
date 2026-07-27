@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -89,6 +90,13 @@ class WorkItem {
   explicit WorkItem(Context &context, unsigned order_);
 
   const unsigned order;
+
+  // R-final: the monotone work-item construction index (`context.work_item_seq++`
+  // in the base ctor). The drain-order tie-break `order`/ContinueJoinOrder LACKS
+  // (it COLLIDES on equal-depth joins). Named `work_seq` (NOT `seq`) to avoid
+  // shadowing the local `seq` SERIES in ContinueJoinWorkItem::Run. Surfaced as
+  // the kJoinEmit `seq=` render token + the eager Site-5 key's unique slot.
+  const unsigned work_seq;
 };
 
 using WorkItemPtr = std::unique_ptr<WorkItem>;
@@ -149,6 +157,11 @@ class Context {
 
   // Work list of actions to invoke to build the execution tree.
   std::vector<WorkItemPtr> work_list;
+
+  // R-final: the monotone work-item construction counter (bumped in the
+  // WorkItem base ctor). Backs `WorkItem::work_seq` — the join/product emission
+  // drain-order tie-break (§2.1). Covers all six emplace sites with one edit.
+  unsigned work_item_seq{0u};
 
   std::unordered_map<QueryView, ContinueJoinWorkItem *> view_to_join_action;
   std::unordered_map<QueryView, ContinueProductWorkItem *>
@@ -266,6 +279,33 @@ class Context {
     std::optional<ParsedMessage> message;  // kEagerInsert stream sinks only
   };
   std::vector<EmittedEagerOp> emitted_eager_ops;
+
+  // R-final (§2.2): the per-(proc, join/product view) EMISSION events recorded
+  // at work-item CREATION (the eager walk runs BEFORE BuildStratumPhases builds
+  // the flow — the §12.6 walk-authority shape, per-(proc, view) so a NEW stream,
+  // not the view-keyed emitted_eager_ops). `BuildDRInventory`'s tail-appended
+  // JOIN_EMIT block replays these into kJoinEmit/kProductEmit ops (kind selects
+  // Make vs MakeProduct; view+order_key+walk_seq rebuild the op). `kind` is a
+  // DROpKind cast (avoids pulling DeltaRel.h into Build.h — the EmittedEagerOp
+  // precedent).
+  struct EmittedJoinEvent {
+    uint8_t kind;                   // DROpKind cast (kJoinEmit / kProductEmit)
+    std::optional<QueryView> view;  // the QueryJoin / QueryProduct view
+    unsigned order_key;             // ContinueJoin/ProductOrder (drain priority)
+    unsigned walk_seq;              // the WorkItem::work_seq (drain tie-break)
+  };
+  std::vector<EmittedJoinEvent> emitted_join_events;
+
+  // R-final Site-5: the emission KEY each LowerJoinEmit / LowerProductEmit
+  // actually produced (pushed at lowering). A closing block in
+  // BuildStratumPhases (after the stratum loop, emit-HIGH-2) multiset-compares
+  // it against the flow's kJoinEmit/kProductEmit enrollment — the independent
+  // net (lowering re-derivation vs enrollment re-derivation). The tuple IS
+  // JoinEmitKey (uintptr_t table_id, uint8_t form, unsigned order/stratum,
+  // uintptr_t walk_seq-or-view-identity) spelled inline so Build.h need not
+  // include DeltaRel.h.
+  std::vector<std::tuple<uintptr_t, uint8_t, unsigned, uintptr_t>>
+      emitted_join_emits;
 };
 
 // Populate `context.monotone_negated_tables` from `query.Negations()`: the

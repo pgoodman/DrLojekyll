@@ -1271,6 +1271,30 @@ DROp MakeMonotoneIngestFold(ProgramImpl *impl, Context &context,
 // `ingest_message` drives render, `ingest_receive` gives `.Columns()` for the
 // VARs. Invoked from BOTH the walk (ExtendEagerProcedure Arm C) AND the
 // tail-appended enrollment, so the two payloads cannot diverge (§12.6).
+// R-final (MED-1): the file-scope (hyde-scope, header-declared external)
+// extraction of the Stratum.cpp:1451 `all_sides_same_scc` lambda (SccOf ==
+// RecursiveSCC, byte-identical bodies) so the delta lowering skip, the delta
+// enrollment and the delta expect() share ONE authority. Mirrors the lambda
+// exactly (operator[] on view_to_model — a join/side view always has a model
+// entry). SccOf (anonymous-namespace static) is visible here via the enclosing
+// hyde namespace.
+bool AllSidesSameScc(ProgramImpl *impl,
+                     const std::unordered_map<TABLE *, unsigned> &scc_map,
+                     QueryView join_view) {
+  DataModel *const jm = impl->view_to_model[join_view]->FindAs<DataModel>();
+  const auto join_scc = SccOf(scc_map, jm->table);
+  if (!join_scc.has_value()) {
+    return false;
+  }
+  for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
+    TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
+    if (SccOf(scc_map, st) != join_scc) {
+      return false;
+    }
+  }
+  return true;
+}
+
 DROp MakeIngestLoopOp(ParsedMessage message, QueryView receive) {
   assert(!receive.CanReceiveDeletions());
   DROp op(DROpKind::kIngestLoop);
@@ -1292,6 +1316,60 @@ IngestLoopKey IngestLoopKeyOf(const DROp &op) {
   return IngestLoopKey(op.ingest_sign, op.ingest_is_explicit,
                        static_cast<uint8_t>(op.ingest_role),
                        op.ingest_message->Id());
+}
+
+// R-final: the single authority for a kJoinEmit op. ID-NEUTRAL + EFFECT-FREE
+// (LowerJoinEmit = BuildJoin allocates the ids; the ctor only records identity
+// + the drain-order key). The model `table=` is resolved HERE via
+// ModelTableOrNull and stored in `table_op_table` (the eager-marker precedent —
+// the dump's EmitDRFlow carries no impl; render/key_of/Site-5 read the stored
+// pointer). No effects, no next_id.
+DROp MakeJoinEmitOp(ProgramImpl *impl, QueryView join_view, JoinEmitForm form,
+                    unsigned order_key, unsigned walk_seq, unsigned stratum) {
+  DROp op(DROpKind::kJoinEmit);
+  op.ctx = Ctx::kEager;  // form distinguishes eager/delta; ctx stays kEager
+  op.emit_join_view = join_view;
+  op.emit_form = form;
+  op.emit_order_key = order_key;
+  op.emit_walk_seq = walk_seq;
+  op.emit_stratum = stratum;
+  op.table_op_table = ModelTableOrNull(impl, join_view);  // E-107 render source
+  return op;
+}
+
+// R-final: the single authority for a kProductEmit op. EAGER-ONLY (the sole
+// TABLEPRODUCT mint is Product.cpp Run — no delta path, no M13 hazard). No
+// form/stratum (form is always kEager). Same id-neutral / effect-free shape.
+DROp MakeProductEmitOp(ProgramImpl *impl, QueryView product_view,
+                       unsigned order_key, unsigned walk_seq) {
+  DROp op(DROpKind::kProductEmit);
+  op.ctx = Ctx::kEager;
+  op.emit_join_view = product_view;
+  op.emit_form = JoinEmitForm::kEager;
+  op.emit_order_key = order_key;
+  op.emit_walk_seq = walk_seq;
+  op.table_op_table = ModelTableOrNull(impl, product_view);
+  return op;
+}
+
+// R-final: the ONE flow-side key extraction (IngestLoopKeyOf precedent). EAGER
+// key = (table_id, form, order_key, walk_seq) — a SET (walk_seq unique per
+// event). DELTA key = (table_id, form, emit_stratum, view.UniqueId()): two
+// DISTINCT-BUT-EQUAL join views sharing one model table at one stratum are
+// intentional (the member-view-list identity invariant), so the view's own
+// identity is the discriminator — pointer-derived, which is fine HERE because
+// the key never renders and the Site-5 multiset compares within one process
+// (order-free; the (F) law binds ordered EMISSION only). PURE (stored fields).
+JoinEmitKey JoinEmitKeyOf(const DROp &op) {
+  assert(op.kind == DROpKind::kJoinEmit || op.kind == DROpKind::kProductEmit);
+  const uintptr_t table_id =
+      op.table_op_table ? uintptr_t(op.table_op_table->id) + 1u : 0u;
+  const uint8_t form = static_cast<uint8_t>(op.emit_form);
+  if (op.emit_form == JoinEmitForm::kDelta) {
+    return JoinEmitKey(table_id, form, op.emit_stratum,
+                       static_cast<uintptr_t>(op.emit_join_view->UniqueId()));
+  }
+  return JoinEmitKey(table_id, form, op.emit_order_key, op.emit_walk_seq);
 }
 
 // R1: a `.find()`-guarded model-table lookup (ADJ-S13/S14). Null when the view
@@ -2575,6 +2653,28 @@ DRFlowGraph BuildDRInventory(
     }
   }
 
+  // ----------------------------------------------------- JOIN_EMIT (eager)
+  // R-final (design §3 / §2.2b): the once-per-(proc, join_view) TABLEJOIN /
+  // TABLEPRODUCT emissions, WALK-AUTHORITATIVE (recorded at work-item creation
+  // into `context.emitted_join_events` — the referent is per-(proc, view) and
+  // the marker records are view-keyed with no proc discriminant, so a NEW
+  // record stream, not a piggyback; §2.2b). TAIL-APPENDED STRICTLY AFTER the
+  // INGEST_LOOP block so every pre-existing `op.N` construction index stays
+  // BYTE-STABLE (the diff is additive; key_of re-sorts the new blocks into the
+  // lead-0 band). The DELTA form is NOT enrolled here — `flow.join_stratum` is
+  // still EMPTY (DeriveDRStrata runs AFTER BuildDRInventory), so the delta
+  // enrollment moves to a NEW step in BuildStratumPhases after DeriveDRStrata
+  // (emit-HIGH-1). The kEager events replay their single-authority ctor.
+  for (const Context::EmittedJoinEvent &rec : context.emitted_join_events) {
+    if (static_cast<DROpKind>(rec.kind) == DROpKind::kProductEmit) {
+      flow.ops.push_back(
+          MakeProductEmitOp(impl, *rec.view, rec.order_key, rec.walk_seq));
+    } else {
+      flow.ops.push_back(MakeJoinEmitOp(impl, *rec.view, JoinEmitForm::kEager,
+                                        rec.order_key, rec.walk_seq, 0u));
+    }
+  }
+
   return flow;
 }
 
@@ -3339,6 +3439,30 @@ void ValidateDROps(
         }
         break;
       }
+
+      // R-final (Fable-review [2], the kIngestLoop precedent): the join/
+      // product EMISSION ops' ctor contracts, per-op and always-on — the
+      // ctor's own asserts compile out under NDEBUG. Effect-free (a stray
+      // effect silently mints dep edges); a real join view; form-consistent
+      // payload (kProductEmit is eager-only; the delta form carries a real
+      // stratum and a zero walk_seq; the eager form carries no stratum) —
+      // a wrong-form payload silently mis-keys the Site-5 multiset.
+      case DROpKind::kJoinEmit:
+      case DROpKind::kProductEmit: {
+        const bool is_product = op.kind == DROpKind::kProductEmit;
+        const bool is_delta = op.emit_form == JoinEmitForm::kDelta;
+        if (op.ctx != Ctx::kEager || !op.emit_join_view.has_value() ||
+            !op.emit_join_view->IsJoin() || !op.effects.empty() ||
+            (is_product && is_delta) ||
+            (is_delta && op.emit_walk_seq != 0u) ||
+            (!is_delta && op.emit_stratum != 0u)) {
+          ValidatorFail("V-JOIN-EMIT: a kJoinEmit/kProductEmit op violates "
+                        "its ctor contract (effect-free eager-ctx join view, "
+                        "form-consistent order/seq/stratum payload)");
+        }
+        break;
+      }
+
       default:
         break;
     }
@@ -3568,6 +3692,32 @@ void ValidateDROps(
     add_gu_key(QueryView(kv), AggProvenance::kKv, kv.NthValueMergeFunctor(0));
   }
 
+  // R-final: the per-join / per-product EMISSION-op recount (both forms carry a
+  // scalar expect(), UNLIKE the 8 walk-authoritative markers — the emission is
+  // once-per-emission and flow-derivable, closing PART of the ADJ-S12 gap at
+  // the emission layer). The DELTA half is INDEPENDENT (flow-derivable from
+  // flow.joins, mirroring the Stratum.cpp:1514 filter); the EAGER half is
+  // walk-authoritative (reads the recorded event count, the ADJ-S10 shape —
+  // Site-5 is its independent net, in BuildStratumPhases). NOTE: this runs
+  // AFTER the delta enrollment step (BuildStratumPhases, between DeriveDRStrata
+  // and ValidateDROps), so `flow.join_stratum` is populated here.
+  unsigned exp_join_emit = 0u, exp_product_emit = 0u;
+  for (const DRJoin &dr_join : flow.joins) {  // DELTA half (independent)
+    const QueryView jv = dr_join.join_view;
+    auto js = flow.join_stratum.find(jv);
+    if (js == flow.join_stratum.end() || AllSidesSameScc(impl, scc_map, jv)) {
+      continue;
+    }
+    ++exp_join_emit;
+  }
+  for (const auto &ev : context.emitted_join_events) {  // EAGER half (walk-auth)
+    if (static_cast<DROpKind>(ev.kind) == DROpKind::kProductEmit) {
+      ++exp_product_emit;
+    } else {
+      ++exp_join_emit;
+    }
+  }
+
   // Compare against the DERIVED op inventory.
   const auto count_kind = [&](DROpKind k) -> unsigned {
     unsigned n = 0u;
@@ -3597,6 +3747,8 @@ void ValidateDROps(
   expect(DROpKind::kCommitSweep, exp_sweep, "commit sweeps");
   expect(DROpKind::kIngestFold, exp_ingest, "ingest folds");
   expect(DROpKind::kIngestLoop, exp_ingest_loop, "ingest loops");  // R-E42
+  expect(DROpKind::kJoinEmit, exp_join_emit, "join emits");        // R-final
+  expect(DROpKind::kProductEmit, exp_product_emit, "product emits");  // R-final
   expect(DROpKind::kGroupUpdate, exp_group_update, "group updates");
   expect(DROpKind::kStateSeal, exp_group_update, "state seals");
 
@@ -4357,6 +4509,12 @@ unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op) {
       return 0u;
     case DROpKind::kStateSeal:
       return 0u;  // trailing commit band (V-READY skip, below)
+    case DROpKind::kJoinEmit:
+    case DROpKind::kProductEmit:
+      // R-final (NOTE-2): the DELTA form renders its real stratum (the lifted
+      // join_stratum stored at enrollment); the EAGER form is pre-phase like
+      // the markers → stratum 0. kProductEmit is always eager.
+      return op.emit_form == JoinEmitForm::kDelta ? op.emit_stratum : 0u;
     case DROpKind::kSubgraphInstantiate:
     case DROpKind::kInstanceDeath:
       // D1.b (A.2.4 / F-OPS-7): the two LIVE instance kinds resolve their
@@ -4685,6 +4843,17 @@ void LinearizeAndValidateDRFlow(
     if (op.kind == DROpKind::kIngestFold ||
         op.kind == DROpKind::kIngestLoop) {
       return Key{0u, 0u, 0u, op_table_id(op), op.ingest_sign, oi};
+    }
+    // R-final (design §5.4): the per-join/product EMISSION ops share ONE lead-0
+    // arm (both eager + delta), keyed on the join's model table_id (resolved by
+    // op_table_id via the stored table_op_table — NO new arm) so a join's
+    // kEagerJoin MARKER and its kJoinEmit EMISSION render adjacently. NOT
+    // IsEagerMarkerKind (its own family); effect-free ⇒ invisible to V-READY.
+    // The surfaced form=/order=/seq= tokens disambiguate eager/delta IN the
+    // block — the band need not. Sign 0 (signless). Without this arm the
+    // default returns a lead-1 PHASE key that mis-sorts the op out of the band.
+    if (op.kind == DROpKind::kJoinEmit || op.kind == DROpKind::kProductEmit) {
+      return Key{0u, 0u, 0u, op_table_id(op), 0, oi};
     }
     // R1 (design §A.6(a)): the eager forwards/inserts ARE the pre-phase monotone
     // push path — the same lead-0 off-lattice band as the ingest folds that feed

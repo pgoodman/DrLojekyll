@@ -3,6 +3,8 @@
 
 #include "Induction.h"
 
+#include "DeltaRel.h"  // R-final: MakeJoinEmitOp / LowerJoinEmit / JoinEmitForm
+
 namespace hyde {
 namespace {
 
@@ -51,7 +53,17 @@ ContinueJoinWorkItem::ContinueJoinWorkItem(Context &context, QueryView view_,
       view(view_),
       input_pivot_vec(input_pivot_vec_),
       swap_pivot_vec(swap_pivot_vec_),
-      induction(induction_) {}
+      induction(induction_) {
+  // R-final (§2.2a): record the per-(proc, join_view) EMISSION event at work-
+  // item CREATION (the walk-authority stream — the flow does not yet exist).
+  // `order`/`work_seq` are the base members set by the base ctor (which ran
+  // first); view_to_join_action dedups so this fires once per (proc, view), 1:1
+  // with the single BuildJoin at Run. BuildDRInventory replays these into eager
+  // kJoinEmit ops (tail-appended → op.N byte-stable). The resolved table is
+  // recomputed at enrollment via ModelTableOrNull, so no table is stored here.
+  context.emitted_join_events.push_back(
+      {static_cast<uint8_t>(DROpKind::kJoinEmit), view_, order, work_seq});
+}
 
 // Find the common ancestor of all insert regions.
 REGION *ContinueJoinWorkItem::FindCommonAncestorOfInsertRegions(void) const {
@@ -575,8 +587,17 @@ void ContinueJoinWorkItem::Run(ProgramImpl *impl, Context &context) {
     seq->AddRegion(unique);
   }
 
-  auto * const join = BuildJoin(impl, join_view, swap_pivot_vec, seq,
-                                false /* for_delta */);
+  // R-final: route the EAGER BuildJoin through LowerJoinEmit (the M13 discharge;
+  // byte-identical — the wrapper only adds the Site-5 push). The op re-derives
+  // its identity from this work item (view/order/work_seq — all in hand). MED-2
+  // tripwire: the stored order_key must equal a FRESH ContinueJoinOrder(view)
+  // re-derivation (a real re-derivation check; the seq assertion is dropped as
+  // tautological). `join_view`/`view` are the same view — QueryJoin vs QueryView.
+  const DROp emit_op = MakeJoinEmitOp(impl, view, JoinEmitForm::kEager, order,
+                                      work_seq, 0u);
+  assert(emit_op.emit_order_key == ContinueJoinOrder(view));
+  auto * const join =
+      LowerJoinEmit(impl, context, emit_op, join_view, swap_pivot_vec, seq);
   OP *parent = join;
 
   // Figure out if any of the joined views is backed by a unit (condition)

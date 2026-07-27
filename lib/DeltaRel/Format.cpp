@@ -122,8 +122,22 @@ static const char *DROpKindName(DROpKind k) {
     case DROpKind::kEagerJoin: return "kEagerJoin";
     case DROpKind::kEagerProduct: return "kEagerProduct";
     case DROpKind::kIngestLoop: return "kIngestLoop";
+    case DROpKind::kJoinEmit: return "kJoinEmit";
+    case DROpKind::kProductEmit: return "kProductEmit";
   }
   fprintf(stderr, "DELTAREL-DUMP: unhandled enum value in a spelling table\n");
+  abort();
+}
+
+// R-final (E-71): the per-join emission op's form spelling table (M7' — a new
+// payload spelling gets its own loud-abort table). `eager`/`delta` reuse the
+// CtxName-adjacent house vocabulary.
+static const char *JoinEmitFormName(JoinEmitForm f) {
+  switch (f) {
+    case JoinEmitForm::kEager: return "eager";
+    case JoinEmitForm::kDelta: return "delta";
+  }
+  fprintf(stderr, "DELTAREL-DUMP: unhandled JoinEmitForm\n");
   abort();
 }
 
@@ -1000,6 +1014,35 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         break;
       }
 
+      // R-final (E-71 SURFACE order=/seq=): the per-join / per-product EMISSION
+      // ops. MARKER-SHAPE (header + `args:` line ONLY; NO reads/effects/spine
+      // sublines — effect-free at the flow layer). `form=` is a HEADER token
+      // (the `sink=`/`cmp=` precedent); `order=` + `seq=` are ARGS tokens (the
+      // `message=`/`functor=` precedent) SURFACING the full drain key. `table=`
+      // is OMITTED when null (E-107; a join view is model-table-backed →
+      // usually present, unlike the table-less markers) — resolved at ctor via
+      // ModelTableOrNull, stored in table_op_table (the dump has no impl).
+      // `seq=` is OMITTED for the delta form (walk_seq is 0/meaningless — the
+      // delta drain is flow.joins iteration).
+      case DROpKind::kJoinEmit:
+      case DROpKind::kProductEmit: {  // one arm: kProductEmit is eager-only,
+        // so the form conditional below already renders both kinds
+        // identically (Fable-review [6] — the copy-paste arm collapsed).
+        // `order=`/`seq=` are EAGER-ONLY tokens (both are drain-key values
+        // of the work-item machinery; the delta drain is flow.joins
+        // iteration, where both are meaningless — Fable-review [5]).
+        os << " sign=" << SignGlyph(0) << " ctx=" << CtxName(op.ctx)
+           << " stratum=" << DROpStratum(flow, op)
+           << " form=" << JoinEmitFormName(op.emit_form) << "\n";
+        os << "    args:";
+        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.emit_form == JoinEmitForm::kEager) {
+          os << " order=" << op.emit_order_key << " seq=" << op.emit_walk_seq;
+        }
+        os << "\n";
+        break;
+      }
+
       default: {
         // Generic fallback (crossover, product-arm, fixpoint-fire, chain-fold,
         // retire, rederive, negate-gate, pivot-assemble). Renders the common
@@ -1063,7 +1106,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << "\n";
   }
 
-  // ---- census (27 DROpKind counts, enum order, one line; grammar R-10) ----
+  // ---- census (29 DROpKind counts, enum order, one line; grammar R-10) ----
   os << "\n";
   const auto count_kind = [&](DROpKind k) -> unsigned {
     unsigned n = 0u;
@@ -1087,7 +1130,8 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       DROpKind::kEagerCompare, DROpKind::kEagerGenerate,
       DROpKind::kEagerUnion,   DROpKind::kEagerSelect,
       DROpKind::kEagerJoin,    DROpKind::kEagerProduct,
-      DROpKind::kIngestLoop};
+      DROpKind::kIngestLoop,
+      DROpKind::kJoinEmit,     DROpKind::kProductEmit};
   os << "census:";
   unsigned census_total = 0u;
   for (DROpKind k : kAllKinds) {
@@ -1096,7 +1140,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     os << " " << DROpKindName(k) << "=" << n;
   }
   os << "\n";
-  if (census_total != flow.ops.size()) {  // a 28th DROpKind not in kAllKinds
+  if (census_total != flow.ops.size()) {  // a 30th DROpKind not in kAllKinds
     fprintf(stderr,
             "DELTAREL-DUMP: census covers %u of %zu ops (kAllKinds is "
             "missing a DROpKind)\n",

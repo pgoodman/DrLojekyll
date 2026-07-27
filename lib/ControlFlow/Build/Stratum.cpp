@@ -1448,19 +1448,10 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
                             &join_pivots,
                         SERIES *stratum_seq) {
 
+  // R-final (MED-1): forwards to the file-scope AllSidesSameScc authority
+  // (shared with the delta enrollment + delta expect()); SccOf == RecursiveSCC.
   const auto all_sides_same_scc = [&](QueryView join_view) -> bool {
-    DataModel *const jm = impl->view_to_model[join_view]->FindAs<DataModel>();
-    const auto join_scc = RecursiveSCC(recursive_sccs, jm->table);
-    if (!join_scc.has_value()) {
-      return false;
-    }
-    for (QueryView side : QueryJoin::From(join_view).JoinedViews()) {
-      TABLE *const st = impl->view_to_model[side]->FindAs<DataModel>()->table;
-      if (RecursiveSCC(recursive_sccs, st) != join_scc) {
-        return false;
-      }
-    }
-    return true;
+    return AllSidesSameScc(impl, recursive_sccs, join_view);
   };
   const auto same_scc = [&](TABLE *a, TABLE *b) -> bool {
     const auto ga = RecursiveSCC(recursive_sccs, a);
@@ -1529,8 +1520,17 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
     unique->vector.Emplace(unique, pivot_vec);
     stratum_seq->AddRegion(unique);
 
-    auto * const join = BuildJoin(impl, QueryJoin::From(join_view), pivot_vec,
-                                  stratum_seq, true /* for_delta */);
+    // R-final: route the DELTA BuildJoin through LowerJoinEmit (the M13
+    // discharge — both callers wrap the untouched BuildJoin; byte-identical).
+    // The op is CONSTRUCTED inline (join_view + stratum + kDelta in hand — no
+    // lookup); the delta enrollment (BuildStratumPhases, post-DeriveDRStrata)
+    // rebuilds the matching op from the SAME flow.joins loop → Site-5 cross-
+    // checks the two derivations.
+    const DROp delta_emit_op = MakeJoinEmitOp(
+        impl, join_view, JoinEmitForm::kDelta, 0u, 0u, stratum);
+    auto * const join = LowerJoinEmit(impl, context, delta_emit_op,
+                                      QueryJoin::From(join_view), pivot_vec,
+                                      stratum_seq);
 
     DataModel *const join_model =
         impl->view_to_model[join_view]->FindAs<DataModel>();
@@ -2027,6 +2027,32 @@ OP *LowerIngestLoop(ProgramImpl *impl, Context &context, const DROp &op,
   return loop;
 }
 
+// R-final: the byte-move wrapper of BuildJoin at the DRAIN / delta site (the
+// M17 lower-in-place). BuildJoin stays the untouched SHARED mint (M13
+// discipline); this pass-through only ADDS the Site-5 record, so BOTH callers
+// (Join.cpp Run eager, Stratum.cpp LowerDRFlow delta) emit byte-identical
+// regions. Returns the TABLEJOIN the caller threads (added/removed body or
+// descent). CARVE-3: the op contract is {TABLEJOIN, pivots, out_vars}; indices
+// stay a shared-CSE side stream OUTSIDE the contract (BuildJoin →
+// GetOrCreateIndex untouched → byte-identical by construction).
+TABLEJOIN *LowerJoinEmit(ProgramImpl *impl, Context &context, const DROp &op,
+                         QueryJoin join_view, VECTOR *pivot_vec, SERIES *seq) {
+  assert(op.kind == DROpKind::kJoinEmit);
+  TABLEJOIN *const join = BuildJoin(impl, join_view, pivot_vec, seq,
+                                    op.emit_form == JoinEmitForm::kDelta);
+  context.emitted_join_emits.push_back(JoinEmitKeyOf(op));  // Site-5 record
+  return join;
+}
+
+// R-final: the product sibling — the SOLE TABLEPRODUCT mint is INLINE in
+// Product.cpp Run (no BuildProduct function to wrap), so this is the Site-5
+// RECORDER ONLY. It emits NOTHING (the product emission is byte-unchanged);
+// it pushes the emission key so the closing multiset covers the product form.
+void LowerProductEmit(Context &context, const DROp &op) {
+  assert(op.kind == DROpKind::kProductEmit);
+  context.emitted_join_emits.push_back(JoinEmitKeyOf(op));
+}
+
 // R2 FAMILY #3 — COMMIT-SWEEP BAND LOWERING (dr → cf).
 //
 // Replaces the hand-coded end-of-batch sweep band (the deleted
@@ -2128,6 +2154,28 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   // fixpoint, now the DR side's own authority. (No id-affecting work — DR
   // construction and derivation allocate no region/vector ids.)
   DeriveDRStrata(dr_flow, impl, context, query, recursive_sccs);
+
+  // ----------------------------------------------------- JOIN_EMIT (delta)
+  // R-final (emit-HIGH-1): the delta-form per-join emission ops enroll HERE — a
+  // NEW step AFTER DeriveDRStrata (which populates `join_stratum`) and BEFORE
+  // ValidateDROps (whose expect() must see them). The eager JOIN_EMIT block
+  // already tail-appended inside BuildDRInventory (emitted_join_events is
+  // complete by the walk); these delta ops tail-append after them, so every
+  // pre-existing `op.N` stays byte-stable ([BYTE-3]). Flow-derived from
+  // dr_flow.joins under the SAME filter as the delta lowering skip
+  // (Stratum.cpp LowerDRFlow) — one AllSidesSameScc authority (MED-1). The
+  // stratum slot carries the LIFTED join_stratum so the block renders its real
+  // stratum (NOTE-2) and Site-5 keys it apart from a same-table sibling.
+  for (const DRJoin &dr_join : dr_flow.joins) {
+    const QueryView jv = dr_join.join_view;
+    auto js = dr_flow.join_stratum.find(jv);
+    if (js == dr_flow.join_stratum.end() ||
+        AllSidesSameScc(impl, recursive_sccs, jv)) {
+      continue;
+    }
+    dr_flow.ops.push_back(
+        MakeJoinEmitOp(impl, jv, JoinEmitForm::kDelta, 0u, 0u, js->second));
+  }
 
   // Always-on op-family + linearization validators (V-OLD-EQUIV legs retired):
   // the census (V-ONE-FOLD/V-SEED-SUP/V-NEG-CTX/V-CLAIM-GATE/... per-kind counts
@@ -2300,8 +2348,40 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
       break;
     }
   }
+  // V-JOIN-EMIT-XCHECK Site 5 (R-final; the Fable-review [0] fix): the
+  // check must run on EVERY exit of this function — the eager half's pushes
+  // happened during the walk (which precedes this function), so on the
+  // no-phase-work early return below the eager multiset is complete and
+  // MUST still be compared (monotone-only programs are exactly the ones
+  // whose only kJoinEmit/kProductEmit ops are eager-form). Defined here,
+  // invoked on both exits.
+  const auto check_join_emit_xcheck = [&](void) {
+    std::vector<JoinEmitKey> emitted = context.emitted_join_emits;
+    std::vector<JoinEmitKey> enrolled;
+    for (const DROp &op : flow.ops) {
+      if (op.kind == DROpKind::kJoinEmit ||
+          op.kind == DROpKind::kProductEmit) {
+        enrolled.push_back(JoinEmitKeyOf(op));
+      }
+    }
+    std::sort(emitted.begin(), emitted.end());
+    std::sort(enrolled.begin(), enrolled.end());
+    if (emitted != enrolled) {
+      std::fprintf(
+          stderr,
+          "error: V-JOIN-EMIT-XCHECK (Site 5) failed: the emitted "
+          "join/product emissions' (table, form, order/stratum, seq/view) "
+          "key multiset disagrees with the flow's kJoinEmit/kProductEmit "
+          "enrollment — a LowerJoinEmit/LowerProductEmit-vs-enrollment "
+          "coverage or drain-key divergence (%zu emitted vs %zu enrolled)\n",
+          emitted.size(), enrolled.size());
+      std::abort();
+    }
+  };
+
   if (flow.branches.empty() && flow.joins.empty() && !any_phase_table &&
       flow.Crossovers().empty() && flow.ProductArms().empty()) {
+    check_join_emit_xcheck();
     return;
   }
 
@@ -2407,6 +2487,23 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     // reads the round's own field, not the discovery `drain_stratum` map.
     LowerDRRounds(impl, context, recursive_sccs, flow, stratum, stratum_seq);
   }
+
+  // V-JOIN-EMIT-XCHECK Site 5 (R-final, emit-HIGH-2) — the per-join / per-
+  // product EMISSION coverage + drain-key check, the ingest-Site-5 sibling. A
+  // CLOSING block at the END of BuildStratumPhases (NOT beside the :2155 ingest
+  // checks): the DELTA `LowerJoinEmit` push happens INSIDE `LowerDRFlow`
+  // (called in the stratum loop above, AFTER ValidateDROps) while the EAGER
+  // push happened during the walk — so only HERE are both complete. Ties the
+  // keys LowerJoinEmit/LowerProductEmit actually EMITTED
+  // (`context.emitted_join_emits`) to the flow's kJoinEmit/kProductEmit
+  // enrollment (eager replay + delta step). The EAGER key is a SET (walk_seq
+  // unique); the DELTA key uses emit_stratum. A dropped or double-emitted join
+  // mismatches even when the count agrees (the E-22 completeness half). This is
+  // the byte-move safety net (two INDEPENDENT derivations: lowering vs
+  // enrollment). `flow` is the stashed const ref (all ops enrolled). The
+  // check body is the `check_join_emit_xcheck` lambda above (defined before
+  // the no-phase-work early return so BOTH exits are covered).
+  check_join_emit_xcheck();
 }
 
 }  // namespace hyde

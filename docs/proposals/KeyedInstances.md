@@ -4497,3 +4497,75 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     kProductEmit per rfinal-design.md §3 as amended emit-HIGH-1/2 +
     MED-1/2 — the E-71 grammar lane for form=/order=/seq= rules
     pre-code), then the flip SD-1..SD-4, then the rename.
+    [EXECUTED — §20(Y).]
+
+(Y) R-FINAL SLICE 3 — THE PER-JOIN EMISSION OPS LANDED (2026-07-27):
+    kJoinEmit(27)/kProductEmit(28), census 27→29 — the ADJ-RJ-14 debt
+    DISCHARGED: the once-per-join deferred TABLEJOIN emission is a
+    MODELED DR-IR op. The ruled R3 shape as amended (emit-HIGH-1/2,
+    MED-1/2, NOTE-1/2): referent = one op per (proc, join_view,
+    form∈{eager,delta}) — 1:1 with a BuildJoin call; payload
+    emit_join_view/form/order_key/walk_seq/stratum, where walk_seq is
+    the NEW WorkItem base-ctor counter (Context::work_item_seq — the
+    drain-order tie-break ContinueJoinOrder LACKS, one edit covering
+    all six emplace sites) and the eager record stream
+    (Context::emitted_join_events) is captured at work-item CREATION
+    (view_to_join_action dedups → once per (proc, view)), replayed
+    into eager ops AFTER INGEST_LOOP (every prior op.N byte-stable);
+    the DELTA form enrolls in its OWN step AFTER DeriveDRStrata (real
+    join_stratum, wired into DROpStratum) filtered by the file-scope
+    AllSidesSameScc shared with the lowering skip; V-JOIN-EMIT-XCHECK
+    Site 5 = a closing multiset block; CARVE-3 (TABLEINDEX outside the
+    id contract — GetOrCreateIndex reuse is emission-order-sensitive,
+    a false constant); LowerJoinEmit wraps the UNTOUCHED BuildJoin at
+    BOTH callers (eager Join.cpp + delta Stratum.cpp:1532 — M13
+    discharged), LowerProductEmit is the Site-5 RECORDER at the inline
+    TABLEPRODUCT mint; render = form= header + args table= (E-107,
+    ctor-stored via ModelTableOrNull — the dump has no impl) +
+    order=/seq= EAGER-ONLY. EMISSION BYTE-IDENTITY was the hard gate:
+    175/175 generated headers byte-identical vs frozen 6107fd3d.
+    STAGE-(d) THREE-WAY (both lanes xhigh): the dump-blind author
+    hand-predicted ALL ELEVEN pins' census tails EXACT + the 7
+    block-gaining carriers' op.N labels EXACT (join_1 op.20/21,
+    optimize_2 op.18, demand_tc op.24-28, symrec op.13/14, booleans
+    op.15/16, elim op.12, d5 op.60 the DELTA carrier — the
+    differential path's first modeled emission event) with an honest
+    E-F ledger naming the only empirical-fill integers == the blind
+    worktree prototype (full implementation +465/−22 across 8 files;
+    21-surface regen EXACTLY 11 DIVERGE + all h/ir/df identical;
+    175-case .h A/B 0-diverged; census==blocks per pin; cross-knob ×3;
+    one self-caught linkage fix; four design-truth adaptations all
+    adjudicated consistent) == the pristine implementation — 11/11
+    dumps BYTE-IDENTICAL (orchestrator cmp, E-77). FABLE REVIEW
+    (14-agent, high): 11 findings → SEVEN root causes, NONE a live
+    miscompile, ALL FIXED PRE-COMMIT: [0] the Site-5 closing block was
+    DEAD on monotone-only programs (the pre-existing no-phase-work
+    early return — the check now runs on BOTH BuildStratumPhases
+    exits); [1] Product.cpp's appends-empty bail converted to the
+    always-on loud abort (the ctor-recorded event made the old silent
+    NDEBUG no-op an enrolled-but-never-emitted hazard — abort at the
+    cause, not the cross-check); [2] the per-op ctor-contract
+    validator arm added for both kinds (the kIngestLoop precedent);
+    [3] the delta Site-5 key gains the join VIEW's identity
+    (model-sharing distinct-but-equal views at one stratum keyed
+    apart; pointer-derived is safe — never rendered, in-process
+    multiset only); [4] the CLAUDE.md re-point applied (census 29, the
+    deferral modeled); [5] order= made EAGER-ONLY (the delta form's
+    order=0 was meaningless — d5's golden re-blessed, EXACTLY the
+    predicted one-line diff); [6] the copy-paste kProductEmit render
+    arm collapsed into the shared case. Post-fix: suite red EXACTLY
+    the predicted d5 IRGOLD-DIVERGE → re-bless (byte-verified) →
+    SUITE PASS(175); ASAN REBUILT + BOTH surfaces PASS(175) + ctest
+    5/5 (the pre-rebuild spot run's stale red identified and
+    discarded). GATES (final tree): E-62 re-grep CLEAN (LIVE); pre-
+    bless reds EXACTLY the eleven .deltarel IRGOLD-DIVERGE → bless
+    (UNFILTERED; git-verified EXACTLY the 11 sanctioned goldens
+    changed, 276 rewrites byte-identical no-ops; sources 11/11
+    byte-verified) → PASS(175) ×3 + post-fix; emission byte-identity
+    175/175 + data/ 144 rows behavior-identical vs frozen 6107fd3d;
+    ctest 5/5 debug + 5/5 ASAN ×2; config-invariance SINGLE-HASH
+    (join_1 + d5, 3-run debug + release); Q5 progsize@128 ABABAB ~1%
+    noise. RESIDUALS: the standing set + Fold C. NEXT: the flip
+    SD-1..SD-4 (rfinal-design.md §4 as amended flip-HIGH-1 — the
+    constant-TUPLE second SET root), then the rename (§5, NARROW +
+    .rel lockstep).

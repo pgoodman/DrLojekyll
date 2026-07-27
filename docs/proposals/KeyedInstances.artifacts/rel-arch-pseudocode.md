@@ -1092,6 +1092,27 @@ owes); kNegateGate rides the generic render (no dedicated case).
       (Stratum.cpp:1532, for_delta=true) — touching it risks the
       modeled path. Carriers: join_1/optimize_2/demand_tc_witness
       (+ symrec for the induction interplay).
+      [DONE (2026-07-27, ledger §20(Y); the ruled R3 shape as
+      amended emit-HIGH-1/2 + MED-1/2 + NOTE-1/2): kJoinEmit(27)/
+      kProductEmit(28) LANDED, census 29 — referent (proc,
+      join_view, form∈{eager,delta}); payload emit_join_view/form/
+      order_key/walk_seq/stratum (walk_seq = the WorkItem
+      base-ctor counter, the drain-order tie-break
+      ContinueJoinOrder lacks; the emitted_join_events record
+      stream is captured at work-item CREATION and replayed into
+      eager ops AFTER INGEST_LOOP — every prior op.N byte-stable);
+      the DELTA form enrolls in its own step AFTER DeriveDRStrata
+      (real stratum wired) with the AllSidesSameScc filter shared
+      file-scope with the lowering skip; Site-5 = a closing
+      V-JOIN-EMIT-XCHECK multiset block after the stratum loop;
+      CARVE-3 (TABLEINDEX outside the id contract); render
+      form=/order=/seq= SURFACED (seq eager-only); LowerJoinEmit
+      wraps the untouched BuildJoin at BOTH callers,
+      LowerProductEmit is the Site-5 recorder at the inline
+      TABLEPRODUCT mint — EMISSION BYTE-IDENTICAL 175/175. All
+      ELEVEN .deltarel pins re-blessed (7 gained real blocks incl.
+      d5's DELTA join emit — the differential path's first modeled
+      emission event; 4 census-line-only).]
       (3) THE GATED FOLD FOLLOW-UPS (owner-DECLINED at R-JOIN;
       re-open at THIS head): the pivot-equality-belt TUPLECMP
       (mint Join.cpp:317-321, filled :513-519; body-anchor
