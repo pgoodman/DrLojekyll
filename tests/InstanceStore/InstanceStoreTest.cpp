@@ -353,7 +353,7 @@ TEST(InstanceStore, DeathHalfRecycleThenPartialReaddDropsRows) {
 // Seal whose current is a STRICT SHRINK of frozen violates frozen ⊆ current;
 // the HP-7 belt must fire — and the trip is an assert() abort (SIGABRT), which
 // would kill the whole test process, so it runs in a forked child (the
-// tests/DeltaRelValidators/InstanceOrderTest.cpp shape). The belt is
+// tests/RelValidators/InstanceOrderTest.cpp shape). The belt is
 // assert()-based (debug-only); under NDEBUG it compiles out, so the whole arm
 // is #ifndef NDEBUG-guarded — a release-built test binary skips it cleanly.
 // -------------------------------------------------------------------------

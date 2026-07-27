@@ -999,7 +999,7 @@ void BuildEagerInductiveRegion(ProgramImpl *impl, QueryView pred_view,
     // union marker on an induction-owning merge. Unreachable today —
     // NeedsInductionCycleVector's merge short-circuit returns true for
     // every InductionGroupId-owning merge — but if that TODO is ever
-    // relaxed, this branch would emit a real union region the .deltarel
+    // relaxed, this branch would emit a real union region the .rel
     // dump cannot show. Model it (its own op kind or a sanctioned mint)
     // before relaxing the short-circuit; re-visit at R-final.
     BuildEagerUnionRegion(impl, pred_view, view, context, parent,

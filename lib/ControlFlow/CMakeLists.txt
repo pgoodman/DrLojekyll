@@ -44,7 +44,7 @@ set(ControlFlow_PRIV_DEPS
 
 set(ControlFlow_DEPS
     DataFlow
-    DeltaRel
+    Rel
     Display
     Lex
     Parse
@@ -59,10 +59,10 @@ dr_define_static_library(ControlFlow
   PRIVATE_DEPS ${ControlFlow_PRIV_DEPS}
 )
 
-# DR.{h,cpp} moved to lib/DeltaRel (its own static-library target, linked above via
-# ControlFlow_DEPS). Build/{Stratum,Procedure}.cpp include "DeltaRel.h" — expose the
-# lib/DeltaRel dir so the quoted include resolves. The DR-IR stays compiler-internal
+# DR.{h,cpp} moved to lib/Rel (its own static-library target, linked above via
+# ControlFlow_DEPS). Build/{Stratum,Procedure}.cpp include "Rel.h" — expose the
+# lib/Rel dir so the quoted include resolves. The DR-IR stays compiler-internal
 # (no include/drlojekyll/ surface).
 target_include_directories(ControlFlow PRIVATE
-  "${PROJECT_SOURCE_DIR}/lib/DeltaRel"
+  "${PROJECT_SOURCE_DIR}/lib/Rel"
 )

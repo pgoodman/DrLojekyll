@@ -190,13 +190,16 @@ exact signatures before writing a driver.
   — no deaths, and `sealed` is an id-order watermark); join/scan body
   membership gates read predicates on the scan cursor id (the emitter's
   row-binding scope stack — the value-keyed re-Find is gone).
-- Delta-relational IR (`lib/DeltaRel/DeltaRel.{h,cpp}` + the T2b
+- Delta-relational IR (`lib/Rel/Rel.{h,cpp}` + the T2b
   `Format.cpp` dump emitter — its own compiler-internal
   static-library target with no `include/drlojekyll/DeltaRel/`
-  surface; the one public seam is the `-deltarel-out` sink
-  `SetDeltaRelDumpStream`, DECLARED on ControlFlow's public
-  Format.h and forwarded to the lib; renamed from lib/DR at the
-  keyed-instances epoch open to mirror DataFlow/ControlFlow): a
+  surface; the one public seam is the `-rel-out` sink
+  `SetRelDumpStream`, DECLARED on ControlFlow's public
+  Format.h and forwarded to the lib; renamed lib/DR->lib/DeltaRel at the keyed-instances epoch open, then
+  lib/DeltaRel->lib/Rel + `-rel-out`->`-rel-out` + `.rel`->`.rel`
+  at the R-final rename ritual — NARROW scope, DR* identifiers deliberately
+  retained; the in-dump `deltarel` header token also retained, its
+  respelling being an unruled E-71 grammar question): a
   typed-value flow
   graph between Query and Program that is now
   the SOLE authority for the stratum machinery (the hand-coded scheduling
@@ -281,7 +284,7 @@ exact signatures before writing a driver.
   owning-merge leg is Authority A round shells; the SELECT arm lowers
   via the extracted `BuildEagerSelectRegion`; @never negates render
   IMPLICIT via `reads: Present` vs `InI`, no token). Every program's
-  `.deltarel` shows its eager markers; ELEVEN `.deltarel` goldens pin
+  `.rel` dump shows its eager markers; ELEVEN `.rel` goldens pin
   the surface (`demand_tc_witness` + `symrec_tie_1` + `map_3` — the
   table-less-ingest carrier witnessing `cmp=`/`functor=` — plus the R3
   trio: `merge_2` (table-BACKED union markers), `booleans` (select with

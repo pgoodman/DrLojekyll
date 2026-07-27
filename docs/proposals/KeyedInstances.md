@@ -4647,4 +4647,55 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     belt-not-authority cross-check per the ruling. RESIDUALS: Fold C;
     the standing spelling/witness set. NEXT: the RENAME ritual (§5
     ruling R6 — NARROW + the .deltarel→.rel lockstep, its own
-    commit, LAST).
+    commit, LAST). [EXECUTED — §20(AA).]
+
+(AA) R-FINAL SLICE 5 — THE RENAME RITUAL LANDED (2026-07-27); THE
+    R-FINAL PROGRAM IS COMPLETE. The ruled R6 NARROW scope + the
+    dump-surface lockstep, ONE commit, ZERO semantic churn (proven,
+    not asserted): lib/DeltaRel→lib/Rel (DeltaRel.{h,cpp}→Rel.{h,cpp};
+    CMake target DeltaRel→Rel incl. the rename-HIGH-1 live
+    target_include_directories line; lib/CMakeLists add_subdirectory;
+    ControlFlow's dep); every #include "DeltaRel.h"→"Rel.h";
+    tests/DeltaRelValidators→tests/RelValidators (all FIVE
+    rename-MED-2 target refs; ctest NAME RelValidators); the flag
+    -deltarel-out→-rel-out (clean break) + SetDeltaRelDumpStream→
+    SetRelDumpStream + the sink identifier family (gRelDumpStream/
+    DumpRelIfEnabled); THE LOCKSTEP: runall.sh:275 (flag + surface
+    filename) + ELEVEN .irgold sidecar tokens 'deltarel opt'→'rel
+    opt' + ELEVEN golden files git-mv'd *.deltarel.opt.golden→
+    *.rel.opt.golden (content UNTOUCHED); the two rename-LOW-4
+    pre-classified comment tokens fixed (InstanceStoreTest path,
+    Induction.cpp .rel); CLAUDE.md live statements re-pointed.
+    EXCLUSIONS held (verified by grep post-edit): -dr-out/gDRStream/
+    dr_out ("Dr. Lojekyll" amalgamation) + dr_define_static_library
+    untouched; DR* IDENTIFIERS deliberately retained (NARROW, not the
+    ~970-site FULL sweep — LowerRelStep names already harmonized and
+    are now retired anyway); the proposal docs + historical ledger
+    prose untouched (journal, not renamed retroactively). DELIBERATE
+    RESIDUAL (recorded): the in-dump `deltarel` header token (Format
+    .cpp:402) KEPT — it is dump GRAMMAR, its respelling is an E-71
+    question the R6 ruling did not reach; a future mini-diff may
+    rule it. GATES: the rename proven CONTENT-EMPTY (old binary
+    -deltarel-out vs new binary -rel-out: dumps + generated headers
+    byte-identical on 6 carriers incl. the demand witness); SUITE
+    PASS(175) with the renamed surface LIVE (irgold reads rel.opt
+    goldens); ctest 5/5 debug (RelValidators passing under its new
+    name) + 5/5 ASAN; ASAN BOTH surfaces PASS(175) (asan tree
+    reconfigured for the moved dir); release reconfigured + built
+    clean. THE R-FINAL CLOSE: all five ruled slices landed IN ONE
+    SESSION under the full per-slice ritual — Fold A (§20(W)), Fold
+    B (§20(X)), the emission ops (§20(Y)), the flip (§20(Z)), the
+    rename (THIS) — the §19(H) acceptance is MET: the two-authority
+    seam is deleted (S1/S2/S4 retired, S3 interior), ONE relational
+    authority derives all flow reachability, every program's dump is
+    proportional (census 29), the eager count/set oracle is live,
+    and the library is named for what it is. RESIDUALS carried
+    forward: Fold C (the scan-partial belt — own witness + gates);
+    the in-dump header token; DS-R4-10; the spelling/witness set
+    (neq/lt/gt, publish-*/message=, table-less kEagerUnion render,
+    dead BuildNestedLoopJoin); F20/F24 record-only; HP-17 → D3.a.
+    NEXT EPOCH candidates (owner re-ranks): D3.a (R-DIFF +
+    multi-adornment, per OD-11 it follows Rel); the agent-substrate
+    direction (the owner's 2026-07-27 design note + my composition
+    assessment — Phase-0 V-series if it firms); Fold C; the
+    pass-harness P2-P5 / §13 / §14 backlog.

@@ -272,7 +272,7 @@ if [ "${1:-}" = "--one" ]; then
       # shellcheck disable=SC2046
       if ! timeout "$TIMEOUT" "$DR" "$DRC" $(flags_of "$mode") \
           -df-out "$iout/df.$mode.out" \
-          -deltarel-out "$iout/deltarel.$mode.out" \
+          -rel-out "$iout/rel.$mode.out" \
           -ir-out "$iout/ir.$mode.out" \
           -cpp-out "$iout/cpp.$mode" \
           >"$iout/dr.$mode.log" 2>&1; then

@@ -54,7 +54,7 @@ static const char *gCxxOutDir = nullptr;
 
 static OutputStream *gDOTStream = nullptr;
 static OutputStream *gDFStream = nullptr;
-static OutputStream *gDeltaRelStream = nullptr;
+static OutputStream *gRelStream = nullptr;
 static OutputStream *gDRStream = nullptr;
 static OutputStream *gIRStream = nullptr;
 
@@ -71,11 +71,11 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
     return EXIT_FAILURE;
   }
 
-  // T2b — install the `-deltarel-out` dump sink BEFORE Program::Build (the
-  // DeltaRel flow graph is built and drained inside it — the dump cannot be a
+  // T2b — install the `-rel-out` dump sink BEFORE Program::Build (the
+  // Rel flow graph is built and drained inside it — the dump cannot be a
   // top-level drain like -dot-out/-df-out). Null-safe: unset leaves the sink
   // a guarded no-op.
-  SetDeltaRelDumpStream(gDeltaRelStream);
+  SetRelDumpStream(gRelStream);
 
   auto program_opt =
       Program::Build(*query_opt, error_log, gFirstId, gPassPolicy,
@@ -207,7 +207,7 @@ static int HelpMessage(const char *argv[]) {
       << "                            imported modules to PATH." << std::endl
       << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
       << "  -df-out <PATH>            Emit the data flow IR in BB-with-arguments text form to PATH." << std::endl
-      << "  -deltarel-out <PATH>      Emit the DeltaRel (DR-IR) flow graph in text form to PATH." << std::endl
+      << "  -rel-out <PATH>      Emit the Rel (DR-IR) flow graph in text form to PATH." << std::endl
       << "  -first-id <N>             The first integer number used for identifiers in the control-flow IR." << std::endl
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
@@ -362,21 +362,21 @@ extern "C" int main(int argc, const char *argv[]) {
         hyde::gDFStream = &(df_out->os);
       }
 
-    // DeltaRel (DR-IR) text dump (the `-deltarel-out` surface).
-    } else if (!strcmp(argv[i], "--deltarel-out") ||
-               !strcmp(argv[i], "-deltarel-out")) {
+    // Rel (DR-IR) text dump (the `-rel-out` surface).
+    } else if (!strcmp(argv[i], "--rel-out") ||
+               !strcmp(argv[i], "-rel-out")) {
       ++i;
       if (i >= argc) {
         error_log.Append() << "Command-line argument '" << argv[i - 1]
                            << "' must be followed by a file path for "
-                           << "DeltaRel IR output";
+                           << "Rel IR output";
       } else {
         deltarel_out.reset(new hyde::FileStream(display_manager, argv[i]));
         if (!deltarel_out->fs.is_open()) {
           error_log.Append() << "Unable to open '" << argv[i]
-                             << "' for DeltaRel IR output";
+                             << "' for Rel IR output";
         }
-        hyde::gDeltaRelStream = &(deltarel_out->os);
+        hyde::gRelStream = &(deltarel_out->os);
       }
 
     // First ID for the control-flow IR. Helps when we use multiple auto-

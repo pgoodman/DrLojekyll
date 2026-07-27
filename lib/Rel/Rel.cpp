@@ -11,7 +11,7 @@
 // silent-breakage bug, so it `fprintf`s + `abort()`s (surviving NDEBUG per
 // ledger §6.1 B-3).
 
-#include "DeltaRel.h"
+#include "Rel.h"
 
 #include <algorithm>
 #include <cassert>
@@ -3485,7 +3485,7 @@ void ValidateDROps(
         // EAGER gate's negate is therefore walk-uncut. Predicate = the EXACT
         // cut criterion (!CanReceiveDeletions), NOT InductionGroupId (F22).
         // The ctx guard scopes the recount to eager gates only — the reserved
-        // standalone seed/fixpoint forms (DeltaRel.h + the :414-420 NOTE) sit
+        // standalone seed/fixpoint forms (Rel.h + the :414-420 NOTE) sit
         // on deletion-capable negates BY DEFINITION and must not trip it
         // (Fable-review R4 [1]; the sibling key_of/V-READY sites carry the
         // same guard).
@@ -4655,7 +4655,7 @@ static unsigned ResolveVecIdx(const DRFlowGraph &flow, const DREffect &e,
 
 }  // namespace
 
-// The per-op stratum key (hoisted; see DeltaRel.h). The emitter and the
+// The per-op stratum key (hoisted; see Rel.h). The emitter and the
 // linearizer key_of() below share THIS body — never fork it.
 unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op) {
   switch (op.kind) {
@@ -4750,7 +4750,7 @@ unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op) {
   }
 }
 
-// V-INST-ORDER core (see DeltaRel.h) — the OD-2 enforcement, factored PURE so
+// V-INST-ORDER core (see Rel.h) — the OD-2 enforcement, factored PURE so
 // it is callable in isolation (the negative-space death test). Grouped by
 // `instance_store_id` (NEVER table_id, NEVER forcing_index — HP-3). Vacuous
 // under R-MONO (no death op). Reads only pinned_order + op kind/store id.
@@ -4986,7 +4986,7 @@ void LinearizeAndValidateDRFlow(
   // The table-id within a band (B-9: keyed on the drained source vec's debug
   // table); sign − before + where a band holds both. T2b.0 (C-1): the
   // tie-break is the table's DETERMINISTIC id — the same id the .ir prints —
-  // never the pointer (the (F) anti-pattern; the T2b -deltarel-out dump, once
+  // never the pointer (the (F) anti-pattern; the T2b -rel-out dump, once
   // landed, walks pinned_order, so this key becomes emitted bytes). A NULL
   // table (eager negate gates, seed/chain folds, pivot assembles) maps to 0;
   // real ids shift +1 into the 64-bit key space (table ids are 32-bit), so
@@ -5634,7 +5634,7 @@ void LinearizeAndValidateDRFlow(
   //     construction; a future independent edge deriver that produced a
   //     key-inverting forced edge would trip here. Combined with V-LINEAR, it
   //     keeps the linearization consistent with the band model the validators
-  //     rely on (and the T2b -deltarel-out dump, once landed — it walks
+  //     rely on (and the T2b -rel-out dump, once landed — it walks
   //     pinned_order, which is why this key must be pointer-free).
   for (unsigned i = 1u; i < flow.pinned_order.size(); ++i) {
     if (key_less(keys[flow.pinned_order[i]], keys[flow.pinned_order[i - 1u]])) {

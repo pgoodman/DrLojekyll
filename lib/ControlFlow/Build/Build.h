@@ -272,7 +272,7 @@ class Context {
   // artifact NOT graph-derivable — flip Correction 2 / R2(d) counted-consume).
   // `BuildDRInventory`'s BuildDREagerInventory block enrolls census[(k,v)] copies
   // of the derived marker for each derived view v. Keyed on a uint8_t DROpKind
-  // cast (avoids pulling DeltaRel.h into Build.h — the EmittedEagerOp precedent)
+  // cast (avoids pulling Rel.h into Build.h — the EmittedEagerOp precedent)
   // and the QueryView (the SAME identity RecordEagerDispatch stored — for a
   // kNegateGate the negate view, since the gate keeps identity in gate_negate).
   // The key ORDER (pointer-based QueryView operator<) never reaches the dump: it
@@ -285,7 +285,7 @@ class Context {
   // not the view-keyed emitted_eager_ops). `BuildDRInventory`'s tail-appended
   // JOIN_EMIT block replays these into kJoinEmit/kProductEmit ops (kind selects
   // Make vs MakeProduct; view+order_key+walk_seq rebuild the op). `kind` is a
-  // DROpKind cast (avoids pulling DeltaRel.h into Build.h — the EmittedEagerOp
+  // DROpKind cast (avoids pulling Rel.h into Build.h — the EmittedEagerOp
   // precedent).
   struct EmittedJoinEvent {
     uint8_t kind;                   // DROpKind cast (kJoinEmit / kProductEmit)
@@ -302,7 +302,7 @@ class Context {
   // net (lowering re-derivation vs enrollment re-derivation). The tuple IS
   // JoinEmitKey (uintptr_t table_id, uint8_t form, unsigned order/stratum,
   // uintptr_t walk_seq-or-view-identity) spelled inline so Build.h need not
-  // include DeltaRel.h.
+  // include Rel.h.
   std::vector<std::tuple<uintptr_t, uint8_t, unsigned, uintptr_t>>
       emitted_join_emits;
 };

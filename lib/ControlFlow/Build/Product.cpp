@@ -3,7 +3,7 @@
 
 #include "Induction.h"
 
-#include "DeltaRel.h"  // R-final: MakeProductEmitOp / LowerProductEmit
+#include "Rel.h"  // R-final: MakeProductEmitOp / LowerProductEmit
 
 namespace hyde {
 namespace {

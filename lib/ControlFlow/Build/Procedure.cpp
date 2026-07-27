@@ -5,7 +5,7 @@
 #include <cstdlib>
 
 #include "Build.h"
-#include "DeltaRel.h"
+#include "Rel.h"
 
 namespace hyde {
 namespace {

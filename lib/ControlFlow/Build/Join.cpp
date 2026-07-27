@@ -3,7 +3,7 @@
 
 #include "Induction.h"
 
-#include "DeltaRel.h"  // R-final: MakeJoinEmitOp / LowerJoinEmit / JoinEmitForm
+#include "Rel.h"  // R-final: MakeJoinEmitOp / LowerJoinEmit / JoinEmitForm
 
 namespace hyde {
 namespace {

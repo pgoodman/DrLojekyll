@@ -2,7 +2,7 @@
 // Copyright 2020, Trail of Bits. All rights reserved.
 
 #include "Build.h"
-#include "DeltaRel.h"
+#include "Rel.h"
 
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
@@ -1091,7 +1091,7 @@ void MapVariablesInEagerRegion(ProgramImpl *impl, QueryView pred_view,
 // site (MessageOfInsertOrNull) and passed in — a second in-body extraction
 // could silently diverge the dump's eager_message from the classification.
 // R-final SD-2: ClassifyEagerSink / MessageOfInsertOrNull RELOCATED to the DR
-// side (ClassifyEagerSinkDR / MessageOfInsertOrNullDR, DeltaRel.cpp), where
+// side (ClassifyEagerSinkDR / MessageOfInsertOrNullDR, Rel.cpp), where
 // enrollment — their sole post-flip caller — derives the kEagerInsert sink/
 // message payload. The walk-side originals are deleted; the R1/ADJ-S13 notes
 // above describe the DR-side spellings' contract.

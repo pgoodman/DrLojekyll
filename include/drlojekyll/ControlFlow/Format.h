@@ -9,12 +9,12 @@ namespace hyde {
 
 class OutputStream;
 
-// T2b — install the `-deltarel-out` dump stream. The DeltaRel (DR-IR) flow
+// T2b — install the `-rel-out` dump stream. The Rel (DR-IR) flow
 // graph is a compiler-internal object built and consumed inside
 // `Program::Build`; it has no public surface, so the dump is wired through
-// this lib/DeltaRel-owned sink (set from Main.cpp's arg loop, drained inside
+// this lib/Rel-owned sink (set from Main.cpp's arg loop, drained inside
 // `Program::Build`). Passing nullptr (the default) disables the dump.
-void SetDeltaRelDumpStream(OutputStream *stream);
+void SetRelDumpStream(OutputStream *stream);
 
 OutputStream &operator<<(OutputStream &os, DataColumn col);
 OutputStream &operator<<(OutputStream &os, DataIndex index);

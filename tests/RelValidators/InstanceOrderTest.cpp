@@ -18,7 +18,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "DeltaRel.h"
+#include "Rel.h"
 
 namespace {
 

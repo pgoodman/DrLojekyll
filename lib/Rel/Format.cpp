@@ -1,6 +1,6 @@
 // Copyright 2026, Peter Goodman. All rights reserved.
 //
-// The `-deltarel-out <PATH>` DeltaRel (DR-IR) textual dump (T2b). Prints the
+// The `-rel-out <PATH>` Rel (DR-IR) textual dump (T2b). Prints the
 // `DRFlowGraph` in the pinned byte grammar (t2b-grammar.md, spec §2.3 + pins
 // p10-p12): a header, the vecs in mint order, first-class branch/join sections,
 // the ops in `pinned_order`, the rounds substrate, the canonically-sorted deps,
@@ -9,11 +9,11 @@
 //
 // The emitter carries no name functions in the model — the eighteen enum
 // spelling tables below are the sole spelling authority (grammar §2.0). It is
-// wired through a lib/DeltaRel-owned pre-guarded sink (SetDeltaRelDumpStream);
+// wired through a lib/Rel-owned pre-guarded sink (SetRelDumpStream);
 // the drain fires from Stratum.cpp on every Program::Build, so the guard is a
 // PRE-guard (format only when a stream is set).
 
-#include "DeltaRel.h"
+#include "Rel.h"
 
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Display/Format.h>
@@ -570,7 +570,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       const int ji = join_index_of(flow.branches[op.seed_branch]);
       if (ji >= 0) return flow.joins[ji].pivot_vec;
     }
-    // kPivotAssemble stores its vec directly (DeltaRel.cpp:1726) — without
+    // kPivotAssemble stores its vec directly (Rel.cpp:1726) — without
     // this arm a multi-join SCC dump rendered an index-less `($join-pivots)`,
     // ambiguous across the program's pivot vecs (the T2b review's catch).
     if (op.kind == DROpKind::kPivotAssemble) {
@@ -1149,19 +1149,19 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
   }
 }
 
-// The lib/DeltaRel-owned sink (spec §2.1 (i)).
-static OutputStream *gDeltaRelDumpStream = nullptr;
+// The lib/Rel-owned sink (spec §2.1 (i)).
+static OutputStream *gRelDumpStream = nullptr;
 
 }  // namespace
 
-void SetDeltaRelDumpStream(OutputStream *stream) {
-  gDeltaRelDumpStream = stream;
+void SetRelDumpStream(OutputStream *stream) {
+  gRelDumpStream = stream;
 }
 
-void DumpDeltaRelIfEnabled(const DRFlowGraph &flow) {
-  if (gDeltaRelDumpStream) {  // PRE-guard: format only when a stream is set.
-    EmitDRFlow(*gDeltaRelDumpStream, flow);
-    gDeltaRelDumpStream->Flush();
+void DumpRelIfEnabled(const DRFlowGraph &flow) {
+  if (gRelDumpStream) {  // PRE-guard: format only when a stream is set.
+    EmitDRFlow(*gRelDumpStream, flow);
+    gRelDumpStream->Flush();
   }
 }
 

@@ -3,7 +3,7 @@
 
 add_subdirectory(CodeGen)
 add_subdirectory(DataFlow)
-add_subdirectory(DeltaRel)
+add_subdirectory(Rel)
 add_subdirectory(ControlFlow)
 add_subdirectory(Display)
 add_subdirectory(Lex)

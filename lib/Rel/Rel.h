@@ -1145,7 +1145,7 @@ bool AllSidesSameScc(ProgramImpl *impl,
                      QueryView join_view);
 
 // R-final flip (Fable-review flip-[3]): the nine MakeEager*Op single-
-// authority ctors and ModelTableOrNull are DeltaRel.cpp-INTERNAL now (file
+// authority ctors and ModelTableOrNull are Rel.cpp-INTERNAL now (file
 // static). They were exported precisely so the walk's retired LowerRelStep_*
 // mints could call them; post-flip the DR-side enrollment is their sole
 // caller, and closing the seam makes a walk-side re-mint (the two-authority
@@ -1189,13 +1189,13 @@ TABLEJOIN *LowerJoinEmit(ProgramImpl *impl, Context &context, const DROp &op,
 // product emission is byte-unchanged). EAGER-ONLY (no delta product path).
 void LowerProductEmit(Context &context, const DROp &op);
 
-// T2b — the `-deltarel-out` sink. `SetDeltaRelDumpStream` (also declared on the
+// T2b — the `-rel-out` sink. `SetRelDumpStream` (also declared on the
 // public ControlFlow/Format.h surface so Main.cpp can wire it) installs the
-// dump stream; `DumpDeltaRelIfEnabled` is the PRE-guarded drain called from
+// dump stream; `DumpRelIfEnabled` is the PRE-guarded drain called from
 // Stratum.cpp right after the flow-graph stash (spec §2.1-2.2). A null stream
 // is a pure no-op (the guard fires on every Program::Build).
 // The linearizer's per-op STRATUM key, hoisted as a shared free helper so the
-// -deltarel-out emitter renders the SAME value key_of() keys on — one
+// -rel-out emitter renders the SAME value key_of() keys on — one
 // authority, no hand-mirrored copy (the T2b Fable review's divergence hazard;
 // the band values the emitter renders are key_of's kind CONSTANTS and need no
 // helper).
@@ -1212,7 +1212,7 @@ unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op);
 // flow needs no real TABLE/Context.
 void CheckInstanceOrder(const DRFlowGraph &flow);
 
-void SetDeltaRelDumpStream(OutputStream *stream);
-void DumpDeltaRelIfEnabled(const DRFlowGraph &flow);
+void SetRelDumpStream(OutputStream *stream);
+void DumpRelIfEnabled(const DRFlowGraph &flow);
 
 }  // namespace hyde
