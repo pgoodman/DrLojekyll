@@ -1,0 +1,301 @@
+// Auto-generated file; do not edit.
+
+#pragma once
+
+#include <drlojekyll/Runtime/Allocator.h>
+#include <drlojekyll/Runtime/Hash.h>
+#include <drlojekyll/Runtime/Table.h>
+#include <drlojekyll/Runtime/Vec.h>
+
+#include <cassert>
+#include <cstdint>
+#include <optional>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+struct Tup_u32_u32 {
+  uint32_t c0;
+  uint32_t c1;
+  auto operator<=>(const Tup_u32_u32 &) const noexcept = default;
+};
+
+
+// Rows of `table_4`.
+struct Row4 {
+  uint32_t f;
+  uint32_t c1;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(f, c1);
+  }
+  bool operator==(const Row4 &) const noexcept = default;
+};
+
+// Rows of `symmetric_8` (symmetric/2).
+struct Row8 {
+  uint32_t f;
+  uint32_t t;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(f, t);
+  }
+  bool operator==(const Row8 &) const noexcept = default;
+};
+
+// User-provided functors. Define the declared member functions in
+// your own translation unit; the generated code calls them.
+struct DatabaseFunctors {
+};
+
+// Receives published messages. The default methods do nothing.
+// Entry points deduce the log's static type, so any type
+// providing the same member signatures observes the published
+// delta stream (a @differential message publishes one call per
+// net presence change at each batch's commit sweep) with no
+// virtual dispatch.
+struct DatabaseLog {
+};
+
+// Internal flow procedures. Not driver-facing. Each signature
+// names exactly the state the procedure reads and writes.
+inline bool init_3(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4> &table_4, ::hyde::rt::DiffTable<Row8> &symmetric_8, uint64_t &g13);
+inline bool proc_12(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4> &table_4, ::hyde::rt::DiffTable<Row8> &symmetric_8, uint64_t &g13, ::hyde::rt::Vec<Tup_u32_u32> vec14, ::hyde::rt::Vec<Tup_u32_u32> vec15);
+inline bool add_edge_2_detail(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4> &table_4, ::hyde::rt::DiffTable<Row8> &symmetric_8, uint64_t &g13, ::hyde::rt::Vec<Tup_u32_u32> vec79, ::hyde::rt::Vec<Tup_u32_u32> vec80);
+inline bool flow_84(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4> &table_4, ::hyde::rt::DiffTable<Row8> &symmetric_8, uint64_t &g13, ::hyde::rt::Vec<Tup_u32_u32> vec19, ::hyde::rt::Vec<Tup_u32_u32> vec23);
+
+// The sealed database state: tables, indices, and epoch counters.
+// Construction allocates empty tables and cannot fail; epoch 0
+// (the empty-program fixpoint) runs when the driver calls
+// `init(db, log, functors)`, and every entry point asserts it has
+// run. All driver-facing functions are hidden friends: reach them
+// by unqualified call with the database as an argument.
+struct Database {
+ public:
+  explicit Database(::hyde::rt::Allocator allocator_)
+    : allocator(allocator_),
+      table_4(allocator_),
+      symmetric_8(allocator_) {}
+
+  // Epoch 0: derives the empty-EDB least model and publishes its
+  // t=0 deltas to `log`. Call exactly once, before any message.
+  template <typename Log, typename Functors>
+  friend auto init(Database &db, Log &, Functors &) {
+    assert(!db.initialized_);
+    db.initialized_ = true;
+    return init_3(db.allocator, db.table_4, db.symmetric_8, db.g13);
+  }
+
+  // Message `add_edge/2`.
+  template <typename Log, typename Functors>
+  friend auto add_edge_2(Database &db, Log &, Functors &, ::hyde::rt::Vec<Tup_u32_u32> vec79, ::hyde::rt::Vec<Tup_u32_u32> vec80) {
+    assert(db.initialized_);
+    return add_edge_2_detail(db.allocator, db.table_4, db.symmetric_8, db.g13, std::move(vec79), std::move(vec80));
+  }
+
+  // Query `symmetric/2` (ff).
+  struct symmetric_ff_cursor {
+    Database &db;
+    uint32_t pos;
+    bool next(uint32_t &From, uint32_t &To) {
+      while (pos < db.symmetric_8.NumRows()) {
+        const uint32_t id = pos++;
+        const auto row = db.symmetric_8.RowAt(id);
+        if (!db.symmetric_8.Present(id)) {
+          continue;
+        }
+        From = row.f;
+        To = row.t;
+        return true;
+      }
+      return false;
+    }
+  };
+  friend symmetric_ff_cursor symmetric_ff(Database &db) {
+    assert(db.initialized_);
+    return {db, 0};
+  }
+
+ private:
+  ::hyde::rt::Allocator allocator;
+
+  ::hyde::rt::DiffTable<Row4> table_4;
+  ::hyde::rt::DiffTable<Row8> symmetric_8;
+
+  uint64_t g13 = 0;
+  bool initialized_ = false;
+};
+
+inline bool init_3(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4> &table_4, ::hyde::rt::DiffTable<Row8> &symmetric_8, uint64_t &g13) {
+  ::hyde::rt::Vec<Tup_u32_u32> vec83(allocator);
+  proc_12(allocator, table_4, symmetric_8, g13, std::move(vec83), std::move(vec83));
+  return false;
+}
+
+inline bool proc_12(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4> &table_4, ::hyde::rt::DiffTable<Row8> &symmetric_8, uint64_t &g13, ::hyde::rt::Vec<Tup_u32_u32> vec14, ::hyde::rt::Vec<Tup_u32_u32> vec15) {
+  ::hyde::rt::Vec<Tup_u32_u32> vec19(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec23(allocator);
+  for (auto [v17, v18] : vec14) {
+    {
+      const auto d0 = table_4.AddExplicit({v17, v18});
+      if (d0.crossed) {
+        vec19.Add({v17, v18});
+      }
+    }
+  }
+  for (auto [v21, v22] : vec15) {
+    {
+      const auto d1 = table_4.SubExplicit({v21, v22});
+      if (d1.crossed) {
+        vec23.Add({v21, v22});
+      }
+    }
+  }
+  vec14.Clear();
+  vec15.Clear();
+  flow_84(allocator, table_4, symmetric_8, g13, std::move(vec19), std::move(vec23));
+  return false;
+}
+
+inline bool add_edge_2_detail(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4> &table_4, ::hyde::rt::DiffTable<Row8> &symmetric_8, uint64_t &g13, ::hyde::rt::Vec<Tup_u32_u32> vec79, ::hyde::rt::Vec<Tup_u32_u32> vec80) {
+  ::hyde::rt::NetBatch(vec79, vec80);
+  proc_12(allocator, table_4, symmetric_8, g13, std::move(vec79), std::move(vec80));
+  return true;
+}
+
+inline bool flow_84(::hyde::rt::Allocator &allocator, ::hyde::rt::DiffTable<Row4> &table_4, ::hyde::rt::DiffTable<Row8> &symmetric_8, uint64_t &g13, ::hyde::rt::Vec<Tup_u32_u32> vec19, ::hyde::rt::Vec<Tup_u32_u32> vec23) {
+  ::hyde::rt::Vec<Tup_u32_u32> vec24(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec25(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec29(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec33(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec37(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec60(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec61(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec62(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec66(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec70(allocator);
+  ::hyde::rt::Vec<Tup_u32_u32> vec74(allocator);
+  g13 += 1;
+  vec23.SortAndUnique();
+  for (auto [v27, v28] : vec23) {
+    {
+      const auto id2 = table_4.Find({v27, v28});
+      if (id2 != ::hyde::rt::kNoRow && table_4.TryClaimDel(id2)) {
+        vec25.Add({v27, v28});
+      }
+    }
+  }
+  vec19.SortAndUnique();
+  for (auto [v31, v32] : vec19) {
+    {
+      const auto id3 = table_4.Find({v31, v32});
+      if (id3 != ::hyde::rt::kNoRow && table_4.TryClaimAdd(id3)) {
+        vec29.Add({v31, v32});
+      }
+    }
+  }
+  for (auto [v35, v36] : vec25) {
+    {
+      const uint32_t m4 = table_4.Find({v35, v36});
+      if (m4 != ::hyde::rt::kNoRow && table_4.NetDeleted(m4)) {
+        vec33.Add({v35, v36});
+      }
+    }
+  }
+  for (auto [v39, v40] : vec29) {
+    {
+      const uint32_t m5 = table_4.Find({v39, v40});
+      if (m5 != ::hyde::rt::kNoRow && table_4.NetAdded(m5)) {
+        vec37.Add({v39, v40});
+      }
+    }
+  }
+  vec33.SortAndUnique();
+  for (auto [v42, v43] : vec33) {
+    vec24.Add({v42, v43});
+  }
+  vec37.SortAndUnique();
+  for (auto [v45, v46] : vec37) {
+    vec24.Add({v45, v46});
+  }
+  for (auto [v48, v49] : vec33) {
+    vec24.Add({v49, v48});
+  }
+  for (auto [v51, v52] : vec37) {
+    vec24.Add({v52, v51});
+  }
+  vec24.SortAndUnique();
+  for (auto [v54, v55] : vec24) {
+    if (const uint32_t j53_0 = table_4.Find({v54, v55}); j53_0 != ::hyde::rt::kNoRow) {
+      const auto r53_0 = table_4.RowAt(j53_0);
+      const auto v56 = r53_0.f;
+      const auto v58 = r53_0.c1;
+      if (const uint32_t j53_1 = table_4.Find({v55, v54}); j53_1 != ::hyde::rt::kNoRow) {
+        const auto r53_1 = table_4.RowAt(j53_1);
+        const auto v59 = r53_1.f;
+        const auto v57 = r53_1.c1;
+        if (r53_0.f == v54 && r53_0.c1 == v55 && table_4.InNew(j53_0) && r53_1.c1 == v54 && r53_1.f == v55 && table_4.InNew(j53_1) && (table_4.NetAdded(j53_0) || table_4.NetAdded(j53_1))) {
+          {
+            const auto d6 = symmetric_8.AddDerivation({v54, v55}, ::hyde::rt::DerivClass::kNonRecursive);
+            if (d6.crossed) {
+              vec60.Add({v54, v55});
+            }
+          }
+        }
+        if (r53_0.f == v54 && r53_0.c1 == v55 && table_4.InI(j53_0) && r53_1.c1 == v54 && r53_1.f == v55 && table_4.InI(j53_1) && (table_4.NetDeleted(j53_0) || table_4.NetDeleted(j53_1))) {
+          {
+            const auto d7 = symmetric_8.SubDerivation({v54, v55}, ::hyde::rt::DerivClass::kNonRecursive);
+            if (d7.crossed) {
+              vec61.Add({v54, v55});
+            }
+          }
+        }
+      }
+    }
+  }
+  vec24.Clear();
+  vec61.SortAndUnique();
+  for (auto [v64, v65] : vec61) {
+    {
+      const auto id8 = symmetric_8.Find({v64, v65});
+      if (id8 != ::hyde::rt::kNoRow && symmetric_8.TryClaimDel(id8)) {
+        vec62.Add({v64, v65});
+      }
+    }
+  }
+  vec60.SortAndUnique();
+  for (auto [v68, v69] : vec60) {
+    {
+      const auto id9 = symmetric_8.Find({v68, v69});
+      if (id9 != ::hyde::rt::kNoRow && symmetric_8.TryClaimAdd(id9)) {
+        vec66.Add({v68, v69});
+      }
+    }
+  }
+  for (auto [v72, v73] : vec62) {
+    {
+      const uint32_t m10 = symmetric_8.Find({v72, v73});
+      if (m10 != ::hyde::rt::kNoRow && symmetric_8.NetDeleted(m10)) {
+        vec70.Add({v72, v73});
+      }
+    }
+  }
+  for (auto [v76, v77] : vec66) {
+    {
+      const uint32_t m11 = symmetric_8.Find({v76, v77});
+      if (m11 != ::hyde::rt::kNoRow && symmetric_8.NetAdded(m11)) {
+        vec74.Add({v76, v77});
+      }
+    }
+  }
+  table_4.Commit([](const Row4 &, bool) {});
+#ifndef NDEBUG
+  table_4.DebugValidateCounts();
+#endif
+  table_4.CompactDead();
+  symmetric_8.Commit([](const Row8 &, bool) {});
+#ifndef NDEBUG
+  symmetric_8.DebugValidateCounts();
+#endif
+  symmetric_8.CompactDead();
+  return true;
+}
+
