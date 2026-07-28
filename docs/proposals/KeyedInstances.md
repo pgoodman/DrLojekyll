@@ -4805,4 +4805,44 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
         agent-substrate direction; Fold C; the header-token E-71
         mini-diff; P2-P5/§13/§14; + the EphemeralTypes.md candidate
         note) — brief presented in-session, code waits on the
-        ruling.
+        ruling. [RULED — §20(AC).]
+
+(AC) OD-14 — THE EPOCH RE-RANK RULING (owner, 2026-07-28, in-session)
+    + THE HEADER-TOKEN E-71 MINI-DIFF LANDED. THE RULING: "ratify
+    D3.a with the header-token mini-diff riding along" — D3.a
+    (R-DIFF + multi-adornment, the OD-11-ranked follower) is the
+    next epoch; the in-dump header-token respell rides along as its
+    own pre-epoch commit; the alternatives (agent-substrate Phase-0,
+    Fold C, P2-P5/§13/§14) tabled per the brief; agent-substrate
+    Phase-0 remains available as a bounded measurement fleet at
+    any seam without opening an epoch; @ephemeral (EphemeralTypes
+    .md) remains a recorded mini-diff-class candidate note whose
+    recompute half sequences after D3.a. THE MINI-DIFF (this
+    commit): the §20(AA) DELIBERATE RESIDUAL discharged — the
+    in-dump header token `deltarel` -> `rel` (lib/Rel/Format.cpp
+    :402ff, the E-71 grammar ruling made BY the OD-14 ratification;
+    the token now matches the -rel-out flag + the .rel golden
+    surface; the sole live emitter site, zero readers parse it —
+    grep-verified). GATES: pre-bless suite red EXACTLY the eleven
+    pre-registered `irgold rel.opt IRGOLD-DIVERGE` (nothing else
+    red across 175 cases), every produced dump differing from its
+    golden by EXACTLY the line-1 header (orchestrator per-golden
+    diff, 11/11 one-line) -> FILTERED bless (git-verified EXACTLY
+    the 11 sanctioned goldens changed, 11 insertions/11 deletions;
+    the in-filter stdout/oracle/monotone/h/ir/df rewrites all
+    byte-identical no-ops) -> SUITE PASS(175); emission UNCHANGED
+    (dump-only: the h/ir/df pins passed in BOTH suite runs —
+    generated headers byte-identical, so Q5 is VACUOUS-BY-BYTE-
+    IDENTITY and was deliberately not run, recorded not asserted);
+    ctest 5/5 debug + 5/5 ASAN (debug/release/asan trees all
+    rebuilt, error-grep 0); config-invariance SINGLE-HASH x2
+    carriers (map_3 + join_1, 3-run debug + release); E-62 re-grep
+    CLEAN (live — same 5 sanctioned hits). Frozen A/B baselines
+    refreshed from THIS commit in the session scratchpad. NEXT:
+    D3.a OPENS under the full per-slice ritual — stage (a)
+    pseudocode build-out of the InstanceStore / instance-op /
+    demand-admission subsystem + the differential machinery it
+    activates (seed-unread derivation lanes, the §7 idiom), with
+    the §20(AB) forward note (NeedsInductionCycleVector) + the
+    standing D3.a inputs (HP-17, RAT-7 re-open, N-1, OWN-3,
+    DS-R4-10, -demand-retract, >1 adornment) as the charter seed.

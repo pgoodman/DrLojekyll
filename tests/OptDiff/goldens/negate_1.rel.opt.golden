@@ -1,4 +1,4 @@
-deltarel
+rel
 
 vec $delete-queue.0 <ids %table:4> uniq=sort-unique-at-drain def=[op.0] use=[op.1]
 vec $add-queue.1 <ids %table:4> uniq=sort-unique-at-drain def=[] use=[op.2]

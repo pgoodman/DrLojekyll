@@ -399,7 +399,10 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
   };
 
   // ---- header ----
-  os << "deltarel\n";
+  // E-71-ruled at the D3.a epoch open (ledger §20(AC)): the header token is
+  // `rel`, matching the -rel-out flag + the .rel golden surface (the §20(AA)
+  // deliberate residual discharged).
+  os << "rel\n";
 
   // ---- vecs (mint order; separator only when the section is non-empty,
   // pin p11 — an empty section must not leave a double blank) ----

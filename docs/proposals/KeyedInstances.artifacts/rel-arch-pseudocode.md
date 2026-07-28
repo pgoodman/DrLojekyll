@@ -1401,8 +1401,8 @@ before any new-epoch work; errata continue at E-138.
         DeterministicOrder within the lead-0 band; the work-list
         schedule is retired from the surface); census = 29 kinds,
         order-free multiset readout; the in-dump header token is
-        still `deltarel` (Format.cpp:402 — the DELIBERATE §20(AA)
-        residual, an unruled E-71 grammar question). ELEVEN .rel
+        `rel` (Format.cpp:402ff — the §20(AA) deliberate residual
+        DISCHARGED by the OD-14 mini-diff, §20(AC)). ELEVEN .rel
         goldens + 5 .df + 2 .h + 2 .ir pins (the 14 .irgold sidecars
         are the count authority); eqset= partition tokens; the eqgate.
 
@@ -1414,10 +1414,12 @@ before any new-epoch work; errata continue at E-138.
         witness + gates owed; EmitTableScan's full-scan fallback
         re-checks are LOAD-BEARING, never fold them).
 
-    THE PATH FORWARD AS DIFFS ON §7 (the owner re-ranks at the next
-    epoch open; none of these is begun):
+    THE PATH FORWARD AS DIFFS ON §7 (RE-RANKED by OD-14, ledger
+    §20(AC), 2026-07-28: D3.a IS THE EPOCH; the header-token
+    mini-diff LANDED with the ruling; the rest tabled):
 
-      D3.a R-DIFF + MULTI-ADORNMENT (per OD-11 the ranked follower):
+      D3.a R-DIFF + MULTI-ADORNMENT (per OD-11 the ranked follower;
+        OD-14: THE RATIFIED NEXT EPOCH):
         differential demanded content — kInstanceDeath mints ON
         (the TableIsDifferential gate becomes reachable), band-(b)'s
         (T,F) drop scan goes live (the RAT-7 partition-assert
@@ -1433,9 +1435,9 @@ before any new-epoch work; errata continue at E-138.
         its own witness (which corpus cases carry partial index
         scans — negation checkers/checkmember rescans) + structural
         gates + bench; emission-shape, never byte-identity.
-      THE HEADER-TOKEN MINI-DIFF: `deltarel` -> `rel` in the dump
-        grammar (Format.cpp:402) — an E-71 ruling + an 11-golden
-        one-line re-bless; cosmetic, self-contained.
+      THE HEADER-TOKEN MINI-DIFF — DONE (§20(AC), rode along with
+        the OD-14 ruling): the dump grammar header is `rel`
+        (Format.cpp:402ff), 11 goldens re-blessed one line each.
       AGENT-SUBSTRATE PHASE-0 (if ruled; the owner's 2026-07-27
         design note + the recorded composition assessment, memory
         agent-substrate-assessment): V1 (monotone arrival-order
