@@ -5040,3 +5040,86 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     ritual, stage (a) seeded by d3a-substrate.md §5's
     G-DEATH-LOWER/G-DEMAND-NEG/G-RETRACT/G-TF-PUBLISH/G-REBIRTH/
     G-FRESH-BELT + the OD-15 rulings.
+
+(AH) D3.a.1-OPEN RE-VERIFICATION RECORD (2026-07-28, tip 0d33bdca;
+    the §7 SINGLE-PASS banner discharged — the errata commit atop is
+    docs+comments only). (0) Frozen A/B baselines RE-SNAPSHOTTED from
+    tip into the session scratchpad BEFORE any code (debug + release +
+    oracle binaries, nested-arm reference dumps SHA-256-pinned; all
+    three trees rebuilt clean, error-grep 0 x2 rounds — pre- and
+    post-errata); SUITE PASS(175) against the FROZEN A binary; ctest
+    6/6 debug + 6/6 ASAN. (1) §7 + §20(AD)-(AG) + the d3a contracts
+    FLEET-RE-VERIFIED (house precedent): 3 seed-UNREAD opus
+    derivation lanes (OWN-3/INV-OWN3-Q + census; the diff-selector
+    plumbing end to end; the death/retract substrate) + 2 seed-READ
+    adversarial verifiers (§7+§20(AD)-(AG); the d3a0-design/ruling-
+    brief/desired-states contracts) + 1 sonnet mechanical lane + 1
+    xhigh consolidator (7 agents, ~614k tokens, zero deaths, zero
+    truncations). The carrier-golden referee EXECUTED by the
+    orchestrator personally: 20/20 pinned surfaces regenerate
+    BYTE-IDENTICAL at tip (the 14 .irgold sidecars the count
+    authority); the MECH lane's independent regen agreed 20/20, plus
+    census-29 x 11 rel carriers (all kIngestLoop=/kJoinEmit=), the
+    nested witness clean (kInstanceDeath=0, two-arg store ctor), the
+    cross-knob law 11/11 (opt==nocf, nodf==none), ctest 6/6 both
+    trees. The E-62 re-grep EXECUTED by the orchestrator personally:
+    CLEAN — zero body_ops/output_ops readers outside lib/Rel/; the 5
+    sanctioned pinned_order hits (Stratum.cpp:1073 comment + 4x the
+    RAT-3 InstanceOrderTest fixture). VERDICT: SOUND-WITH-ERRATA —
+    ZERO false claims (verifier A), ZERO code-deviations from the
+    amended design (verifier B), three independent seed-unread maps
+    converge on the doc structure; the D3.a.1 CHARTER IS UNCHANGED
+    (no d1-d7 premise false; the L3 two-axis question stands exactly
+    as posed — pub @Rel.cpp:1055/1059 vs demand @:1139). SIX ERRATA
+    (LOW/COSM), applied by the orchestrator per the consolidator's
+    exact edit specs, LINE-COUNT-PRESERVING in Rel.cpp so every
+    standing doc anchor stays valid (verified: the :1139 gate, :2041
+    mint call, :3996 census expect unmoved):
+      E-142 LOW  Rel.cpp:1008-1018 stale "GATED OFF at D1.b /
+                 unconditionally false" header above
+                 BuildSubgraphInstanceOps — respelled live-since-D2.b
+                 (the flag lands at Build.cpp:1468; mech proved the
+                 body runs: kSubgraphInstantiate=1 on the witness).
+      E-143 LOW  Rel.cpp:2036-2040 same stale D1.b prose at the mint
+                 call site — respelled.
+      E-144 LOW  Rel.cpp:3968-3974 same stale D1.b prose at the
+                 census recount — respelled (recount re-derives
+                 counts INDEPENDENTLY of the mint, the cross-check).
+      E-145 COSM d3a0-design.md x3 (:349/:554/:658) death-gate
+                 anchor Rel.cpp:1137 -> :1139 (load-bearing for the
+                 D3.a.1 L3 rider).
+      E-146 COSM d3a-substrate.md:247 "Rel.cpp:1137-1149" ->
+                 ":1138-1150; the if at :1139" (§1-§6 pre-slice-0
+                 anchor, fixed because D3.a.1-seeding).
+      E-147 COSM d3a0-design.md:162 stale debug assert in the §1.3
+                 block — [AS LANDED superseded by Fable fix [2], the
+                 always-on survivor guard View.cpp:668-674] note
+                 appended; historical block preserved.
+    REFUTED (grounds in the consolidation record): the HP-7-belt
+    "always-on" mismatch (the belt IS #ifndef NDEBUG at
+    InstanceStore.h:177-194 and NO in-scope doc claims otherwise —
+    "armed" is accurate; the always-on family is V-INST-*/OWN-3
+    only, a d5/d7 perturbation-gate design note); the ruling-brief
+    1137 citation (it contains none); the "ships INERT — HP-17" mint
+    comment vs "FATAL-not-inert" (different antecedents: unminted-
+    dormant vs counterfactual-mint, both true). ADVISORY for stage
+    (b): lane 3's code-derived missing-pieces checklist M1-M6 (death
+    lowering/enrollment closing V-INST-EMITTED; EmitInstanceDeath
+    draining a demand kNetRemovals frontier + RecycleCurrent + the
+    (T,F) drop scan; frontier provisioning + V-INST-DRAIN extension;
+    monotone=false store + the N-1 contingency check; injector
+    del_vec downstream completeness; the V-INST-FRESH same-epoch
+    death+refire ordering) seeds the D3.a.1 design checklist; the
+    death abort point is LATE (V-INST-EMITTED at CF lowering — every
+    Rel.cpp validator passes a minted death) and NO pre-pass fence
+    guards a differential demand message. GATES post-errata (rebuilt
+    x3 trees, error-grep 0): SUITE PASS(175) zero churn; ctest 6/6
+    debug + 6/6 ASAN; nested-arm datalog.h/.rel/.ir BYTE-IDENTICAL
+    to the frozen pre-errata reference (comment-only proven
+    dump-neutral); baselines refreshed from the errata commit. NEXT:
+    D3.a.1 stage (a) — the slice-scoped pseudocode build-out (the
+    retract channel end to end; the death path; the netting/
+    TouchedFlag/V-INST-FRESH coupling), then the d2 L3 ritual-head
+    question BEFORE stage-(b) lanes; the landing record will be
+    §20(AI) (the §20(AG) NEXT said (AH); this record took the
+    letter).

@@ -244,7 +244,7 @@ kSubgraphInstantiate  (Rel.cpp:1086-1135):
          -> child kFold into pub_table (+1, kNonRecursive)
 ```
 
-**The kInstanceDeath gate (`Rel.cpp:1137-1149`) — the R-DIFF frontier:**
+**The kInstanceDeath gate (`Rel.cpp:1138-1150`; the `if` at :1139) — the R-DIFF frontier:**
 ```c++
 if (demand_table && TableIsDifferential(demand_table)) {
   DROp death(kInstanceDeath);

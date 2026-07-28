@@ -1006,15 +1006,15 @@ static LiveRecognition ResolveLiveRecognition(ProgramImpl *impl, Query query) {
 }
 
 // ---------------------------------------------------------------------------
-// The keyed-instance mint (§3), GATED OFF at D1.b. The caller guards on
-// `context.demand_instance_enabled`, unconditionally false at D1.b (no
-// `-demand-instance` flag until D2.b), AND `query.RecognizedSubgraphs()` is
-// empty absent that flag — so this body is DEAD on every corpus flow and every
-// mode (P-D1b.1). It is fully written and compiled so D2.b flips one bool; the
-// α-consumer wiring (context_col_sources, the PlanTree body) and the ABA-safe
-// mint identity scheme (crit-correctness-1) land at D2.b. Because the gate is
-// false here, the stored RecognizedSubgraph QueryView handles are NEVER
-// dereferenced at D1.b (the §19(K) dangling-handle hazard is sidestepped).
+// The keyed-instance mint (§3), gated on `context.demand_instance_enabled`
+// (`-demand-instance`, LIVE since D2.b — Program::Build threads the flag).
+// Flag-off this body never runs, so the stored RecognizedSubgraph QueryView
+// handles are dereferenced only under the gate (the §19(K) dangling-handle
+// hazard stays sidestepped on every plain-mode corpus flow). Flag-on it mints
+// the instantiate/death/seal ops per recognized+live forcing (the
+// demand_neighborhood_witness eqgate case exercises it). NOTE (E-142): this
+// comment block deliberately keeps its original line count so downstream
+// file:line anchors in the D3.a contracts stay valid.
 // ---------------------------------------------------------------------------
 static void BuildSubgraphInstanceOps(
     DRFlowGraph &flow, ProgramImpl *impl, Context &context, Query query,
@@ -2033,11 +2033,11 @@ DRFlowGraph BuildDRInventory(
                         input, kv.NthValueMergeFunctor(0), /*num_config=*/0u);
   }
 
-  // ------------------------------------------------------- keyed instances (D1.b)
-  // GATED OFF: the guard is unconditionally false at D1.b (no `-demand-instance`
-  // flag), so the mint is dead on every corpus flow — zero instance ops minted
-  // (P-D1b.1), and RecognizedSubgraphs()' handles are never dereferenced. D2.b
-  // flips the bit.
+  // ------------------------------------------------------- keyed instances
+  // Gated on `-demand-instance` (LIVE since D2.b): flag-off the mint never
+  // runs — zero instance ops minted, RecognizedSubgraphs()' handles never
+  // dereferenced; flag-on BuildSubgraphInstanceOps mints per recognized+live
+  // forcing.
   if (context.demand_instance_enabled) {
     BuildSubgraphInstanceOps(flow, impl, context, query, scc_map);
   }
@@ -3965,13 +3965,13 @@ void ValidateDROps(
   expect(DROpKind::kGroupUpdate, exp_group_update, "group updates");
   expect(DROpKind::kStateSeal, exp_group_update, "state seals");
 
-  // Keyed-instance census recount (D1.b), GATED OFF: `demand_instance_enabled`
-  // is unconditionally false at D1.b, so this block is NEVER entered and
-  // `RecognizedSubgraphs()` is never iterated/dereferenced (the §19(K)
-  // dangling-handle sidestep — the recount is exactly "such a consumer"). With
-  // 0 minted instance ops, the three expect(...) below demand 0 of each, which
-  // holds. The full order-free key-multiset compare (the :2911-2935 mold) lands
-  // with the D2.b mint; at D1.b the count contract is the byte-visible census.
+  // Keyed-instance census recount, gated on `demand_instance_enabled`
+  // (`-demand-instance`, LIVE since D2.b). Flag-off this block is never
+  // entered and `RecognizedSubgraphs()` is never iterated/dereferenced (the
+  // §19(K) dangling-handle sidestep); the expect(...) calls below demand 0 of
+  // each kind. Flag-on the recount re-derives the expected instance-op counts
+  // INDEPENDENTLY of the mint (ResolveLiveRecognition off the DataFlow pass's
+  // RecognizedSubgraphs(), never the mint's own output — A.1.5): a cross-check.
   unsigned exp_instance = 0u, exp_death = 0u;
   if (context.demand_instance_enabled) {
     // ABA-safe recount (§3.1): re-resolve via the SAME LiveRecognition helper

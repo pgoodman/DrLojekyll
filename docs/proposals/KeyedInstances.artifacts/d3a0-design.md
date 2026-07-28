@@ -160,6 +160,10 @@ INV-OWN3-Q is bidirectional and index/query move in strict lockstep.
         abort();
       }
       assert(query == that->query);              // debug: single-QueryImpl owner
+      // [AS LANDED this line is SUPERSEDED — Fable review fix [2],
+      //  d3a-desired-states.md SLICE 0: an ALWAYS-ON survivor-side owner
+      //  guard (fprintf+abort on !that->query || that->query != query),
+      //  View.cpp:668-674 at 0d33bdca.]
       CheckGuardAnnotationFold(query->guard_annotations[guard_annotation_index],
                                query->guard_annotations[that->guard_annotation_index]);
       ++query->guard_annotation_folded_count;    // §1.4 — the SOLE writer
@@ -346,7 +350,7 @@ The mint already computes `const bool diff = TableIsDifferential(pub_table);` at
 `TableIsDifferential(pub)` is the store's monotone-belt gate (belt OFF exactly
 when a touched iid can lose rows). This is INERT and correct at .0 (bit false
 either way), but note: the death MINT gate keys on
-`TableIsDifferential(demand_table)` (`Rel.cpp:1137`), a DIFFERENT predicate. The
+`TableIsDifferential(demand_table)` (`Rel.cpp:1139`), a DIFFERENT predicate. The
 two-axis reconciliation — store belt-off = `demand-diff || input-diff`, vs the
 pub-diff proxy used here — is **load-bearing for D3.a.1 correctness and MUST be
 first-class in that slice**, not a footnote (§3). The eqgate flat==nested is the
@@ -551,7 +555,7 @@ Untouched by design: `Operation.cpp:512/527` (Hash/Equals), `Format.cpp:659-672`
    goes OFF for that store.
 3. **The store-diff predicate rider [L3 — FIRST-CLASS in D3.a.1]:** the store bit
    keys on `TableIsDifferential(pub)`; the death MINT gate keys on
-   `TableIsDifferential(demand_table)` (`Rel.cpp:1137`). D3.a.1 MUST reconcile the
+   `TableIsDifferential(demand_table)` (`Rel.cpp:1139`). D3.a.1 MUST reconcile the
    two axes — confirm co-activation, or switch the store predicate to the explicit
    disjunction `TableIsDifferential(demand_table) || <input differential>`
    (V-INST-SOLE, `Rel.cpp:4334-4339`, keeps one instantiate deriver per pub but
@@ -655,7 +659,7 @@ findings CONFIRMED at code and FOLDED into §1/§2.
 |---|---|---|---|
 | L1 "transitively pins BOTH carriers" overstates V-INST-DIFF-COHERENCE | LOW | **CONFIRMED → §2.4** softened to "pins the AUTHORITY to the live predicate"; carrier-vs-authority assert handed to D3.a.1 | the check compares `inst.differential` vs `TableIsDifferential(pub)`, not the carriers |
 | L2 §6.1 inertness proof leans on the rider, not the STEP-2 closure | LOW | **CONFIRMED → §4** cites the STEP-2 single-clause reject as the closure of the independent-writer hole | Demand STEP-2 multi-clause reject (empirically closed by c2 probe) |
-| L3 store keys pub-diff; death mint keys demand-diff | LOW | **CONFIRMED → §2.1 + §3.3** carried FORWARD as a first-class D3.a.1 correctness item (inert at .0) | store `= TableIsDifferential(pub)` vs death gate `TableIsDifferential(demand_table)` @Rel.cpp:1137 |
+| L3 store keys pub-diff; death mint keys demand-diff | LOW | **CONFIRMED → §2.1 + §3.3** carried FORWARD as a first-class D3.a.1 correctness item (inert at .0) | store `= TableIsDifferential(pub)` vs death gate `TableIsDifferential(demand_table)` @Rel.cpp:1139 |
 | C1 anchor drift (Rel.h:876→880; store ctor line) | COSM | **CONFIRMED → §2.1/§2.5** anchors corrected to Rel.h:880, Database.cpp:1461 | `pub_table{nullptr}` @Rel.h:880; ctor loop 1460-1462 |
 | C2 region `differential` write-only/dead at .0 | COSM | **CONFIRMED → §2.2** noted intentional forward-plumbing; no `-Werror` risk (unused data members unflagged); comment present | grep: only `IsDifferential()` reads the descriptor field; region field unread this slice |
 | C3 §4.2 prose references non-existent `pub` local | COSM | **CONFIRMED → §2.4** uses `op->table_op_table` directly | LowerSubgraphInstances has no `pub` local; pub Emplaced from `op->table_op_table` @Procedure.cpp:289 |
