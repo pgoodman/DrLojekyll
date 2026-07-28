@@ -4888,4 +4888,40 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     OQ-OWN3 mechanism; OQ-NEVER reject-vs-promote; OQ-INDUCTION-
     UNION). NEXT: the D3.a RITUAL-HEAD RULING BRIEF (the twelve
     OQs with recommendations) — an OWNER RULING; stage (b) design
-    lanes open only under the ratified rulings.
+    lanes open only under the ratified rulings. [RULED — §20(AE).]
+
+(AE) OD-15 — THE D3.a RITUAL-HEAD RULINGS RATIFIED (owner,
+    2026-07-28, in-session): "ratify all" — the twelve §6 OQs +
+    the sub-slice order, AS RECOMMENDED; binding record =
+    KeyedInstances.artifacts/d3a-ruling-brief.md (ratification
+    record at tail). THE FRAME: OQ-MODEL = FULL-RESCAN (the store
+    stays a predicate-free set island; differentialness = the
+    frozen-vs-current DIFF AT PUBLISH; D3.a is a pub-boundary +
+    lifecycle problem — moots G-DIFF-TABLE/G-ROW-RETRACT/
+    G-OCCUPANCY, N-1 CLOSES moot-under-rescan with a recorded
+    contingency). The rest in one line each: two staged axes
+    (demand D3.a.1 / input D3.a.2); SET-demand + batch SET
+    netting via the fabricated message going @differential (the
+    injector's del_vec arm exists); RAT-7 YES — the band-(b)
+    partition belt lands WITH the (T,F) scan (born+carried==cur,
+    dropped+carried==frz), HP-7 stays armed for monotone stores;
+    publish order = signed deltas into pub's own machinery, drop
+    scan before born scan per iid; death = full (T,F) retract +
+    RecycleCurrent with the PINNED three-way coupling (netting
+    kills same-batch flap; TouchedFlag suppresses dead-key a2;
+    V-INST-FRESH unchanged); differential input YES at D3.a.2
+    (FENCE (iii) + V-INST-SOLE lift; removal-triggered
+    Recycle+rescan; G-STALE subsumed); multi-adornment = N
+    disjoint stores keyed (query, BindingPattern), the pass loops
+    per adornment; OWN-3 promotes always-on (record-comparing
+    abort + census equation) as D3.a.0 hygiene; DS-R4-10 = REJECT
+    fence + witness; recursive demand DEFERRED all of D3.a (the
+    §20(AB) precondition binds any future toucher). SUB-SLICE
+    ORDER: D3.a.0 (OWN-3 + inert diff-selector plumbing) ->
+    D3.a.1 (differential demand: -demand-retract, death ON, (T,F)
+    scan, partition belt, demand net-removals frontier) -> D3.a.2
+    (differential input) -> D3.a.3 (multi-adornment); each under
+    the full per-slice ritual; the eqgate's flat==nested answer
+    identity is the standing cross-lowering oracle (flat -demand
+    is already differential-capable). NEXT: stage (b) design
+    lanes for D3.a.0 under these rulings.
