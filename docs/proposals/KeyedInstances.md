@@ -4924,4 +4924,57 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     the full per-slice ritual; the eqgate's flat==nested answer
     identity is the standing cross-lowering oracle (flat -demand
     is already differential-capable). NEXT: stage (b) design
-    lanes for D3.a.0 under these rulings.
+    lanes for D3.a.0 under these rulings. [EXECUTED — §20(AF).]
+
+(AF) D3.a.0 STAGES (b)/(c) COMPLETE (2026-07-28, tip 42100428):
+    THE BINDING DESIGN COMMITTED —
+    KeyedInstances.artifacts/d3a0-design.md. Fleet: 2 xhigh design
+    lanes (b1 OWN-3 promotion; b2 inert diff-selector plumbing) +
+    2 FRESH adversarial critics + 1 xhigh adjudicator (~555k
+    tokens; 12 findings CONFIRMED and folded, 1 not-material,
+    ZERO OD-15 escalations); the orchestrator re-verified every
+    load-bearing anchor at code before commit. SUB-DIFF (i) OWN-3:
+    View.cpp:588's dormant assert becomes the always-on
+    record-comparing CheckGuardAnnotationFold (pure free function,
+    RAT-3 CheckInstanceOrder idiom; compatibility predicate =
+    forcing_index + instance_key EQUAL — the two Equals-INVARIANT
+    identity fields; site stamps kind/demand_side/role
+    legitimately differ across a valid fold); mechanism (B) = a
+    QueryImpl* back-pointer on QueryViewImpl under INV-OWN3-Q
+    (non-null iff annotated; propagated on move, cleared paired;
+    always-on null-guard before the record deref — the MED-2
+    NDEBUG-SIGSEGV catch); guard_annotation_folded_count gains its
+    SOLE writer (the compatible-fold arm, dormant on corpus); the
+    Demand.cpp census promotes always-on IN PLACE with the
+    dead-flow-orphan question RESOLVED AT CODE (dead-flow deletes
+    annotated views ONLY post-Optimize; the census is pinned
+    PRE-Optimize at Build.cpp:2587-before-2599 — never relocate
+    without orphan accounting); NEW negative test =
+    tests/DataFlowValidators/GuardAnnotationFoldTest.cpp
+    (fork/waitpid SIGABRT death arm + positive arm; the LOW-1
+    catch: {}-init makes both records compatible — the death arm
+    MUST set forcing_index explicitly). SUB-DIFF (ii) plumbing:
+    ONE authority DRInstance.differential =
+    TableIsDifferential(pub) stamped at the mint (Rel.cpp:1058),
+    feeding the SUBGRAPHINSTANCE region ctor (third arg;
+    Hash/Equals UNTOUCHED — proven safe: the bit is a pure
+    function of pub_table which Equals already keys on) + the
+    ProgramInstanceStore descriptor + a new always-on
+    V-INST-DIFF-COHERENCE (stamped bit == live predicate, at the
+    lowering); the store-ctor emitter appends ", false" ONLY when
+    differential (emit-when-differential CHOSEN over
+    always-explicit: the eqgate nested arm's generated text stays
+    byte-for-byte tip); ZERO render change (an .ir token would be
+    an E-71 lane — out of scope). CROSS-SLICE (§3): the L3
+    predicate rider is FIRST-CLASS for D3.a.1 (store bit keys
+    pub-diff, death mint keys demand-diff — reconcile before the
+    bit goes live); coherence/death-test liveness by perturbation
+    lands with D3.a.1. GATES pre-registered (§4): expected reds
+    NONE, zero golden churn, [BYTE] on every pinned surface (both
+    sub-diffs), eqgate nested-arm generated-text delta EXACTLY
+    ZERO, suite PASS(175) debug+release+ASAN (release newly runs
+    the always-on aborts — must pass silently), ctest +1 (the new
+    DataFlowValidators death test). NEXT: stage (d) — compact
+    desired-states + the BLIND worktree prototype (hand-
+    provisioned, tip-verified) converging with the pristine
+    implementation; then Fable review; then land as ONE commit.
