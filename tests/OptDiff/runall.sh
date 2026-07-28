@@ -24,7 +24,10 @@
 #     -demand and reject only under -demand-instance, recursive_content is the
 #     upstream plain-demand body-walk reject),
 #   demand_multi_adorn_1 (via its -demand .drflags sidecar: a demanded query
-#     name with two binding patterns — the adornment cross-wire reject)
+#     name with two binding patterns — the adornment cross-wire reject),
+#   negate_never_diff_1 (@never over a differential negated view — the
+#     DS-R4-10 post-fixpoint fence; the directed order-hole shape that was
+#     mode-split before D3.a.1)
 #     — the compiler must exit 1 with a rendered diagnostic (no assert/crash)
 #     in all 4 modes (evm_func_parse: unstratified negation, rejected by the
 #     dataflow Stratify pass; agg_in_scc_1/kv_in_scc_1: unstratified
@@ -355,7 +358,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_cyclic_1|demand_recursive_content_1|demand_diff_input_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_cyclic_1|demand_recursive_content_1|demand_diff_input_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

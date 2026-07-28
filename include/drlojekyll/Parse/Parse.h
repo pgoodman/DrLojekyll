@@ -882,8 +882,13 @@ class ParsedModule {
   // (A7/G1). Returns `std::nullopt` on a G3 collision (a user already declared
   // a message with this reserved name) — a clean-diagnostic reject the caller
   // reports. Not for general use; there is no source syntax that reaches it.
+  // When `differential` is true (the `-demand-retract` channel, D3.a.1
+  // OQ-RETRACT-POLICY), the fabricated message carries a SYNTHETIC
+  // `@differential` attribute token, so the whole demanded closure flips
+  // differential through the ordinary machinery.
   std::optional<ParsedMessage> FabricateDemandMessage(
-      std::string_view name, const std::vector<TypeLoc> &param_types) const;
+      std::string_view name, const std::vector<TypeLoc> &param_types,
+      bool differential) const;
 
   // COMPILER-INTERNAL (the live demand transform). Fabricate a real
   // `#local`-kind declaration for a demand relation `d_p` (recipe A1/F5: the

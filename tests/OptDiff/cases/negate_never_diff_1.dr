@@ -1,0 +1,29 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; negate_never_diff_1 -- the DS-R4-10 fence witness (OQ-NEVER, ruled REJECT):
+; '@never' over a negated view that can produce differential updates is a
+; clean diagnostic in ALL FOUR modes. The shape is the directed ORDER-HOLE
+; probe: the @never negate's own can_produce flips first (its non-negated
+; input is @differential at one hop) while the negated view's
+; differentialness arrives through a THREE-hop chain -- the pre-D3.a.1
+; in-fixpoint check MISSED this under -disable-dataflow-opt (mode-split
+; accept: opt/nocf rejected, nodf/none compiled the latent wrong-answer
+; program; FINDINGS.md F25). The post-fixpoint fence rejects it in every mode.
+
+#message add(i32 A) @differential.
+#message nin(i32 A) @differential.
+
+#local pos(i32 A).
+pos(A) : add(A).
+
+#local n0(i32 A).
+n0(A) : nin(A).
+#local n1(i32 A).
+n1(A) : n0(A).
+#local neg(i32 A).
+neg(A) : n1(A).
+
+#local x(i32 A).
+x(A) : pos(A), @never neg(A).
+
+#query qx(free i32 A) : x(A).

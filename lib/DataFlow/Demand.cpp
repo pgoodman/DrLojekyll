@@ -383,7 +383,8 @@ static std::vector<VIEW *> CollectColUsers(QueryImpl *query, VIEW *producer) {
 }
 
 bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
-                                     const ErrorLog &log, bool demand_mode) {
+                                     const ErrorLog &log, bool demand_mode,
+                                     bool demand_retract) {
 
   // MODE GATE. When the `-demand` flag is off (the default), this pass is a
   // total no-op: nothing is minted, no module state is mutated, the id-stream
@@ -826,7 +827,8 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     return false;
   }
 
-  const auto msg_opt = module.FabricateDemandMessage(base_name, bound_types);
+  const auto msg_opt =
+      module.FabricateDemandMessage(base_name, bound_types, demand_retract);
   if (!msg_opt) {
     log.Append(q_decl.SpellingRange())
         << "Cannot fabricate the demand message '" << base_name

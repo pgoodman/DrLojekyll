@@ -129,3 +129,40 @@ Fixed in the final session:
 - Repro: `build/debug/bin/drlojekyll tests/OptDiff/cases/conflicting_constants.dr -disable-dataflow-opt -disable-controlflow-opt -df-out out.df` run repeatedly — the `-df-out` text varies ACROSS RUNS OF ONE BINARY (8-run sample: 3 distinct hashes, majority 5/8). The varying lines are AutoVar column ORDER inside a `tuple`/`compare` block pair (e.g. `^tuple.7 (AutoVar_2, AutoVar_3, AutoVar_1)` vs `(AutoVar_3, AutoVar_2, AutoVar_1)` and the matching `^compare.21` header/edge) — a per-process ASLR/pointer-order dependence in the nodf-mode constant/comparator canonicalization path, the same class the (F) landing swept for `-ir-out` (F20's post-fix note) but surviving on the `.df` surface for this shape.
 - PRE-EXISTING: reproduces IDENTICALLY on the frozen pre-PIN-3 baseline binary (tip 1492adbf snapshot — 3 distinct hashes over 8 runs, sharing the two majority hashes with the refined binary). Found by the PIN-3 full-corpus intended-flip referee (the one non-flip diff in 674 comparisons); the stage-(d) blind/author lanes hit it independently. Opt-mode conflicting_constants is byte-stable; no golden pins any nodf/none `.df` surface, so no gate is affected.
 - Out of PIN-3 scope (the slice touches only the class= derivation, which is order-independent — integer-keyed map, OR-fold, no iteration). Trigger for promotion: any (F)-law sweep extension to the `.df` surface at nodf/none, or a future `.df` nodf/none golden pin.
+
+## Round 11 (D3.a.1 stage-(b) lane-b4 pre-implementation analysis, 2026-07-28)
+
+### F25 [FIXED 2026-07-28, D3.a.1]: the `@never`-over-differential reject is visit-order fragile — a mode-split latent accept of a wrong-answer program under `-disable-dataflow-opt`
+- Found by the D3.a.1 stage-(b) lane-b4 empirical probe BEFORE any retract code
+  was written (the F22 caught-pre-code precedent): the DS-R4-10 fence
+  (`'@never' cannot operate on a predicate that can produce differential
+  updates`) lived INSIDE the `TrackDifferentialUpdates` fixpoint
+  (lib/DataFlow/Differential.cpp), under the outer
+  `!view->can_produce_deletions` guard — it only ran while the negate's OWN
+  bit was still false. A negate whose own `can_produce` flips first (e.g.
+  from a `@differential` non-negated input at one hop) skips the arm FOREVER
+  if the negated view's differentialness arrives later through a longer
+  chain.
+- Repro (the never2 shape, now the standing case `negate_never_diff_1`):
+  `x(A) : pos(A), @never neg(A).` with `pos` fed by a `@differential`
+  message at ONE hop and `neg` fed by a `@differential` message through a
+  THREE-hop forwarding chain. MODE-SPLIT at the pre-fix tip: rc=1 under
+  opt/nocf (canonicalization collapses the chain, the reject fires), rc=0
+  (COMPILES) under nodf/none — the uncanonicalized graph's extra forwarding
+  TUPLEs shift the fixpoint interleaving past the check's window, silently
+  accepting a latent wrong-answer program (an `@never` gate over a
+  retractable negated view — the F18 once-absent-always-absent assumption
+  violated at runtime). A 1-hop chain (never1) rejects in all 4 modes, which
+  is why no earlier corpus case caught it.
+- Fix: the check MOVES post-fixpoint (same file) — the final closure bits are
+  the unique least fixpoint, order- and mode-independent — iterating the raw
+  `negations` DefList under `log.IsEmpty()`, with the dead-view filter
+  (`is_dead || !negated_view`: `PrepareToDelete` clears `negated_view` and
+  the DefList retains dead defs, so the raw walk needs the guard the old
+  ForEachView-nested check got for free). Diagnostic text byte-identical.
+  Acceptance perimeter: the only corpus `@never` carriers (negate_6, map_5)
+  have monotone negated views — zero golden/acceptance churn; newly rejected
+  are exactly the order-hole shapes under nodf/none (a strengthening).
+- Witness: `negate_never_diff_1` (all-4-modes-diagnostic) pins the 3-hop
+  ORDER-HOLE shape, regression-fencing the fragility itself, not just the
+  reject.

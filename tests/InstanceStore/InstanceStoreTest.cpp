@@ -6,7 +6,9 @@
 // (pointer swap + Reset + occupancy snapshot; frozen becomes prior current);
 // RecycleCurrent idempotence (same-epoch flap); the H6 Arena regression
 // (bounded allocation across reset/refill cycles); the pre-D3 death half
-// (Recycle-then-partial-readd is a genuine drop under monotone=false); and the
+// (Recycle-then-partial-readd is a genuine drop under monotone=false); the
+// D3.a.1 death->rebirth->second-death cycle (TouchedFlag toggling + the
+// same-iid rebind — no tombstone); and the
 // RAT-5 belt-fires NEGATIVE (a shrunk monotone Seal must abort with SIGABRT,
 // exercised in a forked child). Intent-communicating asserts throughout
 // (ASSERT_EQ/LT/GT, EQ on rows).
@@ -345,6 +347,58 @@ TEST(InstanceStore, DeathHalfRecycleThenPartialReaddDropsRows) {
   st.Seal();
   ASSERT_EQ(st.Frozen(g).NumRows(), 0u);
   ASSERT_FALSE(st.SealedOccupied(g));                     // sealed occ. died.
+  st.DebugValidate();
+}
+
+// D3.a.1 (OQ-DEATH-VS-REBUILD): the death->rebirth->second-death CYCLE, the
+// runtime mirror of witness steps r1/p1c/r1b. Pins: (i) death's
+// RecycleCurrent raises TouchedFlag (the band-(a1)/(a2) same-epoch
+// suppression signal — the Touch is load-bearing) and Seal clears it;
+// (ii) NO iid tombstone — a dead key stays bound and rebirth REBINDS the
+// SAME iid (why the band-(a2) demand-liveness gate must probe demand
+// presence, never FindInstance existence); (iii) rebirth is a FRESH rescan
+// against an EMPTY frozen buffer (all rows born, including a while-dead
+// addition); (iv) a second death cycles clean.
+TEST(InstanceStore, DeathRebirthCycleRebindsIidAndTogglesTouchedFlag) {
+  Store st(MallocAllocator(), /*monotone=*/false);   // belt OFF (R-DIFF mold).
+  const uint32_t g = st.FindOrAddInstance(KeyX{1});
+
+  // BIRTH: current = {2,3,4}; seal -> frozen = {2,3,4}, occupied.
+  auto &c1 = st.TouchCurrent(g);
+  c1.TryAdd(Nbr{2});
+  c1.TryAdd(Nbr{3});
+  c1.TryAdd(Nbr{4});
+  st.Seal();
+  ASSERT_EQ(Drain(st.Frozen(g)), (std::set<int32_t>{2, 3, 4}));
+  ASSERT_TRUE(st.SealedOccupied(g));
+
+  // DEATH: Recycle raises the suppression flag; Seal clears it and swaps the
+  // empty current in (occupancy dies). The key stays bound (no tombstone).
+  st.RecycleCurrent(g);
+  ASSERT_TRUE(st.TouchedFlag(g));       // the a1/a2 suppression signal is UP
+                                        //   post-Recycle (death's Touch).
+  st.Seal();                            // death epoch: frozen empty,
+  ASSERT_FALSE(st.SealedOccupied(g));   //   occupancy died,
+  ASSERT_FALSE(st.TouchedFlag(g));      //   flag cleared by Seal.
+  ASSERT_EQ(st.FindInstance(KeyX{1}), g);       // no tombstone: still bound.
+  ASSERT_EQ(st.FindOrAddInstance(KeyX{1}), g);  // rebirth REBINDS the iid.
+
+  // REBIRTH: a fresh rescan fills current against an EMPTY frozen — ALL rows
+  // are born, including the while-dead {15} (never a stale-store replay).
+  auto &c2 = st.TouchCurrent(g);
+  c2.TryAdd(Nbr{2});
+  c2.TryAdd(Nbr{3});
+  c2.TryAdd(Nbr{4});
+  c2.TryAdd(Nbr{15});
+  st.Seal();
+  ASSERT_EQ(Drain(st.Frozen(g)), (std::set<int32_t>{2, 3, 4, 15}));
+  ASSERT_TRUE(st.SealedOccupied(g));
+
+  // SECOND DEATH cycles clean against the REBUILT frozen set.
+  st.RecycleCurrent(g);
+  st.Seal();
+  ASSERT_FALSE(st.SealedOccupied(g));
+  ASSERT_FALSE(st.TouchedFlag(g));
   st.DebugValidate();
 }
 

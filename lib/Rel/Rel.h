@@ -1218,6 +1218,13 @@ unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op);
 // flow needs no real TABLE/Context.
 void CheckInstanceOrder(const DRFlowGraph &flow);
 
+// V-INST-DRAIN death clause (D3.a.1): every kInstanceDeath in `flow` must name
+// a provisioned demand net-removals frontier (DR vec + `-` kFrontierFilter
+// producer). PURE over the flow (pointer identity only, no TABLE deref) so the
+// negative space is death-testable in tests/RelValidators. fprintf+abort,
+// survives NDEBUG, always-on. Vacuous when no death op is present.
+void CheckInstanceDeathFrontier(const DRFlowGraph &flow);
+
 void SetRelDumpStream(OutputStream *stream);
 void DumpRelIfEnabled(const DRFlowGraph &flow);
 

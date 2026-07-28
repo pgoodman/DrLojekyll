@@ -4,9 +4,7 @@
 # evaluates the plain (undemanded) program, so its neighborhood rows are the
 # FULL single-hop relation -- the answer-identity referee for the demand-ON
 # driver's per-key answers (demand-blind, so it gains all four rebuild rows
-# including the undemanded (13,14)). D3.a.1 RETRACT phase: one WHILE-DEAD
-# edge (1,15) -- the oracle is demand-blind, so it sees the edge, never the
-# retraction (death is a query-surface call, absent from this file).
+# including the undemanded (13,14)).
 #
 # Batch 1: 1's first two out-edges, the 9->9 self-loop, the detached 7->8.
 batch
@@ -34,9 +32,4 @@ batch
 end
 batch
 + add_edge 13 14
-end
-# D3.a.1 RETRACT-phase epoch: the while-dead edge for key 1 (driver e7 --
-# suppressed by the demand-liveness gate; reappears at the p1c rebirth).
-batch
-+ add_edge 1 15
 end

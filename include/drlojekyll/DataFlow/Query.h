@@ -1048,7 +1048,8 @@ class Query {
   static std::optional<Query> Build(const ParsedModule &module,
                                     const ErrorLog &log,
                                     const PassPolicy &policy,
-                                    bool demand_mode = false);
+                                    bool demand_mode = false,
+                                    bool demand_retract = false);
 
   ~Query(void);
 

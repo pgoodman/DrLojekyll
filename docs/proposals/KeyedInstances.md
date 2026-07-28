@@ -5261,3 +5261,86 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     prediction lane + the BLIND worktree prototype (hand-
     provisioned, tip-verified) converging with pristine; then Fable
     review; then land as ONE commit. Landing record = §20(AK).
+
+(AK) D3.a.1 LANDED (2026-07-28) — DIFFERENTIAL DEMAND: the retract
+    channel, death, the (T,F) publish, and the witness family, per
+    d3a1-design.md as amended by the Fable review; desired-states
+    record = d3a-desired-states.md SLICE 1; substrate =
+    d3a1-substrate.md (incl. §7 the d2 CO-ACTIVATION ruling).
+    MECHANISM AS LANDED: (i) -demand-retract (implies -demand, OFF
+    PassPolicy) -> FabricateDemandMessage stamps a SYNTHETIC
+    @differential token (kPragmaDifferential) -> the closure flips
+    via the ORDINARY machinery; a second kQueryMessageInjector + the
+    generated <name>_<pattern>_retract hidden friend write del_vec;
+    netting = the landed NETBATCH arm; driver contract
+    TOTAL+IDEMPOTENT (R-4). (ii) death = band-(a0) INSIDE the
+    SUBGRAPHINSTANCE region (R-1): removal_frontier UseRef +
+    RemovalFrontier(), {sid,kInstanceDeath} enrollment closing
+    V-INST-EMITTED, FindInstance+RecycleCurrent emitter (its FIRST
+    codegen caller; kNoInstance silent-skip R-6); V-INST-DRAIN
+    REGIME-SPLIT + the pure CheckInstanceDeathFrontier (death-tested
+    in rel_validators_test) + the G-8 source check +
+    V-INST-DEATH-COHERENCE + orphan-mint fences at EVERY memoized
+    vec fetch (incl. the review-[B] band-(a1) fence); ClassifyVector
+    extended for every new region vector. (iii) band-(b) gains the
+    (T,F) drop scan (OVERDELETE-first per iid; SubDerivation +
+    DelQueue) + the AddDerivation born arm + the ALWAYS-ON generated
+    V-INST-PARTITION belt; band-(a2) gains the DEMAND-LIVENESS gate
+    (R-3: demand Find+Present nested inside the iid check per
+    review-[I]); IsDifferential()/DemandTable()/DelQueue()/AddQueue()
+    accessors; the store constructs monotone=false by co-activation
+    (d5; HP-7 belt off for differential stores). (iv) the witness
+    grew retract/dead-key-edge/rebirth/second-death phases + the
+    @differential nbhd_out tap (EQGATE UPGRADED: answer + sorted
+    published-delta identity); DS-R4-10 moved POST-FIXPOINT with the
+    is_dead filter + an ALWAYS-ON no-predicate fallback (review-[C]);
+    negate_never_diff_1 = the fence witness; FINDINGS.md F25;
+    + the review-[A] R-MONO twin demand_neighborhood_mono_witness
+    (the pre-slice witness bytes as a SECOND eqgate case — the
+    monotone nested lowering keeps end-to-end coverage). Suite
+    175->177. STAGE-(d) THREE-WAY: design §6 == the desired-states
+    author's hand-derived 36-line golden == the blind prototype, on
+    every compared surface; the census adjudicated at the dump
+    (kSeedFold=7 = the two differential joins' signed seed arms,
+    kJoinEmit=2 their delta forms — the DS lane under-predicted, the
+    prototype was correct); red set EXACTLY the 10 pre-registered
+    lines; golden churn EXACTLY 3 witness files via --bless (+ the 3
+    resurrected mono-twin goldens committed directly). d7
+    PERTURBATIONS L1-L10 ALL FIRED with recorded texts (amendments:
+    L3's never-minted role is kProductInput; L5 perturbs
+    mint-consistently past G-8; L7/L8 vehicle is the NESTED arm;
+    L2 recorded in BOTH configurations — tip validator:
+    V-INST-DRAIN-first, regime-split: V-INST-EMITTED "2 vs 3").
+    INCIDENT RECORDED: an orchestrator git-checkout during the L5
+    cycle wiped P1's uncommitted Rel.cpp edits; reconstructed from
+    the binding specs, PROVEN byte-equivalent (nested .rel/.ir/.h ==
+    pre-wipe artifacts); RITUAL AMENDMENT: WIP-commit the prototype
+    worktree BEFORE perturbation cycles. FABLE REVIEW (workflow,
+    high; 21 agents, 10 ranked findings, ZERO live miscompiles):
+    [A] coverage regression FIXED (the mono twin); [B]-[E] NDEBUG/
+    fence hardenings FIXED; [G] shared DeathHarness.h (3rd
+    fork/waitpid copy eliminated); [H] HasTableDeltaVector helper x3
+    sites; [I] the a2 probe nested (hot-path hash probe eliminated);
+    [J] stale ships-INERT comments; [F] the ~90-line retract/forcer
+    builder duplication DEFERRED with a NAMED OBLIGATION (D3.a.3
+    touches the registry walk — dedup rides there; the forcer twin's
+    pre-existing assert-only handler guard rides with it). GATES
+    (final bytes, all personally executed or re-executed; error-grep
+    0 x3 trees at every rebuild): SUITE PASS(177) debug; ASAN
+    PASS(177) x2 sweeps + ctest 6/6 debug + 6/6 ASAN; the pre-bless
+    red set matched the prediction EXACTLY (10/10, twice — worktree
+    + pristine); 20/20 pinned regen [BYTE] x3 rounds; eqgate LIVE x4
+    both witnesses (flat==nested==golden; the differential witness
+    additionally delta-stream-identical); config-invariance
+    SINGLE-HASH x3 + release==debug on both witness arms +
+    demand_tc; E-62 CLEAN; Q5 progsize@128 release ABABAB MEASURED:
+    A~=148.8ms vs B~=148.2ms warm medians — compile-time NEUTRAL
+    (<2%). RESIDUALS OPENED: the [F] dedup obligation (D3.a.3); the
+    §20(AF) §3.6 liveness obligation is DISCHARGED (L6 both
+    polarities with the TRUE-bit carrier; L7 the partition belt; L10
+    OWN-3). NEXT: D3.a.2 — differential input (lift FENCE (iii) +
+    V-INST-SOLE, the input net-removals a2 trigger ->
+    RecycleCurrent + full rescan; the a2 quiescence-argument rider
+    from design §3.2 re-derives there) under the full per-slice
+    ritual; then D3.a.3 multi-adornment (+ the View.cpp fold-
+    predicate precondition + the [F] dedup).

@@ -483,6 +483,104 @@ static std::optional<ProgramProcedure> BuildQueryForceProcedure(
   return std::nullopt;
 }
 
+// D3.a.1 (`-demand-retract`): build the RETRACT injector for a
+// demand-transformed query whose fabricated demand message is differential.
+// A sibling of `BuildQueryForceProcedureFromRegistry` with exactly three
+// deltas: the vector KINDS swap (the retract key rides the REMOVE vector;
+// the add vector is passed empty), the VECTORAPPEND targets `del_vec`, and
+// the CALL's argument roles flip accordingly. One key per call; each call is
+// one epoch through the suppressed demand handler (SET-demand,
+// OQ-RETRACT-POLICY).
+static std::optional<ProgramProcedure> BuildQueryRetractProcedureFromRegistry(
+    ProgramImpl *impl, Context &context, ParsedQuery query,
+    const QueryDemandForcing &entry) {
+
+  ParsedDeclaration query_decl(query);
+  const ParsedMessage message = entry.message;
+  assert(message.IsReceived());
+  assert(message.IsDifferential());
+  assert(message.Arity() == entry.bound_params.size());
+  // [ALWAYS-ON] (Fable review [E]): the handler map is indexed below and a
+  // miss would default-insert nullptr — a null CALL callee that codegen
+  // dereferences (release SIGSEGV, no diagnostic). The sibling asserts guard
+  // fabrication invariants; THIS guards a map lookup. (The forcer twin keeps
+  // its pre-existing assert; the [F] dedup obligation unifies both.)
+  if (!context.messsage_handler.count(message)) {
+    fprintf(stderr, "error: demand retract: the fabricated demand message has "
+                    "no handler procedure\n");
+    abort();
+  }
+
+  auto proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kQueryMessageInjector);
+  proc->has_raw_use = true;
+
+  // One parameter per bound query parameter, in message-parameter order.
+  for (unsigned param_index : entry.bound_params) {
+    const auto var =
+        proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
+    var->parsed_param = query_decl.NthParameter(param_index);
+  }
+
+  // Vector column types from the fabricated message's own parameters.
+  std::vector<TypeLoc> col_types;
+  for (auto i = 0u; i < message.Arity(); ++i) {
+    col_types.push_back(message.NthParameter(i).Type());
+  }
+
+  VECTOR *add_vec = proc->vectors.Create(
+      impl->next_id++, VectorKind::kEmpty, col_types, 0);
+  VECTOR *del_vec = proc->vectors.Create(
+      impl->next_id++, VectorKind::kParameter, col_types,
+      0  /* disambiguation */);
+
+  SERIES *seq = impl->series_regions.Create(proc);
+  proc->body.Emplace(proc, seq);
+
+  VECTORAPPEND *append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+      seq, ProgramOperation::kAppendQueryParamsToMessageInjectVector);
+  seq->regions.AddUse(append);
+  append->vector.Emplace(append, del_vec);
+  for (VAR *param_var : proc->input_vars) {
+    append->tuple_vars.AddUse(param_var);
+  }
+
+  CALL *call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, seq, context.messsage_handler[message]);
+  seq->regions.AddUse(call);
+  call->arg_vecs.AddUse(add_vec);  // Empty.
+  call->arg_vecs.AddUse(del_vec);
+
+  RETURN *ret = impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure);
+  seq->regions.AddUse(ret);
+
+  return proc;
+}
+
+// D3.a.1: dispatcher for the retract injector — the same registry loop +
+// binding-pattern second belt as `BuildQueryForceProcedure`, additionally
+// gated on the fabricated message's differentialness (the `-demand-retract`
+// toggle's downstream truth). The user `@first` forcing surface gets NO
+// retract arm (user forcing messages are out of scope).
+static std::optional<ProgramProcedure> BuildQueryRetractProcedure(
+    ProgramImpl *impl, Context &context, ParsedQuery query) {
+
+  if (context.demand_forcings) {
+    for (const QueryDemandForcing &entry : *context.demand_forcings) {
+      if (entry.query == query &&
+          ParsedDeclaration(entry.query).BindingPattern() ==
+              ParsedDeclaration(query).BindingPattern() &&
+          entry.message.IsDifferential()) {
+        return BuildQueryRetractProcedureFromRegistry(impl, context, query,
+                                                      entry);
+      }
+    }
+  }
+
+  return std::nullopt;
+}
+
 // Add entry point records for each query of the program.
 static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
                                      ParsedDeclaration decl,
@@ -503,6 +601,11 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
   const DataTable table(model->table);
   std::optional<ProgramProcedure> forcer_proc =
       BuildQueryForceProcedure(impl, context, query);
+
+  // D3.a.1 (`-demand-retract`): the retract injector, created AFTER the
+  // forcer so the flag-off id stream is byte-identical to tip.
+  std::optional<ProgramProcedure> retract_proc =
+      BuildQueryRetractProcedure(impl, context, query);
   std::optional<DataIndex> scanned_index;
 
   if (!col_indices.empty()) {
@@ -511,7 +614,8 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
     }
   }
 
-  impl->queries.emplace_back(query, table, scanned_index, forcer_proc);
+  impl->queries.emplace_back(query, table, scanned_index, forcer_proc,
+                             retract_proc);
 }
 
 
@@ -541,7 +645,7 @@ static void BuildEmptyQueryEntryPointImpl(ProgramImpl *impl,
   }
 
   impl->queries.emplace_back(query, DataTable(table), scanned_index,
-                             std::nullopt);
+                             std::nullopt, std::nullopt);
 }
 
 // Add entry point records, over a shared always-empty table, for each unique
@@ -742,6 +846,13 @@ void FindMonotoneNegatedTables(ProgramImpl *impl, Context &context,
 
 // The lazily created per-table delta vector of `kind` (one of the eight
 // batch-skeleton kinds documented on `Context::table_delta_vecs`).
+bool HasTableDeltaVector(Context &context, TABLE *table, VectorKind kind) {
+  auto it = context.table_delta_vecs.find(table);
+  return it != context.table_delta_vecs.end() &&
+         it->second.count(static_cast<unsigned>(kind)) &&
+         it->second.at(static_cast<unsigned>(kind)) != nullptr;
+}
+
 VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
                          VectorKind kind) {
   VECTOR *&vec = context.table_delta_vecs[table][static_cast<unsigned>(kind)];

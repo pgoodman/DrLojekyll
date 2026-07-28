@@ -161,7 +161,8 @@ void ParsedModule::MarkDemandFabricated(void) const noexcept {
 }
 
 std::optional<ParsedMessage> ParsedModule::FabricateDemandMessage(
-    std::string_view name, const std::vector<TypeLoc> &param_types) const {
+    std::string_view name, const std::vector<TypeLoc> &param_types,
+    bool differential) const {
 
   ParsedModuleImpl *const module = impl.get();
 
@@ -195,6 +196,18 @@ std::optional<ParsedMessage> ParsedModule::FabricateDemandMessage(
   message->name_view = name_view;
   message->directive_pos = name_tok.Position();
   message->rparen = name_tok;  // A synthetic anchor; used only by diagnostics.
+
+  // D3.a.1 (OQ-RETRACT-POLICY, the `-demand-retract` channel): stamp a
+  // SYNTHETIC `@differential` pragma token so `ParsedMessage::IsDifferential()`
+  // holds and the demand closure flips differential via the ordinary
+  // machinery. Lexeme-faithful (`kPragmaDifferential` is what the parser
+  // stores at a user site); the empty-range synthetic is the established
+  // fabricated-pragma idiom (Aggregate.cpp kPragmaPerfInline) — the
+  // attribute token's spelling is never emitted.
+  if (differential) {
+    message->differential_attribute =
+        Token::Synthetic(Lexeme::kPragmaDifferential, DisplayRange());
+  }
 
   FabricateParams(module, message, param_types);
 

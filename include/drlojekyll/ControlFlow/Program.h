@@ -860,9 +860,31 @@ class ProgramSubgraphInstanceRegion
   // BAND (a2) input(edge) net-additions frontier (REBUILD keys). [R-REBUILD-a2]
   DataVector InputFrontier(void) const noexcept;
 
+  // BAND (a0) death drain source (the netted demand net-removals frontier,
+  // D3.a.1). Present only when a kInstanceDeath op exists for this store
+  // (differential demand); absent under R-MONO.
+  std::optional<DataVector> RemovalFrontier(void) const noexcept;
+
   // The summarized monotone input + the published answer relation.
   DataTable InputTable(void) const;
   DataTable PubTable(void) const;
+
+  // Valid ONLY when IsDifferential(): the demand relation's table — the
+  // band-(a2) rebuild gate probes its Present membership (a dead key still
+  // binds an iid; demand presence is the ONLY correct liveness signal).
+  DataTable DemandTable(void) const;
+
+  // D3.a.1: the store/pub differential regime — == DRInstance.differential ==
+  // TableIsDifferential(pub) (V-INST-DIFF-COHERENCE-checked at lowering).
+  // Gates the band-(b) (T,F) drop scan, the signed publish, and the
+  // V-INST-PARTITION belt.
+  bool IsDifferential(void) const noexcept;
+
+  // Pub's delete/add queues (the band-(b) signed publish appends into them —
+  // the GROUP_UPDATE DelQueue/AddQueue peer). Valid ONLY when
+  // IsDifferential(); null refs for a monotone store.
+  DataVector DelQueue(void) const noexcept;
+  DataVector AddQueue(void) const noexcept;
 
   // The pub-row partition (HP-6): key positions (from KeyAt) vs row positions
   // (from the rescan).
@@ -1347,13 +1369,21 @@ class ProgramQuery {
   // `bound`-attributed parameters of the query declaration.
   std::optional<ProgramProcedure> forcing_function;
 
+  // If present, a procedure which retracts a standing demand for the given
+  // `bound`-attributed parameters (the `-demand-retract` surface, D3.a.1).
+  // Present only for a demand-transformed query whose fabricated demand
+  // message is differential.
+  std::optional<ProgramProcedure> retract_function;
+
   inline explicit ProgramQuery(
       ParsedQuery query_, DataTable table_, std::optional<DataIndex> index_,
-      std::optional<ProgramProcedure> forcing_function_)
+      std::optional<ProgramProcedure> forcing_function_,
+      std::optional<ProgramProcedure> retract_function_)
       : query(query_),
         table(table_),
         index(std::move(index_)),
-        forcing_function(std::move(forcing_function_)) {}
+        forcing_function(std::move(forcing_function_)),
+        retract_function(std::move(retract_function_)) {}
 
   ProgramQuery(const ProgramQuery &) = default;
   ProgramQuery(ProgramQuery &&) noexcept = default;

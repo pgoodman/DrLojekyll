@@ -12,7 +12,9 @@
 //   - positive arm: death pinned before instantiate → child must EXIT 0.
 
 #include <DrTest.h>
+#include <DeathHarness.h>
 
+#include <cerrno>
 #include <csignal>
 #include <cstdio>
 #include <sys/wait.h>
@@ -48,35 +50,12 @@ static hyde::DRFlowGraph MakeTwoOpFlow(bool instantiate_first) {
   return flow;
 }
 
-// Child-termination classes the arms assert on. kForkFailed makes a fork()
-// failure loud in BOTH arms instead of masquerading as either outcome.
-enum class ChildOutcome { kCleanExit, kSigAbrt, kOtherAbnormal, kForkFailed };
+// The shared fork/waitpid harness (DeathHarness.h, Fable review [G]); the
+// death arm accepts ONLY SIGABRT.
+using drtest::ChildOutcome;
 
-// Run `CheckInstanceOrder(flow)` in a forked child and classify how the child
-// terminated. ValidatorFail is fprintf + abort(), so the ONLY termination the
-// death arm accepts is SIGABRT specifically — any other crash (e.g. a future
-// deref regression on the trip path) must turn the test red, not pass as a
-// green death. stdout is flushed before fork so the child's abort-time flush
-// cannot replay the parent's buffered DrTest progress lines into the ctest log.
 static ChildOutcome RunCheckInChild(const hyde::DRFlowGraph &flow) {
-  std::fflush(nullptr);
-  const pid_t pid = fork();
-  if (pid < 0) {
-    return ChildOutcome::kForkFailed;
-  }
-  if (pid == 0) {
-    hyde::CheckInstanceOrder(flow);
-    _exit(0);  // reached ONLY when the check does not abort
-  }
-  int status = 0;
-  (void) waitpid(pid, &status, 0);
-  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-    return ChildOutcome::kCleanExit;
-  }
-  if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) {
-    return ChildOutcome::kSigAbrt;
-  }
-  return ChildOutcome::kOtherAbnormal;
+  return drtest::RunInForkedChild([&] { hyde::CheckInstanceOrder(flow); });
 }
 
 }  // namespace

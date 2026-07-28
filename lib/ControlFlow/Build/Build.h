@@ -320,6 +320,12 @@ bool TableIsDifferential(TABLE *table);
 
 // The lazily created per-table delta vector of `kind` (one of the eight
 // batch-skeleton kinds documented on `Context::table_delta_vecs`).
+// True iff the (table, kind) delta vector is ALREADY memoized (non-null) in
+// `context.table_delta_vecs`. The fence predicate for sites that must NEVER
+// let `TableDeltaVector` mint-on-miss (a producer-less orphan vector) and for
+// the V-INST-DRAIN monotone-regime provisioning checks (D3.a.1).
+bool HasTableDeltaVector(Context &context, TABLE *table, VectorKind kind);
+
 VECTOR *TableDeltaVector(ProgramImpl *impl, Context &context, TABLE *table,
                          VectorKind kind);
 

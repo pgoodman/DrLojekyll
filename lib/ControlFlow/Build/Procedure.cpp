@@ -201,6 +201,12 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
         if (vec == si->input_frontier.get()) {
           read.insert(vec);  // [R-REBUILD-a2] band-(a2) drains it (read-only)
         }
+        if (vec == si->removal_frontier.get()) {
+          read.insert(vec);   // D3.a.1 band-(a0) death drain (read-only)
+        }
+        if (vec == si->del_queue.get() || vec == si->add_queue.get()) {
+          written.insert(vec);  // D3.a.1 band-(b) signed publish appends
+        }
         break;
       }
 
@@ -257,13 +263,26 @@ static void CreateDifferentialMessageVectors(
   }
 }
 
-// D2.b keyed-instance lowering: build ONE SUBGRAPHINSTANCE region per
-// kSubgraphInstantiate op (birth/rebuild + band-(b) publish + self-lowered
-// seal — HP-1/OD-5 realization (ii): the seal is the region's own tail). Runs
-// in the (pre-split) flow proc so ExtractPrimaryProcedure threads the demand
-// frontier automatically. Under R-MONO no kInstanceDeath is minted (HP-17).
+// D2.b/D3.a.1 keyed-instance lowering: build ONE SUBGRAPHINSTANCE region per
+// kSubgraphInstantiate op, realizing the THREE-OP store protocol
+// {death?, instantiate, seal} as one region whose internal band order
+// (a0 death -> a1 birth -> a2 rebuild -> b publish -> Seal) is textual and
+// unreorderable (R-1: the death is the seal's head-mirror — a DR op with no
+// region of its own, self-lowered at the region HEAD). Runs in the
+// (pre-split) flow proc so ExtractPrimaryProcedure threads the frontier
+// vectors automatically. A kInstanceDeath exists only for a DIFFERENTIAL
+// demand table (P-DEATH, the `-demand-retract` channel); under R-MONO the
+// death band and the removal_frontier member stay absent.
 static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
                                    const DRFlowGraph &dr_flow, SERIES *seq) {
+
+  // D3.a.1 (M1): the death ops by store id. V-INST-PAIR guarantees at most
+  // one death per sid, so a plain map is total.
+  std::unordered_map<unsigned, const DROp *> death_by_sid;
+  for (const DROp *dop : dr_flow.OpsOfKind(DROpKind::kInstanceDeath)) {
+    death_by_sid.emplace(dop->instance_store_id, dop);
+  }
+
   for (const DROp *op : dr_flow.SubgraphInstances()) {
     const unsigned sid = op->instance_store_id;
     if (sid >= dr_flow.instances.size()) {
@@ -284,6 +303,22 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
       std::abort();
     }
 
+    // Orphan-mint fence [ALWAYS-ON] (Fable review [B], the A2.6 symmetry):
+    // under the differential regime the demand kNetAdditions frontier is a
+    // commit-band product that must ALREADY be memoized here — and the
+    // V-INST-DRAIN regime split no longer checks the ControlFlow-side vector
+    // for a differential demand (XC-3), so a mint-on-miss below would hand
+    // band-(a1) a producer-less always-empty frontier: zero births, silently.
+    // (Monotone regime: the eager boundary append provisioned it, and the
+    // validator's cf_ok arm still checks it — no fence needed.)
+    if (inst.differential &&
+        !HasTableDeltaVector(context, op->demand_table,
+                             VectorKind::kNetAdditions)) {
+      std::fprintf(stderr,
+                   "error: orphan-mint fence: band-(a1) demand frontier not "
+                   "pre-minted (store %u)\n", sid);
+      std::abort();
+    }
     VECTOR *const demand_front =
         TableDeltaVector(impl, context, op->demand_table,
                          VectorKind::kNetAdditions);
@@ -299,6 +334,80 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
     seq->AddRegion(si);
     si->demand_frontier.Emplace(si, demand_front);
     si->input_frontier.Emplace(si, input_front);  // [R-REBUILD-a2]
+
+    // D3.a.1: under the differential regime the band publishes SIGNED deltas
+    // into pub's own machinery (OQ-PUBLISH-ORDER) — fetch pub's memoized
+    // delete/add queues. Monotone stores keep null refs (TryAdd publish).
+    if (inst.differential) {
+      // Queue orphan-mint fence [ALWAYS-ON, §3.3 / A2.6 idiom]: the
+      // (pub, kDeleteQueue/kAddQueue) entries must ALREADY be memoized
+      // (minted by the step-1 claim-drain lowering) — TableDeltaVector mints
+      // on miss, which would silently hand the band drainless orphan vectors
+      // (+ id churn) for a differential pub the claim-drain mint skipped.
+      {
+        if (!HasTableDeltaVector(context, op->table_op_table,
+                                 VectorKind::kDeleteQueue) ||
+            !HasTableDeltaVector(context, op->table_op_table,
+                                 VectorKind::kAddQueue)) {
+          std::fprintf(stderr,
+                       "error: orphan-mint fence: pub delete/add queue not "
+                       "pre-minted (store %u)\n", sid);
+          std::abort();
+        }
+      }
+      si->del_queue.Emplace(
+          si, TableDeltaVector(impl, context, op->table_op_table,
+                               VectorKind::kDeleteQueue));
+      si->add_queue.Emplace(
+          si, TableDeltaVector(impl, context, op->table_op_table,
+                               VectorKind::kAddQueue));
+      // E8d (R-3): the band-(a2) demand-liveness gate probes the demand
+      // table's Present membership. Hash/Equals untouched — like the queues,
+      // demand_table is a pure function of the Equals key (V-INST-SOLE +
+      // V-INST-PAIR pin one demand table per store).
+      si->demand_table.Emplace(si, op->demand_table);
+    }
+
+    // D3.a.1 (M1/M2): the death band's drain source — the demand table's
+    // NETTED net-removals frontier (the commit-band frontier-filter product;
+    // the memoized fetch returns the SAME VECTOR that filter's lowering
+    // already minted). Null under R-MONO: the band and the member stay
+    // absent, and the emitter keys on presence (D-2 — the death is keyed by
+    // the OP, never by the region diff bit; d2 ruling).
+    if (auto dit = death_by_sid.find(sid); dit != death_by_sid.end()) {
+      const DROp *const death = dit->second;
+      // V-INST-DEATH-COHERENCE [ALWAYS-ON]: the death op must name the SAME
+      // demand/pub tables as its instantiate — a drifted mint would drain the
+      // wrong table's frontier or retract into the wrong pub. fprintf+abort,
+      // survives NDEBUG (the V-INST-DIFF-COHERENCE mold).
+      if (death->demand_table != op->demand_table ||
+          death->table_op_table != op->table_op_table) {
+        std::fprintf(stderr,
+                     "error: SUBGRAPHINSTANCE store %u: kInstanceDeath tables "
+                     "(demand/pub) disagree with its kSubgraphInstantiate\n",
+                     sid);
+        std::abort();
+      }
+      // A2.6 orphan-mint fence [ALWAYS-ON]: the (demand, kNetRemovals) entry
+      // must ALREADY be memoized (minted by the step-1 EmitFrontierFilter
+      // lowering) — TableDeltaVector mints on miss, which would silently
+      // hand the death drain a producer-less orphan vector.
+      {
+        if (!HasTableDeltaVector(context, death->demand_table,
+                                 VectorKind::kNetRemovals)) {
+          std::fprintf(stderr,
+                       "error: orphan-mint fence: death drain vector not "
+                       "pre-minted (store %u)\n", sid);
+          std::abort();
+        }
+      }
+      si->removal_frontier.Emplace(
+          si, TableDeltaVector(impl, context, death->demand_table,
+                               VectorKind::kNetRemovals));
+      context.emitted_instance_ops.push_back(
+          {sid, static_cast<uint8_t>(DROpKind::kInstanceDeath)});
+    }
+
     si->input_table.Emplace(si, op->input_table);
     si->pub_table.Emplace(si, op->table_op_table);  // HP-3: pub rides op_table
     si->key_positions = inst.key_cols;
@@ -338,7 +447,9 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
     }
 
     // V-INST-EMITTED (HP-1): enroll the instantiate AND the self-lowered seal
-    // (both kinds emitted by this region). Death is not minted under R-MONO.
+    // (the death, when present, enrolled above at its wiring site — the
+    // three-op protocol {death?, instantiate, seal} is emitted by this ONE
+    // region).
     context.emitted_instance_ops.push_back(
         {sid, static_cast<uint8_t>(DROpKind::kSubgraphInstantiate)});
     context.emitted_instance_ops.push_back(

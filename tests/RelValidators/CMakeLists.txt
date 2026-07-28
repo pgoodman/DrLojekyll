@@ -6,6 +6,7 @@
 # validators directly. Rel and ControlFlow are mutually-referencing static
 # libs resolved at the final executable link, so both are listed.
 add_executable(rel_validators_test
+  DeathFrontierTest.cpp
   InstanceOrderTest.cpp)
 
 # Rel.h transitively includes ControlFlow's internal impl headers

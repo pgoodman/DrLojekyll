@@ -1038,7 +1038,7 @@ class QueryImpl {
   // a negation/aggregate sink). `module` is threaded so the pass can
   // fabricate demand messages and reach the display manager for interning.
   bool ApplyDemandTransform(const ParsedModule &module, const ErrorLog &log,
-                            bool demand_mode);
+                            bool demand_mode, bool demand_retract);
 
   // Canonicalize the dataflow. This tries to put each node into its current
   // "most optimal" form. Previously it was more about re-arranging columns

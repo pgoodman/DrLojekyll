@@ -658,8 +658,12 @@ OutputStream &operator<<(OutputStream &os, ProgramGroupUpdateRegion region) {
 
 OutputStream &operator<<(OutputStream &os,
                          ProgramSubgraphInstanceRegion region) {
-  os << os.Indent() << "subgraph-instance i#" << region.StoreId()
-     << " demand " << region.DemandFrontier() << " input "
+  os << os.Indent() << "subgraph-instance i#" << region.StoreId();
+  // D3.a.1 band-(a0): only-when-present (differential demand only).
+  if (auto removal = region.RemovalFrontier(); removal) {
+    os << " death " << *removal;
+  }
+  os << " demand " << region.DemandFrontier() << " input "
      << region.InputFrontier() << " rescan "
      << region.InputTable() << " -> publish " << region.PubTable() << " key@{";
   auto sep = "";
@@ -667,7 +671,14 @@ OutputStream &operator<<(OutputStream &os,
   os << "} row@{";
   sep = "";
   for (auto p : region.RowPositions()) { os << sep << p; sep = ", "; }
-  os << "} seal";
+  // D3.a.1: the signed publish queues (differential regime only; the
+  // GROUP_UPDATE `emit-touched one-net-pair -> del / add` mold).
+  if (region.IsDifferential()) {
+    os << "} diff-publish -> " << region.DelQueue() << " / "
+       << region.AddQueue() << " seal";
+  } else {
+    os << "} seal";
+  }
   return os;
 }
 

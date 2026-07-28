@@ -47,6 +47,7 @@ namespace {
 static unsigned gFirstId = 0u;
 static bool gDemand = false;
 static bool gDemandInstance = false;
+static bool gDemandRetract = false;
 static PassPolicy gPassPolicy;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
@@ -66,7 +67,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   gPassPolicy.bisect_counter = 0u;
 
   auto query_opt =
-      Query::Build(module, error_log, gPassPolicy, gDemand);
+      Query::Build(module, error_log, gPassPolicy, gDemand, gDemandRetract);
   if (!query_opt) {
     return EXIT_FAILURE;
   }
@@ -218,6 +219,7 @@ static int HelpMessage(const char *argv[]) {
       << "                            procedure deduplication)." << std::endl
       << "  -demand                   Enable the live demand transform (magic-sets) for bound queries." << std::endl
       << "  -demand-instance          Enable the keyed-instance nested lowering for demanded subgraphs (implies -demand)." << std::endl
+      << "  -demand-retract           Enable demand retraction (implies -demand): bound queries gain a <name>_<bindings>_retract entry point." << std::endl
       << "  -opt-disable=<glob>[,..]  Skip optional passes by name (e.g. df.cse, cf.*)." << std::endl
       << "  -opt-only=<glob>[,..]     Run only the matched optional passes." << std::endl
       << "  -opt-bisect-limit=<N>     Skip optional pass applications with index > N (-1 prints indices)." << std::endl
@@ -477,6 +479,16 @@ extern "C" int main(int argc, const char *argv[]) {
                !strcmp(argv[i], "--demand-instance")) {
       hyde::gDemand = true;          // implies -demand
       hyde::gDemandInstance = true;
+
+    // Enable demand retraction (D3.a.1, OQ-RETRACT-POLICY SET-demand): the
+    // fabricated demand message goes @differential and bound queries gain a
+    // generated `<name>_<bindings>_retract` entry point. A semantic flag —
+    // OFF the PassPolicy registry, orthogonal to `-demand-instance` and to
+    // the 4 golden optimization modes.
+    } else if (!strcmp(argv[i], "-demand-retract") ||
+               !strcmp(argv[i], "--demand-retract")) {
+      hyde::gDemand = true;          // implies -demand
+      hyde::gDemandRetract = true;
 
     // Datalog module file search path.
     } else if (!strcmp(argv[i], "-M")) {

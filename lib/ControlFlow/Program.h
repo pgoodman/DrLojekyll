@@ -1173,8 +1173,24 @@ class ProgramSubgraphInstanceRegionImpl final : public OP {
 
   UseRef<VECTOR> demand_frontier;  // BAND (a1) drain source (birth keys)
   UseRef<VECTOR> input_frontier;   // BAND (a2) drain source (edge REBUILD keys)
+  UseRef<VECTOR> removal_frontier;  // BAND (a0) death drain source (netted
+                                    // demand net-removals). NULL under R-MONO —
+                                    // presence == a kInstanceDeath op for this
+                                    // store (D3.a.1).
+  // D3.a.1 band-(b) signed publish queues (pub's delete/add delta queues,
+  // differential regime only; NULL monotone) — the band-(b) signed publish
+  // appends; the SAME memoized TableDeltaVector objects pub's claim drains
+  // consume (per-epoch proc locals, so the band's post-drain appends are
+  // inert this slice — the commit sweep is the publish channel; see the b3
+  // §0.8 residual). Declared here so ClassifyVector's written-set arm (A2.1)
+  // covers them.
+  UseRef<VECTOR> del_queue;
+  UseRef<VECTOR> add_queue;
   UseRef<TABLE> input_table;       // the summarized monotone input
   UseRef<TABLE> pub_table;         // the published answer relation
+  UseRef<TABLE> demand_table;      // D3.a.1 differential regime only: probed
+                                   // by the band-(a2) demand-liveness gate.
+                                   // NULL monotone.
 
   // The pub-row partition (HP-6): published positions that are instance keys
   // (published from KeyAt) vs the row payload (published from the rescan).
@@ -1187,7 +1203,8 @@ class ProgramSubgraphInstanceRegionImpl final : public OP {
 
   const unsigned store_id;  // -> program.InstanceStores()[store_id]
   const bool differential;  // == DRInstance.differential; read by
-                            //    EmitSubgraphInstance in D3.a.1. FALSE today.
+                            //    EmitSubgraphInstance (the D3.a.1
+                            //    drop-scan/belt selector).
 };
 
 using SUBGRAPHINSTANCE = ProgramSubgraphInstanceRegionImpl;

@@ -1135,7 +1135,8 @@ static void BuildSubgraphInstanceOps(
     }
     flow.ops.push_back(std::move(inst));
 
-    // ---- kInstanceDeath (R-DIFF ONLY; ships INERT — HP-17) ----
+    // ---- kInstanceDeath (R-DIFF; LIVE since D3.a.1 under -demand-retract:
+    //      the fabricated demand message goes @differential — gate below) ----
     if (demand_table && TableIsDifferential(demand_table)) {
       DROp death(DROpKind::kInstanceDeath);
       death.ctx = Ctx::kSeed;
@@ -4258,8 +4259,8 @@ void ValidateDROps(
   // at D1.b (0 instance ops minted); always-on so the D2.b mint is covered the
   // instant it fires. V-INST-EFFECT is the V-AGG-EFFECT mold (per-op effect-
   // multiset totality, regime-split per §3.3); V-INST-PAIR is the V-AGG-PAIR
-  // mold (the per-store op-set shape). The 3-way (R-DIFF) arm ships INERT
-  // (HP-17).
+  // mold (the per-store op-set shape). The 3-way (R-DIFF) arm is LIVE since
+  // D3.a.1 (-demand-retract).
   {
     std::unordered_map<unsigned, unsigned> inst_per_store, death_per_store,
         seal_per_store;
@@ -4350,7 +4351,14 @@ void ValidateDROps(
           bool forbidden = false;
           for (const DREffect &fx : op.effects) {
             switch (fx.kind) {
-              case EffKind::kVecDrain: ++drains; break;
+              case EffKind::kVecDrain:
+                ++drains;
+                if (fx.vec_role != VecRole::kNetRemoval ||
+                    fx.value_table != op.demand_table) {
+                  ValidatorFail("V-INST-EFFECT: a death kVecDrain is not a "
+                                "net-removals drain of the demand frontier");
+                }
+                break;
               case EffKind::kInstanceDemand: ++demands; break;
               case EffKind::kStateOld: ++olds; break;
               case EffKind::kInstanceRebuild:
@@ -4493,35 +4501,53 @@ void ValidateDROps(
     }
   }
 
-  // V-INST-DRAIN (HP-2, §3.3): every instantiate's demand net-additions
-  // frontier must have been provisioned by the cut test (§2.2) — a missing
-  // frontier would birth zero keys silently. VACUOUS knob-off.
+  // V-INST-DRAIN (HP-2, §3.3; REGIME-SPLIT at D3.a.1 — XC-3): every instance
+  // drain must name a PROVISIONED frontier, checked against the producer that
+  // actually feeds it in its regime.
+  //  - MONOTONE demand/input: the eager boundary append (Build.cpp:999)
+  //    provisioned the ControlFlow VECTOR during the walk — it must exist NOW.
+  //  - DIFFERENTIAL demand: the frontiers are commit-band products; their
+  //    ControlFlow VECTORs are first minted inside the stratum lowering,
+  //    AFTER this validator (XC-3) — so check the DR-side vec + the
+  //    kFrontierFilter producer of the right sign, both minted by
+  //    BuildDRInventory before any validation.
+  const auto cf_ok = [&](TABLE *t, VectorKind kind) -> bool {
+    return HasTableDeltaVector(context, t, kind);
+  };
+  const auto dr_ok = [&](TABLE *t, VecRole role, int sign) -> bool {
+    auto tv = flow.table_vecs.find(t);
+    if (tv == flow.table_vecs.end() || !tv->second.count(role)) {
+      return false;
+    }
+    for (const DROp &f : flow.ops) {
+      if (f.kind == DROpKind::kFrontierFilter && f.table_op_table == t &&
+          f.table_op_sign == sign) {
+        return true;
+      }
+    }
+    return false;
+  };
   for (const DROp &op : flow.ops) {
     if (op.kind != DROpKind::kSubgraphInstantiate) {
       continue;
     }
-    auto it = context.table_delta_vecs.find(op.demand_table);
-    const bool ok =
-        it != context.table_delta_vecs.end() &&
-        it->second.count(static_cast<unsigned>(VectorKind::kNetAdditions)) &&
-        it->second.at(static_cast<unsigned>(VectorKind::kNetAdditions)) !=
-            nullptr;
-    if (!ok) {
+    const bool demand_ok =
+        TableIsDifferential(op.demand_table)
+            ? dr_ok(op.demand_table, VecRole::kNetAddition, +1)
+            : cf_ok(op.demand_table, VectorKind::kNetAdditions);
+    if (!demand_ok) {
       ValidatorFail("V-INST-DRAIN: an instantiate's demand net-additions "
                     "frontier was never provisioned (OD-7/§2.2 gap)");
     }
-    // [R-REBUILD-a2] the edge(input) frontier drain must ALSO resolve.
-    auto et = context.table_delta_vecs.find(op.input_table);
-    const bool edge_ok =
-        et != context.table_delta_vecs.end() &&
-        et->second.count(static_cast<unsigned>(VectorKind::kNetAdditions)) &&
-        et->second.at(static_cast<unsigned>(VectorKind::kNetAdditions)) !=
-            nullptr;
-    if (!edge_ok) {
+    // [R-REBUILD-a2] input(edge) arm UNCHANGED: monotone this slice (a
+    // differential input is V-INST-SOLE-rejected upstream, :4335-4340;
+    // D3.a.2 owns the split here).
+    if (!cf_ok(op.input_table, VectorKind::kNetAdditions)) {
       ValidatorFail("V-INST-DRAIN: an instantiate's input(edge) net-additions "
                     "frontier was never provisioned (OD-4/R-a2 gap)");
     }
   }
+  CheckInstanceDeathFrontier(flow);  // D3.a.1 death clause (pure core).
 
   // §7b ONE-OP-PER-(message, receive, polarity): no receive owns two ingest
   // folds of one sign. (The message is determined by the receive — one io per
@@ -4755,6 +4781,37 @@ unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op) {
 // it is callable in isolation (the negative-space death test). Grouped by
 // `instance_store_id` (NEVER table_id, NEVER forcing_index — HP-3). Vacuous
 // under R-MONO (no death op). Reads only pinned_order + op kind/store id.
+// V-INST-DRAIN death clause (D3.a.1, G-4/G-5): every kInstanceDeath must
+// drain a PROVISIONED demand net-removals frontier — DR vec present AND the
+// `-` kFrontierFilter producer minted. PURE over the flow (no impl/context,
+// no TABLE deref — pointer identity only) so the negative space is
+// death-testable in tests/RelValidators (the CheckInstanceOrder mold).
+void CheckInstanceDeathFrontier(const DRFlowGraph &flow) {
+  for (const DROp &op : flow.ops) {
+    if (op.kind != DROpKind::kInstanceDeath) {
+      continue;
+    }
+    bool vec_ok = false;
+    if (auto tv = flow.table_vecs.find(op.demand_table);
+        tv != flow.table_vecs.end()) {
+      vec_ok = tv->second.count(VecRole::kNetRemoval) != 0u;
+    }
+    bool producer_ok = false;
+    for (const DROp &f : flow.ops) {
+      if (f.kind == DROpKind::kFrontierFilter &&
+          f.table_op_table == op.demand_table && f.table_op_sign == -1) {
+        producer_ok = true;
+        break;
+      }
+    }
+    if (!vec_ok || !producer_ok) {
+      ValidatorFail("V-INST-DRAIN: a death's demand net-removals frontier was "
+                    "never provisioned (no DR vec / no - frontier-filter "
+                    "producer) — G-DEMAND-NEG");
+    }
+  }
+}
+
 void CheckInstanceOrder(const DRFlowGraph &flow) {
   std::unordered_map<unsigned, unsigned> pinned_pos;
   for (unsigned i = 0u; i < flow.pinned_order.size(); ++i) {

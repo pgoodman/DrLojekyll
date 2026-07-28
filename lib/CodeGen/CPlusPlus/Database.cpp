@@ -756,6 +756,13 @@ void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
     auto si = ProgramSubgraphInstanceRegion::From(region);
     out.tables.insert(si.InputTable().Id());
     out.tables.insert(si.PubTable().Id());
+    // Fable review [D]: the band-(a2) demand-liveness gate reads the demand
+    // table under the differential regime — register it so the detail
+    // function's parameter set never depends on a sibling region happening
+    // to reference the same table.
+    if (si.IsDifferential()) {
+      out.tables.insert(si.DemandTable().Id());
+    }
     // band-(b) maintains the pub table's indices (EmitIndexAdds), so they ride
     // as ref-params too.
     for (DataIndex index : si.PubTable().Indices()) {
@@ -1664,6 +1671,38 @@ void Generator::EmitQueryFriends(const ProgramQuery &spec) {
     hh << ");\n";
   };
 
+  // D3.a.1 (`-demand-retract`): the generated RETRACT entry — a hidden
+  // friend `<name>_<pattern>_retract(db, log, functors, bound...)` (void)
+  // that injects the key into the demand handler's REMOVE vector via the
+  // retract injector proc. Emitted for BOTH query shapes (existence and
+  // cursor), before the `!has_free` early return.
+  if (spec.retract_function) {
+    const auto &rfx = EffectsOf(*spec.retract_function);
+    hh << hh.Indent() << "// Retract a standing demand for `" << decl.Name()
+       << "/" << decl.Arity() << "` (" << decl.BindingPattern() << ").\n";
+    hh << hh.Indent() << "template <typename Log, typename Functors>\n";
+    hh << hh.Indent() << "friend void " << name << "_retract(Database &db, Log &"
+       << (rfx.uses_log ? "log" : "") << ", Functors &"
+       << (rfx.uses_functors ? "functors" : "");
+    for (auto i = 0u; i < params.size(); ++i) {
+      if (is_bound[i]) {
+        hh << ", " << TypeName(module, params[i].Type()) << " "
+           << param_names[i];
+      }
+    }
+    hh << ") {\n";
+    hh.PushIndent();
+    hh << hh.Indent() << "assert(db.initialized_);\n";
+    hh << hh.Indent() << DetailName(*spec.retract_function) << "("
+       << DetailStateArgs(*spec.retract_function, "db.");
+    for (const auto &arg : bound_names) {
+      hh << ", " << arg;
+    }
+    hh << ");\n";
+    hh.PopIndent();
+    hh << hh.Indent() << "}\n\n";
+  }
+
   if (!has_free) {
     // Existence check.
     emit_signature_prefix();
@@ -2279,18 +2318,33 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
   cc << cc.Indent() << "}\n";  // for touched
 }
 
-// D2.b keyed-instance codegen (SUBGRAPH_INSTANTIATE, R-MONO a1-only). Band-(a1)
-// BIRTH: drain the demand net-additions frontier, FindOrAddInstance, the
-// V-INST-FRESH inline guard, TouchCurrent, then rescan the input keyed on the
-// instance key (a full scan with a key filter — the keyed index is a deferred
-// perf refinement; the DR spine already tags section-walk) and TryAdd each
-// matching row into `current`. Band-(b) PUBLISH: for each touched instance, the
-// (F,T) born set (current \ frozen) is published into the pub table. Then the
-// self-lowered Seal (HP-1/OD-5) swaps current->frozen.
+// D2.b/D3.a.1 keyed-instance codegen (SUBGRAPH_INSTANTIATE). Band-(a0) DEATH
+// (differential demand only, keyed on the removal_frontier's PRESENCE — D-2):
+// drain the netted demand net-removals frontier, FindInstance +
+// RecycleCurrent (Touch + current.Reset) — the dead key reaches band-(b) with
+// dropped = frozen \ current = ALL frozen rows, so the full (T,F) retract
+// rides the generic drop scan. Band-(a1) BIRTH: drain the demand
+// net-additions frontier, FindOrAddInstance, the V-INST-FRESH inline guard,
+// TouchCurrent, then rescan the input keyed on the instance key (a full scan
+// with a key filter — the keyed index is a deferred perf refinement; the DR
+// spine already tags section-walk) and TryAdd each matching row into
+// `current`. Band-(b) PUBLISH, two regimes: MONOTONE — for each touched
+// instance, the (F,T) born set (current \ frozen) is TryAdd-published into
+// the pub table. DIFFERENTIAL (D3.a.1) — the (T,F) drop scan runs FIRST per
+// touched iid (OVERDELETE-first, OQ-PUBLISH-ORDER): dropped = frozen \
+// current, SubDerivation + del-queue append (a dead key's empty current
+// makes this the full (T,F) retract); then the born scan publishes via
+// AddDerivation (DiffTable has no TryAdd) + add-queue append; the always-on
+// generated V-INST-PARTITION belt (RAT-7) checks born+carried==cur &&
+// dropped+carried==frz per iid. Then the self-lowered Seal (HP-1/OD-5)
+// swaps current->frozen.
 void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   EmitComment(region);
   const auto id = std::to_string(region.StoreId());
   const auto sname = "instance_" + id;
+  // D3.a.1: the drop-scan/belt/liveness-gate selector (== the store's
+  // descriptor bit == TableIsDifferential(pub), V-INST-DIFF-COHERENCE).
+  const bool diff = region.IsDifferential();
   const DataVector demand = region.DemandFrontier();
   const DataVector input_front = region.InputFrontier();  // [R-REBUILD-a2]
   const DataTable input = region.InputTable();
@@ -2349,6 +2403,42 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
     cc << cc.Indent() << "}\n";  // input rescan
   };
 
+  // band-(a0) DEATH [D3.a.1]: drain the NETTED demand net-removals frontier
+  // (rows == the instance key columns, the a1 mold). RecycleCurrent = Touch +
+  // current.Reset (its FIRST codegen caller):
+  //  - Touch sets TouchedFlag => the dead key's a1/a2 rescans SKIP this epoch
+  //    (the OD-15 suppression) and Seal visits the iid;
+  //  - current stays EMPTY => band-(b)'s drop scan retracts the key's WHOLE
+  //    frozen set (dropped = frozen \ current = frozen) — the full (T,F)
+  //    retract into pub's delete side rides the generic drop scan (b3);
+  //  - V-INST-FRESH unchanged: nothing here fills current (OD-15 coupling).
+  // FindInstance is NON-adding; kNoInstance SKIPS silently (R-6: unreachable
+  // today via netting + append-only iids; idempotence-preserving under
+  // D3.a.2 interleavings; divergence is loud via belt + eqgate).
+  // Netting kills same-batch demand flap upstream (handler NETBATCH + the
+  // commit-band was!=now filter), so a removal row is a genuine standing-
+  // demand death.
+  if (auto removal = region.RemovalFrontier(); removal) {
+    const auto death_arity =
+        static_cast<unsigned>(removal->ColumnTypes().size());
+    std::vector<std::string> dbinds;
+    for (unsigned i = 0u; i < death_arity; ++i) {
+      dbinds.push_back("d" + std::to_string(i));
+    }
+    cc << cc.Indent() << "for (const auto &[" << JoinExprs(dbinds, ", ")
+       << "] : " << VecName(*removal) << ") {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "const auto iid = " << sname << ".FindInstance(Key_"
+       << id << "{" << JoinExprs(dbinds, ", ") << "});\n";
+    cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance) {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << sname << ".RecycleCurrent(iid);\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";  // found
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";  // band-(a0) death drain
+  }
+
   // band-(a1) drain the demand frontier (rows == the instance key columns).
   const auto key_arity =
       static_cast<unsigned>(demand.ColumnTypes().size());
@@ -2393,15 +2483,41 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
     cc.PushIndent();
     cc << cc.Indent() << "const auto iid = " << sname << ".FindInstance(Key_"
        << id << "{" << JoinExprs(ekeyexprs, ", ") << "});\n";
-    // Live-demanded gate + first-touch dedup ([D-COLLAPSE]).
-    cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance && !" << sname
-       << ".TouchedFlag(iid)) {\n";
+    if (diff) {
+      // D3.a.1 DEMAND-LIVENESS gate (R-3): iid existence stopped implying
+      // liveness when demand became retractable (append-only iids, no
+      // tombstone — OD-15; TouchedFlag resets at Seal). Gate the rebuild on
+      // the demand table's POST-COMMIT presence for the key (Present). Sound
+      // because the demand table is QUIESCENT in an input-edge epoch (one
+      // entry call = one epoch; the edge handler never writes demand) —
+      // Present == committed presence. Flat agrees by construction (the edge
+      // joins against the absent demand row). D3.a.2 RIDER: a differential
+      // input interleaving re-derives this quiescence argument.
+      const auto demand_member = table_member[region.DemandTable().Id()];
+      // Fable review [I]: the demand probe nests INSIDE the iid check so the
+      // common stray/undemanded-edge rows (iid == kNoInstance) pay no hash
+      // probe on this hot per-edge path.
+      cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance) {\n";
+      cc.PushIndent();
+      cc << cc.Indent() << "const auto dq = " << demand_member << ".Find({"
+         << JoinExprs(ekeyexprs, ", ") << "});\n";
+      cc << cc.Indent() << "if (dq != ::hyde::rt::kNoRow && " << demand_member
+         << ".Present(dq) && !" << sname << ".TouchedFlag(iid)) {\n";
+    } else {
+      // Live-demanded gate + first-touch dedup ([D-COLLAPSE]).
+      cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance && !" << sname
+         << ".TouchedFlag(iid)) {\n";
+    }
     cc.PushIndent();
     // The SAME rescan as band-(a1); the key filter compares the edge row's
     // own key cols (e<in_key[j]>), not a demand bind.
     emit_instance_rescan(ekeyexprs);
     cc.PopIndent();
     cc << cc.Indent() << "}\n";  // live && !TouchedFlag
+    if (diff) {
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";  // iid != kNoInstance (review [I] nest)
+    }
     cc.PopIndent();
     cc << cc.Indent() << "}\n";  // edge drain
   }
@@ -2416,14 +2532,20 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   }
   const unsigned npub =
       static_cast<unsigned>(key_pos.size() + row_pos.size());
-  // Map each pub position to its source expr (KeyAt slot or the rescanned row).
-  std::vector<std::string> pub_exprs(npub);
-  for (unsigned r = 0u; r < key_pos.size(); ++r) {
-    pub_exprs[key_pos[r]] = "key.c" + std::to_string(r);
-  }
-  for (unsigned r = 0u; r < row_pos.size(); ++r) {
-    pub_exprs[row_pos[r]] = "row.c" + std::to_string(r);
-  }
+  // Map each pub position to its source expr (KeyAt slot or a store-row var).
+  // Row-var-parameterized (D3.a.1): the born scan binds `row` (from cur), the
+  // (T,F) drop scan binds `drow` (from frz).
+  const auto pub_exprs_for = [&](const char *rv) {
+    std::vector<std::string> es(npub);
+    for (unsigned r = 0u; r < key_pos.size(); ++r) {
+      es[key_pos[r]] = "key.c" + std::to_string(r);
+    }
+    for (unsigned r = 0u; r < row_pos.size(); ++r) {
+      es[row_pos[r]] = std::string(rv) + ".c" + std::to_string(r);
+    }
+    return es;
+  };
+  const std::vector<std::string> pub_exprs = pub_exprs_for("row");
 
   cc << cc.Indent() << "for (const auto iid : " << sname << ".Touched()) {\n";
   cc.PushIndent();
@@ -2431,6 +2553,40 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   cc << cc.Indent() << "const auto &frz = " << sname << ".Frozen(iid);\n";
   cc << cc.Indent() << "const auto &key = " << sname << ".KeyAt(iid);\n";
   cc << cc.Indent() << "(void) key;\n";
+  if (diff) {
+    // RAT-7 / OQ-BELT: the V-INST-PARTITION counters. Always-on in generated
+    // code (fprintf+abort, survives NDEBUG) — the differential-mode invariant
+    // born+carried==cur && dropped+carried==frz. HP-7 stays the monotone
+    // stores' [DBG] Seal belt.
+    cc << cc.Indent() << "uint32_t born = 0u;\n";
+    cc << cc.Indent() << "uint32_t carried = 0u;\n";
+    cc << cc.Indent() << "uint32_t dropped = 0u;\n";
+    // The (T,F) DROP SCAN (G-TF-PUBLISH), BEFORE the born scan per touched
+    // iid (OQ-PUBLISH-ORDER OVERDELETE-first). dropped = frozen \ current;
+    // delete side = the GROUP_UPDATE fold shape (SubDerivation +
+    // del-queue append; enqueue unconditional — TryClaimDel re-tests at
+    // dequeue). A DEAD key (RecycleCurrent left cur empty) retracts its
+    // whole frozen buffer here — death needs no bespoke publish arm.
+    const auto dpub = pub_exprs_for("drow");
+    cc << cc.Indent() << "for (uint32_t r = 0; r < frz.NumRows(); ++r) {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "const auto &drow = frz.RowAt(r);\n";
+    cc << cc.Indent() << "if (cur.Find(drow) == ::hyde::rt::kNoRow) {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "++dropped;\n";
+    cc << cc.Indent() << pub_member << ".SubDerivation(" << RowExpr(dpub)
+       << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+    cc << cc.Indent() << VecName(region.DelQueue()) << ".Add(" << RowExpr(dpub)
+       << ");\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "} else {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "++carried;\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";  // (T,F) gate
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";  // rows of frozen
+  }
   cc << cc.Indent() << "for (uint32_t r = 0; r < cur.NumRows(); ++r) {\n";
   cc.PushIndent();
   cc << cc.Indent() << "const auto &row = cur.RowAt(r);\n";
@@ -2438,22 +2594,55 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   // the D2.b guardian): publish only rows absent from the sealed frozen buffer.
   cc << cc.Indent() << "if (frz.Find(row) == ::hyde::rt::kNoRow) {\n";
   cc.PushIndent();
-  if (!pub_has_indexes) {
-    cc << cc.Indent() << pub_member << ".TryAdd(" << RowExpr(pub_exprs)
-       << ");\n";
+  if (!diff) {
+    if (!pub_has_indexes) {
+      cc << cc.Indent() << pub_member << ".TryAdd(" << RowExpr(pub_exprs)
+         << ");\n";
+    } else {
+      const auto ins = "ins" + std::to_string(next_ins_id++);
+      cc << cc.Indent() << "if (const auto " << ins << " = " << pub_member
+         << ".TryAdd(" << RowExpr(pub_exprs) << "); " << ins << ".added) {\n";
+      cc.PushIndent();
+      EmitIndexAdds(pub, ins, pub_exprs);
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";
+    }
   } else {
-    const auto ins = "ins" + std::to_string(next_ins_id++);
-    cc << cc.Indent() << "if (const auto " << ins << " = " << pub_member
-       << ".TryAdd(" << RowExpr(pub_exprs) << "); " << ins << ".added) {\n";
-    cc.PushIndent();
-    EmitIndexAdds(pub, ins, pub_exprs);
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";
+    cc << cc.Indent() << "++born;\n";
+    // DiffTable has no TryAdd: the born side is the emit_add_deriv mold
+    // (AddDerivation + added_row-gated index adds + add-queue append).
+    if (!pub_has_indexes) {
+      cc << cc.Indent() << pub_member << ".AddDerivation(" << RowExpr(pub_exprs)
+         << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+    } else {
+      const auto d = "gd" + std::to_string(next_ins_id++);
+      cc << cc.Indent() << "const auto " << d << " = " << pub_member
+         << ".AddDerivation(" << RowExpr(pub_exprs)
+         << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
+      cc << cc.Indent() << "if (" << d << ".added_row) {\n";
+      cc.PushIndent();
+      EmitIndexAdds(pub, d, pub_exprs);
+      cc.PopIndent();
+      cc << cc.Indent() << "}\n";
+    }
+    cc << cc.Indent() << VecName(region.AddQueue()) << ".Add("
+       << RowExpr(pub_exprs) << ");\n";
   }
   cc.PopIndent();
   cc << cc.Indent() << "}\n";  // (F,T) gate
   cc.PopIndent();
   cc << cc.Indent() << "}\n";  // rows of current
+  if (diff) {
+    cc << cc.Indent() << "if (born + carried != cur.NumRows() || "
+       << "dropped + carried != frz.NumRows()) {\n";
+    cc.PushIndent();
+    cc << cc.Indent() << "std::fprintf(stderr, \"V-INST-PARTITION: instance "
+       << "%u born=%u carried=%u dropped=%u cur=%u frz=%u (store " << id
+       << ")\\n\", iid, born, carried, dropped, cur.NumRows(), "
+       << "frz.NumRows()); std::abort();\n";
+    cc.PopIndent();
+    cc << cc.Indent() << "}\n";
+  }
   cc.PopIndent();
   cc << cc.Indent() << "}\n";  // touched
 

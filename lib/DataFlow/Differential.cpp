@@ -1,6 +1,9 @@
 // Copyright 2026, Peter Goodman. All rights reserved.
 // Copyright 2020, Trail of Bits. All rights reserved.
 
+#include <cstdio>
+#include <cstdlib>
+
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/Parse.h>
 
@@ -89,21 +92,11 @@ void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
               changed = true;
             }
 
-            // If the negated view is differential, then we can't use `@never`.
-            if (negate->negated_view->can_produce_deletions) {
-              auto reported = false;
-              for (ParsedPredicate pred : negate->negations) {
-                if (pred.IsNegatedWithNever()) {
-                  reported = true;
-                  log.Append(pred.SpellingRange(),
-                             pred.Negation().SpellingRange())
-                     << "'@never' cannot operate on a predicate that can "
-                     << "produce differential updates";
-                }
-              }
-              (void) reported;
-              assert(reported);
-            }
+            // NOTE (D3.a.1 / DS-R4-10): the `@never`-over-differential reject
+            // that used to live HERE was visit-order fragile (it only ran
+            // while this negate's own can_produce_deletions was still false)
+            // and mode-split under -disable-dataflow-opt; it moved to the
+            // POST-fixpoint sweep below, which checks the final closure bits.
           } else {
             view->can_produce_deletions = true;
             changed = true;
@@ -139,6 +132,46 @@ void QueryImpl::TrackDifferentialUpdates(const ErrorLog &log,
         });
       }
     });
+  }
+
+  // DS-R4-10 (OQ-NEVER, ruled REJECT): '@never' assumes once-absent-always-
+  // absent, so a negated view that can produce differential updates
+  // invalidates the gate (its rows can appear AND retract). Checked POST-
+  // fixpoint on the final closure bits: the in-fixpoint check this replaces
+  // was visit-order fragile — a negate whose own can_produce flipped first
+  // (e.g. from a differential non-negated input) skipped the arm forever,
+  // and the uncanonicalized -disable-dataflow-opt shape slipped through
+  // (mode-split accept of a latent wrong-answer program; FINDINGS.md F25).
+  // The raw `negations` DefList retains dead defs (PrepareToDelete clears
+  // negated_view), hence the is_dead/null guard (A4.1).
+  if (log.IsEmpty()) {
+    for (const auto &negate : negations) {
+      if (negate->is_dead || !negate->negated_view || !negate->is_never ||
+          !negate->negated_view->can_produce_deletions) {
+        continue;
+      }
+      auto reported = false;
+      for (ParsedPredicate pred : negate->negations) {
+        if (pred.IsNegatedWithNever()) {
+          reported = true;
+          log.Append(pred.SpellingRange(), pred.Negation().SpellingRange())
+              << "'@never' cannot operate on a predicate that can "
+              << "produce differential updates";
+        }
+      }
+      // [ALWAYS-ON] (Fable review [C]): every user-written @never carries an
+      // @never-flagged ParsedPredicate, so `reported` holds on any parseable
+      // program — a miss means a fabricated/rebuilt negate reached the fence
+      // with no diagnostic anchor, and an assert would NDEBUG-strip into a
+      // SILENT ACCEPT of exactly the shape DS-R4-10 rejects (the F18/F25
+      // wrong-answer class). Hard-stop instead.
+      if (!reported) {
+        fprintf(stderr, "error: DS-R4-10 fence: a live @never negate over a "
+                        "differential negated view carries no @never-flagged "
+                        "predicate to diagnose\n");
+        abort();
+      }
+    }
   }
 
   if (!report_message_errors) {

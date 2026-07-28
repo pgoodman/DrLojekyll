@@ -759,11 +759,30 @@ DataVector ProgramSubgraphInstanceRegion::DemandFrontier(void) const noexcept {
 DataVector ProgramSubgraphInstanceRegion::InputFrontier(void) const noexcept {
   return DataVector(impl->input_frontier.get());
 }
+std::optional<DataVector>
+ProgramSubgraphInstanceRegion::RemovalFrontier(void) const noexcept {
+  if (auto vec = impl->removal_frontier.get()) {
+    return DataVector(vec);
+  }
+  return std::nullopt;
+}
 DataTable ProgramSubgraphInstanceRegion::InputTable(void) const {
   return DataTable(impl->input_table.get());
 }
 DataTable ProgramSubgraphInstanceRegion::PubTable(void) const {
   return DataTable(impl->pub_table.get());
+}
+DataTable ProgramSubgraphInstanceRegion::DemandTable(void) const {
+  return DataTable(impl->demand_table.get());
+}
+bool ProgramSubgraphInstanceRegion::IsDifferential(void) const noexcept {
+  return impl->differential;
+}
+DataVector ProgramSubgraphInstanceRegion::DelQueue(void) const noexcept {
+  return DataVector(impl->del_queue.get());
+}
+DataVector ProgramSubgraphInstanceRegion::AddQueue(void) const noexcept {
+  return DataVector(impl->add_queue.get());
 }
 const std::vector<unsigned> &
 ProgramSubgraphInstanceRegion::KeyPositions(void) const noexcept {

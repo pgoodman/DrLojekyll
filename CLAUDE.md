@@ -50,8 +50,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 175 corner-case programs as of the
-`:-` strict-order-separator landing — symrec_tie_1 is the standing
+(`<name>.dr` + `<name>.main.cpp`, 177 corner-case programs as of the
+D3.a.1 differential-demand landing — symrec_tie_1 is the standing
 determinism witness; agg_distinct_1 pins the aggregate multiplicity
 semantics + carries the projected-column lint shape; barrier_neck_1
 witnesses the `:-` separator, sugar for `@barrier` between every two
@@ -90,6 +90,8 @@ delta-relational-IR golden policy.
   as the negation reject), `algebra_dup_1`, `algebra_conflict_1` (the
   @-algebra pragma surface: a duplicate pragma / the mutually-exclusive
   @invertible+@recompute pair, rejected in Functor.cpp), `evm_func_parse`,
+  `negate_never_diff_1` (@never over a differential negated view — the
+  DS-R4-10 post-fixpoint fence, F25),
   `nonascii_1`, `truncated_decl_1`, `demand_multi_adorn_1` (a `-demand` query
   name carrying >1 binding pattern — the demand pass's clean per-name reject,
   via its `.drflags` sidecar), `demand_cyclic_1`/`demand_diff_input_1` (two
@@ -456,7 +458,13 @@ of the goldens, so mode-gating is mandatory.
 PassPolicy registry — a lowering selector, not a pass) lowers a recognized
 demanded subgraph to a keyed InstanceStore instead of the flat guard web (the
 D2.b nested lowering). It is ANSWER-IDENTICAL to flat `-demand`: the
-`demand_neighborhood_witness` case is the two-lowerings equivalence witness —
+`demand_neighborhood_witness` case is the two-lowerings equivalence witness
+(since D3.a.1 it runs `-demand -demand-retract` and exercises the DIFFERENTIAL
+regime — retract/death/rebirth phases + the `@differential` `nbhd_out` tap
+upgrading the eqgate to answer + sorted published-delta identity; its
+pre-retract twin `demand_neighborhood_mono_witness`, bare `-demand`, keeps the
+R-MONO nested lowering end-to-end covered — the Fable-review [A] coverage
+catch) —
 its `.eqgate` sidecar drives run_eqgate (runall.sh --one), which re-compiles the
 nested arm (`.drflags` + `-demand-instance`) with the SAME driver in all four
 optimization modes and byte-compares each mode's stdout against

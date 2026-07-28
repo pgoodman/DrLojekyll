@@ -2518,7 +2518,7 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
                                   const ErrorLog &log,
                                   const PassPolicy &policy,
-                                  bool demand_mode) {
+                                  bool demand_mode, bool demand_retract) {
 
   std::shared_ptr<QueryImpl> impl(new QueryImpl(module));
 
@@ -2584,7 +2584,7 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   // limit silently neutering it would also silently drop its clean
   // diagnostics (the demand_multi_adorn_1 reject class). A future stage may
   // define LOUD composition semantics; until then -demand alone decides.
-  if (!impl->ApplyDemandTransform(module, log, demand_mode)) {
+  if (!impl->ApplyDemandTransform(module, log, demand_mode, demand_retract)) {
     return std::nullopt;
   }
   if (num_errors != log.Size()) {

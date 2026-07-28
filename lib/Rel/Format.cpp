@@ -880,7 +880,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         break;
       }
 
-      case DROpKind::kInstanceDeath: {  // R-DIFF only; never rendered at D1.b/D2.b
+      case DROpKind::kInstanceDeath: {  // live since D3.a.1 (differential demand)
         os << " sign=" << SignGlyph(op.table_op_sign) << " ctx=" << CtxName(op.ctx)
            << " stratum=" << DROpStratum(flow, op) << " i#"
            << op.instance_store_id << "\n";

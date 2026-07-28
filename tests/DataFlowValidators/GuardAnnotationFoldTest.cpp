@@ -15,6 +15,7 @@
 //     differs -> child must EXIT 0.
 
 #include <DrTest.h>
+#include <DeathHarness.h>
 
 #include <cerrno>
 #include <csignal>
@@ -48,47 +49,14 @@ static hyde::GuardAnnotation MakeAnn(unsigned forcing_index,
       forcing_index};
 }
 
-// Child-termination classes the arms assert on. kForkFailed makes a fork()
-// failure loud in BOTH arms instead of masquerading as either outcome.
-enum class ChildOutcome { kCleanExit, kSigAbrt, kOtherAbnormal, kForkFailed };
+// The shared fork/waitpid harness (DeathHarness.h, Fable review [G]); the
+// death arm accepts ONLY SIGABRT.
+using drtest::ChildOutcome;
 
-// Run `CheckGuardAnnotationFold(loser, survivor)` in a forked child and
-// classify how the child terminated. The check is fprintf + abort(), so the
-// ONLY termination the death arm accepts is SIGABRT specifically -- any other
-// crash (e.g. a future deref regression on the trip path) must turn the test
-// red, not pass as a green death. stdout is flushed before fork so the
-// child's abort-time flush cannot replay the parent's buffered DrTest
-// progress lines into the ctest log.
 static ChildOutcome RunCheckInChild(const hyde::GuardAnnotation &loser,
                                     const hyde::GuardAnnotation &survivor) {
-  std::fflush(nullptr);
-  const pid_t pid = fork();
-  if (pid < 0) {
-    return ChildOutcome::kForkFailed;
-  }
-  if (pid == 0) {
-    hyde::CheckGuardAnnotationFold(loser, survivor);
-    _exit(0);  // reached ONLY when the check does not abort
-  }
-  // waitpid failure must be LOUD (the fork() treatment extended): with an
-  // unchecked -1 return, `status` stays 0 and WIFEXITED would classify the
-  // arm as a clean exit -- a vacuous green. Retry EINTR; any other failure
-  // (e.g. ECHILD under SIG_IGN-SIGCHLD auto-reaping) classifies as abnormal.
-  int status = 0;
-  pid_t waited = -1;
-  do {
-    waited = waitpid(pid, &status, 0);
-  } while (waited < 0 && errno == EINTR);
-  if (waited != pid) {
-    return ChildOutcome::kOtherAbnormal;
-  }
-  if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-    return ChildOutcome::kCleanExit;
-  }
-  if (WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT) {
-    return ChildOutcome::kSigAbrt;
-  }
-  return ChildOutcome::kOtherAbnormal;
+  return drtest::RunInForkedChild(
+      [&] { hyde::CheckGuardAnnotationFold(loser, survivor); });
 }
 
 }  // namespace

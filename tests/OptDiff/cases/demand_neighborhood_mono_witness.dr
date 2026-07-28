@@ -33,13 +33,3 @@
 edge(From, To) : add_edge(From, To).
 
 #query neighborhood(bound u64 Start, free u64 Node) : edge(Start, Node).
-
-; D3.a.1 RETRACT (OD-15 SET-demand): the driver retracts standing demand via
-; the generated retract entry (-demand-retract in .drflags); death is observed
-; through the published @differential tap below -- probes CANNOT see death
-; (a probe re-injects demand = rebirth). G-15: any published output over the
-; demanded closure MUST be @differential (Differential.cpp faithfulness check)
-; once the fabricated demand message is differential.
-
-#message nbhd_out(u64 Start, u64 Node) @differential
-    : neighborhood(Start, Node).
