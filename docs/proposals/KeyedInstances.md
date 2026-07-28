@@ -4846,3 +4846,46 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     the §20(AB) forward note (NeedsInductionCycleVector) + the
     standing D3.a inputs (HP-17, RAT-7 re-open, N-1, OWN-3,
     DS-R4-10, -demand-retract, >1 adornment) as the charter seed.
+    [EXECUTED — §20(AD).]
+
+(AD) D3.a STAGE (a) COMPLETE (2026-07-28, tip 428dae76): THE
+    SUBSTRATE PSEUDOCODE COMMITTED —
+    KeyedInstances.artifacts/d3a-substrate.md (the §7-idiom
+    whole-program map of the InstanceStore / instance-op /
+    demand-admission / differential subsystems as landed, every
+    load-bearing statement file:line-anchored at tip). Produced by
+    a 4-lane seed-UNREAD derivation fleet + xhigh seed-READ
+    consolidator (~683k tokens, zero deaths); the orchestrator
+    personally re-verified the five most load-bearing anchors at
+    code pre-commit. TWO CONTRACT-VS-CODE DRIFTS ADJUDICATED (code
+    is authority, both aspirational-R-DIFF prose that never
+    landed): XC-1 — the band-(b) (T,F) drop scan is ABSENT from
+    EmitSubgraphInstance (not "emitted inert" as d2b-design
+    :722-727/:826 reads); XC-2 — the SUBGRAPHINSTANCE region is
+    minted TWO-ARG (Procedure.cpp:284; d2b-design:689-690's third
+    TableIsDifferential ctor arg is UNLANDED — the region does not
+    know its diff-ness). HEADLINE STRUCTURAL FACTS the map
+    establishes: the store's algebra slot is FIXED monotone
+    (Table<RowT>, no signed nested representation);
+    RecycleCurrent — the whole-instance retraction primitive — is
+    BUILT AND UNIT-PINNED with ZERO codegen callers; a minted
+    kInstanceDeath today is FATAL-not-inert (the lowering enrolls
+    only instantiate+seal, so V-INST-EMITTED multiset-aborts);
+    DeathEffects assumes a demand kNetRemoval frontier NOTHING
+    provisions or validates; the whole demand chain is monotone by
+    construction (fabricated message never @differential, injector
+    mints no del_vec); V-INST-SOLE FORBIDS a differential input
+    outright. §5 = the 17-gap ledger (G-DIFF-TABLE, G-ROW-RETRACT,
+    G-OCCUPANCY/N-1, G-BELT-FLIP, G-TF-PUBLISH, G-DIFF-REGION,
+    G-DEATH-LOWER, G-DEMAND-NEG, G-RETRACT, G-INPUT-NEG, G-STALE,
+    G-REBIRTH, G-FRESH-BELT, G-OWN3, G-NEVER-DIFF,
+    G-INDUCTION-UNION, G-ADORN). §6 = the TWELVE ritual-head open
+    questions (OQ-MODEL the pivotal rescan-vs-incremental fork on
+    which every other OQ is contingent; OQ-AXES demand-vs-content
+    differentialness; OQ-RETRACT-POLICY ref-counted vs set-demand
+    + batch netting; OQ-N1; OQ-BELT the HP-7 replacement; OQ-
+    PUBLISH-ORDER; OQ-DEATH-VS-REBUILD; OQ-INPUT; OQ-ADORN-KEY;
+    OQ-OWN3 mechanism; OQ-NEVER reject-vs-promote; OQ-INDUCTION-
+    UNION). NEXT: the D3.a RITUAL-HEAD RULING BRIEF (the twelve
+    OQs with recommendations) — an OWNER RULING; stage (b) design
+    lanes open only under the ratified rulings.
