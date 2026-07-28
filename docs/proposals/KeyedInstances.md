@@ -5122,4 +5122,64 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     TouchedFlag/V-INST-FRESH coupling), then the d2 L3 ritual-head
     question BEFORE stage-(b) lanes; the landing record will be
     §20(AI) (the §20(AG) NEXT said (AH); this record took the
-    letter).
+    letter). [EXECUTED — §20(AI); the landing record shifts again,
+    to §20(AJ).]
+
+(AI) D3.a.1 STAGE (a) COMPLETE + THE d2/L3 RULING (2026-07-28, tip
+    a87aad5f): THE SLICE SUBSTRATE COMMITTED —
+    KeyedInstances.artifacts/d3a1-substrate.md (§1 retract channel /
+    §2 death path / §3 instance runtime+band / §4 frontiers+pub
+    interface+coupling timeline / §5 the 18-gap ledger mapped to
+    d1-d7+M1-M6 / §6 the L3 fact base / §7 the d2 adjudication).
+    Fleet: 3 seed-UNREAD opus lanes (retract channel; instance
+    runtime+band; frontiers+netting) + fleet1's lane3-death map as a
+    fourth lane (re-anchored at a87aad5f, no drift) + xhigh seed-READ
+    consolidator (~513k tokens, zero deaths); the ORCHESTRATOR
+    personally re-verified all ten load-bearing anchor families at
+    code pre-commit. HEADLINE STRUCTURAL FACTS: the d1 toggle is ONE
+    field (ParsedMessageImpl::differential_attribute, Parse.h:388,
+    never set by fabrication); the retract DATA channel is plumbed
+    end-to-end but WRITER-LESS (injector del_vec Build.cpp:416-440
+    passed `// Empty.`, never a VECTORAPPEND target; handler NETBATCH
+    Procedure.cpp:570-575 -> NetBatch Vec.h:176-218 = the OQ3 SET
+    netting, engaged only when a remove side exists); XC-3 (the ONE
+    substantive lane correction, both halves orchestrator-verified):
+    under a naive d1 flip the FIRST abort is V-INST-DRAIN
+    (Rel.cpp:4509-4512) — the eager boundary append is gated
+    !TableIsDifferential (Build.cpp:999) so a differential demand
+    table loses its kNetAdditions provisioning, and ValidateDROps
+    (Stratum.cpp:2186) runs BEFORE the differential frontier vecs are
+    minted in LowerDRFlow/LowerDRRounds (:2477/:2489) —
+    V-INST-EMITTED is the SECOND abort; hence d1 IS NOT INDEPENDENTLY
+    LANDABLE (co-design d1+d3(+d4) or interpose a temporary fence).
+    THE d2/L3 RULING (substrate §7; adjudicated at code by the
+    orchestrator, NO owner brief — the charter's escalation rule:
+    §6 proves the two spellings extensionally EQUAL on accepted
+    D3.a.1 programs, so no observable behavior turns on the choice):
+    **CO-ACTIVATION — P-STORE stays TableIsDifferential(pub) as
+    landed; the explicit disjunction REJECTED.** A @differential
+    demand message makes TableIsDifferential(pub) TRUE under BOTH
+    lowerings (the lib/DataFlow/Differential.cpp closure :56-65/
+    :114-140; -demand-instance is ControlFlow-only, Main.cpp:69 vs
+    :82, so the Query-graph bits are shared); the converse is fenced
+    (FENCE (iii) + Demand.cpp:624-627 + impure-MAP). Grounds: D3.a.2
+    divergence (diff input: P-STORE true/P-DEATH false) is handled
+    CORRECTLY by the pub-keyed spelling with no edit; one-authority
+    preserved (all three sinks read the one Rel.cpp:1055 `diff`
+    local); V-INST-DIFF-COHERENCE keeps its designed stamp-vs-live
+    meaning. BINDING for stage (b): the death gate KEEPS its own
+    demand-keyed predicate (Rel.cpp:1139) — extensional equality is a
+    THEOREM of the fence set, not an invariant; do NOT fold the two
+    predicates into a shared helper. Also recorded: any published
+    output over the demanded closure must itself be @differential or
+    the DataFlow faithfulness check hard-errors (Differential.cpp
+    :174-179) — a d6 witness-design constraint. Docs only; no gates
+    beyond anchor verification (no code moved). NEXT: stage (b) —
+    design lanes for the slice under this substrate + the ruling
+    (suggested split per the session charter: b1 retract channel +
+    SET netting; b2 death mint/lowering/enrollment + the demand
+    kNetRemovals frontier + V-INST-DRAIN extension; b3 the (T,F)
+    drop scan + RAT-7 partition belt + the selector going live; b4
+    witness/fixture + the DS-R4-10 fence), honoring XC-3's
+    co-landability constraint; then critics + adjudicator ->
+    d3a1-design.md; landing record = §20(AJ).
