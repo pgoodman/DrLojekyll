@@ -1159,9 +1159,10 @@ class ProgramSubgraphInstanceRegionImpl final : public OP {
  public:
   virtual ~ProgramSubgraphInstanceRegionImpl(void);
 
-  inline ProgramSubgraphInstanceRegionImpl(REGION *parent_, unsigned store_id_)
+  inline ProgramSubgraphInstanceRegionImpl(REGION *parent_, unsigned store_id_,
+                                           bool differential_)
       : OP(parent_, ProgramOperation::kSubgraphInstance),
-        store_id(store_id_) {}
+        store_id(store_id_), differential(differential_) {}
 
   void Accept(ProgramVisitor &visitor) override;
   uint64_t Hash(uint32_t depth) const override;
@@ -1185,6 +1186,8 @@ class ProgramSubgraphInstanceRegionImpl final : public OP {
   std::vector<unsigned> input_row_cols;
 
   const unsigned store_id;  // -> program.InstanceStores()[store_id]
+  const bool differential;  // == DRInstance.differential; read by
+                            //    EmitSubgraphInstance in D3.a.1. FALSE today.
 };
 
 using SUBGRAPHINSTANCE = ProgramSubgraphInstanceRegionImpl;
@@ -1944,6 +1947,9 @@ struct ProgramInstanceStore {
   unsigned id{0u};
   std::vector<TypeLoc> key_types;  // the demanded α column types (Key_<id>)
   std::vector<TypeLoc> row_types;  // the published row column types (Row_<id>)
+  bool differential{false};        // == DRInstance.differential; !differential
+                                   //    == InstanceStore monotone ctor arg.
+                                   //    FALSE today.
 
   explicit ProgramInstanceStore(unsigned id_) : id(id_) {}
 };

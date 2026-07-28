@@ -1458,7 +1458,11 @@ void Generator::EmitDatabaseDecl(void) {
   // D2.b: InstanceStores. R-MONO constructs monotone=true (default) — the HP-7
   // frozen-subset-current Seal belt is ON (RAT-4). R-DIFF (D3.a) passes false.
   for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
-    hh << ",\n" << hh.Indent() << "  instance_" << store.Id() << "(allocator_)";
+    hh << ",\n" << hh.Indent() << "  instance_" << store.Id() << "(allocator_";
+    if (store.IsDifferential()) {
+      hh << ", false";  // monotone=false: HP-7 belt OFF for a droppable store
+    }
+    hh << ")";
   }
   hh << " {}\n\n";
   hh.PopIndent();

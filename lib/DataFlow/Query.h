@@ -478,6 +478,14 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // once. Never sorted, never iterated into emission-visible order (HP-9).
   unsigned guard_annotation_index{~0u};
 
+  // Owning query, set ONLY on guard-annotated views (INV-OWN3-Q: non-null iff
+  // guard_annotation_index != ~0u), for the OWN-3 fold diagnostic's record
+  // lookup. nullptr for every other view. Never entered into any order.
+  // NOTE: QueryImpl is only forward-declared at this point (it becomes
+  // complete later in this header); a pointer-to-incomplete member is legal
+  // and the type is complete at deref time in View.cpp.
+  QueryImpl *query{nullptr};
+
   // The group ID of this node that it will push forward to its dependencies.
   unsigned group_id{0u};
 
@@ -1151,9 +1159,11 @@ class QueryImpl {
   // recount source.
   std::vector<RecognizedSubgraph> recognized_subgraphs;
 
-  // Count of both-annotated guard folds (survivor's entry kept). Dormant in
-  // the D1/D2 slice — first incremented when D3 multi-guard folds go live;
-  // until then the choke-point transfer's equality assert is the guard.
+  // Count of both-annotated guard folds (survivor's entry kept). Sole
+  // writer = the compatible-fold arm of CopyDifferentialAndGroupIdsTo
+  // (View.cpp), guarded by the OWN-3 always-on record-comparing diagnostic
+  // (D3.a.0). Read by the pre-Optimize annotation census (Demand.cpp),
+  // whose equation keeps this term even while folds are corpus-dormant.
   unsigned guard_annotation_folded_count{0u};
 
   // Number of strata (SCCs of the condensation) assigned by `Stratify`;
@@ -1167,6 +1177,16 @@ class QueryImpl {
   // owning stratum.
   std::vector<EquivalenceSet *> stratum_straddling_models;
 };
+
+// OWN-3 (ruled, always-on): the guard-annotation fold compatibility predicate
+// and the record-comparing incompatible-fold check. PURE free functions over
+// two GuardAnnotation records -- no views, no QueryImpl -- mirroring the RAT-3
+// CheckInstanceOrder idiom so a death test can hand-build inputs. Defined in
+// View.cpp; called from the CopyDifferentialAndGroupIdsTo both-set fold arm.
+bool GuardAnnotationsCompatible(const GuardAnnotation &a,
+                                const GuardAnnotation &b);
+void CheckGuardAnnotationFold(const GuardAnnotation &loser,
+                              const GuardAnnotation &survivor);
 
 using COL = QueryColumnImpl;
 using REL = QueryRelationImpl;

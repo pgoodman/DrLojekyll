@@ -995,6 +995,7 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     // CSE-fold, so neither can carry the record.
     guard->guard_annotation_index =
         static_cast<unsigned>(guard_annotations.size());
+    guard->query = this;  // INV-OWN3-Q: stamped beside the index
     guard_annotations.push_back(GuardAnnotation{
         static_cast<GuardAnnotation::Kind>(site.kind),
         GuardAnnotation::kDReader, GuardAnnotation::kBody,
@@ -1052,6 +1053,7 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     // the graph alone can no longer tell the two sides apart.
     guard->guard_annotation_index =
         static_cast<unsigned>(guard_annotations.size());
+    guard->query = this;  // INV-OWN3-Q: stamped beside the index
     guard_annotations.push_back(GuardAnnotation{
         GuardAnnotation::kReadAtTuple, GuardAnnotation::kRawSeed,
         GuardAnnotation::kQueryProjection,
@@ -1125,15 +1127,14 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
   QueryDemandForcing forcing{ParsedQuery::From(q_decl), d_msg, bound_indices};
   demand_forcings.emplace_back(std::move(forcing));
 
-  // ---------------------------------------------------------------------
-  // 11. ANNOTATION CENSUS (order-free counts; PRE-Optimize ONLY — dead-flow
-  //     elimination deletes annotated views outright with no orphan bucket,
-  //     so this equation is sound only on the freshly-stamped graph; it
-  //     runs exactly once, here). Debug severity: no reader consumes the
-  //     annotation under flat `-demand`; the always-on abort arm arrives
-  //     with the `-demand-instance` reader (D2.b).
-  // ---------------------------------------------------------------------
-#ifndef NDEBUG
+  // -------------------------------------------------------------------------
+  // 11. ANNOTATION CENSUS (order-free counts; ALWAYS-ON, PRE-Optimize ONLY --
+  //     dead-flow elimination (the Build.cpp Optimize call) deletes annotated
+  //     views outright with no orphan bucket, so the equation is sound ONLY on
+  //     this freshly-stamped graph; runs exactly once, here; NEVER relocate/
+  //     duplicate post-Optimize without orphan accounting. OWN-3 (ruled):
+  //     promoted always-on as the D3 multi-guard precondition.
+  // -------------------------------------------------------------------------
   {
     auto n_stamped = 0u;
     ForEachView([&n_stamped](VIEW *v) {
@@ -1141,10 +1142,23 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
         ++n_stamped;
       }
     });
-    assert(n_stamped + guard_annotation_folded_count ==
-           guard_annotations.size());
-    assert(recognized_subgraphs.size() == demand_forcings.size());  }
-#endif
+    if (n_stamped + guard_annotation_folded_count != guard_annotations.size()) {
+      fprintf(stderr,
+              "OWN-3: guard-annotation census mismatch: %u live-stamped + %u "
+              "folded != %zu total stamped (pre-Optimize; a stamp/fold "
+              "accounting bug)\n",
+              n_stamped, guard_annotation_folded_count,
+              guard_annotations.size());
+      abort();
+    }
+    if (recognized_subgraphs.size() != demand_forcings.size()) {
+      fprintf(stderr,
+              "OWN-3: recognized-subgraph/forcing count mismatch: %zu "
+              "subgraphs != %zu forcings\n",
+              recognized_subgraphs.size(), demand_forcings.size());
+      abort();
+    }
+  }
 
   module.MarkDemandFabricated();
   return true;

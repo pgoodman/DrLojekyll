@@ -1399,6 +1399,9 @@ class ProgramInstanceStoreInfo {
   const std::vector<TypeLoc> &KeyTypes(void) const noexcept;
   const std::vector<TypeLoc> &RowTypes(void) const noexcept;
 
+  // R-DIFF (D3.a): true iff the store can drop rows (belt off, monotone=false).
+  bool IsDifferential(void) const noexcept;
+
  private:
   friend class Program;
   explicit ProgramInstanceStoreInfo(const void *impl_) : impl(impl_) {}

@@ -1056,6 +1056,7 @@ static void BuildSubgraphInstanceOps(
     const unsigned sid = static_cast<unsigned>(flow.instances.size());
 
     DRInstance inst_desc(*ri.demanded_view, *ri.pub_view);
+    inst_desc.differential = diff;  // ONE spelling, shared with InstantiateEffects
     inst_desc.forcing_index = rs.forcing_index;
     // crit-pins-3: resolve the forcing name at mint (Format has no `query`),
     // fprintf+abort on an out-of-range forcing index — never a silent guess.

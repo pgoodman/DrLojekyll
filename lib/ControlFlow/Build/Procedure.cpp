@@ -271,6 +271,19 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
     }
     const DRInstance &inst = dr_flow.instances[sid];
 
+    // V-INST-DIFF-COHERENCE: the stamped bit must equal the live
+    // TableIsDifferential(pub) authority (the InstantiateEffects fork,
+    // Rel.cpp). A future edit that desyncs the mint stamp from the live
+    // predicate aborts here. Always-on; survives NDEBUG.
+    if (inst.differential != TableIsDifferential(op->table_op_table)) {
+      std::fprintf(stderr,
+                   "error: SUBGRAPHINSTANCE store %u: stamped differential=%d "
+                   "!= TableIsDifferential(pub)=%d\n",
+                   sid, inst.differential,
+                   TableIsDifferential(op->table_op_table));
+      std::abort();
+    }
+
     VECTOR *const demand_front =
         TableDeltaVector(impl, context, op->demand_table,
                          VectorKind::kNetAdditions);
@@ -281,7 +294,8 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
                          VectorKind::kNetAdditions);
 
     SUBGRAPHINSTANCE *const si =
-        impl->operation_regions.CreateDerived<SUBGRAPHINSTANCE>(seq, sid);
+        impl->operation_regions.CreateDerived<SUBGRAPHINSTANCE>(
+            seq, sid, inst.differential);
     seq->AddRegion(si);
     si->demand_frontier.Emplace(si, demand_front);
     si->input_frontier.Emplace(si, input_front);  // [R-REBUILD-a2]

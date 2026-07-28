@@ -252,6 +252,10 @@ ProgramInstanceStoreInfo::RowTypes(void) const noexcept {
   return static_cast<const ProgramInstanceStore *>(impl)->row_types;
 }
 
+bool ProgramInstanceStoreInfo::IsDifferential(void) const noexcept {
+  return static_cast<const ProgramInstanceStore *>(impl)->differential;
+}
+
 // Return the query used to build this program.
 ::hyde::Query Program::Query(void) const noexcept {
   return impl->query;

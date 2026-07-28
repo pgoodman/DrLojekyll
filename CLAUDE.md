@@ -32,7 +32,9 @@ cmake -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DDRLOJEKYLL_ENABLE_TE
 ## Test
 
 ```sh
-cd build/debug && ctest --output-on-failure   # MiniDisassembler, PointsTo, Runtime
+cd build/debug && ctest --output-on-failure   # DataFlowValidators, RelValidators,
+                                              # InstanceStore, MiniDisassembler,
+                                              # PointsTo, Runtime
 ```
 
 End-to-end tests compile a `.dr` file at build time via `compile_datalog()`

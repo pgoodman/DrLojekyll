@@ -4978,3 +4978,65 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     desired-states + the BLIND worktree prototype (hand-
     provisioned, tip-verified) converging with the pristine
     implementation; then Fable review; then land as ONE commit.
+    [EXECUTED — §20(AG).]
+
+(AG) D3.a.0 LANDED (2026-07-28) — THE FIRST D3.a SLICE: the OWN-3
+    promotion + the inert diff-selector plumbing, per d3a0-design.md
+    as amended by the Fable review; desired-states record =
+    d3a-desired-states.md SLICE 0. MECHANISM AS LANDED: (i) OWN-3 —
+    GuardAnnotationsCompatible/CheckGuardAnnotationFold pure free
+    functions (View.cpp; predicate = forcing_index + instance_key,
+    the Equals-invariant identity fields; record-printing
+    fprintf+abort, survives NDEBUG); the QueryImpl* back-pointer on
+    QueryViewImpl under INV-OWN3-Q (stamped at both Demand.cpp
+    sites, propagated on move, cleared paired; BOTH halves always-on
+    — the loser-side null guard AND the review-[2] survivor-side
+    owner guard); guard_annotation_folded_count gains its sole
+    writer; the Demand.cpp census promoted always-on PINNED
+    PRE-Optimize; NEW tests/DataFlowValidators (ctest 5→6,
+    fork/waitpid death arm SIGABRT + positive arm, EINTR-safe per
+    review [3]). (ii) plumbing — DRInstance.differential =
+    TableIsDifferential(pub) stamped at mint; the SUBGRAPHINSTANCE
+    region ctor third arg (Hash/Equals untouched); the
+    ProgramInstanceStore descriptor bit + IsDifferential() accessor;
+    always-on V-INST-DIFF-COHERENCE at the lowering; the store-ctor
+    emitter appends ", false" ONLY when differential. STAGE-(d)
+    THREE-WAY: design §4 pre-registered predictions == blind
+    worktree prototype (hand-provisioned at 118d723a, own build,
+    zero substantive deviations) == pristine (patch applied VERBATIM
+    after orchestrator spec review) — every prediction MATCHED incl.
+    the EXACTLY-ZERO nested-arm generated-text delta. FABLE REVIEW
+    (15-agent, high): 13 findings → 7 distinct, ZERO live
+    miscompiles — [2] survivor-side guard + [3] waitpid + [4]/[6]
+    doc comments FIXED pre-commit (proven dump-neutral post-fix);
+    [5] REFUTED-as-designed (the §2.2 ctor-arg adjudication);
+    [0]+[1] ACCEPTED AS THE LABELED PREDICATE RESIDUAL — a BINDING
+    D3.a.3 PRECONDITION (in-code at the View.cpp predicate + here):
+    before multi-guard folds first go live, re-derive the
+    compatibility predicate against REAL fold shapes with directed
+    witnesses in BOTH directions (survivorship: the surviving
+    record's role is load-bearing in ResolveLiveRecognition —
+    Rel.cpp:960 derives input_table only from kBody; invariance:
+    proxy-TUPLE-migrated annotations may legally fold with differing
+    instance_key — a false-abort hazard; the two findings pull
+    opposite ways, which is why the re-derivation waits for
+    witnesses). GATES (final tree, all against genuinely rebuilt
+    binaries, error-grep 0 ×3 trees ×2 rounds): SUITE PASS(175) ×2
+    (pre-fix + post-fix) with ZERO reds and ZERO golden churn; ctest
+    6/6 debug + 6/6 ASAN ×2; nested-arm datalog.h BYTE-IDENTICAL to
+    the pre-patch reference ×2 (+ prototype ×2); 20/20 pinned
+    surfaces regen ×2 (+ prototype ×2 + the blind lane's own);
+    E-62 CLEAN (5 sanctioned); config-invariance SINGLE-HASH
+    (demand_tc .rel + .h, 3-run debug + release); Q5
+    VACUOUS-BY-BYTE-IDENTITY (recorded, not asserted). RESIDUALS
+    OPENED: the [0]/[1] predicate re-derivation (D3.a.3
+    precondition); the §3 inheritance set stands (region bit goes
+    live at D3.a.1; the L3 pub-diff-vs-demand-diff predicate
+    reconciliation FIRST-CLASS at D3.a.1; coherence/death-test
+    liveness by perturbation at D3.a.1). NEXT: D3.a.1 — differential
+    demand (-demand-retract, kInstanceDeath ON + its lowering, the
+    (T,F) scan, the RAT-7 partition belt, the demand net-removals
+    frontier + V-INST-DRAIN extension) under the full per-slice
+    ritual, stage (a) seeded by d3a-substrate.md §5's
+    G-DEATH-LOWER/G-DEMAND-NEG/G-RETRACT/G-TF-PUBLISH/G-REBIRTH/
+    G-FRESH-BELT + the OD-15 rulings.

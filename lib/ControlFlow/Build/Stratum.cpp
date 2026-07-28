@@ -2335,6 +2335,7 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
     for (unsigned p : inst.row_cols) {
       desc.row_types.push_back(pub_cols[p].Type());
     }
+    desc.differential = inst.differential;  // same DRInstance field as region
     impl->instance_stores.push_back(std::move(desc));
   }
 

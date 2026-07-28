@@ -7,6 +7,8 @@
 #include <drlojekyll/Util/DefUse.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <iomanip>
 #include <sstream>
 
@@ -553,6 +555,72 @@ bool QueryViewImpl::PrepareToDelete(void) {
   return true;
 }
 
+// OWN-3 (ruled): the guard-annotation fold compatibility predicate. CSE folds
+// ONLY `Equals` JOINs, and `instance_key` (the join's pivot-position vector)
+// is part of what `Equals` structurally compares, so it is fold-invariant:
+// two guards cannot be `Equals` yet carry different stamped pivot vectors. By
+// contrast `demand_side`/`kind`/`role` are non-structural site STAMPS recorded
+// PRE-CSE that legitimately differ across a valid fold (on non-recursive
+// witnesses CSE folds the raw-seed TUPLE into the d-reader, so a kRawSeed and
+// a kDReader guard of the SAME forcing collapse); `guarded_read` /
+// `demanded_view` are opaque handles that differ by construction in any
+// two-view fold. Hence the predicate keys on exactly the two fold-invariant
+// identity fields. `is_instance_key` is always false this slice (a future
+// recursive-subgoal slice revisits it). PURE: no views, no QueryImpl.
+//
+// LABELED RESIDUAL (D3.a.0 Fable review [0]/[1]; a BINDING D3.a.3
+// precondition): this predicate is seated while the fold arm is
+// corpus-DORMANT (the pre-promotion debug assert proved no both-set fold
+// occurs today). Before multi-guard folds first go live (multi-adornment)
+// it MUST be re-derived against real fold shapes with directed witnesses,
+// in BOTH directions: (a) SURVIVORSHIP -- the surviving record's `role` is
+// load-bearing downstream (ResolveLiveRecognition derives input_table only
+// from a kBody-stamped record), so a role-divergent compatible fold needs a
+// survivor-record policy, not just admission; (b) INVARIANCE -- the
+// Equals-invariance argument for instance_key holds only while annotations
+// sit on guard JOINs; the propagate arm migrates them onto proxy TUPLEs
+// whose Equals does not compare pivot vectors, so a same-forcing
+// different-key fold may be LEGAL there (a false-abort hazard).
+bool GuardAnnotationsCompatible(const GuardAnnotation &a,
+                                const GuardAnnotation &b) {
+  return a.forcing_index == b.forcing_index &&
+         a.instance_key == b.instance_key;
+}
+
+// Deref-FREE record print (handles as raw %p, never dereferenced) so the pure
+// function is null-handle-safe for the death test's hand-built records.
+static void PrintGuardAnnotation(const char *label, const GuardAnnotation &g) {
+  fprintf(stderr,
+          "  %s: forcing_index=%u kind=%u demand_side=%u role=%u "
+          "is_instance_key=%d instance_key=[",
+          label, g.forcing_index, unsigned(g.kind), unsigned(g.demand_side),
+          unsigned(g.role), int(g.is_instance_key));
+  for (unsigned i = 0u; i < g.instance_key.size(); ++i) {
+    fprintf(stderr, "%s%u", i ? "," : "", g.instance_key[i]);
+  }
+  fprintf(stderr, "] guarded_read=%p demanded_view=%p\n",
+          static_cast<const void *>(g.guarded_read.impl),
+          static_cast<const void *>(g.demanded_view.impl));
+}
+
+// OWN-3 (ruled): the record-comparing incompatible-fold check, always-on
+// (bare fprintf(stderr, ...) + abort() that survives NDEBUG -- the DataFlow-
+// layer abort idiom, matching the DF-BIJECTION check in Format.cpp).
+void CheckGuardAnnotationFold(const GuardAnnotation &loser,
+                              const GuardAnnotation &survivor) {
+  if (GuardAnnotationsCompatible(loser, survivor)) {
+    return;
+  }
+  fprintf(stderr,
+          "OWN-3: incompatible guard-annotation fold -- two distinct demanded "
+          "instances collapsed into one survivor (mis-keyed instance). "
+          "loser forcing_index=%u, survivor forcing_index=%u:\n",
+          loser.forcing_index, survivor.forcing_index);
+  PrintGuardAnnotation("loser   ", loser);
+  PrintGuardAnnotation("survivor", survivor);
+  abort();
+}
+
 // Copy the group IDs and the receive/produce deletions from `this` to `that`.
 void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
 
@@ -579,15 +647,38 @@ void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
   if (guard_annotation_index != ~0u) {
     if (that->guard_annotation_index == ~0u) {
       that->guard_annotation_index = guard_annotation_index;
+      that->query = query;  // propagate (INV-OWN3-Q)
     } else {
-      // Two annotated guards folded into one survivor: dormant in the D1/D2
-      // slice (guard JOINs are structurally distinct and CSE-stable). A
-      // genuine two-distinct-guard fold trips this loudly in debug; the
-      // record-comparing incompatible-fold diagnostic (and the fold count)
-      // land at D3 when multi-guard folds first go live.
-      assert(that->guard_annotation_index == guard_annotation_index);
+      // Two annotated guards fold into one survivor. Always-on record-
+      // comparing diagnostic (OWN-3, ruled): compatible (same instance + key)
+      // folds are counted; an incompatible fold is a mis-keyed instance and
+      // aborts. The null check is ALWAYS-ON (NDEBUG-safe): a future index
+      // writer that forgets the co-located `query` stamp must abort loudly
+      // here, never degrade to a release SIGSEGV on the record fetch.
+      if (!query) {
+        fprintf(stderr, "OWN-3: annotated view with null query "
+                        "(INV-OWN3-Q broken)\n");
+        abort();
+      }
+      // The survivor-side half of INV-OWN3-Q is ALSO always-on: the record
+      // fetch below indexes `query->guard_annotations` with the SURVIVOR's
+      // index, so a survivor stamped against a null/different QueryImpl must
+      // abort loudly here, never reach an out-of-bounds operator[] in
+      // release (the Fable-review [2] catch).
+      if (!that->query || that->query != query) {
+        fprintf(stderr,
+                "OWN-3: fold survivor's query back-pointer %s the loser's "
+                "(INV-OWN3-Q broken on the survivor side)\n",
+                that->query ? "differs from" : "is null vs");
+        abort();
+      }
+      CheckGuardAnnotationFold(
+          query->guard_annotations[guard_annotation_index],
+          query->guard_annotations[that->guard_annotation_index]);
+      ++query->guard_annotation_folded_count;  // the SOLE writer
     }
     guard_annotation_index = ~0u;
+    query = nullptr;  // keep index+query paired (INV-OWN3-Q bidirectional)
   }
 }
 

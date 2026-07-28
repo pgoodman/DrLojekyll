@@ -878,6 +878,12 @@ class DRInstance {
                                    //   Format has no `query`, so the name is
                                    //   resolved at mint, abort-on-unresolvable)
   TABLE *pub_table{nullptr};       // answer INSERT target (the published rel)
+  bool differential{false};        // == TableIsDifferential(pub_table); the
+                                   //   R-DIFF store selector. FALSE program-
+                                   //   wide today (pub monotone for every
+                                   //   demanded subgraph). Read by the region
+                                   //   ctor + the descriptor +
+                                   //   V-INST-DIFF-COHERENCE.
   TABLE *demand_table{nullptr};    // demand relation model table
   TABLE *input_table{nullptr};     // summarized monotone input
   std::vector<unsigned> key_cols;  // α positions in the published row (ik: set)
