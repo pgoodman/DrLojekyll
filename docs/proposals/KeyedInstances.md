@@ -5182,4 +5182,82 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     drop scan + RAT-7 partition belt + the selector going live; b4
     witness/fixture + the DS-R4-10 fence), honoring XC-3's
     co-landability constraint; then critics + adjudicator ->
-    d3a1-design.md; landing record = §20(AJ).
+    d3a1-design.md; landing record = §20(AJ). [EXECUTED — §20(AJ);
+    the landing record shifts to §20(AK).]
+
+(AJ) D3.a.1 STAGES (b)/(c) COMPLETE (2026-07-28, tip 95251825): THE
+    BINDING DESIGN COMMITTED — d3a1-design.md + the four annexes
+    d3a1-b{1,2,3,4}-design.md (the design binds where it amends; a
+    lane's edit spec is adopted verbatim where it is silent). Fleet:
+    4 xhigh design lanes + 4 FRESH adversarial critics (pipelined
+    per lane) + 1 xhigh adjudicator (~1.59M tokens, zero deaths);
+    20 findings CONFIRMED at code and folded (0 refuted, 0
+    escalations — §8 OWNER-ESCALATION: NONE); the orchestrator
+    personally re-verified all ten load-bearing anchor families at
+    code pre-commit. THE MERGED SLICE = ONE commit, four sub-diffs:
+    (i) -demand-retract (implies -demand; orthogonal to
+    -demand-instance + the 4 modes; OFF PassPolicy) -> the
+    fabricated demand message gains a synthetic @differential token
+    -> the closure flips via the ORDINARY machinery (zero new
+    differential code flat); a SECOND kQueryMessageInjector + the
+    generated hidden friend <name>_<pattern>_retract(db, log,
+    functors, bound...) writes the del_vec; netting = the landed
+    NETBATCH arm. Driver contract RULED TOTAL+IDEMPOTENT (R-4:
+    SubExplicit structural no-op, AddExplicit kExplicit-bit
+    idempotence = the SET-demand second leg). (ii) death lowering =
+    band-(a0) INSIDE the SUBGRAPHINSTANCE region (R-1,
+    seal-precedent; epoch position is the operative constraint),
+    removal_frontier UseRef + {sid,kInstanceDeath} enrollment
+    closing V-INST-EMITTED, FindInstance+RecycleCurrent-only
+    emitter (kNoInstance silent-skip R-6), V-INST-DRAIN
+    REGIME-SPLIT + pure CheckInstanceDeathFrontier (new TEST in the
+    existing rel_validators_test binary, EINTR-safe mold; ctest
+    stays 6/6 binaries, R-5) + V-INST-DEATH-COHERENCE; ZERO
+    ControlFlow pre-provisioning (the differential machinery
+    provisions the demand sextet before ValidateDROps);
+    ClassifyVector's kSubgraphInstance arm extended for EVERY new
+    region vector (A2.1 + the adjudicator's del/add-queue
+    extension); orphan-mint fences at every memoized vec fetch
+    (A2.6/§3.3). (iii) band-(b) (T,F) drop scan (OVERDELETE-first
+    per iid; SubDerivation + DelQueue append), born arm ->
+    AddDerivation, always-on GENERATED V-INST-PARTITION belt,
+    IsDifferential()/DemandTable()/queue accessors, d5 ", false"
+    ctor by co-activation, PLUS the adjudicator-folded BAND-(a2)
+    DEMAND-LIVENESS GATE (R-3 = the b3-critique HIGH-1
+    zombie-rebirth catch, the slice's one genuine interface
+    mismatch X8: a dead key still binds an iid and TouchedFlag
+    resets at Seal, so a later edge would re-materialize the dead
+    neighborhood — the diff-arm a2 gate gains demand-table
+    Find+Present conjuncts; model-covered by the ALREADY-declared
+    kInstanceDemand read Rel.cpp:800-803, no effect-set change; NOT
+    an iid tombstone — OD-15 honored). (iv) witness growth (the
+    @differential nbhd_out tap; retract/dead-key-edge/rebirth/
+    second-death phases; send_expect_silent NORMATIVE with abort
+    teeth), the DS-R4-10 fence MOVED POST-FIXPOINT with the
+    is_dead||!negated_view filter (A4.1) + negate_never_diff_1
+    (all-4-modes diagnostic; suite 175->176) + FINDINGS.md F25 (the
+    @never-over-differential mode-split latent accept, caught
+    pre-code). LOUD RIDER R-2: the merged design REORDERS XC-3's
+    counterfactual abort chain — under the regime-split
+    V-INST-DRAIN a d1-only build's FIRST abort is V-INST-EMITTED
+    (verdict unchanged: one commit, no temporary fence; the
+    substrate's V-INST-DRAIN-first wording is superseded as a
+    counterfactual description, observed at the L2 checkpoint).
+    EQGATE UPGRADED: answer + sorted published-delta identity (the
+    tap). GATES PRE-REGISTERED (§6): pre-bless red set EXACTLY 10
+    lines (witness x4 GOLDEN-DIVERGE + oracle + monotone + eqgate
+    x4; any 11th red or byte off prediction = STOP); golden churn
+    EXACTLY 3 witness-owned files via --bless; [BYTE] everywhere
+    else (174 stdouts x4, 20 pinned surfaces, diagnostics, data/
+    36x4); witness header/rel/ir [STRUCT] with line-level
+    predictions re-anchored at the stage-(d) (d0) TAP-FUL PRE-d1
+    BASELINE (binding protocol addition); Q5 MUST RUN (ABABAB,
+    bytes move — the D3.a.0 waiver is void); ASAN hard-gated x2
+    sweeps (death path = use-after-free terrain); d7
+    liveness-by-perturbation table L1-L10 consolidated (incl. both
+    V-INST-DIFF-COHERENCE polarities with the TRUE-bit carrier —
+    the §20(AF) §3.6 obligation lands here). NEXT: stage (d) — (d0)
+    tap-ful baseline, compact desired-states, the dump-author
+    prediction lane + the BLIND worktree prototype (hand-
+    provisioned, tip-verified) converging with pristine; then Fable
+    review; then land as ONE commit. Landing record = §20(AK).
