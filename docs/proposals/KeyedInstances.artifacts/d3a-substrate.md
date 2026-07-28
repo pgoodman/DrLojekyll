@@ -884,4 +884,117 @@ op kind or a sanctioned mint; A.6(c) forbids a `kEagerUnion` on an owning merge)
 intended op kind; SD-4's set-oracle completeness rests on the short-circuit.
 
 ---
-END DRAFT — d3a-substrate-draft.md
+
+## §7 THE POST-D3.a.0 STATE (2026-07-28, tip ad2805ca; orchestrator-read
+##    anchors — the epoch's whole-program view AFTER slice 0, §20(AG).
+##    SINGLE-PASS: the next session's fleet re-verifies THIS section +
+##    §20(AD)-(AG) before D3.a.1 code. §1-§6 above are the PRE-slice-0
+##    map stamped at 428dae76 — still the subsystem authority where
+##    slice 0 did not touch it; anchors there may have drifted by the
+##    slice-0 insertions.)
+
+    THE PIPELINE AS IT STANDS (only the slice-0 deltas spelled out;
+    everything else per §1-§6):
+
+    demand pass (lib/DataFlow/Demand.cpp):
+      stamp sites :996-998 / :1053-1056 now stamp the PAIR
+        {guard_annotation_index, query} (INV-OWN3-Q: non-null iff
+        annotated; the QueryImpl* back-pointer is mechanism (B))
+      the ANNOTATION CENSUS (:1131-1160) is ALWAYS-ON, PINNED
+        PRE-Optimize (dead-flow deletes annotated views only
+        post-Optimize; never relocate without orphan accounting);
+        equation keeps the folded term.
+    the fold choke (lib/DataFlow/View.cpp):
+      GuardAnnotationsCompatible :584 (forcing_index + instance_key —
+        the Equals-invariant identity fields) carries THE LABELED
+        RESIDUAL comment (:571-583): a BINDING D3.a.3 precondition to
+        re-derive the predicate against real fold shapes (survivorship
+        role policy; proxy-TUPLE invariance) — the two Fable findings
+        pull opposite ways.
+      CheckGuardAnnotationFold :609 (record-printing fprintf+abort,
+        survives NDEBUG).
+      the both-set arm :651-681: TWO always-on INV-OWN3-Q guards
+        (loser null :658-662; survivor null-or-different :663-674) ->
+        the fold check -> ++guard_annotation_folded_count :678 (the
+        SOLE writer) -> paired clear :680-681.
+    the mint (lib/Rel/Rel.cpp):
+      inst_desc.differential = TableIsDifferential(pub_table) :1059 —
+        THE ONE AUTHORITY (same `diff` local the InstantiateEffects
+        fork reads); the kInstanceDeath gate :1139
+        (TableIsDifferential(demand_table)) UNCHANGED and still FALSE
+        on every accepted program.
+    the lowering (lib/ControlFlow/Build/Procedure.cpp):
+      V-INST-DIFF-COHERENCE :274-285 (always-on: stamped bit == live
+        TableIsDifferential(pub); vacuous-green, liveness-by-
+        perturbation owed at D3.a.1); the region ctor is THREE-ARG
+        :296-298 (Hash/Equals untouched — the bit is a pure function
+        of pub_table which Equals already keys on).
+    the descriptor + emitter:
+      ProgramInstanceStore.differential set at Stratum.cpp:2338;
+      ProgramInstanceStoreInfo::IsDifferential(); the Database.cpp
+      store-ctor emitter :1461-1464 appends ", false" ONLY when
+      differential — generated text is byte-identical program-wide
+      today (the bit is false everywhere).
+    the store (include/drlojekyll/Runtime/InstanceStore.h) —
+      UNTOUCHED by slice 0: RecycleCurrent :216 still has ZERO
+      codegen callers; the HP-7 monotone belt :185 still armed
+      everywhere (the selector exists, nothing selects false yet).
+    tests: ctest is SIX units (tests/DataFlowValidators
+      GuardAnnotationFoldTest — fork/waitpid, EINTR-safe).
+
+    THE PATH FORWARD AS DIFFS ON THIS STATE (ruled order, OD-15):
+
+    D3.a.1 — DIFFERENTIAL DEMAND (NEXT; opens at stage (b): the
+      epoch stage-(a) substrate is §1-§6 + this section):
+      d1 the RETRACT CHANNEL: the fabricated demand message gains
+         @differential (lib/Parse/Demand.cpp:163-204) -> the
+         injector's existing IsDifferential del_vec arm
+         (Build.cpp:416-421) goes live -> the demand relation model
+         becomes differential; batch SET netting per OQ-RETRACT
+         (add∩remove annihilates — the OQ3 semantics).
+      d2 FIRST RITUAL-HEAD QUESTION (the §20(AF) §3.3 L3 rider,
+         FIRST-CLASS): reconcile the two diff axes — the store/region
+         bit keys TableIsDifferential(pub) while the death mint keys
+         TableIsDifferential(demand_table) (Rel.cpp:1139). Rule
+         co-activation (a differential demand MAKES pub differential?)
+         or switch the store predicate to the explicit disjunction.
+      d3 DEATH GOES REACHABLE: the :1139 gate turns true ->
+         G-DEATH-LOWER discharges: the death lowering band
+         (RecycleCurrent wiring — its FIRST codegen caller; the (T,F)
+         full retract of the dead key's frozen rows into pub's delete
+         side), V-INST-EMITTED enrollment of {sid, kInstanceDeath},
+         the demand kNetRemoval frontier PROVISIONED (G-DEMAND-NEG)
+         + V-INST-DRAIN extended to check it.
+      d4 THE (T,F) DROP SCAN in band-(b) (G-TF-PUBLISH) + the RAT-7
+         PARTITION BELT (born+carried==cur.NumRows AND
+         dropped+carried==frz.NumRows, always-on) — drop scan BEFORE
+         born scan per touched iid; signed deltas into pub's own
+         machinery (OQ-PUBLISH-ORDER).
+      d5 THE SELECTOR GOES LIVE: monotone=false stores emit
+         ", false"; HP-7 off for them; V-INST-FRESH unchanged (the
+         pinned OQ-DEATH-VS-REBUILD three-way coupling:
+         netting kills same-batch flap; TouchedFlag suppresses
+         dead-key a2; Recycle leaves current empty).
+      d6 WITNESS: the eqgate witness grows RETRACT batches
+         (birth-rebuild-RETRACT-rebirth probes); flat -demand handles
+         retraction via the ordinary differential machinery, so the
+         eqgate flat==nested stays the live oracle; DEATH stays
+         oracle-blind (the .batches oracle never sees it).
+      d7 LIVENESS OWED: perturb V-INST-DIFF-COHERENCE + the OWN-3
+         fold abort + the partition belt with a TRUE bit (the
+         §20(AF) §3.6 obligation).
+      (rider) the DS-R4-10 REJECT fence (@never over a
+         CanReceiveDeletions negated view + directed witness, ruled
+         OQ-NEVER) has no assigned slice — natural ride-along here.
+    D3.a.2 — DIFFERENTIAL INPUT: lift FENCE (iii) (Build.cpp
+      nested pre-pass) + the V-INST-SOLE differential-input
+      forbiddance; the input net-REMOVALS frontier as a second a2
+      trigger -> RecycleCurrent + full rescan (G-INPUT-NEG; G-STALE
+      subsumed).
+    D3.a.3 — MULTI-ADORNMENT: loop the pass per adornment;
+      (query, BindingPattern) keying sweep; N disjoint stores
+      (OQ-ADORN-KEY). PRECONDITION: the View.cpp:571-583 labeled
+      fold-predicate re-derivation with directed witnesses.
+    DEFERRED all-epoch: recursive demand (FENCE (i) stands; the
+      §20(AB) NeedsInductionCycleVector precondition binds any
+      future toucher).
