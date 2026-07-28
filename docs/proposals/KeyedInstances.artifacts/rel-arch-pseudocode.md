@@ -205,6 +205,19 @@ the one effect-free lead-0 op that is NOT id-neutral at lower — the
 load-bearing ground it stays out of IsEagerMarkerKind; the 8 markers
 still lack a scalar count expect (the M15/ADJ-S12 oracle R-final
 owes); kNegateGate rides the generic render (no dedicated case).
+RE-AMENDED 2026-07-28 (the R-final-closing session, post §20(AA)): §7
+= THE POST-R-FINAL WHOLE-PROGRAM ARCHITECTURE as pseudocode
+(orchestrator-read anchors at tip 19f16652 — the same session that
+landed all five R-final slices wrote this), with the path forward
+expressed as diffs ON §7. §1-§6 are HISTORICAL below this banner:
+§2's Authority-B web, §4's M3/M4 walk-mint/record/replay, and the §5
+blocks describe the PRE-flip world and stand as lineage (their DONE
+notes are the discharge records); the M-precedents (M1-M17) still
+BIND as design law where their subject survives (M2' payload
+discipline, M9/M12 carrier-coverage layers, M15/M17 per-surface
+count-law referents, M16 deferred-emission referent pinning).
+SINGLE-PASS: the next session's fleet re-verifies §7 + §20(W)-(AA)
+before any new-epoch work; errata continue at E-138.
 ======================================================================
 
 # The two-authority seam, as pseudocode — and "DeltaRel → Rel" as diffs
@@ -1295,3 +1308,151 @@ owes); kNegateGate rides the generic render (no dedicated case).
       D4 zero emission change (dump-only; the PIN-3 gate battery is
          the template: A/B corpus is .df-blind, the pinned-golden
          referee + suite pre-bless reds are the structural gate).
+
+
+## §7. THE POST-R-FINAL ARCHITECTURE (2026-07-28, tip 19f16652;
+##     orchestrator-read anchors — the ONE-AUTHORITY pipeline as landed
+##     by §20(W)-(AA). SINGLE-PASS: the next fleet re-verifies THIS
+##     section against code before building on it.)
+
+    main(argv):                              # bin/drlojekyll/Main.cpp
+      flags -> streams (-rel-out sink SetRelDumpStream —
+        ControlFlow/Format.h; -df-out; -dr-out is the UNRELATED
+        amalgamation), gDemand, gDemandInstance, gPassPolicy
+      query   = Query::Build(module, log, policy, demand_mode)
+                # parse -> DataFlow IR; ApplyDemandTransform;
+                # Optimize; IdentifyInductions; Stratify
+      program = Program::Build(query, log, first_id, policy,
+                               demand_instance)
+      dumps; codegen.
+
+    Program::Build, the ONE mint+lower path (the §19(H) acceptance):
+
+    (A) THE WALK (emission-side; runs FIRST — F-ORDER: the flow
+        post-dates it). BuildEntryProcedure (Procedure.cpp):
+        per IO: ExtendEagerProcedure:
+          deletion-capable receive -> MakeStageOneIngestFolds pair ->
+            LowerIngestFold (queue VECTORAPPEND body; cursor discarded)
+          monotone table-backed    -> MakeMonotoneIngestFold ->
+            LowerIngestFold (empty UPDATECOUNT cursor = the hole,
+            INGEST-CURSOR-SHAPE guard) -> the descent fills it
+          table-less monotone      -> MakeIngestLoopOp ->
+            LowerIngestLoop (VECTORLOOP + VAR-per-column cursor,
+            INGEST-LOOP guard; M17 lower-in-place)
+        constant-fact roots: every all-constant TUPLE (the ONE
+          spelling IsAllConstantTupleDR, Rel.h:974) dispatched from
+          init with a LET binding.
+        the descent (BuildEagerInsertionRegions/BuildEagerRegion,
+        Build.cpp): InTryInsert fold -> cut test = IsCutSuccessorDR
+          (Rel.h:968 — THE one cut authority, called by the walk at
+          Build.cpp:969 AND by the DR derivation; S2 is deleted) ->
+          per dispatch arm CensusEagerMarkerAndBuild (Build.cpp:1119)
+          — the (kind, view) census increment and the UNTOUCHED
+          region-builder call are ONE helper (construction-paired:
+          enrollment reads this census for multiplicity, so the pair
+          must be indivisible); OD-4 boundary frontier appends.
+        joins/products: builders append pivot vecs + find-or-create
+          work items; the work-item CTOR records the (kJoinEmit/
+          kProductEmit, view, order, work_seq) EMISSION EVENT
+          (Context::emitted_join_events, Build.h:296; work_seq =
+          Context::work_item_seq++ in the WorkItem base ctor — the
+          drain-order tie-break ContinueJoinOrder lacks).
+        CompleteProcedure drains work_list (stable_sort by order,
+          pop_back LIFO): ContinueJoinWorkItem::Run -> BuildJoin
+          (index probes are FULL-KEY EXACT — Table.h:789ff contract;
+          NO TUPLECMP belt, Fold A; the delta sections conjoin NO
+          key equalities, Fold B; cf16_2 is the fold witness) ->
+          LowerJoinEmit pushes the emitted Site-5 key; the product
+          Run mints TABLEPRODUCT inline and LowerProductEmit records
+          (the appends-empty bail is a loud always-on abort).
+
+    (B) THE FLOW (model-side; derives, validates, lowers the
+        differential machinery). BuildStratumPhases (Stratum.cpp):
+        BuildDRInventory: differential families (crossovers/folds/
+          claims/sweeps/group-updates/instance ops) + per-IO ingest
+          folds + BuildDREagerInventory (Rel.cpp:1664) — THE FLIP:
+          derives the eager marker SET graph-side (roots = receive
+          successors + all-constant TUPLEs; cut at IsCutSuccessorDR;
+          transparent THROUGH inductive merges), enrolls in (Depth,
+          DeterministicOrder) x the walk-census multiplicity, and
+          runs the SD-4 SET-agreement oracle (Rel.cpp:1772, always-
+          on, proven live by perturbation) — the walk census is the
+          count source, the derivation is the set source, and they
+          must agree; kIngestLoop enrollment (IOs x Receives);
+          kJoinEmit EAGER replay from emitted_join_events (after
+          INGEST_LOOP; labels tail-stable).
+        DeriveDRStrata -> the DELTA kJoinEmit enrollment (its own
+          step; real join_stratum; AllSidesSameScc shared with the
+          lowering skip) -> validators (census 29 + kAllKinds
+          totality; A.6(c) structural recount; per-op ctor-contract
+          arms incl. kIngestLoop + kJoinEmit/kProductEmit; V-NEG-CTX;
+          V-READY/V-LINEAR/V-BAND-HAZARD; the section-7d role
+          cross-check — KEPT as a belt, no longer an authority) ->
+          Linearize.
+        Lower{DRFlow,DRRounds,CommitSweeps,GroupUpdate,
+          SubgraphInstance}; V-INGEST-XCHECK (fold + loop multisets)
+          + V-JOIN-EMIT-XCHECK (Stratum.cpp:2358 — runs on BOTH
+          BuildStratumPhases exits, incl. the no-phase-work early
+          return).
+
+    (C) OBSERVABILITY: the -rel-out dump (lib/Rel/Format.cpp) renders
+        flow.ops in pinned_order with op.<construction-index> labels —
+        post-flip the order is a PURE GRAPH FUNCTION (Depth +
+        DeterministicOrder within the lead-0 band; the work-list
+        schedule is retired from the surface); census = 29 kinds,
+        order-free multiset readout; the in-dump header token is
+        still `deltarel` (Format.cpp:402 — the DELIBERATE §20(AA)
+        residual, an unruled E-71 grammar question). ELEVEN .rel
+        goldens + 5 .df + 2 .h + 2 .ir pins (the 14 .irgold sidecars
+        are the count authority); eqset= partition tokens; the eqgate.
+
+    (D) CODEGEN (Database.cpp): joins emit probe-only bodies (no
+        re-checks either path); JOIN-KEY-DUP always-on (indexed key
+        columns pairwise distinct per side — the Fold B invariant
+        made structural); the scan-partial TUPLECMP belt REMAINS
+        (Build.h — probe-redundant, the FOLD C candidate, its own
+        witness + gates owed; EmitTableScan's full-scan fallback
+        re-checks are LOAD-BEARING, never fold them).
+
+    THE PATH FORWARD AS DIFFS ON §7 (the owner re-ranks at the next
+    epoch open; none of these is begun):
+
+      D3.a R-DIFF + MULTI-ADORNMENT (per OD-11 the ranked follower):
+        differential demanded content — kInstanceDeath mints ON
+        (the TableIsDifferential gate becomes reachable), band-(b)'s
+        (T,F) drop scan goes live (the RAT-7 partition-assert
+        question re-opens), the N-1 working_count drop revisits,
+        HP-17's executing-coverage residual retires, OWN-3 (the
+        View.cpp record-comparing diagnostic) PROMOTES always-on as
+        the admission precondition, -demand-retract, >1 binding
+        pattern per demanded name. Diff shape: mostly Runtime/
+        InstanceStore + the instance-op lowerings + demand-pass
+        admission; the §7 pipeline shape is untouched.
+      FOLD C (the scan-partial belt): BuildMaybeScanPartial stops
+        minting its TUPLECMP; same argument chain as Folds A/B; needs
+        its own witness (which corpus cases carry partial index
+        scans — negation checkers/checkmember rescans) + structural
+        gates + bench; emission-shape, never byte-identity.
+      THE HEADER-TOKEN MINI-DIFF: `deltarel` -> `rel` in the dump
+        grammar (Format.cpp:402) — an E-71 ruling + an 11-golden
+        one-line re-bless; cosmetic, self-contained.
+      AGENT-SUBSTRATE PHASE-0 (if ruled; the owner's 2026-07-27
+        design note + the recorded composition assessment, memory
+        agent-substrate-assessment): V1 (monotone arrival-order
+        confluence harness — final-state confluent / delta-stream
+        batch-relative is the sharpened claim), V12 (LLM repair-loop
+        baseline over current diagnostics), V13 (replay determinism
+        = canonicalized state hash), the composition report checked
+        into docs/agent-substrate/; F1-as-lint rides the DRFlowGraph
+        (the dependency-graph API already exists); F2 hosts on the
+        demand/keyed-instance machinery (~70% landed). Load-bearing
+        gaps if adopted: I9 makes canonical forms semver (F24 + DOT
+        pointer-names + cursor-order graduate to must-fix);
+        DS-R4-10; the generated database name needs a knob for
+        multi-module hosts.
+      STANDING RESIDUALS (unchanged): neq/lt/gt + positivity
+        spellings and publish-*/message= corpus-unwitnessed; the
+        table-less kEagerUnion render opt-unwitnessed; dead
+        BuildNestedLoopJoin (labeled); the eq/neq/lt/gt triple-copy
+        hygiene diff; F20/F24 record-only; no differential-PRODUCT
+        kProductArm golden; evm_array_parse identical-SIGABRT.
