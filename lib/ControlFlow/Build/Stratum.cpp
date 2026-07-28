@@ -1448,7 +1448,7 @@ static void LowerDRFlow(ProgramImpl *impl, Context &context,
                             &join_pivots,
                         SERIES *stratum_seq) {
 
-  // R-final (MED-1): forwards to the file-scope AllSidesSameScc authority
+  // R-final (MED-1): forwards to the single (header-shared) AllSidesSameScc authority
   // (shared with the delta enrollment + delta expect()); SccOf == RecursiveSCC.
   const auto all_sides_same_scc = [&](QueryView join_view) -> bool {
     return AllSidesSameScc(impl, recursive_sccs, join_view);

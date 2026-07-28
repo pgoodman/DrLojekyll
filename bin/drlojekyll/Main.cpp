@@ -281,7 +281,7 @@ extern "C" int main(int argc, const char *argv[]) {
 
   std::unique_ptr<hyde::FileStream> dot_out;
   std::unique_ptr<hyde::FileStream> df_out;
-  std::unique_ptr<hyde::FileStream> deltarel_out;
+  std::unique_ptr<hyde::FileStream> rel_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -371,12 +371,12 @@ extern "C" int main(int argc, const char *argv[]) {
                            << "' must be followed by a file path for "
                            << "Rel IR output";
       } else {
-        deltarel_out.reset(new hyde::FileStream(display_manager, argv[i]));
-        if (!deltarel_out->fs.is_open()) {
+        rel_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!rel_out->fs.is_open()) {
           error_log.Append() << "Unable to open '" << argv[i]
                              << "' for Rel IR output";
         }
-        hyde::gRelStream = &(deltarel_out->os);
+        hyde::gRelStream = &(rel_out->os);
       }
 
     // First ID for the control-flow IR. Helps when we use multiple auto-

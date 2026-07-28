@@ -84,7 +84,7 @@ static ChildOutcome RunCheckInChild(const hyde::DRFlowGraph &flow) {
 // The HP-3 death test: a plus-before-minus (instantiate pinned before death)
 // MUST trip V-INST-ORDER — and the trip must be the ValidatorFail abort
 // (SIGABRT), not just any abnormal termination.
-TEST(DeltaRelValidators, InstOrderTripsOnPlusBeforeMinus) {
+TEST(RelValidators, InstOrderTripsOnPlusBeforeMinus) {
   const hyde::DRFlowGraph flow = MakeTwoOpFlow(/*instantiate_first=*/true);
   ASSERT_EQ(static_cast<int>(ChildOutcome::kSigAbrt),
             static_cast<int>(RunCheckInChild(flow)));
@@ -92,7 +92,7 @@ TEST(DeltaRelValidators, InstOrderTripsOnPlusBeforeMinus) {
 
 // The positive control: death pinned before instantiate is well-formed — the
 // check must return cleanly (no abort).
-TEST(DeltaRelValidators, InstOrderAcceptsMinusBeforePlus) {
+TEST(RelValidators, InstOrderAcceptsMinusBeforePlus) {
   const hyde::DRFlowGraph flow = MakeTwoOpFlow(/*instantiate_first=*/false);
   ASSERT_EQ(static_cast<int>(ChildOutcome::kCleanExit),
             static_cast<int>(RunCheckInChild(flow)));

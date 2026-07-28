@@ -4699,3 +4699,110 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     direction (the owner's 2026-07-27 design note + my composition
     assessment — Phase-0 V-series if it firms); Fold C; the
     pass-harness P2-P5 / §13 / §14 backlog.
+
+(AB) EPOCH-OPEN RE-VERIFICATION RECORD (2026-07-28, tip 4d3ae315; the
+    session-open items (0)+(1) EXECUTED per the §20(AA) close + the §7
+    SINGLE-PASS banner).
+    (0) Frozen A/B baselines RE-SNAPSHOTTED from tip into the session
+        scratchpad BEFORE any code (debug 11490b83… / release
+        e8809f6e…; both presets rebuilt clean, error-grep 0) — the
+        prior session's snapshots gone with its scratchpad. ASAN
+        cadence stands per-diff (§19(F)/(J)); the tip was docs-only
+        atop 19f16652, whose both-surface sweeps are the standing
+        green. [Post-errata the snapshots were REFRESHED from the
+        errata commit — see the gates paragraph below.]
+    (1) §7 (rel-arch-pseudocode.md:1313-1459) + §20(W)-(AA) + the
+        three rfinal contracts FLEET-RE-VERIFIED (house precedent):
+        3 seed-UNREAD opus derivation lanes (the post-flip
+        one-authority pipeline end to end; the kJoinEmit/kProductEmit
+        emission layer; the dump/census/key_of + codegen contracts at
+        census 29) + 3 seed-read adversarial verifiers (§7;
+        §20(W)/(X)/(Y) + rfinal-design §1-§3/§6; §20(Z)/(AA) +
+        rfinal-design §4-§5 + ruling brief + desired-states) + 1
+        sonnet mechanical lane + 1 xhigh consolidator (8 agents,
+        ~739k tokens; every candidate adjudicated AT the code; zero
+        lane deaths). The E-62 tripwire re-grepped by the
+        ORCHESTRATOR personally, TWICE (pre- and post-errata): CLEAN
+        (sole out-of-lib hits = the standing Stratum.cpp:1073 comment
+        + the RAT-3 InstanceOrderTest fixture, now under
+        tests/RelValidators). The carrier-golden referee EXECUTED by
+        the orchestrator personally: ALL TWENTY pinned golden
+        surfaces regenerate BYTE-IDENTICAL at tip (11 rel + 5 df +
+        2 h + 2 ir; the 14 .irgold sidecars the count authority) —
+        and the MECH lane's independent second regen agreed 20/20,
+        plus 11/11 census-29 lines byte-identical (all carrying
+        kIngestLoop=/kJoinEmit=), per-carrier op-line counts ==
+        census summaries (154 counts, 0 mismatch), map_3 hexdump
+        pins (c2 b7 middle dot, cmp=eq, functor=add_i32/3), the
+        cross-knob law opt==nocf / nodf==none on all 11 rel
+        carriers (33 extra compiles rc=0), d5's op.60 form=delta
+        stratum=6 with NO order=/seq=, and demand_tc's 4/8
+        table=-carrying kEagerJoin split (2 x %table:4 + 2 x
+        %table:15). VERDICT: SOUND-WITH-ERRATA — ZERO behavior
+        defects, ZERO false live-section claims; §7's every anchor
+        and §20(W)-(AA)'s every as-landed claim held. FOUR errata,
+        ALL cosmetic CODE-TEXT residuals of the NARROW rename /
+        stale comments (not doc falsities), applied in place:
+          E-138 LOW  Main.cpp: the -rel-out arm's LOCAL FileStream
+                     still spelled deltarel_out — renamed rel_out
+                     (4 sites :284/:374/:375/:379); flag/help/
+                     gRelStream/SetRelDumpStream were already clean.
+          E-139 LOW  tests/RelValidators/InstanceOrderTest.cpp: the
+                     two DrTest TEST(DeltaRelValidators, ...) suite
+                     labels -> TEST(RelValidators, ...) (:87/:95);
+                     dir/CMake target/ctest NAME were already clean.
+          E-140 COSM Stratum.cpp:1451 comment: AllSidesSameScc is
+                     HEADER-SHARED (Rel.h:1143 decl, cross-TU
+                     callers), not "file-scope" — comment respelled;
+                     the one-authority substance holds.
+          E-141 COSM Rel.cpp:1680 comment: the all-constant root
+                     dispatch is Procedure.cpp:823 (":826" was
+                     3-line drift; NOT a §7 anchor).
+        REFUTED (grounds in the consolidation record): the
+        gDeltaRelStream-vs-gRelDumpStream doc conflict (two DISTINCT
+        identifiers — Main.cpp driver-local gRelStream vs the
+        lib-side gRelDumpStream/DumpRelIfEnabled family — both
+        landed, neither doc misstates its object); the dead
+        census-free second BuildEagerUnionRegion caller as a
+        one-authority falsity (§7 claims pairing-indivisibility and
+        merge-transparency, not sole-callership; the Induction.cpp
+        :1005 caller is provably DEAD behind NeedsInductionCycle-
+        Vector's unconditional true and honestly labeled in-code);
+        the census totality-guard message nit (the ordinal lives in
+        a comment, never the emitted string). RECORD-ONLY forward
+        notes: (i) D3.a INPUT — SD-4 set-oracle COMPLETENESS rests
+        on NeedsInductionCycleVector's unconditional-true merge
+        short-circuit (Induction.cpp:12-13): if that TODO is ever
+        relaxed for R-DIFF, the union region on an induction-owning
+        merge must be MODELED BEFORE the relax (else an emitted
+        region the .rel dump cannot show, and SD-4 stays blind —
+        both sides exclude induction-owning merges); (ii) the COUNT
+        dimension has no independent runtime oracle by design
+        (§20(Z) honest framing re-confirmed; construction pairing +
+        Site-5 + emission A/B are the nets); (iii) the DELTAREL-
+        DUMP:/DELTAREL: stderr diagnostic prefixes + proposal-doc
+        name refs in code comments are deliberate NARROW-rename
+        residue (unranked hygiene). GATES on the errata diff (all
+        run against genuinely rebuilt binaries, error-grep 0):
+        20/20 pinned surfaces DUMP-NEUTRAL post-fix; SUITE PASS(175)
+        (irgold + eqgate live); ctest 5/5 debug + 5/5 ASAN (asan
+        tree rebuilt); E-62 re-grep CLEAN (live — the Rel.cpp edit
+        is a comment); frozen A/B snapshots refreshed from the
+        errata commit. MID-SESSION OWNER IDEATION (recorded, its own
+        proposal doc, same commit): @ephemeral on #foreign types —
+        values that MUST NOT be persisted (re-run the functor to
+        read); docs/proposals/EphemeralTypes.md is the binding
+        record (two readings kept separate; type-level primary —
+        dissolves taint propagation; the equality/hash exemption;
+        the reject-only V-EPHEMERAL slice-1; the @declassify knob;
+        placement: agent-substrate strongest synergy, WASM manifest
+        slot, recompute-on-read sequenced after D3.a; NOT ranked —
+        a mini-diff-class candidate note for the re-rank). Full
+        fleet record: session scratchpad fleet-newopen/ (disposable;
+        THIS entry is binding). Errata continue at E-142. NEXT: the
+        epoch re-rank — an OWNER RULING at the head (candidates per
+        §7's path-forward block: D3.a R-DIFF+multi-adornment; the
+        agent-substrate direction; Fold C; the header-token E-71
+        mini-diff; P2-P5/§13/§14; + the EphemeralTypes.md candidate
+        note) — brief presented in-session, code waits on the
+        ruling.

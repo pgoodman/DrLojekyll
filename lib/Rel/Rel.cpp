@@ -1677,7 +1677,7 @@ static void BuildDREagerInventory(ProgramImpl *impl, Context &context,
   };
 
   // Root 1 (flip-HIGH-1): all-constant-input TUPLEs — dispatched DIRECTLY at
-  // Procedure.cpp:826 (BuildEagerRegion(view, view)), NOT downstream of any
+  // Procedure.cpp:823 (BuildEagerRegion(view, view)), NOT downstream of any
   // receive, so receive-rooted reachability can never reach them. Mirror the
   // walk's all-constant test (Procedure.cpp:801-808) verbatim.
   for (QueryTuple tuple : query.Tuples()) {
