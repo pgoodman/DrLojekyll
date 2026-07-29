@@ -5344,3 +5344,76 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     from design §3.2 re-derives there) under the full per-slice
     ritual; then D3.a.3 multi-adornment (+ the View.cpp fold-
     predicate precondition + the [F] dedup).
+
+(AL) D3.a.2-OPEN RE-VERIFICATION RECORD (2026-07-28, tip bff75eb6;
+    the §8 SINGLE-PASS banner discharged). (0) Frozen A baselines
+    RE-SNAPSHOTTED from tip into the session scratchpad BEFORE any
+    code (debug + release + oracle binaries; BOTH witnesses'
+    nested-arm reference dumps, SHA-256-pinned; all three trees
+    rebuilt, error-grep 0); SUITE PASS(177) against the FROZEN A
+    binary; ctest 6/6 debug + 6/6 ASAN. (1) §8 + §20(AH)-(AK) + the
+    d3a1 contracts FLEET-RE-VERIFIED (house precedent): 2 seed-UNREAD
+    opus derivation lanes (lane1 retract/death/validators/band as
+    landed; lane2 the INPUT-side substrate D3.a.2 will touch) + 1
+    seed-READ adversarial verifier + 1 sonnet mechanical lane + 1
+    xhigh consolidator (5 agents, ~572k tokens, zero deaths). The
+    carrier-golden referee EXECUTED by the orchestrator personally:
+    20/20 pinned surfaces regenerate BYTE-IDENTICAL at tip; the MECH
+    lane's independent regen agreed 20/20, plus census x11 (all
+    kIngestLoop=/kJoinEmit=, kInstanceDeath=0), BOTH witnesses'
+    nested dumps byte-identical to the frozen refs (diff census
+    kInstanceDeath=1 kSubgraphInstantiate=1 kInstanceSeal=1
+    kSeedFold=7 kJoinEmit=2; mono kInstanceDeath=0), eqgate
+    SUITE: PASS (2 cases) 20/20 sub-verdicts, cross-knob 11/11,
+    ctest 6/6 both trees, L1/L10 spot-reruns 4/4. The E-62 re-grep
+    EXECUTED by the orchestrator personally: CLEAN (zero
+    body_ops/output_ops readers outside lib/Rel/; the 5 sanctioned
+    pinned_order hits). VERDICT: SOUND-WITH-ERRATA — ZERO false
+    behavioral claims, ZERO code-deviations, both seed-unread maps
+    converge with the verifier and §8/(AK); the D3.a.2 CHARTER IS
+    UNCHANGED (no e1-e8 premise false). ONE inter-lane contradiction
+    adjudicated at code (lane1 right, verifier wrong): the death
+    gate `if` sits at Rel.cpp:1140, NOT :1139 — the slice's two-line
+    comment respell at :1138-1139 pushed it down one; §8 had carried
+    the pre-slice anchor forward (historical :1139 citations in
+    (AH)/(AI)/§1-§7/annexes are correct at their stamps, untouched).
+    FOUR ERRATA (all COSM, all d3a1-substrate.md §8, applied by the
+    orchestrator per the consolidator's exact specs,
+    LINE-COUNT-PRESERVING; docs-only so binaries unmoved):
+      E-148 COSM §8 flags block Main.cpp range :488-497 -> :488-491
+                 (:493 opens the -M handler).
+      E-149a COSM §8 mint block gate anchor :1139 -> :1140 +
+                 "comment :1138 respelled" -> "comment :1138-1139".
+      E-149b COSM §8 THE TWO PREDICATES P-DEATH (:1139) -> (:1140)
+                 (load-bearing for the e5 divergence audit).
+      E-150 COSM §8 band block band-(b) :2540ff -> :2525ff.
+    ADVISORY for stage (a)/(b) (consolidation record, 9 items —
+    seeds, not rulings): ADV-3 is LOUD — the shared rescan mold
+    (Database.cpp:2366-2404) has NO presence filter; over a
+    DiffTable input it would re-materialize dead rows (a wrong-
+    answer shape unless the mold gains a Present conjunct — a
+    stage-(b) must-have). ADV-9: e3's "RecycleCurrent + full
+    rescan" wording is loose — V-INST-FRESH guarantees current is
+    EMPTY at band-(a) entry, so a live-key input-removal rebuild
+    likely reduces to the a2 Touch+rescan mold with a SECOND drain
+    source (the ritual-head question's feed; if Recycle is kept it
+    must stay behind !TouchedFlag or a same-epoch add-rescan is
+    silently wiped). Others: V-INST-SOLE's one abort string covers
+    two forbiddances (split when lifting, ADV-1); NO input-side
+    death analogue — input removals never mint death (ADV-2); the
+    nested pub is co-derived by flat guard-web joins AND band-(b) —
+    the symmetric-firing argument is unwritten, re-derive before a
+    third signed pathway (ADV-4); the input kNetRemovals PRODUCER
+    is free (generic both-sign mint Rel.cpp:2541ff) — the slice's
+    work is the drain side (ADV-5); V-INST-EFFECT's split is
+    pub-keyed with input_drains==1 hard-coded — the input branch
+    keys on a THIRD predicate axis, pose the L3-style question
+    before code (ADV-6); discharge N-1 explicitly at stage (a)
+    (ADV-7); demand_diff_input_1.dr's comment cites stale
+    Build.cpp:1344, fix when e1 flips it (ADV-8). GATES post-errata:
+    docs-only edits, binaries PROVABLY unmoved (no rebuild;
+    baselines stand). NEXT: D3.a.2 stage (a) — the input-side
+    substrate build-out (lane2's map + the advisories seed the
+    lanes), then the ritual-head a2-trigger-shape ruling BEFORE
+    stage-(b) lanes; this record took the charter's §20(AL) letter,
+    so the D3.a.2 landing record shifts to §20(AM)+.

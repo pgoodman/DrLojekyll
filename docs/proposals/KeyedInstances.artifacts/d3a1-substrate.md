@@ -746,7 +746,7 @@ pre-pass fence for the intermediate commits.
     out — everything else per §1-§6 modulo drift):
 
     flags (bin/drlojekyll/Main.cpp):
-      gDemandRetract :50; `-demand-retract` implies -demand :488-497;
+      gDemandRetract :50; `-demand-retract` implies -demand :488-491;
       threads ONLY into Query::Build (:70, fifth param) — DataFlow-side
       like -demand; -demand-instance stays ControlFlow-only. OFF
       PassPolicy; orthogonal to the 4 golden modes.
@@ -775,9 +775,9 @@ pre-pass fence for the intermediate commits.
       surface TOTAL+IDEMPOTENT (design R-4).
 
     the mint (lib/Rel/Rel.cpp):
-      kInstanceDeath gate :1139 (`demand_table &&
+      kInstanceDeath gate :1140 (`demand_table &&
       TableIsDifferential(demand_table)` — P-DEATH, demand-keyed, LIVE
-      under -demand-retract; comment :1138 respelled); DeathEffects
+      under -demand-retract; comment :1138-1139); DeathEffects
       unchanged (4-effect zero-counter signature); OD-2 sign sort +
       V-INST-ORDER death-before-instantiate unchanged.
 
@@ -813,7 +813,7 @@ pre-pass fence for the intermediate commits.
       gate :2487-2519 (diff arm ONLY: `if (iid != kNoInstance) { dq =
       demand.Find(key); if (dq != kNoRow && Present(dq) &&
       !TouchedFlag) rescan }` — the review-[I] nest; monotone arm
-      tip-verbatim); band-(b) two-regime :2540ff: the (T,F) DROP SCAN
+      tip-verbatim); band-(b) two-regime :2525ff: the (T,F) DROP SCAN
       (frz rows absent from cur -> SubDerivation + DelQueue append,
       OVERDELETE-first per iid) BEFORE the born scan (diff:
       AddDerivation + AddQueue + EmitIndexAdds gated on added_row;
@@ -846,7 +846,7 @@ pre-pass fence for the intermediate commits.
     THE TWO PREDICATES (the §7 ruling, as landed): P-STORE =
     TableIsDifferential(pub) (Rel.cpp mint stamp -> region ctor ->
     descriptor -> `, false`), P-DEATH = TableIsDifferential(demand)
-    (:1139). CO-ACTIVE on every accepted D3.a.1 program; they FIRST
+    (:1140). CO-ACTIVE on every accepted D3.a.1 program; they FIRST
     DIVERGE at D3.a.2 by design (diff input: P-STORE true, P-DEATH
     false — belt off, no death minted; the pub-keyed spelling already
     handles it). NEVER fold them.
