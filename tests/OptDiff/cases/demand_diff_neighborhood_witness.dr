@@ -1,0 +1,39 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; demand_diff_neighborhood_witness -- the D3.a.2 DIFFERENTIAL-INPUT eqgate
+; carrier and THE e5 DIVERGENCE WITNESS (d3a2-substrate H-16): the first program
+; where P-STORE (TableIsDifferential(pub), Rel.cpp:1071) is TRUE while P-DEATH
+; (TableIsDifferential(demand), Rel.cpp:1162) is FALSE. The `add_edge` input is
+; @differential (deletable) while the demand relation stays MONOTONE (bare
+; `-demand`, no `-demand-retract`), so the band-(a2) demand-liveness gate probes
+; a MONOTONE demand member -- soundness by IRREVOCABILITY (monotone demand never
+; retracts, d3a2-substrate XC-9), not the D3.a.1 quiescence argument.
+;
+; DEATH IS EDGE-DRIVEN, never demand-driven: demand is monotone, so a probe
+; re-injects demand idempotently and `neighborhood_bf_retract` does NOT exist. A
+; neighborhood SHRINKS by retracting its EDGES via the two-Vec differential
+; message `add_edge_2(db, log, functors, adds, removes)`. Death is observed
+; through the published @differential `nbhd_out` tap (probes cannot see death).
+; The band-(a2) input net-REMOVALS trigger (a2', R-A2-TRIGGER: TWO DRAINS) +
+; the Present-filtered rescan (ADV-3) are exactly what a live-demanded edge
+; retract exercises.
+;
+; HP-5: the graph carries edges OUTSIDE each probed key's neighborhood; each
+; probe ASSERTS its drained answer is EXACTLY neighborhood(Start), so an
+; over-materialized nested arm both aborts the driver AND diverges from the
+; golden. Under flat `-demand` this compiles and answers; the nested
+; `-demand-instance` lowering must be ANSWER-IDENTICAL on the same batches --
+; the two-lowerings equivalence gate (run_eqgate), refereed live: flat ==
+; nested == golden, PLUS sorted published-delta identity through nbhd_out.
+
+#message add_edge(u64 From, u64 To) @differential.
+
+#local edge(u64 From, u64 To).
+edge(From, To) : add_edge(From, To).
+
+#query neighborhood(bound u64 Start, free u64 Node) : edge(Start, Node).
+
+; G-15: any published output over the demanded closure MUST be @differential
+; (Differential.cpp faithfulness check) once the input closure is differential.
+#message nbhd_out(u64 Start, u64 Node) @differential
+    : neighborhood(Start, Node).

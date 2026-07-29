@@ -5558,4 +5558,84 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     whole-slice-first-green baseline in the WIP-committed prototype
     worktree, the desired-states author lane + the BLIND prototype
     converging with pristine; then Fable review; then land as ONE
-    commit. Landing record = §20(AO).
+    commit. Landing record = §20(AO). [EXECUTED — §20(AO).]
+
+(AO) D3.a.2 LANDED (2026-07-29) — DIFFERENTIAL INPUT: the fence
+    lifts, the a2' removal arm, the Present rescan, and the witness
+    2x2, per d3a2-design.md as amended by the Fable review;
+    desired-states record = d3a-desired-states.md SLICE 2; substrate
+    = d3a2-substrate.md (incl. §7 the R-A2-TRIGGER ruling).
+    MECHANISM AS LANDED: (i) FENCE (iii)'s diff_input arm DELETED
+    (cyclic + recursive-content siblings survive); V-INST-SOLE's
+    differential half lifted, pub-alias half reworded, + the NEW
+    induction-owned-input belt; input_diff = the THIRD predicate
+    axis (own spelling, never folded); InstantiateEffects grows the
+    kVecDrain{input, kNetRemoval} leg; V-INST-EFFECT totality
+    input_diff?3:2 + the O-1 closure belt (input_diff && !diff
+    aborts); V-INST-DRAIN both-sign dr_ok input arm;
+    region input_removal_frontier + InputRemovalFrontier() +
+    ClassifyVector arm + fenced pre-minted ± fetch +
+    V-INST-INPUT-COHERENCE; CheckInstanceInputArm (the D-1
+    deviation: a pure tested belt per the CheckInstanceDeathFrontier
+    factoring precedent — inline-path teeth joined to the D3.a.3
+    obligation) + InputArmTest.cpp (4 TESTs, DeathHarness mold;
+    ctest stays 6/6 binaries). (ii) band-(a2') = the edge
+    net-removals drain APPENDED after a2, a gate-set clone (NO
+    RecycleCurrent — the R-A2-TRIGGER fence, in-code comment);
+    the ONE rescan mold gains the input.Present(s) conjunct under
+    input_diff at ALL THREE sources; landed a0/a1/a2 bytes untouched.
+    (iii) comments only: the e4 lemma discharged the :2494-2495
+    RIDER; the five-way coupling block (D-2 home: EmitSubgraphInstance
+    head); the N-1 close; H-20 respells. (iv) the witness 2x2:
+    demand_diff_neighborhood_witness (the e5 carrier — the FIRST
+    P-STORE-and-not-P-DEATH program; census kInstanceDeath=0 beside
+    kSubgraphInstantiate=1, kSeedFold=6) + demand_diff_input_1
+    REPURPOSED diagnostic->golden (diff x diff; E-F1/E-F2/E-F2b/
+    E-F3; census kInstanceDeath=1, kSeedFold=8); suite 177->178;
+    eqgate carriers 2->4 (16 live verdicts). STAGE-(d) THREE-WAY:
+    blind prototype == blind DS-author BYTE-EQUAL on all 6 golden
+    surfaces + census (the DS lane derived kSeedFold correctly this
+    time); Phase-A red set EXACTLY the 14 predicted lines; churn
+    EXACTLY 6 NEW goldens (one amended in place by review WIT-4),
+    zero existing goldens touched. LANE INCIDENT (recorded): the P2
+    lane capped mid-suite — the orchestrator personally re-executed
+    Phase A, the cmp ritual, the bless, and Phase B (the standing
+    placeholder-gate rule); P3 supplied P2's missing WIP-commit as
+    the perturbation anchor. d7 L1-L22: all scratch rows FIRED with
+    recorded texts EXCEPT two HONEST masked negatives — L15 (the
+    forbidden ungated-late-Recycle produced NO red: belts silent AS
+    PREDICTED but split counters >= 2 ALSO masked eqgate/HP-5 — the
+    documentary fence is now demonstrably belt-AND-witness-invisible;
+    E-E red-team robustness flagged) and L17 (the ClassifyVector a2'
+    arm is belt-only on single-proc witnesses; teeth refuted for the
+    arm, kept as mold symmetry — review WIT-2). FABLE REVIEW
+    (workflow, high; 21 agents; 14 raw -> 12 verified -> 11 ranked):
+    ZERO HIGH, ZERO MED, zero live miscompiles; 7 FIXED pre-commit
+    (WIT-4 the E-F2b live-key retract cell — the one runtime-artifact
+    fix, its own golden amended; WIT-3 the .ir `input-removals`
+    only-when-present production, death-branch mold — the slice's ONE
+    E-71 grammar note, orchestrator-adjudicated, amending R-4's
+    zero-note tally; DOCS-3 the :1530-1537 fence anchor x4 sites;
+    DOCS-2/validators-1/validators-2/DOCS-1 comment respells);
+    1 DEFERRED-with-obligation (design-1 inline-validator teeth ->
+    D3.a.3, joins review-[F]); 4 ACCEPT. Dump-neutrality of every
+    comment fix PROVEN (20/20 pinned + both frozen witnesses
+    byte-identical on FINAL bytes). GATES (final bytes, personally
+    executed or re-executed; error-grep 0 x3 trees every rebuild):
+    SUITE PASS(178) debug post-fix; ASAN PASS(178) x2 sweeps + ctest
+    6/6 debug + 6/6 ASAN; 20/20 pinned regen [BYTE]; BOTH frozen
+    witnesses' nested .h/.rel/.ir byte-identical to the frozen refs;
+    config-invariance SINGLE-HASH x3 (both new witness arms flat+
+    nested + demand_tc) + release==debug; data/ corpus 144/144
+    old-vs-new byte-identical x4 modes; E-62 CLEAN (5 sanctioned);
+    eqgate 16/16 OK; Q5 progsize@128 release ABABAB MEASURED:
+    warm medians A=139ms vs B=139ms — compile-time NEUTRAL (cold
+    first pair discarded; A/B headers byte-identical). RESIDUALS
+    OPENED: the R-5 named obligation (body-walk/recognition widening
+    re-derives OB8(i)'s derived branch with a directed witness); the
+    design-1 inline-teeth obligation + the E2c ~24-line gate clone
+    join the D3.a.3 [F] dedup sweep; the L15 E-E red-team robustness
+    note. NEXT: D3.a.3 — multi-adornment (preconditions f1 the
+    View.cpp fold-predicate re-derivation with directed witnesses
+    BOTH directions + f2 the review-[F] retract/forcer dedup, now
+    carrying design-1 + the E2c clone).

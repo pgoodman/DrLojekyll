@@ -201,6 +201,9 @@ static void ClassifyVector(VECTOR *vec, REGION *region,
         if (vec == si->input_frontier.get()) {
           read.insert(vec);  // [R-REBUILD-a2] band-(a2) drains it (read-only)
         }
+        if (vec == si->input_removal_frontier.get()) {
+          read.insert(vec);  // [D3.a.2 a2'] input net-removals drain (read-only)
+        }
         if (vec == si->removal_frontier.get()) {
           read.insert(vec);   // D3.a.1 band-(a0) death drain (read-only)
         }
@@ -322,11 +325,35 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
     VECTOR *const demand_front =
         TableDeltaVector(impl, context, op->demand_table,
                          VectorKind::kNetAdditions);
-    // [R-REBUILD-a2] the SAME memoized edge frontier the eager cut-successor
-    // append (Build.cpp:999-1004) writes into — a2 drains it, provisions none.
+    // [R-REBUILD-a2] the memoized input net-additions frontier.
+    //  - MONOTONE input: the eager cut-successor boundary append
+    //    (Build.cpp:1110-1114) minted it during the walk — the mint-on-miss
+    //    fetch resolves it and provisions nothing new.
+    //  - DIFFERENTIAL input (input_diff): the eager append was SKIPPED
+    //    (Build.cpp:1110 `!TableIsDifferential`), so both frontiers are
+    //    commit-band products minted by LowerDRFlow's frontier-filter lowering
+    //    BEFORE this pass (F-b1-3). A mint-on-miss here would hand band-(a2) a
+    //    producer-less always-empty frontier — the silent-orphan hazard the
+    //    fence catches (A2.6 idiom).
+    const bool input_diff =
+        op->input_table && TableIsDifferential(op->input_table);
+    if (input_diff &&
+        (!HasTableDeltaVector(context, op->input_table,
+                              VectorKind::kNetAdditions) ||
+         !HasTableDeltaVector(context, op->input_table,
+                              VectorKind::kNetRemovals))) {
+      std::fprintf(stderr,
+                   "error: orphan-mint fence: differential input +/- frontier "
+                   "not pre-minted (store %u)\n", sid);
+      std::abort();
+    }
     VECTOR *const input_front =
         TableDeltaVector(impl, context, op->input_table,
                          VectorKind::kNetAdditions);
+    VECTOR *const input_removal_front =
+        input_diff ? TableDeltaVector(impl, context, op->input_table,
+                                      VectorKind::kNetRemovals)
+                   : nullptr;
 
     SUBGRAPHINSTANCE *const si =
         impl->operation_regions.CreateDerived<SUBGRAPHINSTANCE>(
@@ -334,6 +361,24 @@ static void LowerSubgraphInstances(ProgramImpl *impl, Context &context,
     seq->AddRegion(si);
     si->demand_frontier.Emplace(si, demand_front);
     si->input_frontier.Emplace(si, input_front);  // [R-REBUILD-a2]
+    if (input_removal_front) {
+      si->input_removal_frontier.Emplace(si, input_removal_front);  // a2'
+    }
+
+    // V-INST-INPUT-COHERENCE [ALWAYS-ON]: input_removal_frontier present iff
+    // the summarized input is @differential — the invariant codegen's a2'/
+    // Present selector relies on. Within THIS scope the equality is a
+    // construction tautology (both sides derive from `input_diff` above); the
+    // LIVE fence is the orphan-mint check at the band head. Kept as an
+    // executable invariant statement (the V-INST-DIFF-COHERENCE mold).
+    if ((si->input_removal_frontier.get() != nullptr) != input_diff) {
+      std::fprintf(stderr,
+                   "error: SUBGRAPHINSTANCE store %u: input_removal_frontier "
+                   "presence (%d) != TableIsDifferential(input)=%d\n",
+                   sid, si->input_removal_frontier.get() != nullptr,
+                   input_diff);
+      std::abort();
+    }
 
     // D3.a.1: under the differential regime the band publishes SIGNED deltas
     // into pub's own machinery (OQ-PUBLISH-ORDER) — fetch pub's memoized

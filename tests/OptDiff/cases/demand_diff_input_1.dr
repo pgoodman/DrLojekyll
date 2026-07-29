@@ -1,12 +1,19 @@
 ; Copyright 2026, Peter Goodman. All rights reserved.
 ;
-; demand_diff_input_1 -- fence-(iii) witness: a bound #query whose demanded
-; body summarizes a @differential (deletable) message input. Rejected under
-; -demand-instance by the Program::Build pre-pass CanReceiveDeletions() check
-; (Build.cpp:1344); ALL FOUR modes diagnostic. This single-hop non-recursive
-; body passes the flat demand transform, so it REACHES the control-flow fence
-; (unlike the recursive-content shape). Stands as the D3.a belt: when the
-; retraction surface lands, deletable demanded inputs become supported.
+; demand_diff_input_1 -- the D3.a.2 LIFTED-FENCE witness (was fence-(iii)): a
+; bound #query whose demanded body summarizes a @differential (deletable) input,
+; NOW SUPPORTED under -demand-instance (the fence at the Build.cpp diff_input arm
+; was lifted at D3.a.2 / lane b1). It is the diff-input x DIFF-demand composition
+; carrier (P-STORE true, P-DEATH true): both axes on = plain symmetric
+; differential (d3a2-substrate O-9). The eqgate re-drives it nested and referees
+; flat == nested == golden + sorted getpt tap deltas.
+;
+; This witness exercises the demand-death x edge-retract interleavings that need
+; a differential DEMAND (E-F1/E-F2/E-F3, d3a2-substrate sec 4): retract demand
+; then retract the edge (the R-3 gate CLOSES on the dead key's absent
+; demand.Present); edge-retract for an already-dead key (gate closes, nothing to
+; drop); and edge-retract then re-demand (a1 birth rebuilds from the SHRUNKEN
+; input, the ADV-3 conjunct on the birth source).
 
 #message pt(u64 Key, u64 Val) @differential.
 
@@ -14,3 +21,7 @@
 ans(K, V) : pt(K, V).
 
 #query getpt(bound u64 Key, free u64 Val) : ans(Key, Val).
+
+; G-15 tap (@differential over the demanded closure; the nbhd_out idiom).
+#message getpt_out(u64 Key, u64 Val) @differential
+    : getpt(Key, Val).

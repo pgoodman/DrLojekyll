@@ -760,6 +760,13 @@ DataVector ProgramSubgraphInstanceRegion::InputFrontier(void) const noexcept {
   return DataVector(impl->input_frontier.get());
 }
 std::optional<DataVector>
+ProgramSubgraphInstanceRegion::InputRemovalFrontier(void) const noexcept {
+  if (auto vec = impl->input_removal_frontier.get()) {
+    return DataVector(vec);
+  }
+  return std::nullopt;
+}
+std::optional<DataVector>
 ProgramSubgraphInstanceRegion::RemovalFrontier(void) const noexcept {
   if (auto vec = impl->removal_frontier.get()) {
     return DataVector(vec);

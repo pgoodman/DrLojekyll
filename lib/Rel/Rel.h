@@ -1225,6 +1225,15 @@ void CheckInstanceOrder(const DRFlowGraph &flow);
 // survives NDEBUG, always-on. Vacuous when no death op is present.
 void CheckInstanceDeathFrontier(const DRFlowGraph &flow);
 
+// V-INST-DRAIN input-arm + V-INST-EFFECT input-drain-role belt (D3.a.2, A1.8):
+// for every kSubgraphInstantiate over a DIFFERENTIAL summarized input (detected
+// via a kNetRemoval role in `table_vecs` — co-true with TableIsDifferential,
+// no view deref), the input drains must be net-additions/net-removals only and
+// BOTH signs' ± frontiers (DR vec + signed kFrontierFilter producer) must be
+// provisioned. PURE over the flow so the negative space is death-testable in
+// tests/RelValidators. fprintf+abort, survives NDEBUG, always-on.
+void CheckInstanceInputArm(const DRFlowGraph &flow);
+
 void SetRelDumpStream(OutputStream *stream);
 void DumpRelIfEnabled(const DRFlowGraph &flow);
 

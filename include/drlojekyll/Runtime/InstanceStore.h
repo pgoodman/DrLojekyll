@@ -18,12 +18,16 @@
 // NESTED TABLES ARE INDEX-FREE (A.3.1): membership is Table::Find / TryAdd by
 // WHOLE row; flat's per-copy hash index (idx_38) disappears — a storage win.
 //
-// working_count DROPPED (A.3.1; N-1 carried): StateCellStore tracks a signed
-// per-group member count; here occupancy is `current->NumRows() > 0`. This is
-// exact under R-MONO (band-(a) plus is a monotone TryAdd, no mid-epoch dip).
-// N-1 (d1-pinned §CARRIED): when R-DIFF lands (D3.a) a mid-batch retraction
-// could make NumRows()-as-occupancy a lie — revisit re-introducing a signed
-// count then; recorded here so it is not lost.
+// working_count DROPPED (A.3.1; N-1 CLOSED under OQ-MODEL, D3.a.2): occupancy
+// is `current->NumRows() > 0`. EXACT under the FULL-RESCAN model
+// (OQ-MODEL / d3a-ruling-brief.md): `current` is built ONLY by the band-(a)
+// monotone rescan (TryAdd) and emptied ONLY at Seal / RecycleCurrent — it
+// never shrinks mid-epoch, even for a DIFFERENTIAL (deletable) summarized
+// input. An input retraction is a Recycle-FREE Touch+rescan (band-(a2')
+// removal arm) that reads the epoch-net input and rebuilds `current` from
+// empty, so NumRows()-as-occupancy stays a truth. REOPENS only if band-(a2)
+// ever becomes an incremental per-row shrink of a standing `current`
+// (OQ-MODEL overturned).
 //
 // BENCH-COUNTER SEAM (HP-16): every counter name below is an ENUMERATED
 // HYDE_RT_BENCH_COUNTER_FIELDS name (BenchCounters.h:23-52) — no new field is
@@ -156,8 +160,10 @@ class InstanceStore {
   // buffer.) StateCellStore tracks a signed working_count; the transpose reads
   // NumRows() instead. EXACT under R-MONO: band-(a) plus is a monotone TryAdd,
   // so current only grows within an epoch — no mid-epoch dip below zero.
-  // N-1 (carried): under R-DIFF a mid-batch retraction breaks this equivalence
-  // — revisit a signed count at D3.a.
+  // N-1 (CLOSED, OQ-MODEL, D3.a.2): under R-DIFF an input retraction is a
+  // Recycle-free Touch+full-rescan that rebuilds `current` from empty (no
+  // incremental shrink), so the equivalence holds. Reopens only if OQ-MODEL
+  // is overturned.
   bool WorkingOccupied(uint32_t iid) const noexcept {
     return current[iid]->NumRows() > 0u;
   }

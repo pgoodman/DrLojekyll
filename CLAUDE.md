@@ -50,8 +50,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 177 corner-case programs as of the
-D3.a.1 differential-demand landing — symrec_tie_1 is the standing
+(`<name>.dr` + `<name>.main.cpp`, 178 corner-case programs as of the
+D3.a.2 differential-input landing — symrec_tie_1 is the standing
 determinism witness; agg_distinct_1 pins the aggregate multiplicity
 semantics + carries the projected-column lint shape; barrier_neck_1
 witnesses the `:-` separator, sugar for `@barrier` between every two
@@ -94,16 +94,21 @@ delta-relational-IR golden policy.
   DS-R4-10 post-fixpoint fence, F25),
   `nonascii_1`, `truncated_decl_1`, `demand_multi_adorn_1` (a `-demand` query
   name carrying >1 binding pattern — the demand pass's clean per-name reject,
-  via its `.drflags` sidecar), `demand_cyclic_1`/`demand_diff_input_1` (two
-  `-demand-instance` nested-lowering feature-gap fences — recursive demand and
-  a @differential summarized input; both COMPILE under plain `-demand` and
-  reject only under `-demand-instance`) and `demand_recursive_content_1` (a
+  via its `.drflags` sidecar), `demand_cyclic_1` (a `-demand-instance`
+  nested-lowering feature-gap fence — recursive demand; it COMPILES under plain
+  `-demand` and rejects only under `-demand-instance`) and
+  `demand_recursive_content_1` (a
   recursive-content demanded body — rejected UPSTREAM by the plain-`-demand`
   body-walk, so its `.drflags` is a bare `-demand`; it pins the shadowed
   Build.cpp recursive-content belt); `kvindex_1` is MODE-SPLIT (compiles
   under opt/nocf where KVINDEX→TUPLE elimination fires, V-ALGEBRA-rejects
   under nodf/none). `aggregate_1` FLIPPED from diagnostic to a 4-mode
-  golden at the R3 stage-C flip.
+  golden at the R3 stage-C flip. The @differential-summarized-input fence was
+  LIFTED at D3.a.2: `demand_diff_input_1` flipped diagnostic→golden and is now
+  the diff-input × diff-demand composition eqgate witness, and the NEW
+  `demand_diff_neighborhood_witness` is the e5 (diff-input × MONO-demand)
+  carrier — the first P-STORE∧¬P-DEATH program (`kInstanceDeath=0` beside
+  `kSubgraphInstantiate=1`).
 - Blessing: goldens change ONLY via explicit
   `runall.sh --bless <workroot> [filter]` after reviewing a run's outputs —
   never automatically on failure, and never to make a red case green.
@@ -480,14 +485,31 @@ edges AFTER their key's demand is standing and re-probes. EDGE-AFTER-DEMAND —
 adding a monotone input edge while a demand is already standing — now REBUILDS
 the standing instance via band-(a2) (a full edge-frontier rescan keyed on the
 edge net-additions frontier); the birth-only enforcement (RAT-6) is lifted and
-the labeled feature gap is CLOSED. Three all-4-modes
-compile fences: recursive demand (`demand_cyclic_1`) and a @differential
-summarized input (`demand_diff_input_1`) reject at the Program::Build nested
-pre-pass (Build.cpp:1336-1346) only under `-demand-instance` (both compile
-under plain `-demand`); a recursive-content demanded body
+the labeled feature gap is CLOSED. Two all-4-modes
+compile fences: recursive demand (`demand_cyclic_1`) rejects at the
+Program::Build nested pre-pass only under `-demand-instance` (it compiles under
+plain `-demand`); a recursive-content demanded body
 (`demand_recursive_content_1`) is caught UPSTREAM by the plain-`-demand`
 body-walk (its `.drflags` is a bare `-demand`; it pins the shadowed Build.cpp
 recursive-content belt).
+
+D3.a.2 (differential input — LANDED) lifts the fence (iii) `diff_input` arm so a
+`@differential` (deletion-capable) SUMMARIZED INPUT is admitted under
+`-demand-instance`. A live-demanded key whose input net-REMOVALS arrive rebuilds
+its standing instance via the band-(a2') removal-drain arm (TWO DRAINS, NO
+RECYCLE — R-A2-TRIGGER), a gate-set clone of band-(a2) draining the input
+net-removals frontier; the ONE Present-filtered rescan mold gains an
+`input.Present(s)` conjunct on all three sources (a1 birth, a2 edge-adds, a2'
+edge-removals) so a physically-present-but-dead input row is skipped. This is the
+first regime where P-STORE (`TableIsDifferential(pub)`) and P-DEATH
+(`TableIsDifferential(demand)`) DIVERGE by design: the e5 carrier
+`demand_diff_neighborhood_witness` (diff-input × MONO-demand, bare `-demand`) has
+`kInstanceDeath=0` beside `kSubgraphInstantiate=1` — its demand-liveness gate
+probes a MONOTONE demand member (soundness by IRREVOCABILITY, not quiescence);
+`demand_diff_input_1` (diff-input × diff-demand, `-demand -demand-retract`) is
+the full composition carrier. Both are eqgate carriers (flat==nested==golden +
+sorted published-delta identity through the `@differential` tap), lifting the
+eqgate family to four.
 
 ## Other known feature gaps (clean diagnostics)
 

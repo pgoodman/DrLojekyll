@@ -17,12 +17,15 @@
 # Case expectations:
 #   kvindex_2/3/4, agg_in_scc_1, kv_in_scc_1, algebra_dup_1,
 #   algebra_conflict_1, evm_func_parse, nonascii_1, truncated_decl_1,
-#   demand_cyclic_1, demand_recursive_content_1, demand_diff_input_1 (the D2.c
-#     nested-lowering fences: recursive demand / recursive-content demanded body
-#     / a @differential summarized input — each rejects in all 4 modes via its
-#     -demand[-instance] .drflags; cyclic + diff_input compile under plain
-#     -demand and reject only under -demand-instance, recursive_content is the
-#     upstream plain-demand body-walk reject),
+#   demand_cyclic_1, demand_recursive_content_1 (the D2.c nested-lowering
+#     fences: recursive demand / recursive-content demanded body — each rejects
+#     in all 4 modes via its -demand[-instance] .drflags; cyclic compiles under
+#     plain -demand and rejects only under -demand-instance, recursive_content
+#     is the upstream plain-demand body-walk reject. The @differential
+#     summarized-input fence was LIFTED at D3.a.2 — demand_diff_input_1 is now
+#     the diff-input x diff-demand composition eqgate witness and
+#     demand_diff_neighborhood_witness the e5 diff-input x mono-demand carrier,
+#     both ordinary auto-discovered golden cases, not diagnostics),
 #   demand_multi_adorn_1 (via its -demand .drflags sidecar: a demanded query
 #     name with two binding patterns — the adornment cross-wire reject),
 #   negate_never_diff_1 (@never over a differential negated view — the
@@ -358,7 +361,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_cyclic_1|demand_recursive_content_1|demand_diff_input_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_cyclic_1|demand_recursive_content_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

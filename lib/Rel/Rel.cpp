@@ -778,8 +778,9 @@ static void BuildGroupUpdateOps(
 // independently hand-counts the same totality (the V-AGG-EFFECT mold), so a
 // drift between mint and validator aborts.
 // ---------------------------------------------------------------------------
-static std::vector<DREffect> InstantiateEffects(bool diff, TABLE *pub,
-                                                TABLE *demand, TABLE *input) {
+static std::vector<DREffect> InstantiateEffects(bool diff, bool input_diff,
+                                                TABLE *pub, TABLE *demand,
+                                                TABLE *input) {
   std::vector<DREffect> fx;
   DREffect drain;  // OD-7 frontier drain (a LOWER-time TableDeltaVector, OD-R7)
   drain.kind = EffKind::kVecDrain;
@@ -797,6 +798,21 @@ static std::vector<DREffect> InstantiateEffects(bool diff, TABLE *pub,
   edge_drain.value_table = input;
   edge_drain.vec_role = VecRole::kNetAddition;
   fx.push_back(edge_drain);
+
+  // [D3.a.2 e3 / R-A2-TRIGGER] the input(edge) net-REMOVALS rebuild drain —
+  // the band-(a2') arm. Present ONLY under a DIFFERENTIAL input (input_diff,
+  // the THIRD predicate axis; NEVER folded into `diff`=P-STORE per §7 d2). The
+  // DeathEffects kNetRemoval drain is the effect-declaration mold; the
+  // producer is FREE (generic both-sign mint — F-b1-2/ADV-5). Pushed THIRD
+  // (after the two net-additions drains) for push-order determinism; no reader
+  // keys on drain order (ADJ-R9).
+  if (input_diff) {
+    DREffect edge_del_drain;
+    edge_del_drain.kind = EffKind::kVecDrain;
+    edge_del_drain.value_table = input;
+    edge_del_drain.vec_role = VecRole::kNetRemoval;
+    fx.push_back(edge_del_drain);
+  }
 
   DREffect demand_read;  // NEW: frozen read of the demand key, no hazard (HP-8)
   demand_read.kind = EffKind::kInstanceDemand;
@@ -1053,6 +1069,11 @@ static void BuildSubgraphInstanceOps(
     }
 
     const bool diff = TableIsDifferential(pub_table);
+    // [D3.a.2 e3] the input differentiality axis — its OWN spelling, threaded
+    // to InstantiateEffects for the removal leg. NEVER folded into `diff`
+    // (P-STORE) or P-DEATH (§7 d2). input_table non-null on the recognized
+    // single-monotone-hop shape (the HP-4 refusal belt above pins it).
+    const bool input_diff = input_table && TableIsDifferential(input_table);
     const unsigned sid = static_cast<unsigned>(flow.instances.size());
 
     DRInstance inst_desc(*ri.demanded_view, *ri.pub_view);
@@ -1095,7 +1116,8 @@ static void BuildSubgraphInstanceOps(
     inst.instance_store_id = sid;
     inst.forcing_index = rs.forcing_index;
     inst.effects =
-        InstantiateEffects(diff, pub_table, demand_table, input_table);
+        InstantiateEffects(diff, input_diff, pub_table, demand_table,
+                           input_table);
     // §3.2b α FOLD-side representation: per published position, kInstanceKeySlot
     // iff the position is an instance key (rs.key_cols), else kRowSlot. No
     // kConfigSlot in the demand slice. V-ALPHA arm B checks this multiset.
@@ -4269,6 +4291,20 @@ void ValidateDROps(
       switch (op.kind) {
         case DROpKind::kSubgraphInstantiate: {
           const bool diff = TableIsDifferential(op.table_op_table);
+          const bool input_diff =
+              op.input_table && TableIsDifferential(op.input_table);
+          // [D3.a.2 R-3] O-1 closure belt: a @differential summarized input
+          // FORCES a differential pub (the lib/DataFlow/Differential.cpp
+          // closure). input_diff && !diff would be a deletable input feeding
+          // a MONOTONE pub — no delete side to retract into; never a legal
+          // mint. Keeps the three-axis separation CHECKED, not assumed
+          // (the b2 F2a else-arm deadness and the §7-d2 divergence audit
+          // both rely on this implication). Always-on; survives NDEBUG.
+          if (input_diff && !diff) {
+            ValidatorFail("V-INST-EFFECT: a differential summarized input "
+                          "over a MONOTONE published table (the O-1 closure "
+                          "is broken)");
+          }
           unsigned drains = 0u, demand_drains = 0u, input_drains = 0u,
                    demands = 0u, leaves = 0u, rebuilds = 0u,
                    emits = 0u, olds = 0u, counters = 0u, crossings = 0u,
@@ -4276,21 +4312,25 @@ void ValidateDROps(
           int rebuild_sign = 0, counter_signs = 0;
           for (const DREffect &fx : op.effects) {
             switch (fx.kind) {
-              case EffKind::kVecDrain:
+              case EffKind::kVecDrain: {
                 ++drains;
-
-                // Source-aware: the two drains must be the demand frontier
-                // and the input (edge) frontier, both net-additions — a
-                // count alone cannot tell "demand + edge" from "demand
-                // twice" (the R-a2 Fable-review hazard; the dump renders
-                // these value_tables verbatim, so a mis-minted drain would
-                // otherwise lie undetected).
-                if (fx.vec_role != VecRole::kNetAddition ||
-                    (fx.value_table != op.demand_table &&
-                     fx.value_table != op.input_table)) {
+                // [D3.a.2 e3] the input net-REMOVALS rebuild drain is admitted
+                // ONLY under a differential input (input_diff). Everything else
+                // must be a net-additions drain of the demand or input frontier.
+                const bool input_del =
+                    (fx.vec_role == VecRole::kNetRemoval &&
+                     fx.value_table == op.input_table && input_diff);
+                // Source-aware: a count alone cannot tell "demand + edge" from
+                // "demand twice" (the R-a2 Fable hazard — the dump renders these
+                // value_tables verbatim).
+                if (!input_del &&
+                    (fx.vec_role != VecRole::kNetAddition ||
+                     (fx.value_table != op.demand_table &&
+                      fx.value_table != op.input_table))) {
                   ValidatorFail("V-INST-EFFECT: an instantiate kVecDrain is "
                                 "not a net-additions drain of the demand or "
-                                "input frontier");
+                                "input frontier, nor a differential input's "
+                                "net-removals rebuild drain");
                 }
                 if (fx.value_table == op.demand_table) {
                   ++demand_drains;
@@ -4298,6 +4338,7 @@ void ValidateDROps(
                   ++input_drains;
                 }
                 break;
+              }
               case EffKind::kInstanceDemand: ++demands; break;
               case EffKind::kFlagRead: ++leaves; break;
               case EffKind::kInstanceRebuild:
@@ -4322,7 +4363,8 @@ void ValidateDROps(
             }
           }
           const bool ok =
-              drains == 2u && demand_drains == 1u && input_drains == 1u &&
+              drains == (input_diff ? 3u : 2u) && demand_drains == 1u &&
+              input_drains == (input_diff ? 2u : 1u) &&
               demands == 1u && leaves == 1u && rebuilds == 1u &&
               rebuild_sign == 1 && emits == 1u && olds == 1u &&
               (diff ? (counters == 2u && counter_signs == 0 &&
@@ -4333,11 +4375,31 @@ void ValidateDROps(
             ValidatorFail("V-INST-EFFECT: a SUBGRAPH_INSTANTIATE effect set is "
                           "not the §3.3 regime-split totality");
           }
+          // [D3.a.2 e2] V-INST-SOLE half 2 SURVIVES: a summarized input that
+          // ALIASES the published table is still forbidden (a self-summarizing
+          // instantiate is nonsense). Reworded — the differential forbiddance
+          // (half 1) LIFTED: a @differential input is now ADMITTED (fence (iii)
+          // lift), its deletion machinery living in the V-INST-DRAIN input-arm
+          // regime split (dr_ok, below), the InstantiateEffects removal leg,
+          // the input_removal_frontier fence, and the band's Present rescan.
           if (op.input_table != nullptr &&
-              (TableIsDifferential(op.input_table) ||
-               op.input_table == op.table_op_table)) {
-            ValidatorFail("V-INST-SOLE: an instantiate's summarized input is "
-                          "differential or aliases the published table");
+              op.input_table == op.table_op_table) {
+            ValidatorFail("V-INST-SOLE: an instantiate's summarized input "
+                          "aliases its published table");
+          }
+          // [D3.a.2 e2/ADV-1] the differential half's TEETH re-pointed, not
+          // dropped: an admitted @differential input MUST be acyclic /
+          // non-induction-owned. The surviving F-A recursive-content fence
+          // (Build.cpp:1530-1537) guarantees it upstream; this DR-layer belt
+          // catches an F-A regression before the band trusts "counters final at
+          // band time" (OB8 — a fixpoint-refired input breaks the Present
+          // rescan). Cheap; always-on.
+          if (op.input_table != nullptr &&
+              TableIsDifferential(op.input_table) &&
+              TableIsInductionOwnedDR(context, op.input_table)) {
+            ValidatorFail("V-INST-SOLE: a differential summarized input is "
+                          "induction-owned (recursive content must stay "
+                          "F-A-fenced)");
           }
           ++inst_per_store[op.instance_store_id];
           if (op.table_op_table) {
@@ -4504,7 +4566,7 @@ void ValidateDROps(
   // V-INST-DRAIN (HP-2, §3.3; REGIME-SPLIT at D3.a.1 — XC-3): every instance
   // drain must name a PROVISIONED frontier, checked against the producer that
   // actually feeds it in its regime.
-  //  - MONOTONE demand/input: the eager boundary append (Build.cpp:999)
+  //  - MONOTONE demand/input: the eager boundary append (Build.cpp:1110-1114)
   //    provisioned the ControlFlow VECTOR during the walk — it must exist NOW.
   //  - DIFFERENTIAL demand: the frontiers are commit-band products; their
   //    ControlFlow VECTORs are first minted inside the stratum lowering,
@@ -4539,15 +4601,30 @@ void ValidateDROps(
       ValidatorFail("V-INST-DRAIN: an instantiate's demand net-additions "
                     "frontier was never provisioned (OD-7/§2.2 gap)");
     }
-    // [R-REBUILD-a2] input(edge) arm UNCHANGED: monotone this slice (a
-    // differential input is V-INST-SOLE-rejected upstream, :4335-4340;
-    // D3.a.2 owns the split here).
-    if (!cf_ok(op.input_table, VectorKind::kNetAdditions)) {
-      ValidatorFail("V-INST-DRAIN: an instantiate's input(edge) net-additions "
-                    "frontier was never provisioned (OD-4/R-a2 gap)");
+    // [D3.a.2 C6] input(edge) arm REGIME-SPLIT (mirrors the demand arm above):
+    //  - MONOTONE input: the eager boundary append (Build.cpp:1110-1114)
+    //    provisioned the ControlFlow kNetAdditions VECTOR during the walk — it
+    //    must exist NOW (cf_ok).
+    //  - DIFFERENTIAL input: the ± frontiers are commit-band products whose
+    //    ControlFlow VECTORs first mint inside LowerDRFlow, AFTER this validator
+    //    (XC-3, F-b1-3) — check the DR-side vec + the signed kFrontierFilter
+    //    producer for BOTH signs, minted by the DR inventory before validation.
+    //    The eager append is SKIPPED for a diff table (Build.cpp:1110), so
+    //    re-enabling cf_ok here would double-provision (laneB B14) — FORBIDDEN.
+    const bool input_ok =
+        (op.input_table && TableIsDifferential(op.input_table))
+            ? (dr_ok(op.input_table, VecRole::kNetAddition, +1) &&
+               dr_ok(op.input_table, VecRole::kNetRemoval, -1))
+            : cf_ok(op.input_table, VectorKind::kNetAdditions);
+    if (!input_ok) {
+      ValidatorFail("V-INST-DRAIN: an instantiate's input(edge) frontier(s) "
+                    "were never provisioned (OD-4/R-a2 gap; a differential "
+                    "input needs BOTH signs' DR vec + frontier-filter "
+                    "producer)");
     }
   }
   CheckInstanceDeathFrontier(flow);  // D3.a.1 death clause (pure core).
+  CheckInstanceInputArm(flow);  // D3.a.2 input-arm/effect-role belt (pure core).
 
   // §7b ONE-OP-PER-(message, receive, polarity): no receive owns two ingest
   // folds of one sign. (The message is determined by the receive — one io per
@@ -4808,6 +4885,68 @@ void CheckInstanceDeathFrontier(const DRFlowGraph &flow) {
       ValidatorFail("V-INST-DRAIN: a death's demand net-removals frontier was "
                     "never provisioned (no DR vec / no - frontier-filter "
                     "producer) — G-DEMAND-NEG");
+    }
+  }
+}
+
+// [D3.a.2 A1.8] V-INST-DRAIN input-arm + V-INST-EFFECT input-drain-role
+// negative space, factored PURE over the flow (pointer identity only, no
+// TABLE deref) so it is death-testable in tests/RelValidators (the
+// CheckInstanceDeathFrontier mold). A DIFFERENTIAL summarized input is
+// detected STRUCTURALLY — its generic inventory mints a kNetRemoval role in
+// `table_vecs` (F-b1-2), a signal co-true with TableIsDifferential(input) for
+// every real flow but needing no view deref. For such an input the
+// instantiate must (a) carry ONLY kNetAddition / kNetRemoval drains on its
+// input table (V-INST-EFFECT role admit, E1d) and (b) have BOTH signs' ±
+// frontiers provisioned — the DR vec + the signed kFrontierFilter producer
+// (V-INST-DRAIN input arm, E1e). This is a belt of the inline op-loop checks
+// (which fire first on a real build; monotone inputs are owned by the inline
+// cf_ok arm (Context); induction-owned diff inputs mint NO role — V-INST-SOLE
+// aborts them first); this tested pure belt is always-on; survives NDEBUG.
+void CheckInstanceInputArm(const DRFlowGraph &flow) {
+  const auto dr_ok = [&](TABLE *t, VecRole role, int sign) -> bool {
+    auto tv = flow.table_vecs.find(t);
+    if (tv == flow.table_vecs.end() || !tv->second.count(role)) {
+      return false;
+    }
+    for (const DROp &f : flow.ops) {
+      if (f.kind == DROpKind::kFrontierFilter && f.table_op_table == t &&
+          f.table_op_sign == sign) {
+        return true;
+      }
+    }
+    return false;
+  };
+  for (const DROp &op : flow.ops) {
+    if (op.kind != DROpKind::kSubgraphInstantiate || !op.input_table) {
+      continue;
+    }
+    bool diff_input = false;
+    if (auto tv = flow.table_vecs.find(op.input_table);
+        tv != flow.table_vecs.end()) {
+      diff_input = tv->second.count(VecRole::kNetRemoval) != 0u;
+    }
+    if (!diff_input) {
+      continue;  // monotone input: the inline cf_ok arm (Context) owns it.
+    }
+    // (a) V-INST-EFFECT role admit: an input-table drain must be a
+    // net-additions or a net-removals rebuild drain, nothing else.
+    for (const DREffect &fx : op.effects) {
+      if (fx.kind == EffKind::kVecDrain && fx.value_table == op.input_table &&
+          fx.vec_role != VecRole::kNetAddition &&
+          fx.vec_role != VecRole::kNetRemoval) {
+        ValidatorFail("V-INST-EFFECT: an instantiate kVecDrain is not a "
+                      "net-additions drain of the demand or input frontier, "
+                      "nor a differential input's net-removals rebuild drain");
+      }
+    }
+    // (b) V-INST-DRAIN input arm: BOTH signs' DR vec + kFrontierFilter producer.
+    if (!(dr_ok(op.input_table, VecRole::kNetAddition, +1) &&
+          dr_ok(op.input_table, VecRole::kNetRemoval, -1))) {
+      ValidatorFail("V-INST-DRAIN: an instantiate's input(edge) frontier(s) "
+                    "were never provisioned (OD-4/R-a2 gap; a differential "
+                    "input needs BOTH signs' DR vec + frontier-filter "
+                    "producer)");
     }
   }
 }

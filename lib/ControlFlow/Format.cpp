@@ -664,7 +664,12 @@ OutputStream &operator<<(OutputStream &os,
     os << " death " << *removal;
   }
   os << " demand " << region.DemandFrontier() << " input "
-     << region.InputFrontier() << " rescan "
+     << region.InputFrontier();
+  // D3.a.2 band-(a2'): only-when-present (differential input only).
+  if (auto irf = region.InputRemovalFrontier(); irf) {
+    os << " input-removals " << *irf;
+  }
+  os << " rescan "
      << region.InputTable() << " -> publish " << region.PubTable() << " key@{";
   auto sep = "";
   for (auto p : region.KeyPositions()) { os << sep << p; sep = ", "; }

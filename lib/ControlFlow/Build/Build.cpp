@@ -1513,7 +1513,7 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
       fguards[annots[ai].forcing_index].emplace_back(v, ai);
     });
     for (auto &fe : fguards) {
-      bool diff_input = false, recursive_content = false, cyclic_demand = false;
+      bool recursive_content = false, cyclic_demand = false;
       for (auto &[v, ai] : fe.second) {
         if (!v.IsJoin()) {
           continue;
@@ -1527,9 +1527,6 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
         }
         if (annots[ai].role == GuardAnnotation::kBody) {
           const QueryView in = jl[1];
-          if (in.CanReceiveDeletions()) {
-            diff_input = true;
-          }
           if (in.InductionGroupId().has_value() || ViewSelfReachable(in)) {
             recursive_content = true;
           }
@@ -1550,9 +1547,6 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
         log.Append() << "Demanded subgraphs with recursive (induction-owned) "
                         "content are not yet supported under -demand-instance "
                         "(a keyed-instance feature gap)";
-      } else if (diff_input) {
-        log.Append() << "Demanded subgraphs over deletable (differential) "
-                        "inputs are not yet supported under -demand-instance";
       }
     }
   }

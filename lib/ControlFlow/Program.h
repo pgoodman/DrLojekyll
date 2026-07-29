@@ -1173,6 +1173,13 @@ class ProgramSubgraphInstanceRegionImpl final : public OP {
 
   UseRef<VECTOR> demand_frontier;  // BAND (a1) drain source (birth keys)
   UseRef<VECTOR> input_frontier;   // BAND (a2) drain source (edge REBUILD keys)
+  UseRef<VECTOR> input_removal_frontier;  // BAND (a2') drain source (the input
+                                          // net-REMOVALS rebuild keys). NULL
+                                          // unless the summarized input is
+                                          // @differential (D3.a.2, input_diff).
+                                          // Presence == codegen's a2'/Present
+                                          // selector authority (keyed on the
+                                          // MEMBER, not a folded bit — d2).
   UseRef<VECTOR> removal_frontier;  // BAND (a0) death drain source (netted
                                     // demand net-removals). NULL under R-MONO —
                                     // presence == a kInstanceDeath op for this

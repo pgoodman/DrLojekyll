@@ -860,6 +860,13 @@ class ProgramSubgraphInstanceRegion
   // BAND (a2) input(edge) net-additions frontier (REBUILD keys). [R-REBUILD-a2]
   DataVector InputFrontier(void) const noexcept;
 
+  // BAND (a2') input(edge) net-REMOVALS rebuild frontier (D3.a.2). Present ONLY
+  // when the summarized input is @differential; absent under a monotone input.
+  // Its PRESENCE is codegen's authority for emitting the a2' removal drain +
+  // the shared rescan's Present(s) conjunct (b3) — keyed on the member, never a
+  // folded input-diff bit (§7 d2).
+  std::optional<DataVector> InputRemovalFrontier(void) const noexcept;
+
   // BAND (a0) death drain source (the netted demand net-removals frontier,
   // D3.a.1). Present only when a kInstanceDeath op exists for this store
   // (differential demand); absent under R-MONO.

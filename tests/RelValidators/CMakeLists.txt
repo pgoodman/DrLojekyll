@@ -7,7 +7,8 @@
 # libs resolved at the final executable link, so both are listed.
 add_executable(rel_validators_test
   DeathFrontierTest.cpp
-  InstanceOrderTest.cpp)
+  InstanceOrderTest.cpp
+  InputArmTest.cpp)
 
 # Rel.h transitively includes ControlFlow's internal impl headers
 # ("Program.h", "Build.h") by quoted include — expose those dirs (mirrors

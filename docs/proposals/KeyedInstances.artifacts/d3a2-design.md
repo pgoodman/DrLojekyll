@@ -426,7 +426,7 @@ later arm skips." Verified at Database.cpp:2435 (RecycleCurrent) +
 InstanceStore.h:216-219 (Touch + Reset). The rest of the coupling block —
 NETTING / V-INST-FRESH / the Present conjunct / the demand-liveness gate +
 the per-epoch-shape interlock + C-REC — is adopted verbatim; C-REC's fence
-anchor is file-qualified per A1.7 (lib/ControlFlow/Build/Build.cpp:1533-1540,
+anchor is file-qualified per A1.7 (lib/ControlFlow/Build/Build.cpp:1530-1537,
 re-verified surviving the E1a deletion set).
 
 **A3.3 (b3C-3): anchor ranges corrected** — E3b's old block is
@@ -533,7 +533,7 @@ pre-pass anchor respelled :1504-1558).
 | X4 | ClassifyVector read arm for `input_removal_frontier` | b3 F3b (said "b2's H-7") / b2 X-b1-1 → **b1 E1f-5** | RESOLVED (R-1): b1 owns it; b3's attribution corrected; L3b is its teeth. Sweep verified: NO edit is specified by two lanes and none is orphaned (effects leg = E1c only; member/accessor/classify/fences = E1f only; Present conjunct = E2b only; a2' arm = E2c only) |
 | X5 | gate-set IDENTITY a2' == a2 (R-A2-TRIGGER §7(2)) | b3 §1 lemma precondition → b2 (E2c) | MATCHED BY CONSTRUCTION OF COPY (char-identical fork); the d7 identity perturbation (Lb2-4) is the standing referee; a divergence voids b3 §1 |
 | X6 | the `input.Present(s)` conjunct on ALL THREE rescan sources (a1 incl.) | b3 coupling mech-4 / b4 L-b4-C/D → b2 (E2b, the ONE mold) | MATCHED — one mold, three call sites (verified no sibling scan exists); witness teeth REPAIRED for the a1 source (A4.1/R-6) |
-| X7 | the recursive-content fence survives F-A's lift (C-REC — OB8(i)'s precondition) | b3 → b1 (E1a keeps :1533-1540) | MATCHED + double-belted: E1b's DR-layer induction-owned-input reject re-points the lifted forbiddance's teeth (L-b1-2) |
+| X7 | the recursive-content fence survives F-A's lift (C-REC — OB8(i)'s precondition) | b3 → b1 (E1a keeps :1530-1537) | MATCHED + double-belted: E1b's DR-layer induction-owned-input reject re-points the lifted forbiddance's teeth (L-b1-2) |
 | X8 | the e4 lemma + RIDER rewrite; E2c's interim gate comment defers to it | b2 X-b3-1 → b3 (E3a) | MATCHED — E3a owns the discharge text (+ the A2.3 reachability sentence); E2c's header comment cites the lemma, does not restate it |
 | X9 | witness coverage: both regimes, E-D delta tap, E-F2 rebirth, FORBIDDEN-Recycle catcher | b2 F2b/b2C-2 → b4 (D-b4-1, E4a-E4j) | MATCHED — flagship d1 = the diff-input E-D sorted-delta referee (A2.2, named acceptance line); composition p1b = E-F2; flagship m1/p1c = the E-E catcher; flagship m3a/m3b/p5 = the mono-regime a1 conjunct (A4.1) |
 | X10 | demand_diff_input_1 disposition + its header/runall/CLAUDE.md mechanics | b1 E1a / b3 E3d / b4 E4g-E4m (THREE claimants) | RESOLVED (R-2/R-9/A3.6): b4 owns the case content + all prose; b1 owns the runall.sh:361 regex cut (mandatory at co-land); b3's E3d superseded; ADV-8 discharged by E4g |

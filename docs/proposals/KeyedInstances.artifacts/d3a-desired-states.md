@@ -162,3 +162,70 @@ Fixes proven suite-green post-fix: SUITE PASS(177); ctest 6/6 debug +
 release==debug; E-62 clean.
 
 GATES RECORD (binding copy = ledger §20(AK)).
+
+## SLICE 2 — D3.a.2 (differential input: fence lifts, the a2' removal arm, the Present rescan, the witness 2x2)
+
+STAGE-(d) THREE-WAY CONVERGENCE (design §6 == desired-states author ==
+blind prototype; orchestrator-compared):
+  half 1  the PRE-REGISTERED predictions (d3a2-design.md §6): Phase-A
+          pre-bless red set EXACTLY 14 lines (all MISSING-class — both
+          new cases had no goldens); golden churn EXACTLY 6 NEW files,
+          zero existing golden changes; [BYTE] on 176 non-witness
+          stdouts x4 + 20 pinned + BOTH frozen D3.a.1 witnesses + data/;
+          ctest 6/6 (+2 TESTs); census kinds unchanged (29).
+  half 2  the DESIRED-STATES AUTHOR lane (blind to the prototype):
+          hand-derived BOTH witnesses' stdout goldens VERBATIM, the
+          [COMPUTED] oracle goldens (flagship "8 batches, 2604
+          assertions"; composition "3 batches, 448 assertions") +
+          monotone projections, and the census arithmetic (flagship
+          kSeedFold=6 kIngestFold=3 kInstanceDeath=0; composition
+          kSeedFold=8 kIngestFold=4 kInstanceDeath=1) — the D3.a.1
+          under-prediction lesson applied, kSeedFold derived correctly.
+  half 3  the BLIND WORKTREE PROTOTYPE (P1 code sub-diffs i-iii; P2
+          witness family; P3 the d7 cycle; the P2 lane was capped
+          mid-suite, so the ORCHESTRATOR personally re-executed Phase A
+          (EXACTLY the 14 predicted reds), the 4-mode + flat==nested cmp
+          ritual, the bless (EXACTLY 6 new goldens), and Phase B (SUITE
+          PASS(178), eqgate 16/16); P3 supplied the missing P2
+          WIP-commit as the perturbation anchor per the standing ritual).
+  CONVERGENCE: prototype == DS-author BYTE-EQUAL on all 6 golden
+  surfaces + census; every pre-registered prediction MATCHED.
+  d7 PERTURBATIONS (L-table L1-L22): scratch rows ALL FIRED with
+  recorded texts EXCEPT two MASKED NEGATIVES (recorded honestly): L15
+  (the FORBIDDEN ungated-late-Recycle produced NO red anywhere — the
+  two required belt-silence observations held AND split counters >= 2
+  masked the observable wipe; strengthens the documentary-fence framing,
+  flags the E-E witness as a non-robust red-team vehicle) and L17 (the
+  ClassifyVector a2' arm is byte-identical-if-removed on single-proc
+  witnesses — belt-only, teeth refuted for this arm; review WIT-2
+  ACCEPT-AS-DESIGNED).
+  P1 DEVIATIONS (both LOUD-recorded, review-adjudicated): D-1 the A1.8
+  TESTs land against a NEW pure CheckInstanceInputArm belt (the
+  CheckInstanceDeathFrontier factoring precedent; ValidateDROps is not
+  fork-callable on a hand-built flow) — the inline-path teeth join the
+  D3.a.3 obligation (review design-1); D-2 the five-way coupling block's
+  source home = the head of EmitSubgraphInstance ([BYTE]-safe;
+  design-2 ACCEPT).
+
+FABLE REVIEW (workflow, high; 21 agents, 14 raw -> 12 verified -> 11
+ranked entries): ZERO HIGH, ZERO MED, zero live miscompiles. FIXED
+pre-commit: WIT-4 (the {DiffTable demand, gate OPEN, Present==true, net
+retraction} cell was untested — the E-F2b live-key phase added, its own
+new golden amended in place, churn stays 6); WIT-3 (the .ir
+subgraph-instance render omitted input_removal_frontier — the
+only-when-present `input-removals` production added in the death-branch
+mold; ZERO committed-golden churn; the ONE E-71 note of the slice,
+orchestrator-adjudicated, amending R-4's zero-notes tally); DOCS-3 (the
+Build.cpp:1533-1540 fence citation -> :1530-1537, char-count-preserving,
+x2 code + x2 design-doc); DOCS-2 ("two drain sources" -> three);
+validators-1 (the V-INST-INPUT-COHERENCE comment respelled honest —
+construction tautology, the live fence is the orphan-mint check);
+validators-2 (CheckInstanceInputArm comment names the induction-owned
+divergence + its V-INST-SOLE guard); DOCS-1 (witness .dr anchors
+:1071/:1162). DEFERRED-with-obligation -> D3.a.3: design-1 (inline
+V-INST-EFFECT/V-INST-DRAIN teeth via a real forked ValidateDROps test;
+joins the review-[F] dedup). ACCEPT-AS-DESIGNED: WIT-2, WIT-5 (the
+lifted fence's diagnostic is unwitnessable by design), design-2,
+design-3 (informational: zero unrecorded deviations).
+
+GATES RECORD (binding copy = ledger §20(AO)).
