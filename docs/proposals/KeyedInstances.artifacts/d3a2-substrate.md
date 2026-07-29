@@ -633,3 +633,180 @@ spelling RULED Present per the four-lane convergence) applies to the ONE
 shared mold — therefore to ALL THREE sources (a1 birth included: the E-F2
 rebirth-after-edge-retract cell) — gated on the input-differential regime;
 the monotone-input emission stays byte-identical.
+
+===============================================================================
+## §8 THE POST-D3.a.2 STATE (2026-07-29, tip bfc068d1; orchestrator-read
+##    anchors — the epoch's whole-program view AFTER slice 2, §20(AO).
+##    SINGLE-PASS: the next session's fleet re-verifies THIS section +
+##    §20(AL)-(AO) before D3.a.3 code. §1-§6 above are the PRE-slice-2 map
+##    (stamped at b4d08307; the slice's ~1078 net inserted lines drifted
+##    their anchors); §7 is the R-A2-TRIGGER ruling, still binding.
+===============================================================================
+
+    THE PIPELINE AS IT STANDS (whole-program; only slice-2 deltas spelled
+    out — the demand/retract/death machinery is per d3a1-substrate.md §8
+    modulo drift, the pre-slice input path per §1-§6 above):
+
+    admission (lib/ControlFlow/Build/Build.cpp):
+      the nested pre-pass at :1504ff keeps ONLY the cyclic-demand and
+      recursive-content fences (trigger :1530-1531, reject :1543-1549);
+      the diff_input arm + flag are DELETED — a @differential summarized
+      input is ADMITTED under -demand-instance. No new flag: input
+      differentiality flows from the user's @differential on the input
+      message through the ordinary Differential.cpp closure.
+
+    the mint (lib/Rel/Rel.cpp):
+      BuildSubgraphInstanceOps :1035 (called from the :2062-2065 mint loop,
+      per recognized+live instance); P-STORE = the `diff` local
+      (TableIsDifferential(pub)) :1071; P-DEATH gate
+      (demand_table && TableIsDifferential(demand_table)) :1162; P-INPUT =
+      `input_diff` (TableIsDifferential(input_table)) computed at the mint
+      and threaded into InstantiateEffects, which emits the second
+      kVecDrain{input, kNetRemoval} leg under it; DeathEffects unchanged.
+
+    validators (lib/Rel/Rel.cpp):
+      V-INST-SOLE = pub-alias half + the NEW induction-owned-input belt
+      :4397-4402 (recursive content stays fenced at the DR layer too);
+      V-INST-EFFECT totality drains==(input_diff?3:2),
+      input_drains==(input_diff?2:1) + the O-1 CLOSURE BELT
+      (input_diff && !diff aborts — the checked one-directional theorem);
+      V-INST-DRAIN input arm regime-split (monotone cf_ok kNetAdditions;
+      differential dr_ok BOTH signs + both filter producers); the pure
+      belts CheckInstanceDeathFrontier :4626 and CheckInstanceInputArm
+      :4627 (body :4906ff — detects input-diff STRUCTURALLY via the
+      kNetRemoval role, co-true with TableIsDifferential on real flows;
+      the INLINE checks' fork-tested teeth are a D3.a.3 obligation,
+      review design-1). V-INST-INPUT-COHERENCE + the fenced pre-minted
+      ± fetch live in Procedure.cpp (the coherence check is a
+      construction tautology within its scope — the LIVE fence is the
+      orphan-mint check; comment says so honestly).
+
+    the band (lib/CodeGen/CPlusPlus/Database.cpp, EmitSubgraphInstance):
+      the codegen selector = MEMBER PRESENCE: input_removal =
+      region.InputRemovalFrontier(); input_diff =
+      input_removal.has_value() :2406-2407 (belt-checked against
+      TableIsDifferential by V-INST-INPUT-COHERENCE); the ONE rescan mold
+      :2423ff carries the input.Present(s) conjunct under input_diff —
+      ALL THREE sources (a1 :2536, a2 :2620, a2' :2700); band-(a2')
+      :2631ff = the edge net-REMOVALS drain APPENDED after a2, a gate-set
+      CLONE of a2 (iid -> nested demand Find+Present under diff demand /
+      plain gate under mono demand -> !TouchedFlag -> the mold), NO
+      RecycleCurrent anywhere in it (the §7 fence, named in-code); the
+      five-way coupling block heads the function; band-(b)/Seal
+      UNCHANGED (the (T,F) drop scan + born arm + V-INST-PARTITION
+      already handle shrink). RecycleCurrent remains DEATH-ONLY (a0).
+
+    dumps:
+      the .ir subgraph-instance line gains the only-when-present
+      ` input-removals <vec>` production (death-branch mold; the slice's
+      ONE E-71 note, lib/ControlFlow/Format.cpp); the .rel instantiate
+      op's effects: line shows the kVecDrain(<input_tid>, kNetRemoval)
+      leg from EXISTING tokens; census KINDS unchanged (29).
+
+    witnesses (tests/OptDiff; suite 178, eqgate carriers 4 = 16 live
+    verdicts):
+      demand_diff_neighborhood_witness — the e5 carrier (diff-input x
+      MONO-demand; the FIRST P-STORE && !P-DEATH program; census
+      kInstanceDeath=0 kSubgraphInstantiate=1 kSeedFold=6); its E-F2b-
+      analogue live-key retract phases + the A4.1 cross-batch a1-Present
+      teeth. demand_diff_input_1 — REPURPOSED diagnostic->golden, the
+      diff x diff composition (E-F1 dead-key silence / E-F2 rebirth /
+      E-F2b live-key net retraction, review WIT-4 / E-F3 second-death;
+      census kInstanceDeath=1 kSeedFold=8). The two D3.a.1 witnesses are
+      FROZEN regression anchors (byte-identical nested dumps).
+
+    THE THREE PREDICATES (the §7-d2 discipline, extended): P-STORE =
+    TableIsDifferential(pub) (:1071); P-DEATH = TableIsDifferential(demand)
+    (:1162); P-INPUT = TableIsDifferential(input) (the mint's input_diff).
+    Separately spelled, NEVER folded. Live divergences: the flagship is
+    P-STORE && !P-DEATH && P-INPUT; the O-1 closure P-INPUT => P-STORE is
+    a belt-checked THEOREM (not an invariant to lean on silently).
+
+    THE ADORNMENT SUBSTRATE (what D3.a.3 touches, orchestrator-read):
+      lib/DataFlow/Demand.cpp — the multi-adornment rejects: the
+      parse-redecl belt :444-460 (a demanded query NAME with >1
+      BindingPattern rejects; patterns collected :455) and the body-walk
+      second-adornment/left-linear rejects :667-670 + :725; the adornment
+      string (b/f per column) built :797-810 and ALREADY suffixes every
+      fabricated name (demand__<name>_<adorn>); the pass head :979 notes
+      the single-shot slice.
+      lib/ControlFlow/Build/Build.cpp — the registries are ALREADY
+      (query, BindingPattern)-keyed at both walks (forcer match :468-473,
+      retract match :570-573); the builder TWINS are the f2 dedup target:
+      BuildQueryForceProcedureFromRegistry :385 (assert-only handler
+      guard) vs BuildQueryRetractProcedureFromRegistry :494 (always-on
+      fence) — ~90 shared lines, vector kinds + fence strength the only
+      deltas.
+      lib/DataFlow/View.cpp — GuardAnnotationsCompatible :584-588 keys on
+      (forcing_index, instance_key); the LABELED RESIDUAL block :571-583
+      is the f1 precondition VERBATIM (survivorship role policy;
+      proxy-TUPLE Equals-invariance; corpus-DORMANT fold arm).
+
+    THE PATH FORWARD AS DIFFS ON THIS STATE (ruled order, OD-15):
+
+    D3.a.3 — MULTI-ADORNMENT (NEXT; OQ-ADORN-KEY ruled: N disjoint
+      stores, one per (query, BindingPattern) forcing; the pass loops
+      STEP 1b->10 per adornment; opens at stage (a) — re-derive the
+      adornment-side substrate from code, THEN diffs):
+      g1 PRECONDITION f1 (BINDING, FIRST): re-derive
+         GuardAnnotationsCompatible (View.cpp:584-588) against REAL fold
+         shapes with directed witnesses BOTH directions — (a) the
+         survivorship policy (the surviving record's role is load-bearing
+         in ResolveLiveRecognition), (b) the proxy-TUPLE invariance
+         question (a same-forcing different-key fold may be LEGAL on
+         propagate-arm annotations — false-abort hazard). The fold arm
+         goes LIVE with multi-guard folds; the D3.a.0 debug-assert
+         evidence expires.
+      g2 PRECONDITION f2 (BINDING): the retract/forcer builder dedup
+         (ONE parameterized builder + one dispatcher; harden the forcer's
+         :393-394-class assert to the always-on fence while there).
+         CARRIES: review design-1 (>=1 RelValidators death test forking a
+         REAL ValidateDROps over a minimally-mutated flow — teeth on the
+         INLINE V-INST-EFFECT totality + V-INST-DRAIN input arm, not only
+         the pure belts) and the E2c a2/a2' ~24-line gate-clone dedup
+         (same sweep, same commit).
+      g3 THE PASS LOOP: lift the Demand.cpp:444-460 redecl reject; run
+         the SIP walk + fabrication + guard minting once per adornment
+         (names already adorned — the fabricated-message namespace is
+         collision-free by construction); the :667-670/:725 body-walk
+         rejects narrow to genuinely-unsupported shapes (left-linear
+         stays out).
+      g4 THE KEYING SWEEP: every registry/lookup keys
+         (query, BindingPattern) — the two Build.cpp walks already do;
+         sweep every name-only keying (fabrication memos, injector
+         suppression, forcing_index assignment) with a directed
+         two-adornment probe per site.
+      g5 N DISJOINT STORES: one SUBGRAPHINSTANCE region per adornment's
+         forcing; the Rel.cpp mint loop is already per recognized
+         instance — the work is per-adornment RECOGNITION (annotation
+         stamps per forcing_index) + census expectations (N instantiates,
+         N seals; kInstanceDeath per adornment's demand regime).
+      g6 WITNESS FAMILY: a two-adornment query witness (eqgate; decide
+         demand_multi_adorn_1's disposition — it pins the REJECT today);
+         regime matrix cells worth carrying: two adornments with
+         DIFFERENT demand regimes (one -demand-retract-forced name?—
+         ruled at stage (b)).
+      g7 FENCES THAT SURVIVE: recursive demand (FENCE (i), all-epoch;
+         the §20(AB) NeedsInductionCycleVector precondition binds); the
+         R-5 widening obligation (any body-walk/recognition widening
+         re-derives OB8(i)'s derived-input branch with a directed
+         witness FIRST).
+      g8 LIVENESS: L-rows for the fold predicate both directions (g1's
+         witnesses double), the keying sweep probes, the dedup'd
+         builder's fence; vehicles NESTED-arm; never-minted roles per
+         the L3 amendment; design a REAL red-team catcher when a fence's
+         claimed observable is load-bearing (the L15 lesson: split
+         counters >= 2 masked the E-E wipe — pick support-1 rows).
+    DEFERRED all-epoch: recursive demand.
+
+    RITUAL AMENDMENTS BANKED THIS SLICE (bind future stage-(d) runs):
+      P-lane CHAINS WIP-COMMIT AT EVERY LANE BOUNDARY (P2 ended without
+      committing; P3 had to supply the anchor — make the commit each
+      lane's LAST protocol step, verified by the next lane);
+      the placeholder-gate rule EXERCISED (P2 capped mid-suite; the
+      orchestrator personally re-executed Phase A/cmp/bless/Phase B —
+      never respawn, never trust a lane's cited-but-unrun gate);
+      masked-negative honesty: when a perturbation row PREDICTS a
+      catcher, verify the catcher's observable is not masked (L15's
+      split-counter masking; L17's single-proc byte-identity) and record
+      the miss loudly rather than re-running to green.
