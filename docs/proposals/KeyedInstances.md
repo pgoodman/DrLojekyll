@@ -5478,4 +5478,84 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     band-(b) net-retraction ride; b3 the e4 quiescence
     re-derivation + OB8 + the e5 divergence-goes-live audit; b4 the
     witness family + gate plan), then critics + adjudicator ->
-    d3a2-design.md; landing record = §20(AN)+.
+    d3a2-design.md; landing record = §20(AN)+. [EXECUTED — §20(AN);
+    the landing record shifts to §20(AO).]
+
+(AN) D3.a.2 STAGES (b)/(c) COMPLETE (2026-07-28, tip b4d08307): THE
+    BINDING DESIGN COMMITTED — d3a2-design.md + the four annexes
+    d3a2-b{1,2,3,4}-design.md (the design binds where it amends; a
+    lane's edit spec is adopted verbatim where it is silent). Fleet:
+    4 xhigh design lanes + 4 FRESH adversarial critics (pipelined
+    per lane) + 1 xhigh adjudicator (~1.65M tokens, zero deaths);
+    21 findings CONFIRMED at code and folded (0 refuted outright, 0
+    escalations — §8 OWNER-ESCALATION: NONE); the orchestrator
+    personally re-verified the design's new load-bearing anchors at
+    code pre-commit (Rel.cpp:4271 diff-at-case-head, :4324-4331
+    totality, :1170-1173 ready_after both tables; runall.sh:361;
+    the inert stub driver; Vec.h:176 NetBatch; Table.h:261-266
+    monotone Present). THE MERGED SLICE = ONE commit, four
+    sub-diffs: (i) DR-layer admission — FENCE (iii) diff_input arm
+    lifted (cyclic + recursive-content SURVIVE, OB8-load-bearing);
+    V-INST-SOLE differential half lifted + pub-alias half reworded
+    + a NEW induction-owned-input belt (ADV-1); the input_diff
+    THIRD axis (own spelling, never folded — d2 extended) threaded
+    into InstantiateEffects with the kVecDrain{input, kNetRemoval}
+    leg; V-INST-EFFECT split (drains input_diff?3:2, input_drains
+    ?2:1) + the adjudicator-folded O-1 CLOSURE BELT (input_diff &&
+    !diff aborts — R-3, the checked one-directional theorem, a
+    drift guard not a unification); V-INST-DRAIN input arm
+    regime-split (both-sign dr_ok diff / cf_ok monotone — the XC-3
+    twin); region input_removal_frontier UseRef + accessor +
+    ClassifyVector read arm + the fenced pre-minted ± fetch + NEW
+    always-on V-INST-INPUT-COHERENCE (member presence ==
+    input_diff); 2 new fork/waitpid TESTs in rel_validators_test
+    (R-7, ctest stays 6/6); the H-20 stale-comment rider. (ii)
+    codegen band — E2a member-presence selector (belt-checked); E2b
+    the input.Present(s) conjunct on the ONE mold, ALL THREE
+    sources; E2c band-(a2') as a character-for-character gate-set
+    CLONE of a2 (NO RecycleCurrent; landed a0/a1/a2 bytes untouched
+    ahead — R-A2-TRIGGER honored; the ~24-line clone joins the
+    D3.a.3 [F] dedup candidate list). (iii) the ARGUMENT lane
+    (comments only, [BYTE] everywhere): the e4 lemma
+    (L-EDGE/L-MONO-irrevocability/L-DEMAND/L-COMBINED-documentary)
+    discharging the Database.cpp:2494-2495 RIDER; the e5 audit
+    A1-A12 ZERO EDITS (the d2 anti-fold payoff); the N-1 close; the
+    pinned FIVE-WAY input-quiescence coupling. (iv) the witness 2x2
+    — NEW flagship demand_diff_neighborhood_witness (diff-input x
+    MONO-demand, the e5 carrier, FIRST P-STORE-and-not-P-DEATH
+    program, census kInstanceDeath=0 beside kSubgraphInstantiate=1)
+    + demand_diff_input_1 REPURPOSED diagnostic->golden as the
+    diff x diff composition witness (E-F1/E-F2/E-F3); both with
+    .batches (the oracle SEES input retractions — stronger than
+    D3.a.1) + .eqgate; suite 177->178, eqgate carriers 2->4; the
+    b4C-1 HIGH repaired (A4.1: the a1-Present discriminator goes
+    CROSS-batch — NetBatch annihilates same-batch +/-, the
+    as-designed perturbation could never fire). KEY RATIFICATIONS:
+    R-2 the demand_diff_input_1 flip is MANDATORY AT CO-LAND (else
+    the suite reds); R-4 NO new dump marker/token — E-71 notes owed
+    ZERO (the removal leg renders from existing kVecDrain tokens;
+    the divergence is census-visible); R-5 the derived-acyclic
+    diff-input class is EMPTY at tip (adjudicator PROBES: CMP body
+    rejected upstream by plain -demand; MERGE input mints no
+    instance; admitted inputs are ingest-written kSeedFold=0) — a
+    NAMED OBLIGATION binds any future body-walk/recognition
+    widening to re-derive OB8(i)'s derived branch with a directed
+    witness; R-8 the (d0) protocol is WHOLE-SLICE-FIRST-GREEN (no
+    witness-alone baseline exists — the abort chain forbids it) +
+    the input-writer census check. GATES PRE-REGISTERED (§6):
+    Phase-A pre-bless red set EXACTLY 14 lines (all GOLDEN-MISSING
+    class — both new cases had no goldens); golden churn EXACTLY 6
+    NEW files, zero existing golden changes; [BYTE] on 176
+    non-witness stdouts x4 + 20 pinned + BOTH frozen D3.a.1
+    witnesses (regression anchors) + data/ 36x4; Q5 MUST RUN
+    (ABABAB vs tip snapshot); ASAN x2 hard (a2' rescan over
+    DiffTable dead-row terrain); config-invariance on both new
+    witness arms; d7 L-TABLE CONSOLIDATED L1-L22 incl. L15 the
+    FORBIDDEN ungated-late-Recycle demonstration (belt-invisible by
+    design — only eqgate+HP-5 catch it, WHY the fence is
+    documentary) and L11 the co-landability chain (E1a+E1b-only
+    first abort = V-INST-DRAIN input arm). NEXT: stage (d) — (d0)
+    whole-slice-first-green baseline in the WIP-committed prototype
+    worktree, the desired-states author lane + the BLIND prototype
+    converging with pristine; then Fable review; then land as ONE
+    commit. Landing record = §20(AO).
