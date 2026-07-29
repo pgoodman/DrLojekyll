@@ -732,3 +732,184 @@ V-INST-EMITTED second) engages until d3/d4 land. Stage (b) must either
 co-design d1+d3(+d4) as one landable unit or interpose a temporary
 pre-pass fence for the intermediate commits.
 
+
+===============================================================================
+## §8 THE POST-D3.a.1 STATE (2026-07-28, tip 33cabcf1; orchestrator-read
+##    anchors — the epoch's whole-program view AFTER slice 1, §20(AK).
+##    SINGLE-PASS: the next session's fleet re-verifies THIS section +
+##    §20(AH)-(AK) before D3.a.2 code. §1-§6 above are the PRE-slice-1 map
+##    (stamped at 95251825; the slice's ~1069 inserted lines drifted its
+##    anchors); §7 is the d2 ruling, still binding.
+===============================================================================
+
+    THE PIPELINE AS IT STANDS (whole-program; only slice-1 deltas spelled
+    out — everything else per §1-§6 modulo drift):
+
+    flags (bin/drlojekyll/Main.cpp):
+      gDemandRetract :50; `-demand-retract` implies -demand :488-497;
+      threads ONLY into Query::Build (:70, fifth param) — DataFlow-side
+      like -demand; -demand-instance stays ControlFlow-only. OFF
+      PassPolicy; orthogonal to the 4 golden modes.
+
+    fabrication (lib/Parse/Demand.cpp):
+      FabricateDemandMessage(name, types, differential) — when the flag
+      is on, stamps message->differential_attribute =
+      Token::Synthetic(kPragmaDifferential, DisplayRange()) :209 ->
+      IsDifferential() holds -> TrackDifferentialUpdates seeds the
+      receive (lib/DataFlow/Differential.cpp seed arm) -> the WHOLE
+      demanded closure flips differential via the ORDINARY machinery
+      (P-STORE co-activates per the §7 d2 ruling; zero bespoke flat
+      code — the standing eqgate-oracle premise).
+
+    the retract entry (lib/ControlFlow/Build/Build.cpp + codegen):
+      BuildQueryRetractProcedureFromRegistry :494 (a second
+      kQueryMessageInjector; params = the bound query params; appends to
+      del_vec; add_vec rides empty; the handler-presence lookup is an
+      ALWAYS-ON fence — review-[E]; the forcer twin at :385ff keeps its
+      pre-existing assert, unified at the f2 dedup), dispatched :575;
+      ProgramQuery.retract_function; the generated hidden friend
+      `<name>_<pattern>_retract(db, log, functors, bound...)` (void,
+      both lowerings). SET netting = the handler NETBATCH arm
+      (Procedure.cpp; NetBatch in Vec.h) — adds∩removes annihilate;
+      AddExplicit idempotence + SubExplicit structural no-op make the
+      surface TOTAL+IDEMPOTENT (design R-4).
+
+    the mint (lib/Rel/Rel.cpp):
+      kInstanceDeath gate :1139 (`demand_table &&
+      TableIsDifferential(demand_table)` — P-DEATH, demand-keyed, LIVE
+      under -demand-retract; comment :1138 respelled); DeathEffects
+      unchanged (4-effect zero-counter signature); OD-2 sign sort +
+      V-INST-ORDER death-before-instantiate unchanged.
+
+    validators (lib/Rel/Rel.cpp):
+      V-INST-DRAIN REGIME-SPLIT ~:4500-4550: monotone arms check the CF
+      vector (cf_ok -> HasTableDeltaVector, Build.h:327/Build.cpp:849);
+      the DIFFERENTIAL demand arm checks the DR-side vec + the `+`
+      kFrontierFilter producer (dr_ok) — the CF vecs mint later, in the
+      stratum lowering (XC-3); CheckInstanceDeathFrontier :4789 (pure;
+      called :4550; death-tested in rel_validators_test via the shared
+      tests/DrTest/DeathHarness.h) requires the demand kNetRemoval vec +
+      the `-` kFrontierFilter producer; the V-INST-EFFECT death arm is
+      G-8 source-aware (drain must be kNetRemoval of op.demand_table).
+
+    the lowering (lib/ControlFlow/Build/Procedure.cpp):
+      death_by_sid :281-283; per-instantiate wiring :360-410:
+      V-INST-DEATH-COHERENCE :379 [ALWAYS-ON] (death names the SAME
+      demand/pub as its instantiate), orphan-mint fences [ALWAYS-ON] at
+      EVERY memoized fetch (band-(a1) demand frontier :318 — review-[B];
+      death drain :399; pub del/add queues), removal_frontier.Emplace
+      :404, demand_table.Emplace :368 (the a2 gate's read;
+      model-covered by the declared kInstanceDemand effect),
+      {sid,kInstanceDeath} enrollment (V-INST-EMITTED balances at
+      3 ops/differential store, 2/monotone); ClassifyVector's
+      kSubgraphInstance arm classifies removal_frontier(read) +
+      del/add queues(written).
+
+    the band (lib/CodeGen/CPlusPlus/Database.cpp, EmitSubgraphInstance):
+      band-(a0) DEATH :2406-2439 (drain the NETTED kNetRemovals
+      frontier -> FindInstance -> kNoInstance silent-skip (R-6) ->
+      RecycleCurrent :2435 — Touch + current.Reset, its FIRST codegen
+      caller); band-(a1) unchanged + fence; band-(a2) DEMAND-LIVENESS
+      gate :2487-2519 (diff arm ONLY: `if (iid != kNoInstance) { dq =
+      demand.Find(key); if (dq != kNoRow && Present(dq) &&
+      !TouchedFlag) rescan }` — the review-[I] nest; monotone arm
+      tip-verbatim); band-(b) two-regime :2540ff: the (T,F) DROP SCAN
+      (frz rows absent from cur -> SubDerivation + DelQueue append,
+      OVERDELETE-first per iid) BEFORE the born scan (diff:
+      AddDerivation + AddQueue + EmitIndexAdds gated on added_row;
+      monotone: TryAdd verbatim); the generated V-INST-PARTITION belt
+      :2557-2650 [ALWAYS-ON in generated code]: born+carried==cur &&
+      dropped+carried==frz per touched iid; CollectEffects registers
+      DemandTable under the diff regime (review-[D]); Seal unchanged;
+      store ctor `, false` live for differential stores (HP-7 belt
+      OFF for them — [DBG] elsewhere).
+
+    the DS-R4-10 fence (lib/DataFlow/Differential.cpp):
+      POST-FIXPOINT sweep (before report_message_errors, under
+      log.IsEmpty()), guard `is_dead || !negated_view || !is_never ||
+      !can_produce_deletions`, per-predicate diagnostics + an
+      ALWAYS-ON no-predicate fallback (review-[C]);
+      negate_never_diff_1 = the all-4-modes witness.
+
+    witnesses (tests/OptDiff):
+      demand_neighborhood_witness — DIFFERENTIAL regime: `-demand
+      -demand-retract` (+ eqgate nested arm), the @differential
+      nbhd_out tap (eqgate = answer + SORTED PUBLISHED-DELTA identity),
+      phases birth/rebuild/RETRACT/dead-key-edge(e7 abort teeth)/
+      rebirth/second-death; demand_neighborhood_mono_witness — the
+      R-MONO twin (pre-slice bytes, bare `-demand`, second eqgate
+      case; keeps the monotone nested lowering end-to-end covered).
+      Suite 177; ctest 6 binaries (rel_validators_test carries
+      DeathFrontierTest; the fork/waitpid harness is shared
+      tests/DrTest/DeathHarness.h).
+
+    THE TWO PREDICATES (the §7 ruling, as landed): P-STORE =
+    TableIsDifferential(pub) (Rel.cpp mint stamp -> region ctor ->
+    descriptor -> `, false`), P-DEATH = TableIsDifferential(demand)
+    (:1139). CO-ACTIVE on every accepted D3.a.1 program; they FIRST
+    DIVERGE at D3.a.2 by design (diff input: P-STORE true, P-DEATH
+    false — belt off, no death minted; the pub-keyed spelling already
+    handles it). NEVER fold them.
+
+    THE PATH FORWARD AS DIFFS ON THIS STATE (ruled order, OD-15):
+
+    D3.a.2 — DIFFERENTIAL INPUT (NEXT; OQ-INPUT ruled YES; opens at
+      stage (a) — re-derive the input-side substrate from code, THEN
+      diffs):
+      e1 LIFT FENCE (iii): Build.cpp:1516-1560's diff_input arm (the
+         `in.CanReceiveDeletions()` reject) — demand_diff_input_1
+         FLIPS from all-4-modes-diagnostic to a compiling case
+         (runall.sh diagnostic-list + CLAUDE.md edits ride).
+      e2 LIFT V-INST-SOLE's input arm (Rel.cpp ~:4339 — the
+         `TableIsDifferential(op.input_table)` forbiddance; keep the
+         pub-alias half).
+      e3 THE INPUT REMOVAL TRIGGER: the ruled semantics — ANY input
+         change (either sign) for a live-demanded key fires
+         RecycleCurrent + full rescan; band-(b) diff-at-publish emits
+         the net retractions. Mechanism to design: the input table's
+         kNetRemovals frontier as a SECOND a2 drain (or one combined
+         ± drain) -> a Recycle-then-rescan arm (the a2 gate's
+         demand-liveness conjuncts unchanged); InstantiateEffects'
+         input drain arm grows the removal leg (+ V-INST-EFFECT/
+         V-INST-DRAIN input-arm regime split mirroring the demand
+         arm); TouchedFlag stays the same-epoch dedup.
+      e4 THE QUIESCENCE RE-DERIVATION (the §3.2 rider, FIRST-CLASS):
+         the a2 gate's `Present == committed presence` argument
+         assumed the demand table is quiescent in an input epoch;
+         with differential INPUT the epoch shapes multiply — re-derive
+         the interleavings (input-removal epoch vs demand-retract
+         epoch vs mixed batches) and pin the coupling like OD-15 did
+         for death (netting/TouchedFlag/V-INST-FRESH).
+      e5 THE DIVERGENCE GOES LIVE: first program with P-STORE true &&
+         P-DEATH false (diff input, monotone demand). V-INST-DIFF-
+         COHERENCE unaffected (same predicate both sides); belts/
+         effects on the P-STORE side must not assume a death exists
+         (V-INST-PAIR already allows n_death==0).
+      e6 WITNESS: a differential-INPUT eqgate witness (edge retract
+         batches; flat -demand already handles them — the oracle
+         stays live); decide demand_diff_input_1's disposition
+         (promote vs keep as a lifted-fence compile witness) at
+         stage (b).
+      e7 G-INPUT-NEG / G-STALE discharge (the §5 gap ledger rows).
+      e8 LIVENESS: perturbation rows for the new arm (the L-table
+         idiom; NESTED-arm vehicles; never-minted roles chosen per
+         the L3 amendment).
+    D3.a.3 — MULTI-ADORNMENT: loop the pass per adornment;
+      (query, BindingPattern) keying sweep; N disjoint stores
+      (OQ-ADORN-KEY). PRECONDITIONS (both BINDING): f1 the
+      View.cpp:571-583 fold-predicate re-derivation with directed
+      witnesses BOTH directions (survivorship role policy;
+      proxy-TUPLE invariance); f2 the review-[F] retract/forcer
+      builder dedup (one parameterized builder + one dispatcher;
+      harden the forcer's assert-only handler guard to the always-on
+      fence while there).
+    DEFERRED all-epoch: recursive demand (FENCE (i); the §20(AB)
+      NeedsInductionCycleVector precondition binds any toucher).
+
+    RITUAL AMENDMENTS BANKED THIS SLICE (bind future stage-(d) runs):
+      WIP-COMMIT the prototype worktree BEFORE perturbation cycles;
+      perturbation roles must be GENUINELY never-minted for the flow
+      (kProductInput, not kDeleteQueue — differential tables own
+      queues); runtime-perturbation vehicles are the NESTED arm
+      (diffrun's four modes are the flat arm); background shells use
+      ABSOLUTE paths (cwd resets silently).
