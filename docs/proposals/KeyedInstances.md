@@ -5416,4 +5416,66 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     substrate build-out (lane2's map + the advisories seed the
     lanes), then the ritual-head a2-trigger-shape ruling BEFORE
     stage-(b) lanes; this record took the charter's §20(AL) letter,
-    so the D3.a.2 landing record shifts to §20(AM)+.
+    so the D3.a.2 landing record shifts to §20(AM)+. [EXECUTED —
+    §20(AM); the landing record shifts again, to §20(AN)+.]
+
+(AM) D3.a.2 STAGE (a) COMPLETE + THE R-A2-TRIGGER RULING (2026-07-28,
+    tip bf0315a0): THE SLICE SUBSTRATE COMMITTED —
+    KeyedInstances.artifacts/d3a2-substrate.md (§1 the flat oracle
+    O-1..O-9 / §2 the input path as landed / §3 fences + the
+    input_table site census + the abort chain / §4 the epoch
+    catalogue + OB1-OB8 quiescence obligations / §5 the gap ledger
+    mapped to b1-b4 / §6 the ritual-head fact base / §7 the ruling /
+    XC-5..XC-10). Fleet: 3 seed-UNREAD opus lanes (flat-oracle
+    trace; exhaustive input_table census; epoch-interleaving
+    catalogue) + fleet1's lane2 input-substrate map as a fourth lane
+    (same code bytes, house precedent) + xhigh seed-READ consolidator
+    (~482k tokens, zero deaths); the ORCHESTRATOR personally
+    re-verified all ten load-bearing anchor families at code
+    pre-commit (all exact). HEADLINE STRUCTURAL FACTS: O-1 the e5
+    divergence is EMPIRICAL — plain -demand on demand_diff_input_1
+    gives a monotone demand Table beside DiffTable pt/ans/getpt
+    (P-STORE true, P-DEATH false); O-3 the edge channel already
+    NetBatches (OB7 discharged); O-8 the flat oracle is made ENTIRELY
+    of landed machinery (no exotic op; kInstance*=0 flat); O-9 the
+    two axes compose as plain symmetric differential (D3.a.2's input
+    axis orthogonal to D3.a.1's demand axis — the slice serves BOTH
+    diff-input x mono-demand AND diff-input x diff-demand). XC-9
+    (substantive): the a2 gate selector is PUB-keyed, so the
+    e5-carrier emits the R-3 gate against a MONOTONE demand member —
+    soundness there is IRREVOCABILITY, not quiescence (a NEW e4
+    sentence). XC-6: the in-source "Build.cpp:999" cross-refs
+    (Rel.cpp ~:4507, Procedure.cpp ~:326) are STALE-BY-DRIFT — the
+    live monotone append is Build.cpp:1110-1114 (H-20 comment rider
+    lands with the slice). ADV-3 CONFIRMED all-lanes: the shared
+    rescan mold needs a Present(s) conjunct over a DiffTable input
+    (spelling RULED Present), on ALL THREE sources (incl. a1 birth —
+    the E-F2 rebirth cell). THE RULING (substrate §7, adjudicated at
+    code, NO owner brief — the §6 fact base proves no admissible
+    option changes observable behavior): **R-A2-TRIGGER = TWO
+    DRAINS, NO RECYCLE** — (1) the input kNetRemovals frontier is a
+    SECOND a2 drain arm (third rescan source) into the ONE shared
+    mold; combined ± drain REJECTED (no combined VecRole — new model
+    surface for zero gain); V-INST-EFFECT grows input_drains==2
+    under the INPUT-keyed regime (ADV-6 third axis, never folded
+    into P-STORE/P-DEATH); (2) gate-set IDENTITY across the two a2
+    arms is binding (behavior-neutrality holds only under it); (3)
+    RecycleCurrent stays DEATH-ONLY — gated Recycle is a provable
+    no-op that blinds V-INST-FRESH in that arm; the UNGATED-late
+    Recycle is the one observably-divergent shape (E-E silent
+    full-retract, no landed belt catches it) and is FORBIDDEN (named
+    stage-(b) design fence); OQ-INPUT's ruled SEMANTICS preserved
+    verbatim, its "RecycleCurrent +" mechanism wording superseded at
+    band position (the R-2 precedent); (4) band order a0 -> a1 ->
+    a2 -> a2'-removals-APPENDED (diff minimality; landed bytes
+    untouched ahead; does NOT discharge the OB8 combined-entry
+    fence-or-proof — that stays e4's). Docs only; no gates beyond
+    anchor verification (no code moved; binaries stand). NEXT:
+    stage (b) — design lanes under this substrate + the ruling
+    (suggested split per the session charter: b1 fence lifts +
+    input kNetRemovals provisioning + effect/validator regime
+    splits; b2 the a2' removal arm + TouchedFlag coupling + the
+    band-(b) net-retraction ride; b3 the e4 quiescence
+    re-derivation + OB8 + the e5 divergence-goes-live audit; b4 the
+    witness family + gate plan), then critics + adjudicator ->
+    d3a2-design.md; landing record = §20(AN)+.
