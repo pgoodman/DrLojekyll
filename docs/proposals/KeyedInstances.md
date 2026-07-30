@@ -5790,4 +5790,80 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     inline teeth + the E2c clone; b4 g5 the O1 per-pub relaxation +
     per-store ADV-10 confirmation + g6 the new success witness + census),
     then critics + adjudicator -> d3a3-design.md; landing record =
-    §20(AR)+.
+    §20(AR)+. [EXECUTED — §20(AR); the landing record shifts to §20(AS).]
+
+(AR) D3.a.3 STAGES (b)/(c) COMPLETE (2026-07-30, tip b65e7668): THE
+    BINDING DESIGN COMMITTED — d3a3-design.md + the four annexes
+    d3a3-b{1,2,3,4}-design.md (the design binds where it amends; a lane's
+    edit spec is adopted verbatim where it is silent). Fleet: 4 xhigh
+    design lanes + 4 FRESH adversarial critics (pipelined per lane) + 1
+    xhigh adjudicator (~1.33M tokens, zero deaths); 17 findings CONFIRMED
+    at code and folded (0 refuted, 0 escalations — §8 OWNER-ESCALATION:
+    NONE); the orchestrator personally re-verified the load-bearing
+    anchors at code pre-commit (R-DUP's RewireConsumer :236 + the shared-
+    reader comment :230-231; O1 inst_per_pub :4289 + forcing_index on the
+    DROp Rel.h:713/:1117; the census recount gate :3999/:4020; the
+    file-local static ResolveLiveRecognition :918; the internal-only fold
+    helpers Query.h:1186/:1188). THE ONE HIGH FINDING THAT REWROTE THE
+    SLICE — F1/R-DUP (b1-critique, CONFIRMED): for EVERY two-adornment
+    query both adornments trace to the SAME q_read/q_consumer (one clause,
+    one materialization Demand.cpp:477; full-width reader :530-552) and,
+    for the g6 seed, the SAME body (consumer,read) over edge_2;
+    RewireConsumer substitutes ONLY c->view==read (:236), so the first
+    adornment's rewire consumes the read-uses and the second adornment's
+    guard is ORPHANED -> DCE'd -> skipped at mint -> HP-5 at the witness.
+    b1's naive "move Steps 5-10 verbatim under Loop 2" does NOT lower the
+    witness. FOLDED as amendment R-DUP (§1.5): group minted guards by
+    (consumer,read); a singleton rewires directly (today's bytes, [BYTE]
+    for |plan|==1); a multi-guard group mints a MERGE UNION of the guards'
+    restored outputs and rewires the consumer ONCE (the flat-arm
+    realization of the reference-counted-union pub, substrate §6.2). It
+    RULES AT CODE (the answer is FIXED — no owner brief) but CANNOT be
+    byte-closed read-only, so stage (c) OWNS mechanism selection
+    (union-rewire PREFERRED) + verification (R-9: the g6 eqgate +
+    the NEW structural gate that each forcing's ResolveLiveRecognition
+    yields a non-null input_table, Rel.cpp:976-982). THE MERGED SLICE =
+    ONE commit, coherent sub-diffs: (g3/b1) the two-phase locate/check/
+    mint pass loop + the seen_variants dedup + RE-MESSAGE :668/:723
+    (never narrow) + the stray-consumer UNION + R-DUP; DELETE the :444-462
+    per-name reject. (g1/b2, FIRST/BINDING, co-lands with g3) the
+    PromoteSurvivorToBody kBody-survivor policy (decl in the INTERNAL
+    Query.h) + the stamp-time kBody-census belt + KEEP GuardAnnotations-
+    Compatible (re-derive its justification, scoping BOTH the :571-583
+    residual AND the :559-562 sentence to JOIN carriers) + 4 pure
+    DataFlowValidators tests. (g5/b4) O1 relax inst_per_pub to key
+    (pub_table, forcing_index) (Rel.cpp:4289/:4406/:4454, +#include <map>)
+    + ADV-10 per-store coupling confirmed (real band-(b) anchors
+    Database.cpp:2736/:2763/:2801) + the RelValidators O1 pair. (g6/b4)
+    the NEW From-preserving witness demand_multi_adorn_witness (mono
+    flagship, bare -demand + -demand-instance eqgate; suite 178->179,
+    eqgate 4->5; demand_multi_adorn_1 STAYS diagnostic, reject moves
+    :457->:717-722). (g2/b3) the ONE parameterized forcer/retract builder
+    + the [F] always-on fence + the E2c gate-clone dedup + design-1 inline
+    teeth by PURE EXTRACTION (CheckInstantiateEffects/CheckInstanceInputDrain,
+    the CheckInstanceInputArm precedent — REJECTING b3's gValidateDROpsTestHook
+    production global per the no-env-gated-debug-scaffolding memory;
+    DEFER-if-entangled). RATIFICATIONS R-1..R-9 (R-1 g1 FIRST co-lands with
+    g3; R-2 g3 owns R-DUP; R-3 O1 byte-neutral standalone; R-4
+    PromoteSurvivorToBody b2-owned hard dep; R-5 b3 §3.4 test DELETED
+    (uncompilable static symbols + toothless dormant arm) -> teeth = b2's
+    pure unit; R-6 design-1 by extraction not hook; R-7 g6 mono-only,
+    diff-witness deferred; R-8 ASAN pre-registered; R-9 R-DUP stage-(c)
+    mechanism+verify). GATES PRE-REGISTERED (§6): Phase-A red EXACTLY +1
+    (demand_multi_adorn_witness GOLDEN-MISSING); golden churn ZERO existing
+    + the NEW witness files; [BYTE] on 176 stdouts x4 + 20 pinned + the 4
+    frozen nested witnesses + both frozen diff witnesses (E2c) + config-
+    invariance; ctest DataFlowValidators +4 + RelValidators +O1-pair
+    (+design-1 if it lands); census the new witness kSubgraphInstantiate=2
+    kInstanceSeal=2 kInstanceDeath=0 (MEASURE at stage (c), the D3.a.1
+    under-prediction lesson); ASAN SUITE + ctest; the d7 L-table (both g1
+    fold directions, L-keying-probe the R-DUP orphan tooth = a real HP-5
+    divergence, L-O1-liveness positive+negative, the L15 support-1 honesty).
+    STAGE-(c) LOAD-BEARING RESIDUALS (the two items this read-only stage
+    could not close): the ResolveLiveRecognition x interposed-MERGE
+    interaction (Rel.cpp:933-1022/:976-982) and the MEASURED witness census.
+    Docs only; no code moved; binaries stand. NEXT: stage (d) — (d0)
+    whole-slice-first-green in the WIP-committed prototype worktree
+    (R-DUP forces this — no witness-alone baseline), the desired-states
+    author lane + the BLIND prototype converging with pristine; then Fable
+    review; then land as ONE commit. Landing record = §20(AS).
