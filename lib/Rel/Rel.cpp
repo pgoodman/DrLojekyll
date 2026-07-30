@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <map>
 #include <memory>
 #include <tuple>
 #include <unordered_set>
@@ -4286,7 +4287,6 @@ void ValidateDROps(
   {
     std::unordered_map<unsigned, unsigned> inst_per_store, death_per_store,
         seal_per_store;
-    std::unordered_map<uintptr_t, unsigned> inst_per_pub;
     for (const DROp &op : flow.ops) {
       switch (op.kind) {
         case DROpKind::kSubgraphInstantiate: {
@@ -4402,9 +4402,6 @@ void ValidateDROps(
                           "F-A-fenced)");
           }
           ++inst_per_store[op.instance_store_id];
-          if (op.table_op_table) {
-            ++inst_per_pub[reinterpret_cast<uintptr_t>(op.table_op_table)];
-          }
           break;
         }
         case DROpKind::kInstanceDeath: {
@@ -4451,12 +4448,16 @@ void ValidateDROps(
         default: break;
       }
     }
-    for (const auto &kv : inst_per_pub) {
-      if (kv.second != 1u) {
-        ValidatorFail("V-INST-SOLE: a published table has more than one "
-                      "SUBGRAPH_INSTANTIATE deriver");
-      }
-    }
+    // D3.a.3 (g5/ADV-1, RULE-AT-CODE O1): per-pub uniqueness re-keyed on
+    // (pub_table, forcing_index). N adornments of one query name SHARE the pub
+    // model table (Rel.cpp:992 resolves pub by q_decl.Id() = name+arity), so a
+    // per-pub-POINTER tally counts N and false-aborts under multi-adornment; the
+    // LEGAL deriver count per (pub, forcing) is exactly 1. Factored PURE so the
+    // relaxed key's negative space (a same-forcing double-mint STILL aborts) is
+    // death-testable in tests/RelValidators. Byte-neutral single-adornment
+    // ({pub,0}==1). The census recount + per-store inst_per_store keep the
+    // residual sanity on top.
+    CheckInstanceSolePub(flow);
     for (const auto &kv : inst_per_store) {
       const unsigned sid = kv.first;
       const unsigned n_inst = kv.second;
@@ -4947,6 +4948,29 @@ void CheckInstanceInputArm(const DRFlowGraph &flow) {
                     "were never provisioned (OD-4/R-a2 gap; a differential "
                     "input needs BOTH signs' DR vec + frontier-filter "
                     "producer)");
+    }
+  }
+}
+
+// V-INST-SOLE per-pub uniqueness (D3.a.3 O1): each (pub_table, forcing_index)
+// pair has EXACTLY one kSubgraphInstantiate deriver. std::map<pair<...>>: the
+// pair has operator< for free (no custom hash); a composed single-uintptr key
+// is rejected — pointer bits and index bits cannot pack collision-free, and a
+// false collision would silently mask a real double-mint. PURE over the flow so
+// the relaxed key's negative space is death-testable. fprintf+abort via
+// ValidatorFail, survives NDEBUG, always-on.
+void CheckInstanceSolePub(const DRFlowGraph &flow) {
+  std::map<std::pair<uintptr_t, unsigned>, unsigned> inst_per_pub;
+  for (const DROp &op : flow.ops) {
+    if (op.kind == DROpKind::kSubgraphInstantiate && op.table_op_table) {
+      ++inst_per_pub[{reinterpret_cast<uintptr_t>(op.table_op_table),
+                      op.forcing_index}];
+    }
+  }
+  for (const auto &kv : inst_per_pub) {
+    if (kv.second != 1u) {
+      ValidatorFail("V-INST-SOLE: a (published table, forcing) pair has more "
+                    "than one SUBGRAPH_INSTANTIATE deriver");
     }
   }
 }

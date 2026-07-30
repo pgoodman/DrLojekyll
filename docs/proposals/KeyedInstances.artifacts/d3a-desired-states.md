@@ -229,3 +229,75 @@ lifted fence's diagnostic is unwitnessable by design), design-2,
 design-3 (informational: zero unrecorded deviations).
 
 GATES RECORD (binding copy = ledger §20(AO)).
+
+## SLICE 3 — D3.a.3 (multi-adornment: N adornments -> N disjoint stores, one shared pub)
+
+STAGE-(d) THREE-WAY CONVERGENCE (design §6 == desired-states author ==
+blind prototype; orchestrator-compared BYTE-LEVEL):
+  half 1  the PRE-REGISTERED predictions (d3a3-design.md §6): Phase-A
+          pre-bless red EXACTLY +1 (demand_multi_adorn_witness,
+          GOLDEN-MISSING); zero existing-golden churn; [BYTE] on 176
+          non-witness stdouts x4 + 20 pinned + the 4 frozen D3.a.1/D3.a.2
+          witnesses; ctest DataFlowValidators +4 + RelValidators +2 (the
+          O1 pair); eqgate carriers 4->5; census the new witness
+          kSubgraphInstantiate=2 (MEASURE at stage (c)).
+  half 2  the DESIRED-STATES AUTHOR lane (BLIND to the prototype):
+          hand-derived the witness .dr (the §2.3 seed), the 7-line stdout
+          golden VALUES MEASURED by compiling+running the bf-half and
+          fb-half drivers in isolation (bf=out-neighbors, fb=in-neighbors,
+          the {10,11,12} HP-5 disjoint component), the driver harness (the
+          b4 MED-1 real surface), and the census PREDICTION
+          (kSubgraphInstantiate=2 kInstanceSeal=2 kInstanceDeath=0
+          kIngestFold=3 kEagerForward=3 kCommitSweep=3 kSeedFold=0,
+          N-scaled from the measured bf-half 2/2/2). One honest flag:
+          whether R-DUP's union MERGE surfaces a kEagerUnion/extra
+          kEagerForward (did NOT materialize).
+  half 3  the BLIND WORKTREE PROTOTYPE (own worktree/branch d3a3-proto,
+          own build, tip-verified 8aca0a9e; whole-slice-first-green per
+          R-8/(d0) since R-DUP forbids a witness-alone baseline;
+          WIP-committed at every lane boundary): implemented g1+g3+R-DUP+
+          O1+g6+g2, reached SUITE PASS(179) + ctest 6/6, and RESOLVED the
+          R-9(b) obligation at code — the union's identity restore tuple
+          canonicalizes away, exposing a guard JOIN as a direct MERGE
+          member, whereupon ProxyMergedViews migrated the guard annotation
+          onto a proxy and ORPHANED the forcing; clean root-cause fix:
+          ProxyMergedViews PRESERVES the guard annotation on the underlying
+          JOIN (dormant single-adornment, byte-neutral).
+  CONVERGENCE: prototype == DS-author BYTE-EQUAL on the witness .dr, the
+  edge set {(1,2),(1,3),(2,4),(10,11),(11,12)}, the 7-line golden, the
+  .drflags/.eqgate, AND the MEASURED census (kSubgraphInstantiate=2
+  kInstanceSeal=2 kInstanceDeath=0 kIngestFold=3 kEagerForward=3
+  kCommitSweep=3 kSeedFold=0 — matches the design prediction EXACTLY, no
+  under-prediction). Every pre-registered prediction MATCHED.
+  P3 DEVIATIONS (LOUD-recorded, all orchestrator-adjudicated): (1) design-1
+  inline-teeth DEFERRED (R-6 DEFER-IF-ENTANGLED — a separable ~100-line
+  Rel.cpp refactor, NO multi-adornment dependency; follow-up candidate);
+  (2) the .rel census PIN dropped (the .irgold harness pins the FLAT
+  .drflags arm, cannot pin the NESTED census without collapsing the
+  flat==nested eqgate proof — the neighborhood-witness precedent; MEASURED
+  instead); (3) O1 realized as a PURE CheckInstanceSolePub extraction
+  (needed for the testable RelValidators O1 pair — the CheckInstanceInputArm
+  precedent); (4) the NEW ProxyMergedViews R-9(b) fix (above); (5) the
+  all-free-adornment loop arm.
+
+FABLE REVIEW (workflow, 9 agents: 4 dimension lanes -> adversarial verify
+-> adjudicator): ONE HIGH finding that BLOCKED, zero refuted. FIXED
+pre-commit: the P3 deviation-(5) all-free arm was a SILENT WRONG-ANSWER
+(a query name with a bound AND an all-free sibling adornment compiled but
+the all-free cursor read the demand-guarded pub and under-answered — a
+regression from the pre-slice per-name reject; the "trips the Step-4
+stray-consumer reject" justification was empirically FALSE, all adornments
+share ONE materialization) -> the skip became a clean reject
+(return reject("...all-free sibling adornment is not yet supported"));
+the orchestrator ADDED demand_multi_adorn_allfree_1 as the all-4-modes
+diagnostic witness (the reject had NO test coverage — WHY the bug survived
+to review; suite 179->180). Two COSM stale-anchor respells (Rel.cpp:976->
+:977, Build.cpp:1528->:1452 x6 comment sites; Build.h twin-name
+BuildQueryForceProcedure->BuildQueryInjectorProcedure). Zero HIGH/MED
+survived the fix; O1's pointer-keyed map is count-only (no codegen leak),
+g2 byte-faithful to the deleted twins, E2c gate-set identity structural,
+determinism intact. The HIGH fix proven DUMP-NEUTRAL (20/20 pinned + 4
+frozen witnesses byte-identical on FINAL bytes; the reject fires only on
+the all-free-mix shape no corpus program has).
+
+GATES RECORD (binding copy = ledger §20(AS)).

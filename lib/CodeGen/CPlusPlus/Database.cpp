@@ -2544,11 +2544,30 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   // band-(a1) does (the ADJ-C1 collapse — one rescan mold, two drain SOURCES).
   // FindInstance (non-adding) SKIPS a stray/undemanded edge (kNoInstance);
   // !TouchedFlag dedups a co-demanded-and-edge-touched key to one rescan.
-  {
+  // D3.a.3 E2c: the ONE edge-drain gate-set emitter (band-(a2) net-additions +
+  // band-(a2') net-removals), parameterized ONLY by the drain frontier. Folding
+  // the two arms STRUCTURALLY ENFORCES the binding R-A2-TRIGGER §7(2) gate-set
+  // identity (a divergence between the arms was a design ERROR; one emitter
+  // makes divergence unrepresentable). The demand-liveness gate rationale (R-3 +
+  // the D3.a.2 e4 discharge):
+  //   L-EDGE  an edge ADD or RETRACT epoch leaves demand FROZEN (channel
+  //           disjointness: the edge handler never writes demand) =>
+  //           Present(dq) == committed demand presence;
+  //   L-MONO  a MONOTONE demand (the e5 carrier: diff input, P-STORE true,
+  //           P-DEATH false) => Present degenerates to Table::Present
+  //           (always-true); sound by IRREVOCABILITY (never retracts);
+  //   L-DEMAND a demand epoch leaves the input frontiers EMPTY => both arms
+  //           iterate zero rows: vacuously sound.
+  // (The L-EDGE derived-input branch is FORWARD-LOOKING; a widening re-derives
+  // OB8(i) first. The hypothetical COMBINED demand+input entry cannot arise —
+  // BuildIOProcedure emits one ingest proc per message, one channel each. NO
+  // RecycleCurrent in either arm — §7(3): current is provably empty at first
+  // touch; an ungated Recycle would be the E-E silent full-retract, FORBIDDEN.)
+  const auto emit_edge_drain = [&](const DataVector &frontier) {
     // ADJ-R1: the outer bind is the FULL EDGE ROW (edge arity), NOT the demand
     // key arity — the key is projected from the edge's own key cols below.
     const auto edge_arity =
-        static_cast<unsigned>(input_front.ColumnTypes().size());
+        static_cast<unsigned>(frontier.ColumnTypes().size());
     std::vector<std::string> ebinds;
     for (unsigned i = 0u; i < edge_arity; ++i) {
       ebinds.push_back("e" + std::to_string(i));
@@ -2558,47 +2577,11 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
       ekeyexprs.push_back("e" + std::to_string(in_key[j]));
     }
     cc << cc.Indent() << "for (const auto &[" << JoinExprs(ebinds, ", ")
-       << "] : " << VecName(input_front) << ") {\n";
+       << "] : " << VecName(frontier) << ") {\n";
     cc.PushIndent();
     cc << cc.Indent() << "const auto iid = " << sname << ".FindInstance(Key_"
        << id << "{" << JoinExprs(ekeyexprs, ", ") << "});\n";
     if (diff) {
-      // D3.a.1 DEMAND-LIVENESS gate (R-3): iid existence stopped implying
-      // liveness when demand became retractable (append-only iids, no
-      // tombstone — OD-15; TouchedFlag resets at Seal). Gate the rebuild on
-      // the demand table's POST-COMMIT presence for the key (Present). Sound
-      // because the demand table is QUIESCENT in an input-edge epoch (one
-      // entry call = one epoch; the edge handler never writes demand) —
-      // Present == committed presence. Flat agrees by construction (the edge
-      // joins against the absent demand row).
-      // D3.a.2 DISCHARGE (e4 lemma, d3a2-design §b3): a differential
-      // (deletable) summarized input does NOT break this gate. Present is
-      // counter-based and flips at the ingest fold (T-5), so at band time it
-      // reads the epoch-NET committed-equivalent presence. Sound for every
-      // admitted epoch shape:
-      //   L-EDGE  an edge ADD or RETRACT epoch leaves demand FROZEN (channel
-      //           disjointness: the edge handler never writes demand) =>
-      //           Present(dq) == committed demand presence (the argument
-      //           above, verbatim; retract changes nothing demand-side);
-      //   L-MONO  a MONOTONE demand (the e5 carrier: diff input, P-STORE true,
-      //           P-DEATH false) => Present degenerates to Table::Present
-      //           (always-true); the gate is sound by IRREVOCABILITY — a
-      //           monotone demand key is never retracted, so a bound iid
-      //           always implies a live demand (no zombie-rebirth to defend);
-      //   L-DEMAND a demand epoch leaves the input frontiers EMPTY
-      //           (per-epoch-fresh flow-proc Vec locals) => this arm and the
-      //           a2' removal arm iterate zero rows: vacuously sound.
-      // (The L-EDGE derived-input branch is FORWARD-LOOKING: today every
-      // admitted summarized input's model is ingest-written — the plain-demand
-      // body-walk and the instance recognition exclude seed-fold-written
-      // inputs; a widening re-derives OB8(i) first.)
-      // The ONE unhandled shape — a hypothetical COMBINED demand+input entry
-      // (both channels one epoch) — cannot arise: BuildIOProcedure emits one
-      // ingest proc per message, each writing a single channel. That fence is
-      // DOCUMENTARY (no band-reachable assert can attest provenance — Present
-      // carries no "written this epoch" bit); a future multi-message batch API
-      // MUST re-derive this gate's committed-vs-post-fold Present spelling
-      // before it lands.
       const auto demand_member = table_member[region.DemandTable().Id()];
       // Fable review [I]: the demand probe nests INSIDE the iid check so the
       // common stray/undemanded-edge rows (iid == kNoInstance) pay no hash
@@ -2626,7 +2609,10 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
     }
     cc.PopIndent();
     cc << cc.Indent() << "}\n";  // edge drain
-  }
+  };
+
+  // band-(a2) [R-REBUILD-a2]: the input net-additions rebuild drain.
+  emit_edge_drain(input_front);
 
   // band-(a2') [R-A2-TRIGGER §7] drain the input(edge) net-REMOVALS frontier
   // (REBUILD-on-shrink): a live-demanded key whose summarized input LOST a row
@@ -2652,60 +2638,13 @@ void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
   // R-A2-TRIGGER §7(2)); a divergence between the two a2 arms is a design
   // ERROR (the d7 gate-identity perturbation).
   if (input_removal) {
-    // ADJ-R1 (as band-(a2)): the outer bind is the FULL EDGE ROW; the key is
-    // projected from the edge's own key cols e<in_key[j]>.
-    const auto edge_arity =
-        static_cast<unsigned>(input_removal->ColumnTypes().size());
-    std::vector<std::string> ebinds;
-    for (unsigned i = 0u; i < edge_arity; ++i) {
-      ebinds.push_back("e" + std::to_string(i));
-    }
-    std::vector<std::string> ekeyexprs;
-    for (unsigned j = 0u; j < in_key.size(); ++j) {
-      ekeyexprs.push_back("e" + std::to_string(in_key[j]));
-    }
-    cc << cc.Indent() << "for (const auto &[" << JoinExprs(ebinds, ", ")
-       << "] : " << VecName(*input_removal) << ") {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "const auto iid = " << sname << ".FindInstance(Key_"
-       << id << "{" << JoinExprs(ekeyexprs, ", ") << "});\n";
-    if (diff) {
-      // DEMAND-LIVENESS gate (R-3), IDENTICAL to band-(a2): a dead key still
-      // binds an iid (append-only, no tombstone — OD-15; TouchedFlag resets at
-      // Seal), so gate the rebuild on the demand table's POST-COMMIT Present.
-      // Diff demand: QUIESCENT in an edge epoch (channel disjointness, T-3) =>
-      // Present == committed presence. MONOTONE demand (the e5 carrier): Find
-      // hits and Present is trivially true — liveness is IRREVOCABILITY, never
-      // retracts (XC-9). E-F3: an edge-removal for a DEAD key closes here and
-      // no-ops (its neighborhood died at the demand-death epoch). The e4
-      // quiescence lemma (b3) discharges the former D3.a.2 RIDER.
-      const auto demand_member = table_member[region.DemandTable().Id()];
-      // Fable review [I]: the demand probe nests INSIDE the iid check so the
-      // common stray/undemanded-edge rows pay no hash probe.
-      cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance) {\n";
-      cc.PushIndent();
-      cc << cc.Indent() << "const auto dq = " << demand_member << ".Find({"
-         << JoinExprs(ekeyexprs, ", ") << "});\n";
-      cc << cc.Indent() << "if (dq != ::hyde::rt::kNoRow && " << demand_member
-         << ".Present(dq) && !" << sname << ".TouchedFlag(iid)) {\n";
-    } else {
-      // Provably unreachable for a real D3.a.2 program (input_diff => diff via
-      // O-1); retained verbatim for gate-set byte-symmetry with band-(a2).
-      cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance && !" << sname
-         << ".TouchedFlag(iid)) {\n";
-    }
-    cc.PushIndent();
-    // The SAME rescan as band-(a1)/band-(a2); key filter compares the edge
-    // row's own key cols (E2b appends the Present conjunct under input_diff).
-    emit_instance_rescan(ekeyexprs);
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // live && !TouchedFlag
-    if (diff) {
-      cc.PopIndent();
-      cc << cc.Indent() << "}\n";  // iid != kNoInstance (review [I] nest)
-    }
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // band-(a2') edge-removal drain
+    // band-(a2') [R-A2-TRIGGER §7]: the THIRD drain SOURCE into the ONE rescan
+    // mold (a1 births, a2 edge-adds, a2' edge-removals). The gate set is
+    // BINDING-identical to band-(a2) by construction (one emitter). E-F3: an
+    // edge-removal for a DEAD key no-ops via the demand-liveness gate; the e4
+    // quiescence lemma discharges the D3.a.2 RIDER. Removals never mint a death
+    // (an input shrink is a REBUILD).
+    emit_edge_drain(*input_removal);
   }
 
   // band-(b) PUBLISH the (F,T) born set of every touched instance.

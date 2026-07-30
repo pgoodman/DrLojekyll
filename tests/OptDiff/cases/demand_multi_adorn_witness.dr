@@ -1,0 +1,18 @@
+; The multi-adornment success witness (D3.a.3): ONE query name `q` with TWO
+; declared binding patterns (bf + fb), both From-preserving over a non-recursive
+; copy of a directed edge relation. Post-g3-fence-lift this compiles to N=2
+; disjoint keyed-instance stores sharing ONE pub (`q`). The bf probe enumerates
+; out-neighbors-by-A, the fb probe enumerates in-neighbors-by-B; the shared pub
+; is the reference-counted union of what either adornment demands.
+;
+; .drflags is a bare `-demand` (the FLAT/MONO flagship); the .eqgate sidecar
+; re-drives it under `-demand -demand-instance` (N=2 disjoint stores) and
+; byte-compares each mode's stdout LIVE against the flat golden. First
+; program whose nested lowering mints kSubgraphInstantiate=2 (two stores, one
+; shared pub) via the g5/O1 (pub,forcing) V-INST-SOLE relaxation.
+#message edge_2(u64 A, u64 B).
+#local rel(u64 A, u64 B).
+rel(A, B) : edge_2(A, B).
+#query q(bound u64 A, free u64 B).
+#query q(free u64 A, bound u64 B).
+q(A, B) : rel(A, B).

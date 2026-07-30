@@ -27,7 +27,11 @@
 #     demand_diff_neighborhood_witness the e5 diff-input x mono-demand carrier,
 #     both ordinary auto-discovered golden cases, not diagnostics),
 #   demand_multi_adorn_1 (via its -demand .drflags sidecar: a demanded query
-#     name with two binding patterns — the adornment cross-wire reject),
+#     name with two binding patterns where one is left-linear — since D3.a.3 the
+#     reject is the per-adornment left-linear fence, not the per-name belt),
+#   demand_multi_adorn_allfree_1 (a demanded query name carrying a BOUND and an
+#     all-free sibling adornment — the all-free cursor would read the guarded pub
+#     and under-answer; the D3.a.3 all-free-sibling fence),
 #   negate_never_diff_1 (@never over a differential negated view — the
 #     DS-R4-10 post-fixpoint fence; the directed order-hole shape that was
 #     mode-split before D3.a.1)
@@ -361,7 +365,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_cyclic_1|demand_recursive_content_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_multi_adorn_allfree_1|demand_cyclic_1|demand_recursive_content_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

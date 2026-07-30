@@ -1188,6 +1188,18 @@ bool GuardAnnotationsCompatible(const GuardAnnotation &a,
 void CheckGuardAnnotationFold(const GuardAnnotation &loser,
                               const GuardAnnotation &survivor);
 
+// OWN-3 (g1, D3.a.3): the SURVIVOR-RECORD POLICY. When two COMPATIBLE guard
+// annotations fold, ResolveLiveRecognition (Rel.cpp:977) AND the nested pre-pass
+// recursive-content fence (Build.cpp:1452) derive/gate ONLY off a role==kBody
+// stamp -- but CSE picks the fold survivor by depth/det_seq (Optimize.cpp:365),
+// NOT by role, so a kQueryProjection survivor can shadow a kBody loser and
+// silently drop the input (Rel.cpp:1053 skip) + blind the recursive-content
+// fence. This forces the SURVIVING record to carry kBody whenever the loser did.
+// PURE (mutates only `surv` from `loser`); GuardAnnotationsCompatible is the
+// precondition (already proved forcing_index + instance_key equal). Defined in
+// View.cpp; called from the CopyDifferentialAndGroupIdsTo both-set fold arm.
+void PromoteSurvivorToBody(GuardAnnotation &surv, const GuardAnnotation &loser);
+
 using COL = QueryColumnImpl;
 using REL = QueryRelationImpl;
 using STREAM = QueryStreamImpl;

@@ -1234,6 +1234,14 @@ void CheckInstanceDeathFrontier(const DRFlowGraph &flow);
 // tests/RelValidators. fprintf+abort, survives NDEBUG, always-on.
 void CheckInstanceInputArm(const DRFlowGraph &flow);
 
+// V-INST-SOLE per-pub uniqueness (D3.a.3 O1): each (pub_table, forcing_index)
+// pair must have exactly one kSubgraphInstantiate deriver. Re-keyed from the
+// pre-D3.a.3 per-pub-POINTER tally so N adornments of one query name (which
+// SHARE the pub model table) are admitted, while a same-forcing double-mint
+// STILL aborts. PURE over the flow (death-testable in tests/RelValidators);
+// fprintf+abort, survives NDEBUG, always-on.
+void CheckInstanceSolePub(const DRFlowGraph &flow);
+
 void SetRelDumpStream(OutputStream *stream);
 void DumpRelIfEnabled(const DRFlowGraph &flow);
 

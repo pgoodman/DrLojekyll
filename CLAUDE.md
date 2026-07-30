@@ -50,8 +50,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 178 corner-case programs as of the
-D3.a.2 differential-input landing — symrec_tie_1 is the standing
+(`<name>.dr` + `<name>.main.cpp`, 180 corner-case programs as of the
+D3.a.3 multi-adornment landing — symrec_tie_1 is the standing
 determinism witness; agg_distinct_1 pins the aggregate multiplicity
 semantics + carries the projected-column lint shape; barrier_neck_1
 witnesses the `:-` separator, sugar for `@barrier` between every two
@@ -510,6 +510,31 @@ probes a MONOTONE demand member (soundness by IRREVOCABILITY, not quiescence);
 the full composition carrier. Both are eqgate carriers (flat==nested==golden +
 sorted published-delta identity through the `@differential` tap), lifting the
 eqgate family to four.
+
+D3.a.3 (multi-adornment — LANDED) lifts the per-name single-binding-pattern reject
+so ONE query name may carry N declared adornments, lowering to N DISJOINT keyed
+stores over ONE shared pub (OD-15). The demand pass (`ApplyDemandTransform`) is a
+TWO-PHASE per-adornment loop (Phase 1 locate/check over `UniqueRedeclarations()`
+with a `seen_variants` dedup, Step 4 stray-consumer union ONCE between the loops,
+Phase 2 mint per adornment) and the guard rewires are DEFERRED and grouped by
+`(consumer, read)`: a SINGLETON group rewires directly (byte-identical for the
+single-adornment corpus), a MULTI-guard group mints a MERGE UNION of the guards'
+restored read-schema outputs (R-DUP) — the flat-arm realization of the
+reference-counted-union pub. The g1 kBody-survivor policy (`PromoteSurvivorToBody`,
+View.cpp) protects the fold arm; V-INST-SOLE is re-keyed on `(pub_table,
+forcing_index)` (`CheckInstanceSolePub`, O1) so N forcings share one pub; and
+`ProxyMergedViews` (Link.cpp) PRESERVES a guard annotation on its JOIN when the
+R-DUP union's identity restore collapses the guard into a direct MERGE member (the
+recognition + cut-successor detection key on the annotated JOIN). The new witness
+`demand_multi_adorn_witness` (`q(bound A,free B)` + `q(free A,bound B)` over a
+non-recursive `rel(A,B):edge_2(A,B)`; `.drflags` bare `-demand`, `.eqgate`
+`-demand -demand-instance`) is the mono flagship — the first program minting
+`kSubgraphInstantiate=2` (two stores, one pub), lifting the eqgate family to five.
+`demand_multi_adorn_1` STAYS diagnostic (its reject MOVES from the per-name
+`:457` to the per-adornment left-linear `:717-722`); `demand_multi_adorn_allfree_1`
+is the new all-4-modes-diagnostic pinning the all-free-sibling fence (a query name
+carrying a bound AND an all-free adornment rejects — the all-free cursor would read
+the demand-guarded pub and under-answer).
 
 ## Other known feature gaps (clean diagnostics)
 

@@ -5867,3 +5867,80 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     (R-DUP forces this — no witness-alone baseline), the desired-states
     author lane + the BLIND prototype converging with pristine; then Fable
     review; then land as ONE commit. Landing record = §20(AS).
+
+(AS) D3.a.3 LANDED (2026-07-30) — MULTI-ADORNMENT: N adornments of one
+    query name -> N disjoint keyed stores over ONE shared pub, per
+    d3a3-design.md as amended by the Fable review; desired-states record
+    = d3a-desired-states.md SLICE 3; substrate = d3a3-substrate.md (incl.
+    §6 the per-pub RULE-AT-CODE O1); design = d3a3-design.md + annexes
+    b1-b4. MECHANISM AS LANDED: (g3) lib/DataFlow/Demand.cpp
+    ApplyDemandTransform is a TWO-PHASE per-adornment loop over
+    UniqueRedeclarations() (Phase 1 locate/check + seen_variants dedup +
+    the all-free-sibling REJECT; Step 4 stray-consumer union ONCE between
+    the loops; Phase 2 mint per adornment with snapshots-in-loop) +
+    RE-MESSAGE :668/:723 (never narrow) + the R-DUP deferred grouped-by-
+    (consumer,read) rewire (SINGLETON direct = [BYTE] for |plan|==1;
+    MULTI-guard mints a MERGE UNION + rewires ONCE — the flat-arm
+    reference-counted-union pub); the :444-462 per-name reject DELETED.
+    (g1) lib/DataFlow/View.cpp + INTERNAL Query.h PromoteSurvivorToBody
+    (kBody survivor policy in the both-set fold arm; the arm is DORMANT
+    but this is the belt) + the stamp-time kBody-census belt + KEEP
+    GuardAnnotationsCompatible (justification scoped to JOIN carriers) +
+    4 DataFlowValidators tests. (R-9b) lib/DataFlow/Link.cpp
+    ProxyMergedViews PRESERVES a guard annotation on its JOIN when the
+    R-DUP union's identity restore collapses a guard into a direct MERGE
+    member (recognition + cut-successor detection key on the annotated
+    JOIN; dormant single-adornment) — the concrete stage-(c) resolution
+    of the design's UNVERIFIED R-9(b) obligation, root-caused by the
+    prototype. (g5/O1) lib/Rel/Rel.{cpp,h} CheckInstanceSolePub pure
+    helper re-keys V-INST-SOLE inst_per_pub on (pub_table, forcing_index)
+    (std::map; +#include <map>) so N forcings share one pub; +2
+    RelValidators tests (the O1 pair: double-mint-one-forcing still
+    aborts; two-forcings-one-pub PASSES). (g2) lib/ControlFlow/Build/
+    Build.cpp ONE parameterized BuildQueryInjectorFromRegistry(...,
+    is_retract) + the always-on [F] handler fence; (E2c) lib/CodeGen/
+    CPlusPlus/Database.cpp the emit_edge_drain lambda called twice
+    (band-a2/a2'). (g6) the NEW witness demand_multi_adorn_witness
+    (q(bound A,free B)+q(free A,bound B) over rel(A,B):edge_2(A,B); mono
+    flagship; .drflags -demand, .eqgate -demand -demand-instance) — the
+    FIRST program minting kSubgraphInstantiate=2 (two stores, one pub);
+    eqgate carriers 4->5. demand_multi_adorn_1 STAYS diagnostic (reject
+    MOVES :457->:717-722). design-1 inline-teeth DEFERRED (R-6; a
+    separable Rel.cpp refactor, follow-up); the .rel census pin dropped
+    (the .irgold harness pins the FLAT arm — the nested kSubgraphInstantiate=2
+    census is MEASURED, the neighborhood-witness precedent). STAGE-(d)
+    THREE-WAY: BLIND prototype == BLIND DS-author BYTE-EQUAL on the
+    witness .dr + edge set + 7-line golden + .drflags/.eqgate + the
+    MEASURED census (kSubgraphInstantiate=2 kInstanceSeal=2
+    kInstanceDeath=0 kIngestFold=3 kEagerForward=3 kCommitSweep=3
+    kSeedFold=0 — matches the design prediction EXACTLY, no
+    under-prediction); the DS lane MEASURED the golden VALUES by running
+    the bf/fb halves in isolation. FABLE REVIEW (workflow, 9 agents: 4
+    dimension lanes -> adversarial verify -> adjudicator): ONE HIGH that
+    BLOCKED, zero refuted. FIXED pre-commit: the all-free-SIBLING SILENT
+    WRONG-ANSWER (a query name with a bound AND an all-free adornment
+    compiled but the all-free cursor read the demand-guarded pub and
+    under-answered — the g3 prototype's bound_indices.empty() SKIP, whose
+    "trips the Step-4 stray reject" justification was empirically FALSE,
+    all adornments share ONE materialization) -> the skip became a clean
+    reject; the orchestrator ADDED demand_multi_adorn_allfree_1 as the
+    all-4-modes diagnostic (the reject had NO test — WHY it survived to
+    review; suite 179->180) + 2 COSM stale-anchor respells (Rel.cpp:976->
+    :977 x4, Build.cpp:1528->:1452 x2, Build.h twin-name). The HIGH fix
+    proven DUMP-NEUTRAL. GATES (final bytes, orchestrator-executed;
+    error-grep 0 x3 trees every rebuild): SUITE PASS(180) debug; ASAN
+    SUITE PASS(179) + the new diagnostic rejects on the ASAN binary all 4
+    modes; ctest 6/6 debug + 6/6 ASAN (DataFlowValidators +4,
+    RelValidators +2); 20/20 pinned regen [BYTE]; the 4 frozen D3.a.1/
+    D3.a.2 witnesses' nested h/.rel/.ir byte-identical (the Link.cpp
+    dormancy proof); config-invariance both witness arms debug-3x
+    single-hash + release==debug; E-62 CLEAN; new witness census
+    kSubgraphInstantiate=2; eqgate carriers 5 (20 verdicts); Q5
+    VACUOUS-BY-EARLY-RETURN (the demand pass early-returns off-mode; the
+    corpus generated bytes provably unmoved — 20/20 pinned + 4 frozen
+    witnesses identical — the ADJ-S8 discipline). RESIDUALS OPENED: the
+    design-1 inline-teeth follow-up (V-INST-EFFECT/V-INST-DRAIN forked
+    ValidateDROps teeth); the R-5 OB8(i) widening obligation still binds
+    any future body-walk widening. NEXT candidates (owner re-ranks): the
+    diff-multi-adorn witness (R-7 deferred); the design-1 follow-up; the
+    header-token E-71 mini-diff; the agent-substrate direction; P2-P5.

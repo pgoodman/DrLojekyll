@@ -441,39 +441,8 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
   REL *const q_rel = bound_queries[0];
   const ParsedDeclaration q_decl(q_rel->declaration);
 
-  // MULTI-ADORNMENT reject (the FIRST belt of the adornment cross-wire fix):
-  // a query NAME may be redeclared at several binding patterns (adornments)
-  // sharing ONE DeclarationContext — a relation is per (name, arity), so the
-  // >1-bound-query fence above does not see them. The ControlFlow entry-point
-  // builder emits one entry per unique redeclaration; only the transformed
-  // adornment has a valid demand seeder, and `ParsedQuery::operator==` is
-  // context-keyed, so a sibling adornment could otherwise inherit the wrong
-  // injector (the registry match's binding-pattern check is the second belt).
-  {
-    std::unordered_set<std::string> patterns;
-    for (ParsedDeclaration redecl : q_decl.UniqueRedeclarations()) {
-      patterns.insert(std::string(redecl.BindingPattern()));
-    }
-    if (patterns.size() != 1u) {
-      return reject(
-          "Multi-adornment demand is not yet supported (a demanded query "
-          "name with more than one binding pattern) under -demand");
-    }
-  }
-
-  std::vector<unsigned> bound_indices;  // Bound param indices, decl order.
-  for (ParsedParameter param : q_decl.Parameters()) {
-    if (param.Binding() == ParameterBinding::kBound) {
-      bound_indices.push_back(param.Index());
-    }
-  }
-
-  // ---------------------------------------------------------------------
-  // 2. Trace the query's projection chain to its read of p. Post-Connect the
-  //    query relation keeps exactly one MATERIALIZE INSERT (Connect.cpp
-  //    :275-282); its bound input column descends through forwarding TUPLEs
-  //    to a full-width reader TUPLE over p's MERGE.
-  // ---------------------------------------------------------------------
+  // The query projection is one clause / one materialization (per name+arity),
+  // shared by every adornment; computed ONCE above both loops.
   if (q_rel->inserts.Size() != 1u) {
     return reject(
         "A demanded query must have exactly one materialization under "
@@ -481,6 +450,60 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
   }
   VIEW *const q_insert = q_rel->inserts[0];
 
+  // D3.a.3 g3: one traced-but-not-yet-minted adornment. Loop 1 (Phase 1) does
+  // Steps 1b+2+3 per adornment with NO minting, so Step 4 (stray-consumer) can
+  // run ONCE over the pre-mint union (ADV-3); Loop 2 (Phase 2) mints Steps 5-10.
+  struct PerAdornment {
+    ParsedDeclaration redecl;             // the declared binding pattern
+    std::vector<unsigned> bound_indices;  // Step-1 (redecl-derived)
+    std::vector<unsigned> p_bound;        // the adornment as p-column positions
+    TUPLE *q_read{nullptr};               // Step-2 outputs
+    VIEW *q_consumer{nullptr};
+    MERGE *p_merge{nullptr};
+    std::vector<GuardSite> sites;         // Step-3 outputs
+    std::vector<TUPLE *> pushdown_reads;
+  };
+
+  std::unordered_set<VIEW *> known_consumers;    // ADV-3 pass-level union
+  std::vector<PerAdornment> plan;
+  std::unordered_set<std::string> seen_variants;  // mirror Build.cpp:678
+
+  // Loop 1 (Phase 1): Steps 1b+2+3 per adornment, NO minting. The multi-
+  // adornment fence at :457 is LIFTED — this loop enumerates the adornments it
+  // used to forbid. The `seen_variants` dedup mirrors Build.cpp:678:
+  // `UniqueRedeclarations()` can return duplicate-pattern redecls (fabricating
+  // `demand__q_<adorn>` twice hits `assert(!io_slot)`), so the old
+  // `patterns`-SET belt existed; this dedup is its faithful inversion.
+  for (ParsedDeclaration redecl : q_decl.UniqueRedeclarations()) {
+    std::string binding(redecl.BindingPattern());
+    if (!seen_variants.insert(std::move(binding)).second) {
+      continue;  // duplicate redecl of an already-planned adornment.
+    }
+
+    std::vector<unsigned> bound_indices;  // Bound param indices, decl order.
+    for (ParsedParameter param : redecl.Parameters()) {
+      if (param.Binding() == ParameterBinding::kBound) {
+        bound_indices.push_back(param.Index());
+      }
+    }
+    if (bound_indices.empty()) {
+      // An all-free SIBLING adornment of a demanded query name shares the ONE
+      // query materialization (Connect.cpp) with its bound siblings, so its
+      // cursor reads the demand-GUARDED pub and would silently under-answer
+      // (only the demanded rows). The pre-D3.a.3 patterns.size()!=1u belt
+      // rejected the whole name; keep it a clean diagnostic. (An all-free-ONLY
+      // name never reaches this loop — `bound_queries` excludes it, so this
+      // fires only on a bound+all-free mix.)
+      return reject("A demanded query name with an all-free sibling adornment "
+                    "is not yet supported under -demand");
+    }
+
+  // ---------------------------------------------------------------------
+  // 2. Trace the query's projection chain to its read of p. Post-Connect the
+  //    query relation keeps exactly one MATERIALIZE INSERT (Connect.cpp
+  //    :275-282); its bound input column descends through forwarding TUPLEs
+  //    to a full-width reader TUPLE over p's MERGE.
+  // ---------------------------------------------------------------------
   VIEW *q_consumer = nullptr;     // The view whose read of p gets guarded.
   TUPLE *q_read = nullptr;        // The query's reader TUPLE over p's MERGE.
   MERGE *p_merge = nullptr;       // p's post-Connect MERGE.
@@ -667,8 +690,8 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
             // From-preserving check); anything else is a second adornment.
             if (in_col->Index() != pos) {
               return reject(
-                  "Multi-adornment demand is not yet supported under "
-                  "-demand");
+                  "Sideways (non-From-preserving) demand propagation is not "
+                  "yet supported under -demand");
             }
             this_site.kind = GuardSite::kReadAtTuple;
             this_site.consumer = parent;
@@ -722,7 +745,8 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
           }
           if (found_col->Index() != pos) {
             return reject(
-                "Multi-adornment demand is not yet supported under -demand");
+                "Sideways (non-From-preserving) demand propagation is not yet "
+                "supported under -demand");
           }
           this_site.kind = GuardSite::kPushDown;
           this_site.consumer = pj;
@@ -758,21 +782,32 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     sites.push_back(site);
   }
 
-  // ---------------------------------------------------------------------
-  // 4. Stray-consumer accounting: every reader of p must be one we traced
-  //    (the query's read or a rule-body read), and every consumer of a
-  //    reader must be a guard-site consumer. An untraced consumer (an
-  //    all-free sibling query, another relation's rule) would read the now-
-  //    pruned p and silently under-derive — the d1 §2.3 inertness terrain,
-  //    un-witnessed, so reject.
-  // ---------------------------------------------------------------------
-  {
-    std::unordered_set<VIEW *> known_consumers;
+    // Loop-1 tail: accumulate the pass-level consumer union, assert the
+    // one-relation-p invariant, and record the traced adornment (no minting).
     known_consumers.insert(q_consumer);
     for (const GuardSite &site : sites) {
       known_consumers.insert(site.consumer);
     }
+    assert(plan.empty() || p_merge == plan.front().p_merge);  // one relation p
+    plan.push_back(PerAdornment{redecl, std::move(bound_indices),
+                                std::move(p_bound), q_read, q_consumer, p_merge,
+                                std::move(sites), std::move(pushdown_reads)});
+  }  // Loop 1 (Phase 1)
 
+  // ---------------------------------------------------------------------
+  // 4. Stray-consumer accounting (ONCE, between the loops, on the PRE-MINT
+  //    graph): every reader of p must be one we traced (the query's read or a
+  //    rule-body read), and every consumer of a reader must be a guard-site
+  //    consumer. An untraced consumer (an all-free sibling query, another
+  //    relation's rule) would read the now-pruned p and silently under-derive
+  //    — the d1 §2.3 inertness terrain, un-witnessed, so reject. Both
+  //    adornments demand the SAME p (one p_merge, asserted above), so the
+  //    union is checked ONCE before any guard is minted (ADV-3): minting A's
+  //    guards first makes them untraced consumers of the shared reader,
+  //    false-rejecting B.
+  // ---------------------------------------------------------------------
+  {
+    MERGE *const p_merge = plan.front().p_merge;
     for (VIEW *user : CollectColUsers(this, p_merge)) {
       TUPLE *const t = user->AsTuple();
       if (!t || !IsFullWidthReaderOf(t, p_merge)) {
@@ -790,12 +825,42 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     }
   }
 
+  // D3.a.3 g3/R-DUP: guard rewires are DEFERRED and grouped by (consumer, read).
+  // Two adornments sharing one (consumer, read) (ALWAYS for N>=2 on a shared
+  // reader) would double-rewire: `RewireConsumer` substitutes only `c->view ==
+  // read`, so the first rewire consumes the read-uses and the second orphans its
+  // guard (dead-flow-eliminated -> under-answer, HP-5). A SINGLETON group (always
+  // at |plan|==1) rewires DIRECTLY (today's exact bytes); a MULTI-guard group
+  // mints a MERGE union of the guards' restored (read-schema) outputs and rewires
+  // the consumer ONCE (the flat-arm realization of the reference-counted-union
+  // pub; the nested arm unions via band-(b)'s reference-counted publish).
+  struct PendingRewire {
+    VIEW *consumer;
+    TUPLE *read;
+    std::vector<COL *> out_for_pos;  // read-pos-indexed JOIN output columns
+    JOIN *guard;
+    TUPLE *restore;  // MintRestoringTuple result; nullptr for a kReadAtTuple
+                     //   guard (direct rewire needs none)
+    GuardSite::Kind kind;
+  };
+  std::vector<PendingRewire> pending;
+
+  // Loop 2 (Phase 2): Steps 5-10 per adornment (fabricate/mint/guard/register).
+  for (PerAdornment &a : plan) {
+    const std::vector<unsigned> &bound_indices = a.bound_indices;
+    const std::vector<unsigned> &p_bound = a.p_bound;
+    MERGE *const p_merge = a.p_merge;
+    TUPLE *const q_read = a.q_read;
+    VIEW *const q_consumer = a.q_consumer;
+    const std::vector<GuardSite> &sites = a.sites;
+    const std::vector<TUPLE *> &pushdown_reads = a.pushdown_reads;
+
   // ---------------------------------------------------------------------
   // 5. FABRICATE the demand message + the demand relation's #local decl
   //    (Option D' / recipe A1; the single-shot flag is owned HERE, N5).
   // ---------------------------------------------------------------------
   std::string adorn;
-  for (ParsedParameter param : q_decl.Parameters()) {
+  for (ParsedParameter param : a.redecl.Parameters()) {
     adorn += (param.Binding() == ParameterBinding::kBound) ? 'b' : 'f';
   }
 
@@ -811,7 +876,7 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
 
   std::vector<TypeLoc> bound_types;
   for (unsigned bi : bound_indices) {
-    bound_types.push_back(q_decl.NthParameter(bi).Type());
+    bound_types.push_back(a.redecl.NthParameter(bi).Type());
   }
 
   // BOTH G3 collision checks run BEFORE anything is fabricated, so a
@@ -1005,25 +1070,17 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
         site.pivot_pos, QueryView(site.read), QueryView(d_reader),
         forcing_index});
 
-    if (site.kind == GuardSite::kReadAtTuple) {
-
-      // The consumer TUPLE reads the guarded read directly: rewire it to
-      // the JOIN's outputs (no restoring TUPLE — the consumer restores
-      // order itself).
-      RewireConsumer(site.consumer, site.read, out_for_pos, guard);
-
-    } else {
-
-      // Push-down / base atom: a restoring TUPLE re-establishes the read's
-      // column order (the TABLE-19 / JOIN-20 restore), then the consumer's
-      // uses of the read swap to it.
-      TUPLE *const restore = MintRestoringTuple(this, site.read, out_for_pos);
-      std::vector<COL *> restore_for_pos;
-      for (COL *c : restore->columns) {
-        restore_for_pos.push_back(c);
-      }
-      RewireConsumer(site.consumer, site.read, restore_for_pos, restore);
+    // DEFER the rewire (R-DUP): the grouped rewire below decides direct vs
+    // union. For kReadAtTuple the consumer restores order itself (no restoring
+    // TUPLE); for push-down / base atom a restoring TUPLE re-establishes the
+    // read's column order (the TABLE-19 / JOIN-20 restore) and is minted HERE
+    // so the singleton id-stream is byte-identical to today.
+    TUPLE *restore = nullptr;
+    if (site.kind != GuardSite::kReadAtTuple) {
+      restore = MintRestoringTuple(this, site.read, out_for_pos);
     }
+    pending.push_back(PendingRewire{site.consumer, site.read, out_for_pos,
+                                    guard, restore, site.kind});
   }
 
   // ---------------------------------------------------------------------
@@ -1062,7 +1119,11 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
         false /* is_instance_key */, p_bound, QueryView(q_read),
         QueryView(raw_seed), forcing_index});
 
-    RewireConsumer(q_consumer, q_read, out_for_pos, guard);
+    // DEFER the rewire (R-DUP): kReadAtTuple, no restoring TUPLE. Under N>=2
+    // this shares (q_consumer, q_read) with every sibling adornment's
+    // query-projection guard -> the grouped rewire unions them.
+    pending.push_back(PendingRewire{q_consumer, q_read, out_for_pos, guard,
+                                    nullptr, GuardSite::kReadAtTuple});
   }
 
   // ---------------------------------------------------------------------
@@ -1126,8 +1187,81 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
   //     consumes it for the public-entry suppression) + close the
   //     single-shot fabrication window (N5).
   // ---------------------------------------------------------------------
-  QueryDemandForcing forcing{ParsedQuery::From(q_decl), d_msg, bound_indices};
+  QueryDemandForcing forcing{ParsedQuery::From(a.redecl), d_msg, bound_indices};
   demand_forcings.emplace_back(std::move(forcing));
+
+  }  // Loop 2 (Phase 2)
+
+  // ---------------------------------------------------------------------
+  // R-DUP: the grouped rewire. Group the deferred guards by (consumer, read);
+  // a SINGLETON group rewires directly (today's exact call — [BYTE] for
+  // |plan|==1); a MULTI-guard group mints a MERGE union of the guards' restored
+  // (read-schema) outputs and rewires the consumer ONCE. guard_bf and guard_fb
+  // read DISTINCT fabricated demand relations -> distinct joined_views[0] ->
+  // never CSE-fold; the MERGE is a fresh sink, so the fold arm stays DORMANT.
+  // ---------------------------------------------------------------------
+  {
+    std::vector<bool> done(pending.size(), false);
+    for (size_t i = 0u; i < pending.size(); ++i) {
+      if (done[i]) {
+        continue;
+      }
+      std::vector<size_t> group;
+      for (size_t j = i; j < pending.size(); ++j) {
+        if (!done[j] && pending[j].consumer == pending[i].consumer &&
+            pending[j].read == pending[i].read) {
+          group.push_back(j);
+          done[j] = true;
+        }
+      }
+
+      PendingRewire &g0 = pending[group.front()];
+      if (group.size() == 1u) {
+        // SINGLETON (always at |plan|==1): today's exact direct rewire.
+        if (g0.kind == GuardSite::kReadAtTuple) {
+          RewireConsumer(g0.consumer, g0.read, g0.out_for_pos, g0.guard);
+        } else {
+          std::vector<COL *> restore_for_pos;
+          for (COL *c : g0.restore->columns) {
+            restore_for_pos.push_back(c);
+          }
+          RewireConsumer(g0.consumer, g0.read, restore_for_pos, g0.restore);
+        }
+        continue;
+      }
+
+      // MULTI-guard (R-DUP): every guard over one `read`, once restored,
+      // presents READ's schema and is union-compatible. Union the read-schema
+      // members and rewire the consumer once.
+      std::vector<VIEW *> members;
+      for (size_t idx : group) {
+        PendingRewire &pr = pending[idx];
+        TUPLE *member = pr.restore;
+        if (!member) {  // kReadAtTuple: mint a read-schema restore over the JOIN.
+          member = MintRestoringTuple(this, pr.read, pr.out_for_pos);
+        }
+        members.push_back(member);
+      }
+
+      MERGE *const um = merges.Create();
+#ifndef NDEBUG
+      um->producer = "DEMAND-GUARD-UNION";
+#endif
+      const auto width = g0.read->columns.Size();
+      for (auto pos = 0u; pos < width; ++pos) {
+        COL *const rc = g0.read->columns[pos];
+        (void) um->columns.Create(rc->var, rc->type, um, rc->id, pos);
+      }
+      for (VIEW *m : members) {
+        um->merged_views.AddUse(m);
+      }
+      std::vector<COL *> merge_for_pos;
+      for (COL *c : um->columns) {
+        merge_for_pos.push_back(c);
+      }
+      RewireConsumer(g0.consumer, g0.read, merge_for_pos, um);
+    }
+  }
 
   // -------------------------------------------------------------------------
   // 11. ANNOTATION CENSUS (order-free counts; ALWAYS-ON, PRE-Optimize ONLY --
@@ -1159,6 +1293,41 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
               "subgraphs != %zu forcings\n",
               recognized_subgraphs.size(), demand_forcings.size());
       abort();
+    }
+
+    // g8 BELT (D3.a.3, PRE-Optimize, STAMP-TIME): every forcing that stamped ANY
+    // guard MUST have stamped >=1 kBody guard. ResolveLiveRecognition
+    // (Rel.cpp:977) AND the nested recursive-content fence (Build.cpp:1452)
+    // derive/gate ONLY off a role==kBody stamp; a forcing minted with zero body
+    // guards resolves input_table==null -> the instance is SILENTLY skipped at
+    // mint (Rel.cpp:1053) -> missing answer rows. This is the STAMP-TIME half of
+    // the survivor-policy invariant. Silence chain: Step 3's one-site-per-body
+    // loop (every non-tail path `return reject`, the tail `sites.push_back`) +
+    // Step 7's per-site kBody mint (:1001-1006) => >=1 kBody per compiling
+    // forcing, so this is silent on the corpus. HONESTY (L15): the belt is
+    // STAMP-TIME (pre-Optimize; CSE runs AFTER) -> it catches a MINT bug, NOT a
+    // fold regression; the fold-time teeth is PromoteSurvivorToBody (View.cpp) +
+    // its directed unit. ALWAYS-ON, NDEBUG-safe.
+    std::unordered_set<unsigned> forcings_with_guard, forcings_with_body;
+    ForEachView([&](VIEW *v) {
+      if (v->guard_annotation_index == ~0u) {
+        return;
+      }
+      const GuardAnnotation &g = guard_annotations[v->guard_annotation_index];
+      forcings_with_guard.insert(g.forcing_index);
+      if (g.role == GuardAnnotation::kBody) {
+        forcings_with_body.insert(g.forcing_index);
+      }
+    });
+    for (unsigned fidx : forcings_with_guard) {
+      if (!forcings_with_body.count(fidx)) {
+        fprintf(stderr,
+                "OWN-3/g8: forcing %u stamped guards but NONE is kBody -- "
+                "ResolveLiveRecognition resolves a null input_table and "
+                "silently skips the instance (a Step-7 guard-mint bug)\n",
+                fidx);
+        abort();
+      }
     }
   }
 

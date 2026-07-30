@@ -370,144 +370,42 @@ static std::optional<ProgramProcedure> BuildQueryForceProcedureImpl(
   return proc;
 }
 
-// Build the forcing procedure for a DEMAND-TRANSFORMED query from the
-// demand-forcing registry (the live demand transform, `-demand`; recipe F2).
-// A thin sibling of `BuildQueryForceProcedureImpl`: the proc creation, the
+// D3.a.3 g2: the ONE demand-injector builder (forcer ⊕ retract) from the
+// demand-forcing registry (the live demand transform; recipe F2). A thin
+// sibling of `BuildQueryForceProcedureImpl`: the proc creation, the
 // per-bound-param input vars, the vectors, the VECTORAPPEND, the CALL to
 // `messsage_handler[message]`, and the RETURN are the same shape — but the
-// clause-var DisjointSet re-derivation is REPLACED by the registry's
-// binding (a demand-transformed query has NO parse-level forcing predicate;
-// the registry's fabricated message's Nth parameter corresponds to the
-// query's `bound_params[N]`-th parameter). The handler entry exists because
-// the fabricated message minted a real `QueryIO` with a non-empty receive,
-// so `BuildIOProcedure` registered it in the same IO loop as user messages.
-// Column types come from the fabricated message's own parameters.
-static std::optional<ProgramProcedure> BuildQueryForceProcedureFromRegistry(
+// clause-var DisjointSet re-derivation is REPLACED by the registry's binding
+// (a demand-transformed query has NO parse-level forcing predicate; the
+// fabricated message's Nth parameter corresponds to the query's
+// `bound_params[N]`-th parameter). The forcer's payload rides the ADD vector;
+// the retract's rides the DEL vector; the non-payload vector, when present, is
+// kEmpty. The retract is only ever over a differential message (its
+// dispatcher's third conjunct), so it always has BOTH vectors; a forcer over a
+// MONOTONE message has the single ADD vector only. add_vec is ALWAYS created
+// before del_vec, matching BOTH twins' id stream — so the emitted IR is
+// byte-identical to the pre-dedup twins in all three reachable cases
+// (mono-force, diff-force, retract).
+static std::optional<ProgramProcedure> BuildQueryInjectorFromRegistry(
     ProgramImpl *impl, Context &context, ParsedQuery query,
-    const QueryDemandForcing &entry) {
+    const QueryDemandForcing &entry, bool is_retract) {
 
   ParsedDeclaration query_decl(query);
   const ParsedMessage message = entry.message;
   assert(message.IsReceived());
+  assert(!is_retract || message.IsDifferential());  // retract-only
   assert(message.Arity() == entry.bound_params.size());
-  assert(context.messsage_handler.count(message) &&
-         "The fabricated demand message has no handler procedure");
 
-  auto proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kQueryMessageInjector);
-  proc->has_raw_use = true;
-
-  // One parameter per bound query parameter, in message-parameter order.
-  for (unsigned param_index : entry.bound_params) {
-    const auto var =
-        proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
-    var->parsed_param = query_decl.NthParameter(param_index);
-  }
-
-  // Vector column types from the fabricated message's own parameters.
-  std::vector<TypeLoc> col_types;
-  for (auto i = 0u; i < message.Arity(); ++i) {
-    col_types.push_back(message.NthParameter(i).Type());
-  }
-
-  VECTOR *add_vec = proc->vectors.Create(
-      impl->next_id++, VectorKind::kParameter, col_types,
-      0  /* disambiguation */);
-  VECTOR *del_vec = nullptr;
-
-  if (message.IsDifferential()) {
-    del_vec = proc->vectors.Create(
-        impl->next_id++, VectorKind::kEmpty, col_types, 0);
-  }
-
-  SERIES *seq = impl->series_regions.Create(proc);
-  proc->body.Emplace(proc, seq);
-
-  VECTORAPPEND *append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
-      seq, ProgramOperation::kAppendQueryParamsToMessageInjectVector);
-  seq->regions.AddUse(append);
-  append->vector.Emplace(append, add_vec);
-  for (VAR *param_var : proc->input_vars) {
-    append->tuple_vars.AddUse(param_var);
-  }
-
-  CALL *call = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, seq, context.messsage_handler[message]);
-  seq->regions.AddUse(call);
-  call->arg_vecs.AddUse(add_vec);
-  if (del_vec) {
-    call->arg_vecs.AddUse(del_vec);  // Empty.
-  }
-
-  RETURN *ret = impl->operation_regions.CreateDerived<RETURN>(
-      seq, ProgramOperation::kReturnTrueFromProcedure);
-  seq->regions.AddUse(ret);
-
-  return proc;
-}
-
-// Try to build a forcing procedure. We'll re-figure out the relation between
-// clause head variables and the forced message variables here, rather than
-// trying to wire through all the information.
-static std::optional<ProgramProcedure> BuildQueryForceProcedure(
-    ProgramImpl *impl, Context &context, ParsedQuery query) {
-
-  // A demand-transformed query's forcer comes from the registry (it has no
-  // parse-level forcing predicate). The user `@first` forcing surface below
-  // stays live for hand-written forcing queries.
-  //
-  // The match is by PER-ADORNMENT identity: `ParsedQuery::operator==` alone
-  // compares by DeclarationContext, which is keyed on (name, arity) ONLY —
-  // two adornments of one query name share a context and would compare
-  // EQUAL, cross-wiring the transformed adornment's injector (and its
-  // bound-parameter binding) onto a sibling adornment's entry point (a
-  // silent miscompile). The demand pass ALSO rejects multi-adornment query
-  // names outright (the first belt); this binding-pattern check is the
-  // second belt so a future fence-lift cannot re-open the cross-wire.
-  if (context.demand_forcings) {
-    for (const QueryDemandForcing &entry : *context.demand_forcings) {
-      if (entry.query == query &&
-          ParsedDeclaration(entry.query).BindingPattern() ==
-              ParsedDeclaration(query).BindingPattern()) {
-        return BuildQueryForceProcedureFromRegistry(impl, context, query,
-                                                    entry);
-      }
-    }
-  }
-
-  if (auto pred = query.ForcingMessage()) {
-    return BuildQueryForceProcedureImpl(
-        impl, context, query, ParsedClause::Containing(*pred), *pred);
-  }
-
-  return std::nullopt;
-}
-
-// D3.a.1 (`-demand-retract`): build the RETRACT injector for a
-// demand-transformed query whose fabricated demand message is differential.
-// A sibling of `BuildQueryForceProcedureFromRegistry` with exactly three
-// deltas: the vector KINDS swap (the retract key rides the REMOVE vector;
-// the add vector is passed empty), the VECTORAPPEND targets `del_vec`, and
-// the CALL's argument roles flip accordingly. One key per call; each call is
-// one epoch through the suppressed demand handler (SET-demand,
-// OQ-RETRACT-POLICY).
-static std::optional<ProgramProcedure> BuildQueryRetractProcedureFromRegistry(
-    ProgramImpl *impl, Context &context, ParsedQuery query,
-    const QueryDemandForcing &entry) {
-
-  ParsedDeclaration query_decl(query);
-  const ParsedMessage message = entry.message;
-  assert(message.IsReceived());
-  assert(message.IsDifferential());
-  assert(message.Arity() == entry.bound_params.size());
-  // [ALWAYS-ON] (Fable review [E]): the handler map is indexed below and a
-  // miss would default-insert nullptr — a null CALL callee that codegen
-  // dereferences (release SIGSEGV, no diagnostic). The sibling asserts guard
-  // fabrication invariants; THIS guards a map lookup. (The forcer twin keeps
-  // its pre-existing assert; the [F] dedup obligation unifies both.)
+  // [F] ALWAYS-ON handler fence (ADV-8): `messsage_handler[message]` is an
+  // unordered_map::operator[]; a MISS default-inserts a nullptr callee that
+  // codegen dereferences (release SIGSEGV, no diagnostic). Always-on so it
+  // survives NDEBUG for BOTH injector kinds (the forcer twin's old assert was
+  // compiled out; under N fabricated demand messages the risk scales).
   if (!context.messsage_handler.count(message)) {
-    fprintf(stderr, "error: demand retract: the fabricated demand message has "
-                    "no handler procedure\n");
+    fprintf(stderr,
+            "error: demand injector (%s): the fabricated demand message has "
+            "no handler procedure\n",
+            is_retract ? "retract" : "force");
     abort();
   }
 
@@ -528,11 +426,23 @@ static std::optional<ProgramProcedure> BuildQueryRetractProcedureFromRegistry(
     col_types.push_back(message.NthParameter(i).Type());
   }
 
-  VECTOR *add_vec = proc->vectors.Create(
-      impl->next_id++, VectorKind::kEmpty, col_types, 0);
-  VECTOR *del_vec = proc->vectors.Create(
-      impl->next_id++, VectorKind::kParameter, col_types,
-      0  /* disambiguation */);
+  // Vector roles: add_vec ALWAYS created before del_vec (matches both twins'
+  // id stream — forcer add→del, retract add→del).
+  VECTOR *add_vec = nullptr, *del_vec = nullptr;
+  if (is_retract) {
+    add_vec = proc->vectors.Create(impl->next_id++, VectorKind::kEmpty,
+                                   col_types, 0);
+    del_vec = proc->vectors.Create(impl->next_id++, VectorKind::kParameter,
+                                   col_types, 0 /* disambiguation */);
+  } else {
+    add_vec = proc->vectors.Create(impl->next_id++, VectorKind::kParameter,
+                                   col_types, 0 /* disambiguation */);
+    if (message.IsDifferential()) {
+      del_vec = proc->vectors.Create(impl->next_id++, VectorKind::kEmpty,
+                                     col_types, 0);
+    }
+  }
+  VECTOR *const payload_vec = is_retract ? del_vec : add_vec;
 
   SERIES *seq = impl->series_regions.Create(proc);
   proc->body.Emplace(proc, seq);
@@ -540,7 +450,7 @@ static std::optional<ProgramProcedure> BuildQueryRetractProcedureFromRegistry(
   VECTORAPPEND *append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
       seq, ProgramOperation::kAppendQueryParamsToMessageInjectVector);
   seq->regions.AddUse(append);
-  append->vector.Emplace(append, del_vec);
+  append->vector.Emplace(append, payload_vec);
   for (VAR *param_var : proc->input_vars) {
     append->tuple_vars.AddUse(param_var);
   }
@@ -548,8 +458,10 @@ static std::optional<ProgramProcedure> BuildQueryRetractProcedureFromRegistry(
   CALL *call = impl->operation_regions.CreateDerived<CALL>(
       impl->next_id++, seq, context.messsage_handler[message]);
   seq->regions.AddUse(call);
-  call->arg_vecs.AddUse(add_vec);  // Empty.
-  call->arg_vecs.AddUse(del_vec);
+  call->arg_vecs.AddUse(add_vec);  // add always first
+  if (del_vec) {
+    call->arg_vecs.AddUse(del_vec);  // empty (force) / payload (retract)
+  }
 
   RETURN *ret = impl->operation_regions.CreateDerived<RETURN>(
       seq, ProgramOperation::kReturnTrueFromProcedure);
@@ -558,23 +470,35 @@ static std::optional<ProgramProcedure> BuildQueryRetractProcedureFromRegistry(
   return proc;
 }
 
-// D3.a.1: dispatcher for the retract injector — the same registry loop +
-// binding-pattern second belt as `BuildQueryForceProcedure`, additionally
-// gated on the fabricated message's differentialness (the `-demand-retract`
-// toggle's downstream truth). The user `@first` forcing surface gets NO
-// retract arm (user forcing messages are out of scope).
-static std::optional<ProgramProcedure> BuildQueryRetractProcedure(
-    ProgramImpl *impl, Context &context, ParsedQuery query) {
+// D3.a.3 g2: the ONE injector dispatcher (forcer ⊕ retract). Registry match is
+// (query, BindingPattern)-keyed (the second belt — `ParsedQuery::operator==`
+// compares DeclarationContext = (name, arity) ONLY, so two adornments of one
+// name would cross-wire without the BindingPattern conjunct; a silent
+// miscompile the D3.a.3 multi-adornment lift makes reachable); the retract arm
+// additionally gates on the fabricated message's differentialness. The user
+// `@first` forcing surface is FORCE-ONLY (user forcing messages get no retract
+// arm). Id-neutral (pure match + delegate); for force the `(!is_retract || …)`
+// short-circuits true, so the emitted IR is byte-identical to the pre-dedup
+// twins.
+static std::optional<ProgramProcedure> BuildQueryInjectorProcedure(
+    ProgramImpl *impl, Context &context, ParsedQuery query, bool is_retract) {
 
   if (context.demand_forcings) {
     for (const QueryDemandForcing &entry : *context.demand_forcings) {
       if (entry.query == query &&
           ParsedDeclaration(entry.query).BindingPattern() ==
               ParsedDeclaration(query).BindingPattern() &&
-          entry.message.IsDifferential()) {
-        return BuildQueryRetractProcedureFromRegistry(impl, context, query,
-                                                      entry);
+          (!is_retract || entry.message.IsDifferential())) {
+        return BuildQueryInjectorFromRegistry(impl, context, query, entry,
+                                              is_retract);
       }
+    }
+  }
+
+  if (!is_retract) {
+    if (auto pred = query.ForcingMessage()) {
+      return BuildQueryForceProcedureImpl(
+          impl, context, query, ParsedClause::Containing(*pred), *pred);
     }
   }
 
@@ -600,12 +524,12 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
 
   const DataTable table(model->table);
   std::optional<ProgramProcedure> forcer_proc =
-      BuildQueryForceProcedure(impl, context, query);
+      BuildQueryInjectorProcedure(impl, context, query, /*is_retract=*/false);
 
   // D3.a.1 (`-demand-retract`): the retract injector, created AFTER the
   // forcer so the flag-off id stream is byte-identical to tip.
   std::optional<ProgramProcedure> retract_proc =
-      BuildQueryRetractProcedure(impl, context, query);
+      BuildQueryInjectorProcedure(impl, context, query, /*is_retract=*/true);
   std::optional<DataIndex> scanned_index;
 
   if (!col_indices.empty()) {

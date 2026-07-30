@@ -8,7 +8,8 @@
 add_executable(rel_validators_test
   DeathFrontierTest.cpp
   InstanceOrderTest.cpp
-  InputArmTest.cpp)
+  InputArmTest.cpp
+  InstanceSolePubTest.cpp)
 
 # Rel.h transitively includes ControlFlow's internal impl headers
 # ("Program.h", "Build.h") by quoted include — expose those dirs (mirrors

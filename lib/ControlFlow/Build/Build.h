@@ -119,7 +119,7 @@ class Context {
   // The demand-forcing registry (the live demand transform, `-demand`;
   // recipe F2): one entry per demand-transformed bound `#query`, carrying
   // the fabricated demand-seed message and the bound-parameter binding.
-  // `BuildQueryForceProcedure` consults it FIRST — a demand-transformed
+  // `BuildQueryInjectorProcedure` consults it FIRST — a demand-transformed
   // query has no parse-level forcing predicate (`ForcingMessage()` stays
   // nullopt), so its injector is built from the registry instead of the
   // clause-var re-derivation. Null/empty unless built under `-demand`.
