@@ -5944,3 +5944,42 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     any future body-walk widening. NEXT candidates (owner re-ranks): the
     diff-multi-adorn witness (R-7 deferred); the design-1 follow-up; the
     header-token E-71 mini-diff; the agent-substrate direction; P2-P5.
+
+(AT) DESIGN-1 FOLLOW-UP LANDED (2026-07-30) — the deferred D3.a.2/D3.a.3
+    inline V-INST-EFFECT teeth, by PURE EXTRACTION (R-6, NOT the
+    gValidateDROpsTestHook production seam the b3 lane proposed — that
+    global is the no-env-gated-debug-scaffolding class the owner forbids).
+    The V-INST-EFFECT effect-multiset TOTALITY of a kSubgraphInstantiate
+    (the O-1 closure belt + the full regime-split count: drains/
+    demand-drains/input-drains/demands/leaves/rebuilds/rebuild-sign/emits/
+    olds and the diff-split counters/counter-signs/crossings/appends) had
+    ZERO teeth — it lived only inline in ValidateDROps, and a one-token
+    weakening (e.g. counters==2u->1u under diff) moves NO program's emitted
+    output so the 180-case golden suite is BLIND to it. FACTORED into the
+    pure `CheckInstantiateEffects(op, diff, input_diff)` (Rel.cpp/Rel.h) —
+    `diff`/`input_diff` passed as BOOLEANS (no TABLE deref; the caller
+    derives them via TableIsDifferential), so the negative space is
+    death-testable with FAKE table pointers (the CheckInstanceInputArm/
+    InputArmTest mold). The inline site now computes the two booleans and
+    CALLS it, keeping the two V-INST-SOLE clauses (pub-alias + the
+    induction-owned belt, the latter needing Context) inline —
+    behavior-VERBATIM. NEW tests/RelValidators/InstanceEffectsTest.cpp:
+    3 positive controls (the exact R-MONO / R-DIFF / input_diff
+    signatures accepted) + 5 death arms with positive/negative pairing
+    (E2 diff-with-single-counter; E1 negative-rebuild-sign + wrong-drain-
+    role kProductInput; D1 input_diff-missing-removals-drain; the O-1
+    closure input_diff-over-monotone-pub) — each mutation isolated from a
+    valid baseline so it aborts for the RIGHT reason (the L15 masked-
+    negative discipline). NOTE: the V-INST-DRAIN input-arm both-signs teeth
+    the b3 lane also named is ALREADY provided by the landed
+    CheckInstanceInputArm pure belt (D3.a.2, death-tested by InputArmTest)
+    — design-1's genuine residual was only the totality, now closed.
+    GATES (byte-neutral test-hardening; no codegen change): SUITE PASS(180)
+    debug; ctest 6/6 debug + 6/6 ASAN (RelValidators +8: 3 accept + 5
+    death); release + ASAN builds clean (error-grep 0 x3); the 4 frozen
+    D3.a.1/2 witnesses' nested h/.rel byte-identical + demand_multi_adorn_
+    witness kSubgraphInstantiate=2 unchanged; 20/20 pinned regen [BYTE].
+    The R-6 DEFER-IF-ENTANGLED did NOT trigger (the extraction landed clean
+    beside the O1 edits, no entanglement). Docs+test+refactor only; the
+    design-1 residual is CLOSED. Remaining residuals: the R-5 OB8(i)
+    widening obligation; the diff-multi-adorn witness (R-7).

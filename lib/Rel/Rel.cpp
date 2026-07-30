@@ -4293,88 +4293,12 @@ void ValidateDROps(
           const bool diff = TableIsDifferential(op.table_op_table);
           const bool input_diff =
               op.input_table && TableIsDifferential(op.input_table);
-          // [D3.a.2 R-3] O-1 closure belt: a @differential summarized input
-          // FORCES a differential pub (the lib/DataFlow/Differential.cpp
-          // closure). input_diff && !diff would be a deletable input feeding
-          // a MONOTONE pub — no delete side to retract into; never a legal
-          // mint. Keeps the three-axis separation CHECKED, not assumed
-          // (the b2 F2a else-arm deadness and the §7-d2 divergence audit
-          // both rely on this implication). Always-on; survives NDEBUG.
-          if (input_diff && !diff) {
-            ValidatorFail("V-INST-EFFECT: a differential summarized input "
-                          "over a MONOTONE published table (the O-1 closure "
-                          "is broken)");
-          }
-          unsigned drains = 0u, demand_drains = 0u, input_drains = 0u,
-                   demands = 0u, leaves = 0u, rebuilds = 0u,
-                   emits = 0u, olds = 0u, counters = 0u, crossings = 0u,
-                   appends = 0u;
-          int rebuild_sign = 0, counter_signs = 0;
-          for (const DREffect &fx : op.effects) {
-            switch (fx.kind) {
-              case EffKind::kVecDrain: {
-                ++drains;
-                // [D3.a.2 e3] the input net-REMOVALS rebuild drain is admitted
-                // ONLY under a differential input (input_diff). Everything else
-                // must be a net-additions drain of the demand or input frontier.
-                const bool input_del =
-                    (fx.vec_role == VecRole::kNetRemoval &&
-                     fx.value_table == op.input_table && input_diff);
-                // Source-aware: a count alone cannot tell "demand + edge" from
-                // "demand twice" (the R-a2 Fable hazard — the dump renders these
-                // value_tables verbatim).
-                if (!input_del &&
-                    (fx.vec_role != VecRole::kNetAddition ||
-                     (fx.value_table != op.demand_table &&
-                      fx.value_table != op.input_table))) {
-                  ValidatorFail("V-INST-EFFECT: an instantiate kVecDrain is "
-                                "not a net-additions drain of the demand or "
-                                "input frontier, nor a differential input's "
-                                "net-removals rebuild drain");
-                }
-                if (fx.value_table == op.demand_table) {
-                  ++demand_drains;
-                } else {
-                  ++input_drains;
-                }
-                break;
-              }
-              case EffKind::kInstanceDemand: ++demands; break;
-              case EffKind::kFlagRead: ++leaves; break;
-              case EffKind::kInstanceRebuild:
-                ++rebuilds;
-                rebuild_sign += fx.sign;
-                break;
-              case EffKind::kStateEmit: ++emits; break;
-              case EffKind::kStateOld: ++olds; break;
-              case EffKind::kCounter:
-                ++counters;
-                counter_signs += fx.sign;
-                if (fx.klass != DerivClass::kNonRecursive) {
-                  ValidatorFail("V-INST-EFFECT: an instantiate counter is not "
-                                "NonRecursive (the acyclic fence)");
-                }
-                break;
-              case EffKind::kInIReadFrozen: ++crossings; break;
-              case EffKind::kVecAppend: ++appends; break;
-              default:
-                ValidatorFail("V-INST-EFFECT: a SUBGRAPH_INSTANTIATE carries an "
-                              "effect kind outside the §3.3 set");
-            }
-          }
-          const bool ok =
-              drains == (input_diff ? 3u : 2u) && demand_drains == 1u &&
-              input_drains == (input_diff ? 2u : 1u) &&
-              demands == 1u && leaves == 1u && rebuilds == 1u &&
-              rebuild_sign == 1 && emits == 1u && olds == 1u &&
-              (diff ? (counters == 2u && counter_signs == 0 &&
-                       crossings == 2u && appends == 2u)
-                    : (counters == 1u && counter_signs == 1 &&
-                       crossings == 0u && appends == 0u));
-          if (!ok) {
-            ValidatorFail("V-INST-EFFECT: a SUBGRAPH_INSTANTIATE effect set is "
-                          "not the §3.3 regime-split totality");
-          }
+          // [D3.a.3 design-1] the V-INST-EFFECT totality (O-1 closure belt +
+          // the full regime-split effect multiset) is factored PURE so its
+          // negative space is death-testable (tests/RelValidators/
+          // InstanceEffectsTest.cpp). Behavior-verbatim; `diff`/`input_diff`
+          // computed here (real TableIsDifferential) and passed as booleans.
+          CheckInstantiateEffects(op, diff, input_diff);
           // [D3.a.2 e2] V-INST-SOLE half 2 SURVIVES: a summarized input that
           // ALIASES the published table is still forbidden (a self-summarizing
           // instantiate is nonsense). Reworded — the differential forbiddance
@@ -4887,6 +4811,97 @@ void CheckInstanceDeathFrontier(const DRFlowGraph &flow) {
                     "never provisioned (no DR vec / no - frontier-filter "
                     "producer) — G-DEMAND-NEG");
     }
+  }
+}
+
+// V-INST-EFFECT effect-multiset totality for ONE kSubgraphInstantiate, factored
+// PURE (D3.a.3 design-1) so the negative space is death-testable with FAKE table
+// pointers (the CheckInstanceInputArm mold). `diff`/`input_diff` arrive as
+// booleans (the caller derives them via TableIsDifferential) — the body derefs
+// no TABLE, comparing only pointer identities against op.demand_table /
+// op.input_table. Behavior-verbatim with the pre-extraction inline block; the
+// two V-INST-SOLE clauses (pub-alias + induction-owned, the latter needing
+// Context) stay at the inline call site.
+void CheckInstantiateEffects(const DROp &op, bool diff, bool input_diff) {
+  // [D3.a.2 R-3] O-1 closure belt: a @differential summarized input FORCES a
+  // differential pub (the lib/DataFlow/Differential.cpp closure). input_diff &&
+  // !diff would be a deletable input feeding a MONOTONE pub — no delete side to
+  // retract into; never a legal mint. Keeps the three-axis separation CHECKED,
+  // not assumed. Always-on; survives NDEBUG.
+  if (input_diff && !diff) {
+    ValidatorFail("V-INST-EFFECT: a differential summarized input "
+                  "over a MONOTONE published table (the O-1 closure "
+                  "is broken)");
+  }
+  unsigned drains = 0u, demand_drains = 0u, input_drains = 0u,
+           demands = 0u, leaves = 0u, rebuilds = 0u,
+           emits = 0u, olds = 0u, counters = 0u, crossings = 0u,
+           appends = 0u;
+  int rebuild_sign = 0, counter_signs = 0;
+  for (const DREffect &fx : op.effects) {
+    switch (fx.kind) {
+      case EffKind::kVecDrain: {
+        ++drains;
+        // [D3.a.2 e3] the input net-REMOVALS rebuild drain is admitted ONLY
+        // under a differential input (input_diff). Everything else must be a
+        // net-additions drain of the demand or input frontier.
+        const bool input_del =
+            (fx.vec_role == VecRole::kNetRemoval &&
+             fx.value_table == op.input_table && input_diff);
+        // Source-aware: a count alone cannot tell "demand + edge" from "demand
+        // twice" (the R-a2 Fable hazard — the dump renders these value_tables
+        // verbatim).
+        if (!input_del &&
+            (fx.vec_role != VecRole::kNetAddition ||
+             (fx.value_table != op.demand_table &&
+              fx.value_table != op.input_table))) {
+          ValidatorFail("V-INST-EFFECT: an instantiate kVecDrain is "
+                        "not a net-additions drain of the demand or "
+                        "input frontier, nor a differential input's "
+                        "net-removals rebuild drain");
+        }
+        if (fx.value_table == op.demand_table) {
+          ++demand_drains;
+        } else {
+          ++input_drains;
+        }
+        break;
+      }
+      case EffKind::kInstanceDemand: ++demands; break;
+      case EffKind::kFlagRead: ++leaves; break;
+      case EffKind::kInstanceRebuild:
+        ++rebuilds;
+        rebuild_sign += fx.sign;
+        break;
+      case EffKind::kStateEmit: ++emits; break;
+      case EffKind::kStateOld: ++olds; break;
+      case EffKind::kCounter:
+        ++counters;
+        counter_signs += fx.sign;
+        if (fx.klass != DerivClass::kNonRecursive) {
+          ValidatorFail("V-INST-EFFECT: an instantiate counter is not "
+                        "NonRecursive (the acyclic fence)");
+        }
+        break;
+      case EffKind::kInIReadFrozen: ++crossings; break;
+      case EffKind::kVecAppend: ++appends; break;
+      default:
+        ValidatorFail("V-INST-EFFECT: a SUBGRAPH_INSTANTIATE carries an "
+                      "effect kind outside the §3.3 set");
+    }
+  }
+  const bool ok =
+      drains == (input_diff ? 3u : 2u) && demand_drains == 1u &&
+      input_drains == (input_diff ? 2u : 1u) &&
+      demands == 1u && leaves == 1u && rebuilds == 1u &&
+      rebuild_sign == 1 && emits == 1u && olds == 1u &&
+      (diff ? (counters == 2u && counter_signs == 0 &&
+               crossings == 2u && appends == 2u)
+            : (counters == 1u && counter_signs == 1 &&
+               crossings == 0u && appends == 0u));
+  if (!ok) {
+    ValidatorFail("V-INST-EFFECT: a SUBGRAPH_INSTANTIATE effect set is "
+                  "not the §3.3 regime-split totality");
   }
 }
 

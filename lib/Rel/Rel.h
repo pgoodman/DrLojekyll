@@ -1234,6 +1234,18 @@ void CheckInstanceDeathFrontier(const DRFlowGraph &flow);
 // tests/RelValidators. fprintf+abort, survives NDEBUG, always-on.
 void CheckInstanceInputArm(const DRFlowGraph &flow);
 
+// V-INST-EFFECT effect-multiset totality for ONE kSubgraphInstantiate (D3.a.3
+// design-1): the O-1 closure belt (input_diff => diff) + the full regime-split
+// effect count (drains/demand-drains/input-drains/demands/leaves/rebuilds/
+// rebuild-sign/emits/olds and the diff-split counters/counter-signs/crossings/
+// appends). Factored PURE — `diff`/`input_diff` are passed as booleans (the
+// caller derives them via TableIsDifferential) so no TABLE is dereferenced and
+// the negative space is death-testable in tests/RelValidators with FAKE table
+// pointers (the CheckInstanceInputArm mold). The two V-INST-SOLE clauses (the
+// pub-alias and the induction-owned belt, the latter needing Context) stay at
+// the inline call site. fprintf+abort, survives NDEBUG, always-on.
+void CheckInstantiateEffects(const DROp &op, bool diff, bool input_diff);
+
 // V-INST-SOLE per-pub uniqueness (D3.a.3 O1): each (pub_table, forcing_index)
 // pair must have exactly one kSubgraphInstantiate deriver. Re-keyed from the
 // pre-D3.a.3 per-pub-POINTER tally so N adornments of one query name (which
