@@ -5727,3 +5727,67 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     snapshot; baselines stand). NEXT: D3.a.3 stage (a) — the
     adornment-side substrate build-out under the g1-g8 charter (g5 now
     carrying ADV-1); the D3.a.3 landing record shifts to §20(AQ)+.
+
+(AQ) D3.a.3 STAGE (a) COMPLETE + THE PER-PUB RULE-AT-CODE RULING
+    (2026-07-30, tip 1f74b5c9): THE ADORNMENT-SIDE SUBSTRATE COMMITTED —
+    KeyedInstances.artifacts/d3a3-substrate.md (§1 the axis as it stands
+    + the N-safe-already inventory / §2 the first two-adornment program +
+    the g6 re-disposition / §3 the fold-arm substrate g1 / §4 the pass
+    loop g3 / §5 the keying sweep g4 + N-store g5 / §6 the per-pub
+    ritual-head ruling / §7 the gap ledger / §8 the stage-(b)
+    ritual-head questions / §9 the load-bearing anchors). Fleet: 3 xhigh
+    opus derivation lanes (laneA the fold-arm reality; laneB the
+    pass-loop decomposition; laneC the keying/N-store/per-pub) + 1 xhigh
+    consolidator (~517k tokens, zero deaths); the ORCHESTRATOR personally
+    re-verified the ten §9 anchors at code AND RE-RAN the g6/misnomer
+    behavioral adjudications as scratch compiles pre-commit (E-77).
+    HEADLINE STRUCTURAL FACTS: (i) the both-set guard-annotation FOLD ARM
+    is DORMANT even under multi-adornment — the two guards of one forcing
+    forward structurally DIFFERENT incoming views so QueryJoinImpl::Equals
+    never holds (View/Join Equals proof); g1's work is DEFENSIVE, not
+    load-bearing-today. (ii) g6 RE-DISPOSED at code: demand_multi_adorn_1
+    does NOT flip diagnostic->golden — its `fb` half hits the
+    demand-propagation (left-linear) reject Demand.cpp:717-722 (bound `To`
+    over a right-linear TC never traces off a read of `path`), so the case
+    STAYS diagnostic (its reject MOVES :457->:717-722); a NEW
+    From-preserving two-adornment SUCCESS witness is needed (the §2.3
+    non-recursive symmetric seed — both `bf` and `fb` compile in
+    isolation, together hit :457; orchestrator-recompiled). (iii) the
+    body-walk "Multi-adornment demand is not yet supported" message is a
+    MISNOMER — a ONE-`bf`-adornment swap recursion fires it (a SIP-derived
+    SIDEWAYS adornment, not a second DECLARED pattern); g3 RE-MESSAGES
+    :668-672/:723-726 (condition unchanged, they STAY fences), never
+    narrows. (iv) ADV-7 HOLDS IN FULL — 34 keying sites swept, all N-safe
+    with NO re-key except the fixes already owned by g1/g2/g3 and the one
+    per-pub obstruction. THE RULING (substrate §6, adjudicated at code, NO
+    owner brief — the d2/R-A2-TRIGGER precedent: no admissible option
+    changes flat-oracle answers or published deltas; the shared pub is the
+    reference-counted union of the N forcings' demanded rows, band-(b)
+    scans each store's OWN Touched() keys and folds into pub
+    non-destructively, Database.cpp:2736/:2801): **THE PER-PUB RULING =
+    RULE AT CODE, ADOPT O1** — relax V-INST-SOLE's inst_per_pub
+    (Rel.cpp:4406) to key on (pub_table, forcing_index), abort unchanged
+    (!=1u). Grounds: diff-minimal (one map-key change, zero emission
+    touched); byte-neutral for the whole single-adornment corpus (each pub
+    has one forcing -> count 1 as before); OD-15-aligned (keeps N disjoint
+    stores / N instantiates / N seals); protection-preserving (a spurious
+    second instantiate for ONE forcing still aborts). O2 (merged publish)
+    REJECTED — answer-neutral but CONFLICTS with the ratified OD-15
+    N-disjoint-stores mandate + diverges the census (N->1) + higher diff
+    cost; O3 (drop the check) DOMINATED by O1. ESCALATION: NONE (the
+    central D3.a.3 design question is DISCHARGED at code). g1/g3/g6 all
+    also rule-at-code; the two OWNER-BRIEF triggers (a live role-divergent
+    fold; any body-walk/recognition WIDENING per R-5/OB8(i)) are
+    CONTINGENT on findings neither this stage nor any lane produced (the
+    multi-adornment loop as scoped widens NO body shape — each declared
+    adornment is an independent From-preserving SIP). Docs only; no code
+    moved; binaries stand. NEXT: stage (b) — the design lanes under this
+    substrate + the per-pub ruling (suggested split per §7/§8: b1 g3 the
+    two-phase pass loop + the RE-MESSAGE + [BYTE] proof; b2 g1 the
+    survivor-record kBody policy + the predicate justification + directed
+    witnesses, co-landing the :668/:723 fence-lift; b3 g2 the
+    forcer/retract builder dedup + the [F] always-on guard + design-1
+    inline teeth + the E2c clone; b4 g5 the O1 per-pub relaxation +
+    per-store ADV-10 confirmation + g6 the new success witness + census),
+    then critics + adjudicator -> d3a3-design.md; landing record =
+    §20(AR)+.
