@@ -5983,3 +5983,39 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     beside the O1 edits, no entanglement). Docs+test+refactor only; the
     design-1 residual is CLOSED. Remaining residuals: the R-5 OB8(i)
     widening obligation; the diff-multi-adorn witness (R-7).
+
+(AU) SESSION SEED — RECURSIVE DEMAND + THE DEMAND COST MODEL (2026-07-30,
+    docs-only, tip f3a55a8f). A design conversation on the demand pipeline
+    produced a whole-program SEED not previously recorded:
+    KeyedInstances.artifacts/recursive-demand-seed.md (SINGLE-PASS, ONE
+    session, NO fleet — the next session's fleet re-derives + verifies it
+    before code). Contents: §1 the two-lowerings frame (transform in
+    data-flow — VERIFIED the .df/.dot are byte-identical between -demand and
+    -demand-instance — vs the instance selector in control-flow); §2 the
+    keyed-instance lowering as pseudocode distilled from the real generated
+    C++ (band-a1 BIRTH / a2 REBUILD / b PUBLISH; the RESCAN a SINGLE monotone
+    section-walk); §3 the TWO recursive fences (Build.cpp:1463/:1468
+    cyclic_demand + :1452-1461/:1471 recursive_content) bottoming out at
+    NeedsInductionCycleVector (Induction.cpp:10) + the OQ-INDUCTION-UNION
+    DEFER ruling & §20(AB) precondition; §4 why it is hard (flat recursive
+    demand lowers to an INDUCTION region with $induction_pivots cycle
+    vectors + round shells, which a keyed instance would have to host
+    PER-INSTANCE — the model today has NO fixpoint, only a monotone rescan);
+    §5 the PATH FORWARD AS DIFFS (r0 model the instance-scoped round in the
+    Rel-IR FIRST [the precondition]; r1 RESCAN becomes a fixpoint; r2 the
+    mint grows a P-RECURSIVE axis, never folded; r3 fences narrow, R-5
+    obligation binds; r4 differential recursive demand = a further slice);
+    §6 the ORTHOGONAL PERF DIFF (p1 indexed rescan — the landed RESCAN is a
+    full section-walk O(|input|) per touched key, `for s < table.NumRows()`;
+    an index on the key cols makes it O(matches); normal mode already
+    index-probes the bound column, so this is the one spot that regressed to
+    a scan); §7 the DEMAND COST MODEL (two tiers — push-persisted inputs
+    [unavoidable] vs pull-demanded derivation [prunable]; demand pays iff
+    pruned-derivation > machinery-cost; message-rooted trivial shapes NEVER
+    satisfy it, so their only justification is the MECHANISM, and recursive
+    demand is where the OPTIMIZATION genuinely pays). NEXT-SESSION candidates
+    (owner re-ranks): recursive demand (the seed's subject — largest gap);
+    the p1 indexed-rescan perf win (cheap, self-contained); the R-7
+    diff-multi-adorn witness; the E-71 header-token mini-diff; the
+    agent-substrate direction; P2-P5. Baselines session-local; RE-SNAPSHOT
+    from tip at next session open (binaries at f3a55a8f).
