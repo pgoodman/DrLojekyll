@@ -637,8 +637,10 @@ the monotone-input emission stays byte-identical.
 ===============================================================================
 ## §8 THE POST-D3.a.2 STATE (2026-07-29, tip bfc068d1; orchestrator-read
 ##    anchors — the epoch's whole-program view AFTER slice 2, §20(AO).
-##    SINGLE-PASS: the next session's fleet re-verifies THIS section +
-##    §20(AL)-(AO) before D3.a.3 code. §1-§6 above are the PRE-slice-2 map
+##    SINGLE-PASS [DISCHARGED 2026-07-30, ledger §20(AP): the fleet
+##    re-verified THIS section + §20(AL)-(AO); VERDICT SOUND, zero errata,
+##    zero false anchors; g5 amended below per ADV-1]. §1-§6 above are the
+##    PRE-slice-2 map
 ##    (stamped at b4d08307; the slice's ~1078 net inserted lines drifted
 ##    their anchors); §7 is the R-A2-TRIGGER ruling, still binding.
 ===============================================================================
@@ -781,6 +783,18 @@ the monotone-input emission stays byte-identical.
          instance — the work is per-adornment RECOGNITION (annotation
          stamps per forcing_index) + census expectations (N instantiates,
          N seals; kInstanceDeath per adornment's demand regime).
+         OBSTRUCTION (§20(AP) ADV-1, orchestrator-verified at code — the
+         CENTRAL D3.a.3 design question): the STORE side is already
+         N-safe (inst_per_store/seal_per_store/death_per_store keyed on
+         op.instance_store_id, Rel.cpp:4404/:4438/:4448/:4460), but the
+         PUB side is NOT — V-INST-SOLE's inst_per_pub keyed on
+         op.table_op_table (:4406) LOUD-ABORTS at :4454-4458 when the
+         count != 1, and N adornments of ONE (query,arity) resolve pub by
+         q_decl.Id() (name+arity, ResolveLiveRecognition :992) to the
+         SAME model table -> N mints set table_op_table = the shared
+         pub_table -> count N -> abort. g5 MUST rule the per-pub check
+         redesign FIRST: relax to per-(pub, forcing/key-shape) OR merge
+         the N publishes.
       g6 WITNESS FAMILY: a two-adornment query witness (eqgate; decide
          demand_multi_adorn_1's disposition — it pins the REJECT today);
          regime matrix cells worth carrying: two adornments with

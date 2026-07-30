@@ -5639,3 +5639,91 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     View.cpp fold-predicate re-derivation with directed witnesses
     BOTH directions + f2 the review-[F] retract/forcer dedup, now
     carrying design-1 + the E2c clone).
+
+(AP) D3.a.3-OPEN RE-VERIFICATION RECORD (2026-07-30, tip 31eb9308; the
+    §8 SINGLE-PASS banner DISCHARGED). (0) Frozen A baselines
+    RE-SNAPSHOTTED from tip into the session scratchpad BEFORE any code
+    (debug + release + oracle binaries; ALL FOUR eqgate witnesses'
+    nested-arm reference dumps h/.rel/.ir, SHA-256-pinned — 17-line
+    SHA256SUMS; all three trees rebuilt, error-grep 0 x3); SUITE
+    PASS(178) against the FROZEN A binary; ctest 6/6 debug + 6/6 ASAN;
+    20/20 pinned regen BYTE-IDENTICAL (orchestrator personally); E-62
+    re-grep CLEAN (orchestrator personally: zero body_ops/output_ops
+    readers outside lib/Rel/; the sanctioned Stratum.cpp:1073 comment +
+    the RelValidators/InstanceOrderTest.cpp fixture pinned_order
+    neighbors). (1) §8 + §20(AL)-(AO) + the d3a2 contracts
+    FLEET-RE-VERIFIED (house precedent, workflow wf_6a638824-229): 2
+    seed-UNREAD opus derivation lanes (lane1 the differential-input
+    machinery as landed — fence lifts, input_diff axis, effect/validator
+    regime splits, CheckInstanceInputArm, the a2' arm + Present mold, the
+    .ir production; lane2 the ADORNMENT-side substrate D3.a.3 will touch
+    — Demand.cpp pass structure, the name-only vs (query,BindingPattern)
+    keying sweep, the builder twins, GuardAnnotationsCompatible + the
+    fold-arm survivorship, N-store recognition/mint/census) + 1
+    seed-READ adversarial verifier over §8 + §20(AL)-(AO) +
+    d3a2-design-as-landed + 1 sonnet mechanical gate lane + 1 xhigh
+    consolidator (5 agents, ~478k tokens, zero deaths). The mech lane's
+    gates (all folded into the consolidation, all GREEN): 20/20 pinned
+    regen, 12/12 nested witness dumps byte-identical to frozenA,
+    config-invariance debug x3 same-hash + release==debug (8/8) all ==
+    frozenA/SHA256SUMS, eqgate SUITE PASS(4 cases) 16/16 sub-verdicts,
+    cross-knob 22/22, ctest 6/6 + 6/6, census 29 kinds
+    (demand_diff_neighborhood_witness kInstanceDeath=0
+    kSubgraphInstantiate=1 kSeedFold=6; demand_diff_input_1
+    kInstanceDeath=1 kSeedFold=8). VERDICT: **SOUND — ZERO substantive
+    false claims, ZERO errata.** No §8 code anchor FALSE; no §8/§20(AO)
+    behavioral claim FALSE; no g1-g8 premise FALSE. Two off-by-one COSM
+    anchors CONSIDERED-AND-DECLINED (§8 body-walk reject :667-670 vs the
+    :668-672 statement; retract match :570-573 one line short of the
+    :574 IsDifferential belt) — both land the reader on the right
+    construct and match the doc's comment-inclusive convention; the
+    verifier's raised View.cpp :584-588 COSM was itself a miscount
+    (:584 IS the signature line — DISMISSED). §20(AL)'s E-148/E-149
+    (P-DEATH :1140) corrected the OLDER d3a1 §8; the slice drifted
+    :1140 -> :1162, and current §8 correctly cites :1162 — different
+    stamps, self-consistent (no contradiction). (2) THE ONE MATERIAL
+    FORWARD FINDING — a charter-completeness gap in g5, orchestrator-
+    verified at code: **ADV-1 the V-INST-SOLE per-pub obstruction.**
+    inst_per_store/seal_per_store/death_per_store (Rel.cpp:4404/:4438/
+    :4448/:4460) are keyed on op.instance_store_id and are ALREADY
+    N-safe; but inst_per_pub (:4406) is keyed on op.table_op_table and
+    V-INST-SOLE LOUD-ABORTS at :4454-4458 when the count != 1 — and N
+    adornments of ONE (query,arity) resolve pub by q_decl.Id()
+    (name+arity, ResolveLiveRecognition :992) to the SAME model table,
+    so N mints set table_op_table = the shared pub_table -> count N ->
+    abort. g5's "N disjoint stores" is thus validator-INCOMPLETE as
+    written (not FALSE — g5 never claimed V-INST-SOLE was N-safe): the
+    per-PUB check redesign (relax to per-(pub, forcing/key-shape) OR
+    merge the N publishes) is the CENTRAL D3.a.3 design question and is
+    now folded into §8's g5 as a hard prerequisite. ADVISORY SEEDS for
+    D3.a.3 stage (a) (facts + hazards, not rulings; full text in the
+    session's consolidated.md): ADV-1 the g5 per-pub abort (LOUD);
+    ADV-2 the forcing_index/first_annotation snapshots (Demand.cpp:
+    983-985) MUST stay INSIDE the per-adornment loop or all adornments
+    mis-key under forcing 0; ADV-3 the known_consumers stray set
+    (Demand.cpp:761-791) must UNION across adornments guarding a shared
+    predecessor or a per-adornment run false-rejects; ADV-4 the fold-arm
+    survivorship policy — CopyDifferentialAndGroupIdsTo (:625-683) keeps
+    `that` as survivor and does NOT pick by role, but
+    ResolveLiveRecognition derives input ONLY from a role==kBody stamp
+    (:974-983), so g1 must FORCE the kBody survivor (the LABELED RESIDUAL
+    View.cpp:571-583, corpus-DORMANT, goes live with multi-guard folds);
+    ADV-5 the proxy-TUPLE Equals false-abort (g1 direction (b) — the
+    key-invariance argument fails once annotations migrate to propagate-
+    arm TUPLEs); ADV-6 the once-per-module boundary (Step-11 census
+    :1132-1163 + MarkDemandFabricated :1165 stay AFTER the last
+    adornment; steps 2-10 loop); ADV-7 fabrication + handler-map + ABI
+    suppression are ALREADY N-safe (adornment suffix + fresh
+    DeclarationContext + per-message keying) — g4 is a VERIFY sweep, not
+    a re-key, EXCEPT ADV-1; ADV-8 the [F] forcer/retract guard asymmetry
+    (assert-only :393-394 vs always-on :508-512) — g2 lands one
+    parameterized builder + the shared always-on guard; ADV-9 the R-5
+    OB8(i) widening obligation stands (any body-walk/recognition
+    widening re-derives the derived-input branch with a directed witness
+    FIRST); ADV-10 confirm the Database.cpp:2343-2390 five-way coupling
+    holds per-store under N regions (esp. no cross-store TouchedFlag
+    aliasing). GATES: docs-only (this record + the §8 g5 amendment +
+    banner discharge); binaries PROVABLY unmoved (no rebuild after the
+    snapshot; baselines stand). NEXT: D3.a.3 stage (a) — the
+    adornment-side substrate build-out under the g1-g8 charter (g5 now
+    carrying ADV-1); the D3.a.3 landing record shifts to §20(AQ)+.
