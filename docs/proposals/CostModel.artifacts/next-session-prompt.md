@@ -70,9 +70,13 @@ the frozen baseline; V-COST-CALIB predicted≈measured on the mono ΔidxAdds=F·
 actionability gate — a cost model that can't reproduce a measured count is make-believe);
 ctest 6/6 debug + ASAN; config-invariance. TRAPS: after every build grep 'error:';
 background shells reset cwd — absolute paths; the bench build is SEPARATE
-(`-DDRLOJEKYLL_BENCH_COUNTERS -O2 -DNDEBUG`, never the timed binary); the `.df`/`.rel` dumps
-are the OFFLINE seam for `bin/Cost` (DO NOT link the internal `lib/Rel`); macOS bash 3.2 (no
-`declare -A`); zsh needs `${=var}`; `PATH="/Users/pag/Code/.brew/bin:$PATH"`. Push to
+(`-DDRLOJEKYLL_BENCH_COUNTERS -O2 -DNDEBUG`, never the timed binary); the bin/Cost SEAM IS A
+FORK to resolve, NOT offline-by-assumption — bin/Oracle links internal libs + builds the Query
+graph in-memory (so Prov is reusable in-process), but the Rel graph has only the text
+SetRelDumpStream seam (see seed r1 / anchor 6); RUN TESTS SILENT (capture to a file, print only
+the sentinel + on-failure detail — tokens matter); GOLDEN-MASTER EVIL-MONKEY test every
+transform on/off in all 4 modes + a negative witness; macOS bash 3.2 (no `declare -A`); zsh
+needs `${=var}`; `PATH="/Users/pag/Code/.brew/bin:$PATH"`. Push to
 `git@github.com:pgoodman/DrLojekyll`.
 
 ---

@@ -101,15 +101,27 @@ above predicts exactly this. That is the first V-COST-CALIB golden.
         Keep: §0 two-layer (L1 Query cardinality / L2 Rel work) — STILL RIGHT, just numeric.
         Keep: §4 scenario FAMILY. Keep: §2.8 spine/Lowering (that IS the access-path/index answer).
 
-    r1  bin/Cost skeleton (drlojekyll-cost, peer of bin/Oracle): parse `.cost` scenario family
-    +   read the program's `-df-out` (Query cardinality) + `-rel-out` (ops+Lowering) OFFLINE
-    +   (dumps are the seam; the in-compiler graphs are internal — DO NOT link lib/Rel)
+    r1  bin/Cost skeleton (drlojekyll-cost, peer of bin/Oracle). THE SEAM IS A DESIGN FORK
+        (grounded, RESOLVE FIRST): bin/Oracle LINKS the internal libs and builds the Query
+        graph IN-MEMORY via the PUBLIC `Query::Build(module,log,optimize)` (bin/CMakeLists.txt:39;
+        bin/Oracle/Main.cpp:7). So:
+        - L1 IN-MEMORY is the clean choice: bin/Cost links internal lib/DataFlow, calls
+          Query::Build, and REUSES Prov DIRECTLY (ComputeColumnProvenance, on QueryImpl) — no
+          re-implementation, no dump-parsing. (Caveat: Prov is on the INTERNAL QueryViewImpl,
+          so bin/Cost includes lib/DataFlow/Query.h, exactly as the compiler does.)
+        - L2/Rel HAS NO in-memory public accessor — the ONLY public seam is SetRelDumpStream
+          (ControlFlow/Format.h:17), a TEXT sink. So L2 EITHER (a) parses the `-rel-out` dump,
+          OR (b) adds a small lib/Rel accessor to hand the built Rel graph to the tool. Fork
+          for the fleet: (a) decoupled but dump-format-fragile; (b) a tiny internal surface but
+          in-memory Lowering/ops. RECOMMEND (b) if the Rel graph outlives Program::Build, else
+          (a). Do NOT assume offline.
 
-    r2  L1 cardinality pass over the .df dump (§2.1). REUSE the Prov idea (a col's demand-key
-        slice) — port Prov's containment reasoning to the dump, or expose a df-dump annotation.
+    r2  L1 cardinality pass (§2.1) over the in-memory Query graph, REUSING Prov for demand-key
+        slices (the containment reasoning is already implemented — this is the payoff of the
+        shared substrate).
 
-    r3  L2 op-cost pass over the .rel dump (§2.2), reading each op's Lowering. Emit a predicted
-        BenchCounters per (scenario, config).
+    r3  L2 op-cost pass (§2.2) over the Rel ops (in-memory per r1(b), or the dump per r1(a)),
+        reading each op's Lowering (Rel.h:483). Emit a predicted BenchCounters per (scenario, config).
 
     r4  THE CALIBRATION HARNESS (the actionability, r4 is the POINT): compile the case
         `-DDRLOJEKYLL_BENCH_COUNTERS`, run a scenario driver, snapshot gBenchCounters, and
@@ -130,6 +142,9 @@ above predicts exactly this. That is the first V-COST-CALIB golden.
 3. The `.rel` census line + op list (`-rel-out`) — the L2 op vocabulary + counts.
 4. lib/DataFlow/Prov.{h,cpp} — the keyset reasoning L1 reuses.
 5. scratchpad/benchmeasure/measure.cpp — the calibration driver prototype (ΔidxAdds=F·K).
-6. bin/Oracle/{Main.cpp,CMakeLists.txt} — the peer-tool build pattern for bin/Cost.
+6. bin/Oracle/Main.cpp:7 + bin/CMakeLists.txt:39 — the peer-tool pattern: LINKS internal libs,
+   builds the Query graph IN-MEMORY via public Query::Build (so Prov is reusable in-process).
+   include/drlojekyll/ControlFlow/Format.h:17 SetRelDumpStream — the ONLY public Rel seam (text);
+   the L1-in-memory / L2-dump-or-accessor fork (r1) hangs off this.
 7. docs/proposals/CostModel.md §0/§2.8/§4 — what to KEEP; §1–§3 symbolic — what to RESHAPE.
 8. measured-calibration-1.md — the reshape rationale + the first calibration law.
