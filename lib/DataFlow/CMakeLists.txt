@@ -9,6 +9,7 @@ set(DataFlow_PUBLIC_H
 set(DataFlow_SRCS
     "EquivalenceSet.h"
     "Optimize.h"
+    "Prov.h"
     "Query.h"
 
     "Aggregate.cpp"
@@ -24,6 +25,7 @@ set(DataFlow_SRCS
     "Differential.cpp"
     "Format.cpp"
     "IO.cpp"
+    "IdentityJoin.cpp"
     "Induction.cpp"
     "Insert.cpp"
     "Join.cpp"
@@ -33,6 +35,7 @@ set(DataFlow_SRCS
     "Merge.cpp"
     "Negate.cpp"
     "Optimize.cpp"
+    "Prov.cpp"
     "Query.cpp"
     "Relation.cpp"
     "Select.cpp"

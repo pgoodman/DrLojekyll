@@ -1,0 +1,12 @@
+dataflow
+
+select ^select.0 (From:u64, To:u64)                ; recv #message add_edge/2
+  ATTRIBUTES eqset=1 class=table-less stratum=0
+  => ^tuple.1 (From, To)
+
+tuple ^tuple.1 (From:u64, To:u64)
+  ATTRIBUTES eqset=1 class=table-less stratum=1
+  => ^insert.2 (From, To)
+
+insert ^insert.2 (From:u64, To:u64) into %table:4
+  ATTRIBUTES eqset=1 class=monotone stratum=2

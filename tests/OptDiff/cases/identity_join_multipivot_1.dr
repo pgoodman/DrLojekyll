@@ -1,0 +1,13 @@
+#message base_2(u64 X, u64 Y).
+#message pay_3(u64 A, u64 B, u64 C).
+#local sr(u64 X, u64 Y).
+sr(X, Y) : base_2(X, Y).
+#local xs(u64 A).
+xs(A) : sr(A, _).
+#local ys(u64 B).
+ys(B) : sr(_, B).
+#local rel(u64 A, u64 B, u64 C).
+rel(A, B, C) : xs(A), ys(B), pay_3(A, B, C).
+#local result(u64 A, u64 B, u64 C).
+result(A, B, C) : rel(A, B, C), sr(A, B).
+#query result_fff(free u64 A, free u64 B, free u64 C) : result(A, B, C).

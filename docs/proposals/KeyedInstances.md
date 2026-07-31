@@ -6019,3 +6019,52 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     diff-multi-adorn witness; the E-71 header-token mini-diff; the
     agent-substrate direction; P2-P5. Baselines session-local; RE-SNAPSHOT
     from tip at next session open (binaries at f3a55a8f).
+
+(AV) COST-MODEL EPOCH OPENED + THE IDENTITY-JOIN RECOGNIZER LANDED
+    (2026-07-31). The session did NOT take the recursive-demand r0 target;
+    the owner re-pointed it, across several in-session steers, at a COST
+    MODEL (an analytic "is this sensical / does it explode" referee for
+    every "do less" feature) and specifically at the magic-sets DOUBLE JOIN
+    ("just because magic sets does the double join, it wasn't obviously
+    justified"). WHAT LANDED (this commit): (1) THE DOUBLE JOIN GROUNDED on
+    real IR (CostModel.artifacts/grounding-double-join.md): a 1-hop bound
+    query is normal=0 joins (index probe) vs -demand=2 joins; the step-8
+    query-projection guard (Demand.cpp:1086-1127, kQueryProjection) is a
+    PROVABLE IDENTITY join on the supported slice (the push-down guard
+    already constrains the bound column to the demand set; the projection
+    guard re-joins a superset of itself, σ=1), surviving to codegen
+    (kJoinEmit). (2) THE GENERAL FIX (owner's idea: "a transform pass to
+    recognize degenerate double joins that are identities") as the SHARED-Prov
+    program: lib/DataFlow/Prov.{h,cpp} = a keyset VALUE-containment provenance
+    analysis (bot-default; SELECT seeds, JOIN pivot=union, MERGE=intersect,
+    NEGATE/AGG/KV/@product/free-MAP=bot) + always-on V-PROV-* validators
+    (V-PROV-BOT anti-fold + V-PROV-PIVOT anti-FABRICATION, the cycle-safe
+    direction — a completeness `⊇` check false-aborted on inductive joins,
+    found+fixed at validation); lib/DataFlow/IdentityJoin.cpp = the recognizer
+    (forward J's users to the keep view when the guard side is an EXACT
+    projection subsuming the keep pivot via Prov), gate df.ident_join
+    (registered in PassPolicy), MONOTONE-FENCED (can_receive/produce_deletions
+    /inductive → skip; the differential regime deferred). (3) VERIFIED by
+    PREDICT-THEN-VERIFY ([[predict-then-verify-ir]], owner's standing
+    methodology): a committed prediction P1-P8, all matched — mono df joins
+    2→1, .rel kEagerJoin 4→2 / kJoinEmit 2→1, OWN-3 census intact (annotation
+    rides CopyDifferentialAndGroupIdsTo), -demand-instance recognition
+    survives (kSubgraphInstantiate=1), tc/multi-adorn/normal unchanged,
+    differential fence holds; SUITE PASS(180), stdout byte-identical, mono
+    .irgold MODE-SPLIT pin blessed (opt/nocf=2, nodf/none=4). (4) MEASURED
+    (answering "is it make-believe": CostModel.artifacts/measured-calibration-1.md):
+    dropping join.7 = ~45% fewer hash ops/probe via gBenchCounters, with the
+    falsifiable law ΔidxAdds=F·K (F per demanded key) + N-independence (demand
+    pruning is O(K·F) not O(N), measured). (5) THE COST MODEL RESHAPED from
+    SYMBOLIC (the fleet's CostModel.md N·M algebra) to a NUMERIC SIMULATOR
+    validated against gBenchCounters (owner steer: "actual numbers", "how are
+    you evaluating these"); the .cost surface is a SCENARIO FAMILY
+    ([[cost-scenario-family]]), not one workload. FLEET WORK: the cost-model
+    design fleet (8 opus agents, TwoLayer IR-home, the double-join verdict) →
+    CostModel.md; a pre-commit review fleet (Fable OVER QUOTA → re-run on opus,
+    result pending at commit). SEED FOR STEPS 2/3 (the reshape + bin/Cost):
+    CostModel.artifacts/cost-simulator-seed.md (whole-program pseudocode +
+    path-forward r0-r6 + anchors) + next-session-prompt.md. This commit is the
+    recognizer only (owner: "do 1"); the cost simulator is the next session.
+    NEXT: reshape CostModel.md numeric (step 2) + build bin/Cost the numeric
+    simulator (step 3), per the seed + prompt.

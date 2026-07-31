@@ -5,6 +5,7 @@
 
 #include <drlojekyll/Util/EqualitySet.h>
 
+#include "Prov.h"
 #include "Query.h"
 
 #include <sstream>
@@ -854,9 +855,44 @@ void QueryImpl::Optimize(const ErrorLog &log, const PassPolicy &policy) {
     changed = policy.Gate("df.dfe") ? EliminateDeadFlows() : false;
   }
 
+  // Identity-join elimination (df.ident_join): the Prov-driven recognizer that
+  // drops a JOIN which provably does no filtering -- the general form of the
+  // magic-sets double-join fix (docs/proposals/CostModel.md §5.5). Runs after
+  // canonicalization has settled (so a demand projection guard is in its post-CSE
+  // chained form), monotone-fenced, to fixpoint; the interposed pass-through
+  // tuples then collapse under the re-canonicalization + final CSE below.
+  if (policy.Gate("df.ident_join")) {
+    // H2: the recognizer's monotone fence reads can_receive/produce_deletions,
+    // which are only correct after a full TrackDifferentialUpdates. Demand-minted
+    // guard joins enter Optimize with default-false flags (ApplyDemandTransform
+    // never recomputes), and the only in-Optimize recompute before here lives
+    // inside do_cse (gated on df.cse). Recompute UNCONDITIONALLY here so the fence
+    // is sound even under -opt-disable=df.cse -- else a load-bearing differential
+    // join could read stale-false flags and be wrongly eliminated (over-answer).
+    TrackDifferentialUpdates(log, true);
+    auto rounds = joins.Size() + 1u;
+    for (; rounds-- && EliminateIdentityJoins(this);) {
+      RemoveUnusedViews();
+      TrackDifferentialUpdates(log, true);
+    }
+    OptimizationContext ident_opt;
+    ident_opt.can_remove_unused_columns = true;
+    ident_opt.bottom_up = false;
+    Canonicalize(ident_opt, log, &policy);
+  }
+
   do_cse();  // Apply CSE to all canonical views.
 
   RemoveUnusedViews();
+
+  // Always-on keyset provenance + V-PROV-* structural validators (owner
+  // OQ-COST-4). The shared substrate for the identity-join recognizer and the
+  // cost model's L1 (docs/proposals/CostModel.md). Structural / total-by-
+  // construction, so no corpus program false-aborts.
+  {
+    const ProvMap prov = ComputeColumnProvenance(this);
+    ValidateProvenance(this, prov);
+  }
 }
 
 }  // namespace hyde

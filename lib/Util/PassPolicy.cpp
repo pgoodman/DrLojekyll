@@ -31,7 +31,7 @@ static bool GlobMatches(std::string_view glob, std::string_view name) {
 // wholesale-skip guards skip today. df.simplify / df.demand run OUTSIDE the
 // DataFlow optimize guard and are deliberately absent.
 static const char *const kDataFlowBody[] = {"df.cse", "df.canon", "df.dfe",
-                                            "df.sink"};
+                                            "df.sink", "df.ident_join"};
 static const char *const kControlFlowBody[] = {"cf.regionopt", "cf.procdedup"};
 
 // EVERY registered pass name (the parse-time reachability authority).
@@ -39,8 +39,8 @@ static const char *const kControlFlowBody[] = {"cf.regionopt", "cf.procdedup"};
 // never gates in P1 (see DataFlow/Build.cpp), so naming it here would
 // re-open the silent-neuter trap.
 static const char *const kAllPasses[] = {"df.simplify", "df.cse", "df.canon",
-                                         "df.dfe", "df.sink", "cf.regionopt",
-                                         "cf.procdedup"};
+                                         "df.dfe", "df.sink", "df.ident_join",
+                                         "cf.regionopt", "cf.procdedup"};
 
 }  // namespace
 

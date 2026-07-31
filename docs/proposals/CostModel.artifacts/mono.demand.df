@@ -1,0 +1,43 @@
+dataflow
+
+select ^select.0 (From:u64, To:u64)                ; recv #message add_edge/2
+  ATTRIBUTES eqset=1 class=table-less stratum=0
+  => ^tuple.2 (From, To)
+
+select ^select.1 (c3:u64)                          ; recv #message demand__neighborhood_bf/1
+  ATTRIBUTES eqset=2 class=table-less stratum=1
+  => ^tuple.4 (c8=c3)
+
+tuple ^tuple.2 (From:u64, To:u64)
+  ATTRIBUTES table=%table:11 eqset=1 class=monotone stratum=2
+  => ^join.6 .in1(From, To)
+
+tuple ^tuple.3 (Start:u64, Node:u64)
+  ATTRIBUTES table=%table:15 eqset=4 class=monotone stratum=5
+  => ^join.7 .in1(Start, Node)
+
+tuple ^tuple.4 (c8:u64)
+  ATTRIBUTES table=%table:8 eqset=2 class=monotone stratum=3
+  => ^join.6 .in0(c8)
+  => ^join.7 .in0(c8)
+
+tuple ^tuple.5 (Start:u64, Node:u64)
+  ATTRIBUTES eqset=6 class=table-less stratum=7
+  => ^insert.8 (Start, Node)
+
+join ^join.6 (From:u64, To:u64) {
+  pivot From:u64 <- .in0.c8, .in1.From
+  out To:u64 <- .in1.To
+}
+  ATTRIBUTES eqset=4 class=table-less stratum=4
+  => ^tuple.3 (Start=From, Node=To)
+
+join ^join.7 (Start:u64, Node:u64) {
+  pivot Start:u64 <- .in0.c8, .in1.Start
+  out Node:u64 <- .in1.Node
+}
+  ATTRIBUTES eqset=6 class=table-less stratum=6
+  => ^tuple.5 (Start, Node)
+
+insert ^insert.8 (Start:u64, Node:u64) into %table:4
+  ATTRIBUTES eqset=6 class=monotone stratum=8
