@@ -6,6 +6,12 @@
 > consumer intent, one logical authority for each meaning, and one physical
 > authority for choosing how that meaning executes. It does not preserve a
 > full-materialization path beside a bounded path merely for compatibility.
+>
+> **Scope note.** [Regional DataFlow Core](RegionalDataFlowCore.md) owns and
+> removes query-body `@first message(...)` forcing. This proposal owns
+> declaration-level and internal bounded-consumption semantics only; any
+> statement below that preserves query-body forcing is superseded by that
+> narrower authority.
 
 ## 0. Decision
 

@@ -1,9 +1,11 @@
 # Regional dataflow: identity-safe demand and keyed instances
 
-Status: proposed replacement architecture. This document is normative about the
-target design and deliberately greenfield about its implementation. The old
-source-level forcing path and the alternate keyed-instance lowering are removed
-as their replacements land; they do not remain as compatibility modes.
+> **Status: superseded.** [Regional DataFlow Core](RegionalDataFlowCore.md)
+> replaces this proposal. This file is retained as a non-normative design
+> record; its recursive region calls, event ports, lifecycle model, language
+> decisions, implementation sequence, and acceptance criteria must not guide
+> implementation. The remainder is intentionally unedited so the rejected
+> design and its evidence remain reviewable.
 
 ## 1. Decision summary
 
