@@ -8,6 +8,8 @@
 #include "Prov.h"
 #include "Query.h"
 
+#include <cinttypes>  // PRIu64 for the canonicalization cap tripwire.
+#include <cstdio>     // fprintf for the canonicalization cap tripwire.
 #include <sstream>
 #include <string_view>
 #include <unordered_set>
@@ -731,11 +733,40 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
         }
       }
 
-      // Looks like we've converged.
+      // The cyclic-fingerprint band-aid. NOTE(cost-audit 2026-07-31): the
+      // zero-initialized history collides with a no-change pass (hash stays
+      // 0), so this is also the PRIMARY exit for graphs that reach a true
+      // fixpoint -- those arrive here with `non_local_changes == false`. A
+      // genuine band-aid firing is a non-zero hash repeating across all eight
+      // slots while changes are still reported (the monotonicity gap the
+      // TODO above names). Measured over the corpus: this fires at iters
+      // 8-10, always far below the iteration cap.
       if (all_eq) {
         break;
       }
     }
+  }
+
+  // Termination contract (promoted from silent to loud, cost-model-findings
+  // #14). Reaching the iteration cap while changes are still pending means we
+  // are about to return a NON-CANONICAL graph -- a silent partial result that
+  // would make downstream Rel inventory, CSE, and any cost snapshot depend on
+  // an optimizer-termination accident. Measured 2026-07-31: the cap never
+  // fires on the OptDiff corpus (max 10 passes observed vs caps >= 64), so
+  // this abort is dead code for known-good programs and a loud tripwire for a
+  // genuine non-terminating rewrite. It survives NDEBUG deliberately (the
+  // DR-validator idiom): release calibration must not trust a silently
+  // truncated canonical form. Guard on `num_views`: an empty graph has
+  // `max_iters == 0`, never enters the loop, and leaves `non_local_changes` at
+  // its `true` initializer -- that is not a truncated fixpoint, so it must not
+  // abort.
+  if (num_views && non_local_changes && iter >= max_iters) {
+    fprintf(stderr,
+            "FATAL: QueryImpl::Canonicalize reached its %" PRIu64
+            "-pass iteration cap over %" PRIu64
+            " views without a fixpoint; the dataflow graph is non-canonical.\n",
+            max_iters, num_views);
+    abort();
   }
 
   RemoveUnusedViews();

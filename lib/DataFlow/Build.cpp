@@ -2591,51 +2591,42 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
-  try {
-    // The wholesale-skip guard is PRESERVED (P1 pinned contract §1):
-    // entering Optimize() with every pass gated is NOT byte-equivalent to
-    // never entering it (driver bookkeeping between passes is structural).
-    if (policy.AnyBodyOptionalEnabled(PassLevel::kDataFlow)) {
-      impl->Optimize(log, policy);
-      if (num_errors != log.Size()) {
-        return std::nullopt;
-      }
-
-    }
-
-    impl->ConvertConstantInputsToTuples();
-    impl->RemoveUnusedViews();
-    impl->ProxyInsertsWithTuples();
-    impl->LinkViews();  // NOTE(pag): Might add new views.
-    impl->RemoveUnusedViews();
-    impl->IdentifyInductions(log);
+  // The wholesale-skip guard is PRESERVED (P1 pinned contract §1):
+  // entering Optimize() with every pass gated is NOT byte-equivalent to
+  // never entering it (driver bookkeeping between passes is structural).
+  //
+  // NOTE(cost-audit 2026-07-31): the former `try { ... } catch (...) {
+  // assert(false); <cull dead views> }` wrapper around this block was
+  // deleted. Under `-DNDEBUG` the `assert(false)` vanished and the handler
+  // silently continued to `Stratify` over a partially-mutated graph, so a
+  // release compiler could report success after an internal failure — which
+  // would invalidate any `-O2 -DNDEBUG` cost calibration. Optimization/
+  // finalization failures now reach the owning boundary (the process) loudly
+  // in every build. See CostModel.artifacts/audit/cost-model-findings.md #13.
+  if (policy.AnyBodyOptionalEnabled(PassLevel::kDataFlow)) {
+    impl->Optimize(log, policy);
     if (num_errors != log.Size()) {
       return std::nullopt;
     }
-
-    impl->FinalizeDepths();
-    impl->FinalizeColumnIDs();
-    impl->TrackDifferentialUpdates(log, true);
-    if (num_errors != log.Size()) {
-      return std::nullopt;
-    }
-    impl->TrackConstAfterInit();
-
-  // This is useful for debugging.
-  } catch (...) {
-    assert(false);
-    auto view_is_dead = [] (QueryViewImpl *v) { return v->is_dead; };
-    impl->selects.RemoveIf(view_is_dead);
-    impl->tuples.RemoveIf(view_is_dead);
-    impl->kv_indices.RemoveIf(view_is_dead);
-    impl->joins.RemoveIf(view_is_dead);
-    impl->maps.RemoveIf(view_is_dead);
-    impl->aggregates.RemoveIf(view_is_dead);
-    impl->merges.RemoveIf(view_is_dead);
-    impl->compares.RemoveIf(view_is_dead);
-    impl->inserts.RemoveIf(view_is_dead);
-    impl->negations.RemoveIf(view_is_dead);
   }
+
+  impl->ConvertConstantInputsToTuples();
+  impl->RemoveUnusedViews();
+  impl->ProxyInsertsWithTuples();
+  impl->LinkViews();  // NOTE(pag): Might add new views.
+  impl->RemoveUnusedViews();
+  impl->IdentifyInductions(log);
+  if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
+
+  impl->FinalizeDepths();
+  impl->FinalizeColumnIDs();
+  impl->TrackDifferentialUpdates(log, true);
+  if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
+  impl->TrackConstAfterInit();
 
   BuildEquivalenceSets(impl.get());
   impl->Stratify(log);

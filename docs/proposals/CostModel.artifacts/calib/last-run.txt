@@ -1,0 +1,25 @@
+== regenerating ON/OFF codegen ==
+== compiling calib_driver against each config ==
+
+== POSITIVE + FANOUT SWEEP (law: idx_adds(OFF)-idx_adds(ON) == F*min(N,K)) ==
+positive/base          N=256    F=4   K=256  DUP=1  R=1  | ON=1024   OFF=2048   Δ=1024   F*min(N,K)=1024    [LAW OK]
+fanout F=1             N=256    F=1   K=256  DUP=1  R=1  | ON=256    OFF=512    Δ=256    F*min(N,K)=256     [LAW OK]
+fanout F=2             N=256    F=2   K=256  DUP=1  R=1  | ON=512    OFF=1024   Δ=512    F*min(N,K)=512     [LAW OK]
+fanout F=8             N=256    F=8   K=256  DUP=1  R=1  | ON=2048   OFF=4096   Δ=2048   F*min(N,K)=2048    [LAW OK]
+fanout F=16            N=256    F=16  K=256  DUP=1  R=1  | ON=4096   OFF=8192   Δ=4096   F*min(N,K)=4096    [LAW OK]
+held-out K=100         N=256    F=4   K=100  DUP=1  R=1  | ON=400    OFF=800    Δ=400    F*min(N,K)=400     [LAW OK]
+held-out N=1000        N=1000   F=4   K=256  DUP=1  R=1  | ON=1024   OFF=2048   Δ=1024   F*min(N,K)=1024    [LAW OK]
+held-out N=10000       N=10000  F=4   K=256  DUP=1  R=1  | ON=1024   OFF=2048   Δ=1024   F*min(N,K)=1024    [LAW OK]
+
+== DUPLICATE-ROW (set/distinct semantics: probe-epoch idx_adds DUP-independent) ==
+dup x4                 N=256    F=4   K=256  DUP=4  R=1  | ON=1024   OFF=2048   Δ=1024   F*min(N,K)=1024    [LAW OK]
+dup x16                N=256    F=4   K=256  DUP=16 R=1  | ON=1024   OFF=2048   Δ=1024   F*min(N,K)=1024    [LAW OK]
+
+== EMPTY / STANDING-EMPTY DEMAND (probe keys with no out-edges) ==
+empty tail refute      N=64     F=4   K=256  DUP=1  R=1  | ON=256    OFF=512    Δ=256    F*min(N,K)=256     [LAW OK]
+
+== REPEATED DEMAND (idempotence: re-probing STANDING keys re-materializes nothing) ==
+repeat x4              N=256    F=4   K=256  DUP=1  R=4  | ON=1024   OFF=2048   Δ=1024   F*min(N,K)=1024    [LAW OK]
+repeat x4 K=N=64       N=64     F=4   K=64   DUP=1  R=4  | ON=256    OFF=512    Δ=256    F*min(N,K)=256     [LAW OK]
+
+CALIB: PASS

@@ -4,6 +4,36 @@ Findings are ordered by severity. Each includes a disposition so a future
 session does not turn an unresolved research question into a compatibility
 branch or guessed implementation.
 
+## Session update 2026-07-31 (tip after `61b17a15`)
+
+Resolved this session (evidence in `calibration-slice.md`,
+`rel-endstate-decision.md`, `costmodel-contract-decision.md`,
+`verification-record-2.md`):
+
+- **#5 (false counter mapping)** — DISCHARGED for `idx_adds` on the mono slice:
+  the duplicate-row and empty-tail negatives are now checked witnesses proving
+  `idx_adds` counts distinct stored rows over populated probes, not events.
+- **#7 (calibration not reproducible)** — FIXED: `calib/calib_driver.cpp` +
+  `calib/runcalib.sh` reproduce the measured law from a clean tree.
+- **#8 (mislabelled mono artifact)** — FIXED: renamed to
+  `mono.demand.ident-join-{off,on}.*`, ON counterpart added, `regen-mono-artifacts.sh`
+  regenerates all from tracked flags.
+- **#13 (release catch-all)** — FIXED: the `catch(...)` in `Query::Build` is
+  deleted; failures reach the process boundary in every build.
+- **#14 (silent optimizer cap)** — MEASURED + FIXED: the iteration cap fires
+  0/519 times corpus-wide (max 10 passes vs caps ≥64); promoted to an always-on
+  loud abort surviving NDEBUG. The cyclic band-aid fires 96× and is load-bearing
+  (kept, with an honest comment).
+- **#16 (Rel authority)** and the Rel end state — ADJUDICATED into a recommended
+  direction (B) with an owner-decision fork; see `rel-endstate-decision.md`.
+- **#1/#2/#17/#19 (product/estimate/report-type boundaries)** — DECIDED for
+  slice 1: measurement-runner only, one checked exact law, everything else
+  observed-only; see `costmodel-contract-decision.md`.
+
+Still open: #3/#4/#6/#9/#10/#11 (all gated on the static-predictor half, which is
+deferred behind the Rel decision), #12 (superseded by the new continuation
+prompt), #15 (release assert audit — separate deeper audit).
+
 ## Critical 1: The Product Is Three Different Tools
 
 **Evidence.** `cost-simulator-seed.md:39-60` combines a static L1 pass, an L2

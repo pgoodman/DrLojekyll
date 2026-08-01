@@ -1,8 +1,29 @@
 # CostModel and Architecture Audit
 
-> Status: code-derived audit at branch `keyed-instances`, inspected at
-> `d6904ae3` on 2026-07-31. This is a living record. Re-check anchors against
-> the current tip before relying on line numbers or status claims.
+> Status: code-derived audit at branch `keyed-instances`, opened at `d6904ae3`
+> on 2026-07-31 and extended the same day at the tip after `61b17a15`. This is a
+> living record. Re-check anchors against the current tip before relying on line
+> numbers or status claims.
+
+## Session decisions and slice (2026-07-31, tip after `61b17a15`)
+
+Read these AFTER the audit files below — they act on it:
+
+- [`rel-endstate-decision.md`](rel-endstate-decision.md): Work Order 2 — the
+  op-family authority table, the A/B/C tradeoff, and the recommended direction
+  (B) with the one fork left to the owner.
+- [`costmodel-contract-decision.md`](costmodel-contract-decision.md): Work Orders
+  3 + 6 — the binding slice-1 product/input/output contract and the
+  general-simulator reassessment.
+- [`calibration-slice.md`](calibration-slice.md): the landed measurement slice —
+  the reproducible `idx_adds(OFF)−idx_adds(ON)=F·min(N,K)` law and its negatives.
+- [`verification-record-2.md`](verification-record-2.md): commands actually run
+  this session and gates not run.
+
+Trust prerequisites repaired this session: the `Query::Build` catch-all is
+deleted; the canonicalization iteration cap is a loud abort (measured to never
+fire on the corpus); the mono artifacts are config-labelled with a tracked
+generator; the identity-join on/off delta is verified in all four modes.
 
 This directory records the audit that precedes the next CostModel session. It
 exists because the current proposal, its seed, and its continuation prompt mix
