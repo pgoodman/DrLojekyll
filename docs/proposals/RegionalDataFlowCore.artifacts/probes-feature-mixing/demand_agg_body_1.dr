@@ -1,0 +1,7 @@
+#functor count_i32(aggregate i32 Val, summary i32 Count) @invertible.
+#message add_edge(i32 Src, i32 Dst).
+#local edge(i32 Src, i32 Dst).
+edge(S, D) : add_edge(S, D).
+#local indeg(i32 Dst, i32 Count).
+indeg(D, C) : count_i32(S, C) over (i32 D, i32 S) { edge(S, D) }.
+#query indeg_of(bound i32 Dst, free i32 Count) : indeg(Dst, Count).

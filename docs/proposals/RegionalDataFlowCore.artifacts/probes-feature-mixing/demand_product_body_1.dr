@@ -1,0 +1,6 @@
+#message add_node(u64 N).
+#local node(u64 N).
+node(N) : add_node(N).
+#local allpairs(u64 A, u64 B).
+allpairs(A, B) @product : node(A), node(B), A != B.
+#query pairs_of(bound u64 A, free u64 B) : allpairs(A, B).

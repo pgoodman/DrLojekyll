@@ -1,0 +1,6 @@
+#message edge_2(u64 From, u64 To).
+#local path(u64 From, u64 To).
+path(F, T) : edge_2(F, T).
+path(F, T) : path(F, M), edge_2(M, T).
+#query fwd(bound u64 From, free u64 To) : path(From, To).
+#query bwd(bound u64 To, free u64 From) : path(From, To).

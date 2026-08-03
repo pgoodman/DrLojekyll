@@ -1,0 +1,9 @@
+#message mp(u64 A, u64 B).
+#message mq(u64 B, u64 C).
+#local p(u64 A, u64 B).
+#local q(u64 B, u64 C).
+p(A, B) : mp(A, B).
+q(B, C) : mq(B, C).
+#local j(u64 A, u64 C).
+j(A, C) :- p(A, B), q(B, C).
+#query j_of(bound u64 A, free u64 C) : j(A, C).

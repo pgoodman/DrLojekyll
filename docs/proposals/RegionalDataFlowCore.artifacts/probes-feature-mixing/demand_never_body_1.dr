@@ -1,0 +1,7 @@
+#message feed(i32 A, i32 B).
+#message unsee(i32 A).
+#local seen(i32 A).
+seen(A) : unsee(A).
+#local vis(i32 A, i32 B).
+vis(A, B) : feed(A, B), @never seen(A).
+#query vis_of(bound i32 A, free i32 B) : vis(A, B).

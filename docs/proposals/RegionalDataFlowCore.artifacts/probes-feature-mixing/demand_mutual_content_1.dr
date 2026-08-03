@@ -1,0 +1,8 @@
+#message base(u64 K, u64 V).
+#message step(u64 V, u64 W).
+#local ra(u64 K, u64 V).
+#local rb(u64 K, u64 V).
+ra(K, V) : base(K, V).
+ra(K, W) : rb(K, V), step(V, W).
+rb(K, W) : ra(K, V), step(V, W).
+#query reach(bound u64 K, free u64 V) : ra(K, V).

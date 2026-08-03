@@ -1,0 +1,5 @@
+#message add_edge(u64 From, u64 To) @differential.
+#local edge(u64 From, u64 To).
+edge(F, T) : add_edge(F, T).
+#query neighbors(bound u64 From, free u64 To) : edge(From, To).
+#message nbhd_out(u64 From, u64 To) @differential : neighbors(From, To).

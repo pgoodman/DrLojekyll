@@ -1,0 +1,11 @@
+#functor max_above(bound i32 Threshold, aggregate i32 Val, summary i32 Max) @recompute.
+#message add_reading(i32 Sensor, i32 Val) @differential.
+#message set_threshold(i32 Sensor, i32 Threshold).
+#local reading(i32 Sensor, i32 Val).
+#local threshold(i32 Sensor, i32 Threshold).
+reading(S, V) : add_reading(S, V).
+threshold(S, T) : set_threshold(S, T).
+#local peak(i32 Sensor, i32 Max).
+peak(S, M) : max_above(T, V, M) over (i32 S, i32 T, i32 V) {
+               threshold(S, T), reading(S, V) }.
+#query peak_of(bound i32 Sensor, free i32 Max) : peak(Sensor, Max).

@@ -1,0 +1,12 @@
+#message base(u64 K, u64 V).
+#message step(u64 V, u64 W).
+#local ra(u64 K, u64 V).
+#local rb(u64 K, u64 V).
+ra(K, V) : base(K, V).
+ra(K, W) : rb(K, V), step(V, W).
+rb(K, W) : ra(K, V), step(V, W).
+#message ra_out(u64 K, u64 V) : ra(K, V).
+#message rb_out(u64 K, u64 V) : rb(K, V).
+#local pick(u64 V, u64 W).
+pick(V, W) : step(V, W).
+#query pick_of(bound u64 V, free u64 W) : pick(V, W).

@@ -1,0 +1,7 @@
+#message pt(u64 Key, u64 Val) @differential.
+#local ans(u64 Key, u64 Val).
+ans(K, V) : pt(K, V).
+#query lookup(bound u64 Key, free u64 Val).
+#query lookup(free u64 Key, bound u64 Val).
+lookup(K, V) : ans(K, V).
+#message lookup_out(u64 Key, u64 Val) @differential : lookup(Key, Val).

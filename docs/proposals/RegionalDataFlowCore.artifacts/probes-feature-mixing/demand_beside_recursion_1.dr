@@ -1,0 +1,9 @@
+#message edge_2(u64 From, u64 To).
+#message seed_2(u64 X, u64 Y).
+#local path(u64 From, u64 To).
+path(F, T) : edge_2(F, T).
+path(F, T) : path(F, M), edge_2(M, T).
+#message path_out(u64 From, u64 To) : path(From, To).
+#local pair(u64 X, u64 Y).
+pair(X, Y) : seed_2(X, Y).
+#query pair_of(bound u64 X, free u64 Y) : pair(X, Y).
