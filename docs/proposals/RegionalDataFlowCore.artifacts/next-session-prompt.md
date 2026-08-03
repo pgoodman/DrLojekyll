@@ -1,110 +1,121 @@
-# Next Session: RegionalDataFlowCore — Stage B (the canonical planning regional program)
+# Next Session: RegionalDataFlowCore — Stage B (the regional representation becomes canonical)
 
 Continue in the Dr. Lojekyll repository, branch `keyed-instances`. Governing
 discipline unchanged: reality grounding, byte-exact goldens, explicit negative
 witnesses, predict-then-verify at the single-transform grain, the evil-monkey
-rule, complexity guilty until proven inherent (smaller-not-larger). THE
-STANDING METHOD applies to every slice: (a) fleet re-verify + EXTEND the
-pseudocode against the tip; (b) express the slice as DIFFS on that pseudocode;
-(c) adversarial critique panel (refute-verified) over any reworked diff;
-(d) author/refresh the DESIRED IR OUTPUT STATES as diffs from freshly
-collected dumps, critique them (determinism lens), use them as
-predict-then-verify targets. Implementation only when (a)-(d) are green.
+rule, complexity guilty until proven inherent (smaller-not-larger).
 
-RUN FOLLOW-ON WORK THROUGH THE WORKFLOW TOOL (pipeline / fan-out /
-adversarial-verify; thin orchestrator; structured findings). MODEL TIERING:
-sonnet mechanical, opus judgment. SILENT tests. NEVER bless to make red green;
-bless only via explicit `runall.sh --bless` after review. Do not commit/push
-unless asked; identity `Peter Goodman <peter.goodman@gmail.com>`; keep
-tool/model/provider details out of commits and artifacts.
+THE STANDING METHOD is the session's shape — for the Stage-B slice:
+(a) BUILD OUT THE PSEUDOCODE: fleet re-verify + extend the architecture/
+    algorithm pseudocode against the tip — `stage-b-seed.md` Part 1 is the
+    Stage-B-grain seed, `regional-arch-pseudocode.md` (§1–§7 + Part R) the
+    deep authority; extend where Stage B needs finer grain (the Query::Build
+    tail and every caller of Query; the Rel/ControlFlow read surface of
+    QueryImpl that "consumes only FrozenRegionalProgram" must wrap; the dump
+    sinks). Merge so ONE pseudocode authority holds.
+(b) FORMULATE THE DIFFS: re-express `stage-b-diff.md` H1–H9 as rigorous
+    diffs on that verified pseudocode, folding in `stage-b-seed.md` Part 2's
+    DELTA-1..6 (the freeze point AFTER the Stage-A contract pass; the
+    190+63+63+59+5 exit gate with I0 live; ratified-G1 + predicted bytes;
+    the panel amendments; the new owner inputs). Opus authors.
+(c) CRITIQUE THE DIFFS: adversarial panel (correctness/lifecycle,
+    termination/confluence, testability/oracle, necessity), REFUTE-VERIFIED
+    against code — and apply DELTA-6: refuters demand concrete code evidence
+    per confirmation, re-triage severities, no finding without a failure
+    scenario (session-3's ~95% survival was too permissive; Stage A's ~22%
+    is the calibration).
+(d) DESIRED IR OUTPUT STATES: author/refresh the desired `-region-out` G1
+    bytes + DOT twin + any `.df`/`.contract`/`.rel` deltas for the ONE-region
+    Stage-B program, as diffs from freshly collected dumps
+    (`region-model-desired-states.md` §2/§3 seed it; honor its §5/§6
+    determinism ledger and do not prejudge the H1/H2 owner items); critique
+    with the determinism lens. These become the predict-then-verify targets.
+Implementation only when (a)–(d) are green and the owner ratifies.
 
-## State at session open (session 3 closed 2026-08-03; re-snapshot from tip)
+RUN FOLLOW-ON WORK THROUGH THE WORKFLOW TOOL — deterministic orchestration
+(pipeline / fan-out / adversarial-verify), a thin orchestrator, agents return
+structured findings (never paste whole files between them; put the COMPLETE
+text in structured-output fields — a session-3 author lost its section to a
+placeholder). MODEL TIERING: sonnet for mechanical extraction (anchor
+verification, dump collection, census counts, suite runs); opus for judgment
+(pseudocode authorship, diff formulation, adjudication, critique/refute
+panels). SILENT tests (capture to files, print only failures). NEVER bless a
+golden to make anything pass; bless only via explicit `runall.sh --bless`
+after review. Do not commit/push unless asked; identity
+`Peter Goodman <peter.goodman@gmail.com>`; keep tool/model/provider details
+out of commits and artifacts.
 
-- COMMITTED at session-3 open: b61797cd (F26 dfe split + V-SCC-SEAM + F23 pin),
-  bd694541 (D3.3 landing set + F27/F28 + F29 record), 1d28a74c (Stage A),
-  70cc60fd (docs: ledger (AW)/(AX), CLAUDE.md refresh, adornment-fuzzing
-  direction). NOT pushed.
-- Session-3 NEW WORK (verify with `git status` whether the owner committed it;
-  if not, the commit gate below): the I0 SLICE (bin/RefInterp — OG1-parsed
-  definitional evaluator; bin/RefHarness — OG2-tool behavioral emitter;
-  bin/CMakeLists.txt targets; runall.sh run_refinterp step + bless line; 59
-  blessed `goldens/*.behavioral.stdout`; 8 `cases/*.probes`; the F29 codegen
-  FIX in lib/CodeGen/CPlusPlus/Database.cpp commit-sweep used-state collector;
-  FINDINGS.md F29 promoted) + the DESIGN artifacts (regional-arch-pseudocode
-  Part R; region-model-diffs.md; region-model-desired-states.md;
-  stage-i0-interpreter.md §7/§8; owner-adjudication-record.md appends;
-  INDEX.md; this prompt).
-- EXIT STATE verified at close: SUITE: PASS (190) with run_refinterp LIVE,
-  ctest 7/7, zero non-behavioral golden churn. The I0 exit gate is MET 63/63
-  (59 compiling MATCH incl. 4-mode behavioral agreement; 4 diagnostics
-  interp-clean; zero carve-outs — negation_flap moot under the netting
-  adjudication).
+## State at session open (session-3 close = tip 423b8139 + the seed commit; pushed)
+
+- Everything is COMMITTED and PUSHED: b61797cd/bd694541/1d28a74c (F26 split /
+  D3.3+F27+F28 / Stage A), 70cc60fd (ledger (AW)/(AX) + CLAUDE.md), a9a11f7b
+  (F29 FIXED — commit-sweep used-state collector), 1137b4f6 (I0 LANDED — the
+  exit gate met 63/63, run_refinterp live in runall.sh, 59 frozen behavioral
+  goldens, 8 .probes), 423b8139 (Part R + region-model-diffs.md +
+  region-model-desired-states.md), + the stage-b-seed/prompt docs commit.
+- Verified at close: SUITE: PASS (190) with the I0 referee live, ctest 7/7,
+  working tree clean.
+- Re-snapshot baselines from the tip; artifact line-anchors are session-local.
 
 ## Phase 0 (housekeeping)
 
-1. `git status` / rebuild / suite SILENT (expect PASS 190) / ctest.
-2. COMMIT GATE (owner-interactive) for the session-3 tree if uncommitted —
-   suggested split: (i) the F29 codegen fix + FINDINGS promotion; (ii) the I0
-   slice (tools + runall wiring + goldens + probes + stage-doc amendments);
-   (iii) the region-model design artifacts. Or the owner's shape.
-3. CLAUDE.md refresh: add the I0 referee to the Test section (run_refinterp,
-   the behavioral golden family, the CBF, the plain-compile rule, the .probes
-   sidecar) + FINDINGS status line (F29 fixed).
+1. `git status` / `git log -5`. Rebuild debug; suite SILENT (expect
+   `SUITE: PASS (190)`); ctest (expect 7/7).
+2. Read, in order: `stage-b-seed.md` (the charge), `stage-b-diff.md` (the
+   hunks it amends), `regional-arch-pseudocode.md` Part R (the pseudocode
+   authority), the `region-model-diffs.md` panel records that name Stage-B
+   homes, `region-model-desired-states.md` §2/§3/§5/§6.
 
-## The MAIN work — Stage B, the canonical planning regional program (owner-ranked next)
+## The MAIN work — Stage B under (a)–(d) above
 
-`stage-b-diff.md` is the stage doc (the ONLY clean stage in the phase-3
-critique). Under the standing method:
+Charge: the regional representation becomes canonical as a PURE REFACTOR —
+`PlanningRegionalProgram` built at the Query::Build tail (AFTER the Stage-A
+contract pass; contracts/models/strata/guard-annotations/RecognizedSubgraphs/
+forcings are its inputs), FROZEN, one ProgramRoot + one observation-root
+region, zero child calls, everything downstream consuming the frozen object;
+the G1 `-region-out` dump + DOT twin; the H9-as-amended scaffold validators;
+the DIFF-R5 logical-key canonicalization IF the owner pulls Minimize into
+this slice (ask — D3.4 deferred it to B as an option, not a mandate).
 
-1. (a) Fleet re-verify stage-b-diff.md's anchors against the tip (Stage A
-   landed since its authoring; Part R of regional-arch-pseudocode.md is the
-   pseudocode authority; the H9 validator handoff was re-pointed by Errata-5).
-2. (b) Express Stage B as diffs on Part R; fold in the Stage-B-relevant
-   normative amendments from region-model-diffs.md's panel records (esp.
-   DIFF-R5's logical/physical key split — the Stage-B Minimize/FieldExpression
-   deferral is where flat-key grows real minimal keys) and the Stage-B inputs
-   recorded in owner-adjudication-record.md (logical-origin provenance on
-   model tables; the demand-areas-vs-SCCs framing; role-inheritance-through-
-   proxies is an OPEN owner item).
-3. (c) Critique panel, refute-verified. NOTE the session-3 panel-yield lesson:
-   the refuters confirmed ~95% (vs Stage A's 22%) — tighten the refuter charge
-   (demand concrete code evidence per confirmation; re-triage severities).
-4. (d) Desired -region-out G1 states: region-model-desired-states.md §2/§3 are
-   the seed (its §5/§6 hazard ledger lists what needs owner adjudication
-   first: H2 the kRequestEdgeAdd-vs-mono-arm-collapse contradiction with
-   rel-stage-c-desired-states.md H-G.3; H1 the key-in-output convention).
-   Stage B's dump grammar is ratified G1 (D2.2); the DOT twin directive
-   applies (cluster_region, advisory).
-5. Exit gate: Stage B is a PURE REFACTOR — all 190 goldens byte-identical,
-   all 59 behavioral goldens byte-identical (I0 now referees the builder
-   tail INDEPENDENTLY — the OG1-parsed independence argument, E2, is live).
+EXIT GATE: 190 bespoke + 63 oracle + 63 monotone + 59 behavioral + 5 eqgate
++ the .irgold pins ALL byte-identical, suite WITH run_refinterp live — the
+I0 referee (no shared code with Query::Build) checks the builder-tail
+refactor independently. A NEW `-region-out` surface pinned deterministic for
+the witness set (blessed only after review). Any behavioral-golden divergence
+is a hard stop (they are FROZEN through the Stage-C cutover).
 
-## Standing referees (use them)
+## Owner decisions to surface (STOP where load-bearing, do not guess)
 
-- I0: `run_refinterp` in every suite run; `drlojekyll-refinterp <dr> <batches>
-  [probes]` ad hoc. The CBF gate compiles the PLAIN program (never .drflags).
-- The adornment-fuzzing direction (owner 2026-08-03) awaits DIFF-R3's slice —
-  keep it in view when Stage B touches the parser-adjacent surfaces.
+- H1 vs H1-ALT: freeze at the Query::Build tail (return-type ripple) vs a
+  main-level step between Query::Build and Program::Build.
+- Minimize/FieldExpression (real minimal keys) into this slice or stay
+  deferred (D3.4; DIFF-R5's Stage-B hook).
+- The desired-states H1 (key-in-output convention) + H2 (kRequestEdgeAdd vs
+  H-G.3 mono-arm-collapse) adjudications — Stage-C-gating, but the G1 census
+  field-order choice must not prejudge them.
+- Role-inheritance-through-proxies (D2.9 default rule); logical-origin
+  provenance on planning table nodes (direction, unratified).
 
 ## Paused behind owner input (do NOT author their code)
 
-D2.6 reader-handle schema (Stage-C header authoring paused); the §6-vs-§11
-routing rule; declared-regions hint-vs-mandate + sequence slot (DIFF-R3);
-the lazy/force barrier variants (DIFF-R4); the desired-states H1/H2
-adjudications; role-inheritance-through-proxies; the region-model-diffs.md
-OPEN OWNER ITEMS lists (per diff).
+Stage C entirely: D2.6 reader-handle schema, the §6-vs-§11 routing rule, the
+request-edge mint (DIFF-R1), the lazy/force barrier (DIFF-R4), declared
+regions + the adornment-fuzzing harness (DIFF-R3 — but keep the G1 grammar
+generator-friendly).
 
 ## Stop conditions
 
 An unratified decision becomes load-bearing; a predicted dump diverges
-unexpectedly; any golden (bespoke OR behavioral) diverges during the Stage-B
-refactor; any impulse to author Stage C/D code before the re-brief.
+unexpectedly; ANY golden (bespoke, oracle, behavioral, eqgate, irgold)
+diverges during the refactor; any impulse to author Stage C/D code.
 
 ## Deliverables
 
-Committed (owner-shaped) session-3 tree; CLAUDE.md I0 refresh; Stage B
-standing-method green (verified anchors, diffs, refuted critiques, desired
-G1 states) and — if the owner ratifies the implementation — the Stage-B
-refactor landed with every golden byte-identical; an updated version of THIS
-prompt pointing at the next ranked slice (Stage-C re-brief resolution or the
-declared-regions surface).
+The verified+extended Stage-B pseudocode (one authority); the reworked
+critiqued Stage-B diffs (amendments applied as dated diffs on
+stage-b-diff.md); the desired G1/DOT states, determinism-critiqued; and —
+if the owner ratifies implementation — Stage B landed with every golden
+byte-identical and the new dump surface blessed after review; an updated
+version of THIS prompt pointing at the ranked-next slice (the Stage-C
+re-brief resolution, or the declared-regions/DIFF-R3 surface, as the owner
+ranks).
