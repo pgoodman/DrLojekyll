@@ -1,0 +1,10 @@
+REFINTERP cf14_3 netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+FINAL
+QUERY reach_f
+QUERY live_f
+2
+5
+7

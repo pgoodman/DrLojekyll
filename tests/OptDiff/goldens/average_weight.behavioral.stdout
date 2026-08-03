@@ -1,0 +1,4 @@
+REFINTERP average_weight netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL

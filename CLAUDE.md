@@ -118,17 +118,31 @@ delta-relational-IR golden policy.
   `demand_diff_neighborhood_witness` is the e5 (diff-input × MONO-demand)
   carrier — the first P-STORE∧¬P-DEATH program (`kInstanceDeath=0` beside
   `kSubgraphInstantiate=1`).
+- I0 referee (the reference relational interpreter, RegionalDataFlowCore
+  stage-i0 — LANDED): any `.batches` case ALSO runs `run_refinterp`.
+  `bin/RefInterp` (`drlojekyll-refinterp <dr> <batches> [probes]`) is a
+  DEFINITIONAL evaluator over raw parsed clauses (OG1-parsed: links no
+  DataFlow, never reads `.drflags` — demand-blind by construction) emitting
+  the Canonical Behavioral Format (per-epoch sorted published-membership
+  deltas + FINAL + probe-restricted QUERY blocks via the `.probes` sidecar);
+  `bin/RefHarness` emits a `behavioral_main.cpp` against the frozen public
+  ABI (OG2-tool), and the behavioral binary — compiled from the PLAIN
+  program, never `.drflags` (demand-gated publish taps legitimately diverge
+  demand-lowered) — must byte-agree across all 4 modes AND match the frozen
+  `goldens/<name>.behavioral.stdout` AND match the interpreter's CBF.
+  Diagnostic `.batches` cases run interp-only. A REFINTERP-DISAGREE is
+  adjudicated per the stage doc §3 (finding, never fudge; F29 was found+fixed
+  this way).
 - Blessing: goldens change ONLY via explicit
   `runall.sh --bless <workroot> [filter]` after reviewing a run's outputs —
   never automatically on failure, and never to make a red case green.
 
 `tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with
-repros (F1–F19, F21, and F26–F28 fixed as of August 2026; F23 promoted to
-the `product_in_scc_diff_1` pin; F20 is an open record-only latent-
-comparator note and F29 an open record-only codegen scope bug — a bound
-#query over a KV-maintained relation emits non-compiling C++ referencing a
-private `idx_*` member; promotion trigger: query-index/KV codegen work or
-the I0 interpreter wanting the shape compiled).
+repros (F1–F19, F21, and F26–F29 fixed as of August 2026; F23 promoted to
+the `product_in_scc_diff_1` pin; F20 is the sole open record-only note —
+the latent comparator. F29, the commit-sweep used-state collector omitting
+the swept table's live indexes, was promoted and fixed the same day the I0
+sweep fired its named trigger).
 
 ### Bench harness (perf, never gates correctness)
 

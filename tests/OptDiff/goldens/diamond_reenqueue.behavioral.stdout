@@ -1,0 +1,6 @@
+REFINTERP diamond_reenqueue netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+FINAL
+QUERY q_out_f

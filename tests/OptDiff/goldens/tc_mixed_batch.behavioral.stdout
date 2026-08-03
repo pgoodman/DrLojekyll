@@ -1,0 +1,9 @@
+REFINTERP tc_mixed_batch netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY t_out_ff
+1 4
+1 5
+2 5
+4 5

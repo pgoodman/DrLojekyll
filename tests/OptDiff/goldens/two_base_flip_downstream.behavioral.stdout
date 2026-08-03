@@ -1,0 +1,6 @@
+REFINTERP two_base_flip_downstream netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY q_out_f
+5

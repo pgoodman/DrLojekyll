@@ -1,0 +1,35 @@
+REFINTERP demand_beside_recursion_1 netting=oq3
+EPOCH 0
++ path_out 10 20
++ path_out 10 30
++ path_out 20 30
++ path_out 40 50
+EPOCH 1
++ path_out 10 60
++ path_out 20 60
++ path_out 30 60
++ path_out 40 40
++ path_out 50 40
++ path_out 50 50
+FINAL
+path_out 10 20
+path_out 10 30
+path_out 10 60
+path_out 20 30
+path_out 20 60
+path_out 30 60
+path_out 40 40
+path_out 40 50
+path_out 50 40
+path_out 50 50
+QUERY pair_of_bf PROBE 1
+100
+101
+QUERY pair_of_bf PROBE 2
+200
+QUERY pair_of_bf PROBE 3
+300
+301
+QUERY pair_of_bf PROBE 9
+QUERY pair_of_bf PROBE 5
+500

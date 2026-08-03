@@ -1,0 +1,9 @@
+REFINTERP optimize_6 netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+FINAL
+QUERY out_ff
+1 2
+QUERY dead_out_f

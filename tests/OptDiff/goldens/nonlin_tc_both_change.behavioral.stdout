@@ -1,0 +1,13 @@
+REFINTERP nonlin_tc_both_change netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+FINAL
+QUERY reachable_ff
+4 5
+4 6
+4 7
+5 6
+5 7
+6 7

@@ -1,0 +1,11 @@
+REFINTERP union_sibling_diff netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+EPOCH 4
+EPOCH 5
+FINAL
+QUERY out_f
+1
+3

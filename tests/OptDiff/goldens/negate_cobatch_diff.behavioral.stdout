@@ -1,0 +1,6 @@
+REFINTERP negate_cobatch_diff netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY out_ff
+20 200

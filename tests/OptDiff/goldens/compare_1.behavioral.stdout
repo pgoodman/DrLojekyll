@@ -1,0 +1,9 @@
+REFINTERP compare_1 netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY q_eq_f
+2
+3
+5
+QUERY q_lt_f

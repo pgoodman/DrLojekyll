@@ -1,0 +1,8 @@
+REFINTERP cf15_5 netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+FINAL
+QUERY all_reach_ff
+3 4
+5 1

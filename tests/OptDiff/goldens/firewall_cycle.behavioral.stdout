@@ -1,0 +1,8 @@
+REFINTERP firewall_cycle netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+FINAL
+QUERY p_out_f
+3
+4

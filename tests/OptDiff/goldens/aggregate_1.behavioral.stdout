@@ -1,0 +1,8 @@
+REFINTERP aggregate_1 netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY get_grouped_fff
+1 1 2
+2 1 2
+3 1 1

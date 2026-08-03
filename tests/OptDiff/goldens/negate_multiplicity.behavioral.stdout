@@ -1,0 +1,10 @@
+REFINTERP negate_multiplicity netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+FINAL
+QUERY out_ff
+1 10
+1 11
+1 12
+2 20

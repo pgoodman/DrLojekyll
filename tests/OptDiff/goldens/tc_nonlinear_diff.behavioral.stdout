@@ -1,0 +1,10 @@
+REFINTERP tc_nonlinear_diff netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY reachable_ff
+2 1
+2 3
+3 1
+4 1
+4 3

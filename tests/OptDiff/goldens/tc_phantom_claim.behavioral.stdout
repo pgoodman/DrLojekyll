@@ -1,0 +1,8 @@
+REFINTERP tc_phantom_claim netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+FINAL
+QUERY t_out_ff
+1 4
+2 5

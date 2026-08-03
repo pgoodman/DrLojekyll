@@ -1,0 +1,19 @@
+REFINTERP demand_diff_neighborhood_witness netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+EPOCH 4
+EPOCH 5
+EPOCH 6
+EPOCH 7
+FINAL
+QUERY neighborhood_bf PROBE 1
+11
+4
+QUERY neighborhood_bf PROBE 3
+5
+6
+QUERY neighborhood_bf PROBE 9
+9
+QUERY neighborhood_bf PROBE 5

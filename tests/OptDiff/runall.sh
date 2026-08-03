@@ -87,6 +87,14 @@
 #     modes, and each mode's stdout is byte-compared against the case's
 #     committed golden (flat==nested==golden, refereed LIVE, never blessed).
 #
+#   any case with a cases/<name>.batches sidecar ALSO runs run_refinterp (the
+#   I0 referee, stage-i0-interpreter.md H6 + the S7 amendments): the reference
+#   interpreter's CBF is byte-compared against goldens/<name>.behavioral.stdout,
+#   and the PLAIN-compiled behavioral binary (never .drflags) must byte-agree
+#   across all 4 modes and match the same golden. Diagnostic cases run
+#   interp-only. A REFINTERP-DISAGREE is adjudicated per the stage doc's S3
+#   protocol (finding, never fudge).
+#
 # Blessing: goldens are updated ONLY by an explicit --bless invocation, after
 # reviewing the outputs of a run — never automatically on failure. --bless
 # copies each case's opt-mode stdout out of <workroot> into goldens/, each
@@ -126,6 +134,12 @@ if [ "${1:-}" = "--bless" ]; then
       echo "blessed $name.monotone"
       n=$((n + 1))
     fi
+    bsrc="$d$name.refinterp/behavioral.opt"
+    if [ -f "$bsrc" ]; then
+      cp "$bsrc" "$HERE/goldens/$name.behavioral.stdout"
+      echo "blessed $name.behavioral"
+      n=$((n + 1))
+    fi
     # IR-golden surfaces (T3): driven by the case's .irgold sidecar; a pinned
     # surface whose produced file is missing is a HARD ERROR (never the
     # [ -f ] && cp skip idiom — a silent under-bless must be loud).
@@ -160,6 +174,12 @@ export DR
 ORACLE=${ORACLE:-$(dirname "$DR")/drlojekyll-oracle}
 case $ORACLE in /*) ;; *) ORACLE=$(pwd)/$ORACLE ;; esac
 export ORACLE
+REFINTERP=${REFINTERP:-$(dirname "$DR")/drlojekyll-refinterp}
+case $REFINTERP in /*) ;; *) REFINTERP=$(pwd)/$REFINTERP ;; esac
+export REFINTERP
+REFHARNESS=${REFHARNESS:-$(dirname "$DR")/drlojekyll-refharness}
+case $REFHARNESS in /*) ;; *) REFHARNESS=$(pwd)/$REFHARNESS ;; esac
+export REFHARNESS
 export CXX=${CXX:-clang++}
 export TIMEOUT=${TIMEOUT:-120}
 
@@ -328,6 +348,99 @@ if [ "${1:-}" = "--one" ]; then
     return $irc
   }
 
+  run_refinterp() {  # I0 referee (stage-i0-interpreter.md H6 + §7): any case
+                     # with a .batches sidecar. The interpreter (demand-blind,
+                     # mode-independent) is byte-compared against the FROZEN
+                     # behavioral golden; the behavioral binary (the PLAIN
+                     # program — never .drflags, the 2026-08-03 adjudication —
+                     # against the stable ABI) is built in all 4 modes and
+                     # must byte-agree across them (ABI mode-invariance).
+                     # Diagnostic cases run interp-only (no behavioral binary).
+    batches="$HERE/cases/$NAME.batches"
+    if [ ! -f "$batches" ]; then
+      return 0
+    fi
+    ri=0
+    out="$WORKROOT/$NAME/$NAME.refinterp"
+    mkdir -p "$out"
+    pargs=""
+    if [ -f "$HERE/cases/$NAME.probes" ]; then
+      pargs="$HERE/cases/$NAME.probes"
+    fi
+
+    # 1. The I0 run (once; no modes, no .drflags).
+    # shellcheck disable=SC2086
+    if ! timeout "$TIMEOUT" "$REFINTERP" "$DRC" "$batches" $pargs \
+        >"$out/interp.cbf" 2>"$out/interp.stderr"; then
+      echo "$NAME refinterp REFINTERP-FAIL"
+      return 1
+    fi
+
+    # Diagnostic case: nothing compiles; the definitional answer is pinned by
+    # the oracle/monotone goldens, so a clean interp run is the whole gate.
+    if [ ! -f "$HERE/goldens/$NAME.stdout" ]; then
+      echo "$NAME refinterp OK-DIAGNOSTIC"
+      return 0
+    fi
+
+    # 2. The behavioral binary, 4 modes, PLAIN compile.
+    if ! "$REFHARNESS" "$DRC" -o "$out/behavioral_main.cpp" \
+        2>"$out/harness.stderr"; then
+      echo "$NAME refinterp HARNESS-FAIL"
+      return 1
+    fi
+    for bmode in opt nodf nocf none; do
+      # shellcheck disable=SC2046
+      if ! "$DR" "$DRC" $(flags_of "$bmode") -cpp-out "$out/gen.$bmode" \
+          >"$out/drc.$bmode.log" 2>&1; then
+        echo "$NAME refinterp DRC-FAIL($bmode)"
+        return 1
+      fi
+      if ! "$CXX" -std=c++23 -I "$REPO_ROOT/include" -I "$out/gen.$bmode" \
+          "$out/behavioral_main.cpp" "$out/gen.$bmode/datalog.cpp" \
+          "$REPO_ROOT/lib/Runtime/Allocator.cpp" -o "$out/behavioral.$bmode.bin" \
+          2>"$out/cxx.$bmode.stderr"; then
+        echo "$NAME refinterp CXX-FAIL($bmode)"
+        return 1
+      fi
+      # shellcheck disable=SC2086
+      if ! timeout "$TIMEOUT" "$out/behavioral.$bmode.bin" "$batches" $pargs \
+          >"$out/behavioral.$bmode" 2>"$out/run.$bmode.stderr"; then
+        echo "$NAME refinterp RUN-FAIL($bmode)"
+        return 1
+      fi
+    done
+
+    # 3. ABI mode-invariance: 4-mode byte agreement (a split is ALWAYS a
+    #    finding — codegen determinism or harness bug, never accepted).
+    for bmode in nodf nocf none; do
+      if ! cmp -s "$out/behavioral.opt" "$out/behavioral.$bmode"; then
+        echo "$NAME refinterp BEHAVIORAL-MODE-SPLIT($bmode)"
+        ri=1
+      fi
+    done
+
+    # 4. The freeze referee + THE I0 GATE, against the blessed golden.
+    if [ ! -f "$HERE/goldens/$NAME.behavioral.stdout" ]; then
+      echo "$NAME refinterp BEHAVIORAL-MISSING"
+      ri=1
+    else
+      if ! cmp -s "$HERE/goldens/$NAME.behavioral.stdout" \
+          "$out/behavioral.opt"; then
+        echo "$NAME refinterp BEHAVIORAL-DIVERGE"
+        ri=1
+      fi
+      if ! cmp -s "$HERE/goldens/$NAME.behavioral.stdout" "$out/interp.cbf"; then
+        echo "$NAME refinterp REFINTERP-DISAGREE"
+        ri=1
+      fi
+    fi
+    if [ "$ri" = 0 ]; then
+      echo "$NAME refinterp OK"
+    fi
+    return $ri
+  }
+
   run_eqgate() {  # equivalence gate (D2.c): a case with a .eqgate sidecar is
                   # re-driven under the nested lowering (.drflags + the
                   # -demand-instance selector) with the SAME driver, in ALL FOUR
@@ -399,6 +512,7 @@ if [ "${1:-}" = "--one" ]; then
       ;;
   esac
   run_oracle || st=1
+  run_refinterp || st=1
   run_eqgate || st=1
   run_irgold || st=1
   exit $st

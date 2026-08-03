@@ -519,3 +519,110 @@ replacement rule is vacuous here.)
   per-owner routing by any pre-cutover oracle. Owner should acknowledge this is
   a Stage C deliverable, not an I0 one.
 ```
+
+---
+
+## 7. Dated amendments — 2026-08-03 (session 3, pre-implementation; the Phase-3 amendment application required by the standing rule)
+
+RATIFICATIONS (owner, 2026-08-03): **OG1-parsed** (raw parsed clauses; the
+Oracle H7 bootstrap is the cross-tie), **OG2-tool** (`drlojekyll-refharness`
+emits `behavioral_main.cpp` against the stable ABI naming), **OG4-carve**
+(`negation_flap` is the one adjudicated carve-out until Stage C's
+permutation-invariance closes it). **OG3 is MOOT — H8 is SATISFIED**: the
+witness landed as `demand_diff_pub_1` (name per D2.11; commit bd694541) and
+proved the R-DIFF pub arm LIVE (answers retract through the `@differential`
+tap under standing demand; nested==flat all 4 modes via its `.eqgate`). H8's
+hypothetical alternative branch (E1's "arm is dead code") is CLOSED — the arm
+is reachable and witnessed.
+
+A-corr-1 RESOLUTION (D1.3 ratified: probe-restricted). The CBF `query_answer`
+block is amended: a BOUND `#query` adornment is refereed through a per-case
+`.probes` sidecar (one probe per line: `<queryname>_<bindings> <bound-val>...`);
+I0 emits, per probe in sidecar order, `QUERY <name>_<bindings> PROBE <vals>`
+followed by the SORTED answer rows for that probe (free cols only). The
+behavioral harness drives the SAME probes through the generated query cursors
+(forcing where required). An all-free `#query` keeps full enumeration (no
+sidecar needed). A bound `#query` with NO `.probes` sidecar emits NO QUERY
+block for that adornment (recorded, not an error) — the flagship-empty-content
+hazard A-corr-1 named is closed by construction because the referee only
+compares content both sides actually produce, and probe selection is explicit
+per-case test input. The full-relation ABI gap stays recorded, not built.
+
+CORPUS ARITHMETIC re-measured at tip (never propagate the constants): **190**
+cases; **63** carry `.batches` + oracle/monotone goldens; **4** of the 63 are
+all-4-modes DIAGNOSTIC cases (`demand_agg_body_1`, `demand_kv_body_1`,
+`demand_config_agg_body_1`, `demand_mutual_content_1` — the D3.3 set whose
+`.batches` exist to pin definitional answers for future reject lifts). For
+these 4 there is NO behavioral binary (nothing compiles); the I0 gate for them
+is I0-FINAL vs the Oracle from-scratch dump (the H7 tie carries the whole
+referee weight). The behavioral-golden family (H5/H6) therefore counts **59**
+compiling `.batches` cases.
+
+F29 SCOPE (fix-or-scope: SCOPED, not fixed). F29 (bound `#query` over a
+KV-maintained relation emits C++ referencing a private `idx_*`) blocks NO I0
+case today: the only corpus shapes on that path are the 4 diagnostic cases
+above, which have no behavioral binary anyway, and I0 itself never compiles
+generated code. CONSTRAINT RECORDED: a future `.probes`-bearing COMPILING
+case with a bound query over a KV relation would hit F29 at behavioral-binary
+build time — authoring such a case is the F29 promotion trigger (fix then).
+
+H6 amendment (mechanical): `run_refinterp` skips the behavioral steps (1-3)
+for diagnostic cases and runs step 4' instead: I0 vs the Oracle from-scratch
+membership (H7 normalizer path). Step 5 (bootstrap) is corpus-wide.
+
+F29 UPDATE (2026-08-03, later the same session): the SCOPED-not-fixed call
+above was overtaken within hours — the I0 sweep's PLAIN compiles of the three
+diff-demand witnesses hit F29 (the recorded blast radius was too narrow), the
+named promotion trigger fired, and F29 is FIXED (commit-sweep used-state
+collector registers the swept table's live indexes; FINDINGS.md F29 has the
+full record; suite 190 byte-neutral).
+
+CBF-GATE ADJUDICATIONS (2026-08-03, from the first full sweep — each a
+finding, none a fudge):
+1. The behavioral binary for the CBF gate is compiled PLAIN (.drflags never
+   applied), AMENDING H6 step 1: since D3.a.1, a demand case's published tap
+   is DEMAND-GATED, so demand-lowered CBF legitimately diverges from the
+   demand-blind I0 (H2's answer-neutrality claim was stale for post-D3.a.1
+   taps — the 4 demand witnesses were the divergence carriers). The
+   demand-lowered arm keeps its referees: bespoke 4-mode goldens + eqgate +
+   oracle. Consequence: run_refinterp builds its own plain -cpp-out rather
+   than reusing the mode loop's gen dirs.
+2. Per-epoch CBF deltas are the MEMBERSHIP SET-DIFF of published relations
+   across the epoch block (one block can dispatch several entry-point calls;
+   transient intra-block flips net away — product_conds was the carrier).
+3. The behavioral driver OQ3-nets each block BEFORE dispatch, so the H9
+   negation_flap carve-out is MOOT for the CBF gate (negation_flap MATCHES);
+   the runtime's own netting surface stays refereed by the bespoke drivers.
+4. Two interp bugs found by the sweep (epoch-0 old snapshot must evaluate the
+   zero-fact program; constant args in body atoms must constrain) — fix
+   verified against the compiled program's behavior on product_conds.
+
+## 8. EXIT-GATE RECORD — I0 LANDED AND VALIDATED (2026-08-03, session 3)
+
+THE GATE IS MET, with ZERO carve-outs: for all 59 compiling `.batches` cases,
+I0_CBF == goldens/<case>.behavioral.stdout == the live tip behavioral binary
+in EVERY optimization mode (the 4-mode ABI cross-agreement had zero splits);
+the 4 diagnostic `.batches` cases run interp-clean with their definitional
+answers pinned by the oracle goldens. The H9 negation_flap carve-out proved
+UNNECESSARY under the driver-side OQ3 netting adjudication (negation_flap
+MATCHES). The H7 bootstrap is discharged through the implementation-time
+Oracle cross-ties (13 hand-verified relations spanning differential TC,
+non-linear TC, negation polarities, aggregates, config aggregates, netting).
+
+Landed surfaces: bin/RefInterp (OG1-parsed; links no DataFlow), bin/RefHarness
+(OG2-tool), the run_refinterp runall.sh step (peer of run_oracle/run_eqgate),
+59 blessed `.behavioral.stdout` goldens (frozen through the Stage-C cutover),
+8 `.probes` sidecars (probe keys mirrored from the witness drivers). Full
+suite: SUITE: PASS (190) with the step live; zero non-behavioral golden churn.
+
+Findings ledger of the validation (every disagreement adjudicated, none
+fudged): F29 PROMOTED+FIXED (compiler, the named trigger fired); harness
+bugs fixed (per-epoch membership-diff vs raw hook lines; config-leading
+reduction params; algebra-less AGGREGATE defaults to @recompute — only KV
+merges require declared algebra); interp bugs fixed (zero-fact epoch-0
+snapshot; distinct anonymous zero-arity conditions conflated under one
+declaration id — the parser gives all conditions ONE empty-named decl, keyed
+now by name token); the referee-model amendment (plain-compile rule, §7
+item 1). RESIDUAL (recorded): the @recompute KV multi-live-value fold order
+is output-invisible today (interp fiat: sorted raw-tuple order, last wins) —
+promotion trigger: a `.probes`-bearing multi-live-value @recompute KV case.

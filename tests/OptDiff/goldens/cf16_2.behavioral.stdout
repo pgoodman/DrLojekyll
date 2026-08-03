@@ -1,0 +1,10 @@
+REFINTERP cf16_2 netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+EPOCH 4
+FINAL
+QUERY symmetric_ff
+1 2
+2 1

@@ -1,0 +1,5 @@
+REFINTERP config_agg_2 netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+FINAL

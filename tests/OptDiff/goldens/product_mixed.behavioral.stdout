@@ -1,0 +1,15 @@
+REFINTERP product_mixed netting=oq3
+EPOCH 0
++ pair 1 10
+EPOCH 1
++ pair 2 10
+EPOCH 2
+- pair 1 10
+- pair 2 10
+EPOCH 3
+EPOCH 4
++ pair 1 30
++ pair 2 30
+FINAL
+pair 1 30
+pair 2 30

@@ -1,0 +1,9 @@
+REFINTERP cf13_6 netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+FINAL
+QUERY all_f
+1
+4

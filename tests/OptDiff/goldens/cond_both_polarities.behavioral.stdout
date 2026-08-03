@@ -1,0 +1,18 @@
+REFINTERP cond_both_polarities netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+EPOCH 4
+EPOCH 5
+EPOCH 6
+EPOCH 7
+EPOCH 8
+EPOCH 9
+FINAL
+QUERY pos_neg_f
+QUERY both_pos_f
+QUERY mixed_f
+10
+11
+12

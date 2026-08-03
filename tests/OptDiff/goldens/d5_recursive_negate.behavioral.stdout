@@ -1,0 +1,11 @@
+REFINTERP d5_recursive_negate netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+FINAL
+QUERY reach_out_f
+1
+2
+3
+4

@@ -1,0 +1,8 @@
+REFINTERP negate_downstream_diff netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+FINAL
+QUERY flag_out_ff
+3 30

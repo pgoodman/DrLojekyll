@@ -1,0 +1,9 @@
+REFINTERP two_hop_phantom netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY h_out_ff
+1 4
+1 9
+2 4
+7 5

@@ -1,0 +1,5 @@
+REFINTERP nonlin_diag_selfloop netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY reachable_ff

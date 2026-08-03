@@ -1,0 +1,9 @@
+REFINTERP negate_lower_strata netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+FINAL
+QUERY out_ff
+2 20
+3 30

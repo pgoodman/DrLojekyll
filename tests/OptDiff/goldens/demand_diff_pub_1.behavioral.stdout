@@ -1,0 +1,8 @@
+REFINTERP demand_diff_pub_1 netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+FINAL
+QUERY neighbors_bf PROBE 1
+20
+QUERY neighbors_bf PROBE 3

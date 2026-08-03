@@ -1,0 +1,10 @@
+REFINTERP product_conds netting=oq3
+EPOCH 0
++ enabled_features true false
+- enabled_features false false
+EPOCH 1
++ enabled_features true true
+- enabled_features true false
+EPOCH 2
+FINAL
+enabled_features true true

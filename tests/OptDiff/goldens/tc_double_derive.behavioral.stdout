@@ -1,0 +1,6 @@
+REFINTERP tc_double_derive netting=oq3
+EPOCH 0
+EPOCH 1
+FINAL
+QUERY t_out_ff
+1 2

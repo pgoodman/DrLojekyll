@@ -1,0 +1,42 @@
+REFINTERP transitive_closure_diff2 netting=oq3
+EPOCH 0
++ found_path 1 2
++ found_path 1 3
++ found_path 1 4
++ found_path 2 3
++ found_path 2 4
++ found_path 3 4
++ found_path 7 8
+EPOCH 1
++ found_path 3 1
++ found_path 3 2
++ found_path 3 7
++ found_path 3 8
++ found_path 4 1
++ found_path 4 2
++ found_path 4 7
++ found_path 4 8
++ found_path 7 1
++ found_path 7 2
++ found_path 8 1
++ found_path 8 2
+- found_path 1 3
+- found_path 1 4
+- found_path 2 3
+- found_path 2 4
+FINAL
+found_path 1 2
+found_path 3 1
+found_path 3 2
+found_path 3 4
+found_path 3 7
+found_path 3 8
+found_path 4 1
+found_path 4 2
+found_path 4 7
+found_path 4 8
+found_path 7 1
+found_path 7 2
+found_path 7 8
+found_path 8 1
+found_path 8 2

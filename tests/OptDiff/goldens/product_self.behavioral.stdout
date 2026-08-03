@@ -1,0 +1,16 @@
+REFINTERP product_self netting=oq3
+EPOCH 0
++ pairs 1 1
+EPOCH 1
++ pairs 1 2
++ pairs 2 1
++ pairs 2 2
+EPOCH 2
+- pairs 1 1
+- pairs 1 2
+- pairs 2 1
+EPOCH 3
++ pairs 3 3
+- pairs 2 2
+FINAL
+pairs 3 3

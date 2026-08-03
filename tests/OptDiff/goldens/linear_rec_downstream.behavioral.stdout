@@ -1,0 +1,9 @@
+REFINTERP linear_rec_downstream netting=oq3
+EPOCH 0
+EPOCH 1
+EPOCH 2
+EPOCH 3
+EPOCH 4
+FINAL
+QUERY flagged_out_f
+4
