@@ -21,4 +21,17 @@ struct QueryDF {
 
 OutputStream &operator<<(OutputStream &os, QueryDF df);
 
+// The Stage-A row-contract text dump (the `-contract-out` surface, hunk H-A8).
+// A tag struct keeps this operator<< disjoint from the DOT and `.df` ones.
+// One block per live view in the SAME det_seq order as the `.df` dump, so a
+// reviewer reads the two side by side. Deterministic, pure byte-compare (no
+// order-free field — permcheck N/A); OPT-MODE-only pinning (contracts are a
+// post-Optimize graph property). The `.df` surface is byte-UNCHANGED by
+// Stage A; contracts live only here.
+struct QueryContracts {
+  Query query;
+};
+
+OutputStream &operator<<(OutputStream &os, QueryContracts qc);
+
 }  // namespace hyde

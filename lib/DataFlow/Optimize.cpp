@@ -397,6 +397,12 @@ static bool CSE(QueryImpl *impl, CandidateList &all_views) {
         ss << "CSE(" << v2->producer << ", " << v1->producer << ")";
         ss.str().swap(v2->producer);
 #endif
+        // V-PROJ-ROLE-STABLE (H-A2): the belt for the projection-role
+        // discriminant, at the sole CSE merge choke point. `Equals` above
+        // already refuses a role mismatch, so this no-ops on a correct
+        // pipeline; it aborts only if a future change lets a role-flipping
+        // merge through.
+        CheckProjectionRoleStable(v1, v2);
         v1->ReplaceAllUsesWith(v2);
         impl->RelabelGroupIDs();
         changed = true;

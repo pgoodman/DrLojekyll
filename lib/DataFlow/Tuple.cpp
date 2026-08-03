@@ -3,6 +3,10 @@
 
 #include <drlojekyll/Util/EqualitySet.h>
 
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
 #include "Optimize.h"
 #include "Query.h"
 
@@ -27,6 +31,22 @@ uint64_t QueryTupleImpl::Hash(void) noexcept {
   assert(hash != 0);
 
   auto local_hash = hash;
+
+  // NOTE(H-A2): `projection_role` is DELIBERATELY NOT folded into this hash,
+  // even though stage-a-diff.md H-A2 sketches `combine(kind, projection_role,
+  // columns...)`. Two reasons, both verified against this tree:
+  //   (1) It is unnecessary for the F1-proof "role is part of structural
+  //       identity" property. CSE does not bucket by `Hash()` here — it buckets
+  //       by `cse_color::Refine` colors (Optimize.cpp) and decides membership
+  //       with `Equals`, which now refuses a role mismatch (below). Equals is
+  //       the whole mechanism; Hash is not on the CSE path at all.
+  //   (2) It is HARMFUL: view `Hash()` DOES feed order-sensitive tie-breaks
+  //       (Merge.cpp canonicalization sorts by hash; ControlFlow Program.h
+  //       orders by `.Hash()`). Folding the role in perturbs those tie-breaks
+  //       and flips the `demand_tc_witness` join-emit `order=`/`seq=` pairing,
+  //       diverging the rel.opt/ir.opt/h.opt goldens while leaving `.df`
+  //       byte-identical -- i.e. it FAILS H-A2's own "zero dump change" exit
+  //       gate for no correctness benefit. See the Stage-A report / finding.
 
   // Mix in the hashes of the tuple by columns; these are ordered.
   for (auto col : input_columns) {
@@ -280,6 +300,15 @@ bool QueryTupleImpl::Equals(EqualitySet &eq,
     return false;
   }
 
+  // The F1-proof refusal branch (H-A2): a member-preserving projection and a
+  // set-collapsing projection are NEVER structurally equal, so CSE literally
+  // cannot fold one into the other (that fold would be the F2 silent-collapse
+  // bug). Folding role into `Equals` can only ever REFUSE a merge that would
+  // otherwise succeed; it can never create a new one.
+  if (projection_role != that->projection_role) {
+    return false;
+  }
+
   eq.Insert(this, that);
   if (!ColumnsEq(eq, input_columns, that->input_columns)) {
     eq.Remove(this, that);
@@ -287,6 +316,51 @@ bool QueryTupleImpl::Equals(EqualitySet &eq,
   }
 
   return true;
+}
+
+// V-PROJ-ROLE-STABLE (H-A2, the §11 no-convert validator): an ALWAYS-ON belt
+// (fprintf + abort, surviving NDEBUG) that backstops the projection-role
+// discriminant. The MECHANISM that keeps a role stable is role-in-identity
+// (Hash/Equals above): CSE compares two views with `Equals`, which now REFUSES
+// to unify two TUPLEs of different roles, so a member-preserving projection is
+// never folded into a set-collapsing one. This belt is the suspenders: it runs
+// at the single CSE merge choke point (Optimize.cpp) and asserts that the pair
+// CSE is about to unify does NOT carry different roles. Because `Equals` is the
+// gate to that merge, the belt is a tautology on a correct pipeline — it fires
+// ONLY if some future change decouples the merge decision from the role check
+// (e.g. dropping the `Equals` refusal branch, or inventing a merge path that
+// bypasses `Equals`). It therefore never false-aborts on a well-formed graph.
+//
+//   loser, survivor : the two views CSE is about to unify (loser -> survivor)
+//   if either is not a TUPLE: return                 (a role is a TUPLE property)
+//   if loser.role == survivor.role:  return          (the expected case)
+//   else: fprintf(stderr, ...); abort()              (a role-flip snuck in)
+//
+// Before (a well-formed CSE step, belt no-ops):
+//
+//   TUPLE A[kMember] ==Equals==> TUPLE B[kMember]     roles match -> merge
+//
+// After a hypothetical regression the belt catches:
+//
+//   TUPLE A[kDistinct] --(some non-Equals merge path)--> TUPLE B[kMember]
+//                                                     roles differ -> ABORT
+void CheckProjectionRoleStable(QueryViewImpl *loser,
+                               QueryViewImpl *survivor) {
+  QueryTupleImpl *const l = loser ? loser->AsTuple() : nullptr;
+  QueryTupleImpl *const s = survivor ? survivor->AsTuple() : nullptr;
+  if (!l || !s || l->projection_role == s->projection_role) {
+    return;
+  }
+  fprintf(stderr,
+          "V-PROJ-ROLE-STABLE: CSE is about to unify two TUPLEs of DIFFERENT "
+          "projection roles (loser=%p role=%u, survivor=%p role=%u) -- a "
+          "member-preserving projection must never fold into a set-collapsing "
+          "one (the F2 silent-collapse bug).\n",
+          static_cast<const void *>(l),
+          static_cast<unsigned>(l->projection_role),
+          static_cast<const void *>(s),
+          static_cast<unsigned>(s->projection_role));
+  abort();
 }
 
 // Returns `true` if all input columns to the tuple are constant.

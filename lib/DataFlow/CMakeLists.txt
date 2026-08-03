@@ -8,9 +8,11 @@ set(DataFlow_PUBLIC_H
 
 set(DataFlow_SRCS
     "EquivalenceSet.h"
+    "Identity.h"
     "Optimize.h"
     "Prov.h"
     "Query.h"
+    "RowContract.h"
 
     "Aggregate.cpp"
     "Build.cpp"
@@ -38,6 +40,7 @@ set(DataFlow_SRCS
     "Prov.cpp"
     "Query.cpp"
     "Relation.cpp"
+    "RowContract.cpp"
     "Select.cpp"
     "Stratify.cpp"
     "Stream.cpp"

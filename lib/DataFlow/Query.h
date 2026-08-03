@@ -8,6 +8,9 @@
 #include <drlojekyll/Util/BitManipulation.h>
 #include <drlojekyll/Util/DefUse.h>
 
+#include "Identity.h"
+#include "RowContract.h"
+
 #include <cassert>
 #include <functional>
 #include <optional>
@@ -703,6 +706,37 @@ class QuerySelectImpl final : public QueryViewImpl {
 
 class QueryTupleImpl final : public QueryViewImpl {
  public:
+  // The projection role of a TUPLE (proposal §4.3, hunk H-A2). Set ONCE at
+  // construction (by the mint site) and NEVER mutated — it is part of the
+  // node's STRUCTURAL identity via `Equals` (the CSE decider), so no CSE or
+  // canonicalization path can migrate, drop, or flip it. There is nothing for
+  // optimization to "preserve" (the F1 lesson): unlike a satellite annotation,
+  // a role that is part of identity cannot be silently converted. (It is
+  // deliberately NOT folded into `Hash` — see the NOTE in Tuple.cpp::Hash;
+  // Hash is not on the CSE-bucketing path and folding it in only perturbs
+  // hash-derived order tie-breaks.)
+  enum class ProjectionRole : uint8_t {
+    // Payload-hiding facade: preserves the input's SemanticMemberKey. Any
+    // dropped column must be functionally determined by the retained key
+    // (V-NO-COLLAPSE, H-A7). This is the DEFAULT for every mint: an optimizer
+    // facade never introduces a set boundary, it hides/reorders columns behind
+    // a stable facade by the keep-last-edge rule.
+    kMember,
+
+    // Set boundary: the visible output tuple BECOMES the member key, and
+    // collapse of equal projected values is INTENDED. Stamped at exactly the
+    // two clause-head mint sites (source-level clause head + the over(){}
+    // synthetic body-clause head) — the output relation is a Datalog SET.
+    kDistinct,
+  };
+
+  // The role default is kMember, so every unlisted / future passthrough facade
+  // inherits it automatically; only the two enumerated clause-head sites pass
+  // kDistinct explicitly (`ConvertToClauseHead`, Build.cpp).
+  explicit QueryTupleImpl(ProjectionRole role = ProjectionRole::kMember)
+      : QueryViewImpl(),
+        projection_role(role) {}
+
   virtual ~QueryTupleImpl(void);
 
   const char *KindName(void) const noexcept override;
@@ -725,6 +759,10 @@ class QueryTupleImpl final : public QueryViewImpl {
   // their pointer values.
   bool Canonicalize(QueryImpl *query, const OptimizationContext &opt,
                     const ErrorLog &) override;
+
+  // Build-stamped, immutable projection discriminant (H-A2). Part of this
+  // node's structural identity via the `Equals` refusal branch in Tuple.cpp.
+  const ProjectionRole projection_role;
 };
 
 // The KV index will have the `input_columns` as the keys, and the
@@ -1189,6 +1227,14 @@ class QueryImpl {
   // build must treat lower-stratum views' insertions into it as seeds of that
   // owning stratum.
   std::vector<EquivalenceSet *> stratum_straddling_models;
+
+  // Stage A (H-A3/H-A4): the conservative RowContract side-table, one entry per
+  // live view, materialized ONCE by `InferConservativeRowContracts` in the
+  // Query::Build tail (post-Stratify). A PURE, RECOMPUTABLE function of the
+  // final graph — NOT present during Optimize, so CSE/canonicalization have
+  // nothing to preserve (the F1 lesson). Read by the H-A7 validators and the
+  // H-A8 `-contract-out` dump; Stage B's input. Empty until the tail call.
+  RowContractMap row_contracts;
 };
 
 // OWN-3 (ruled, always-on): the guard-annotation fold compatibility predicate
@@ -1200,6 +1246,13 @@ bool GuardAnnotationsCompatible(const GuardAnnotation &a,
                                 const GuardAnnotation &b);
 void CheckGuardAnnotationFold(const GuardAnnotation &loser,
                               const GuardAnnotation &survivor);
+
+// V-PROJ-ROLE-STABLE (H-A2, always-on): the no-convert belt for the TUPLE
+// projection-role discriminant. PURE over the two views CSE is about to unify;
+// no-ops unless both are TUPLEs of DIFFERENT roles, in which case it fprintf +
+// aborts (surviving NDEBUG). Defined in Tuple.cpp; called from the single CSE
+// merge choke point (Optimize.cpp), the only place a role could be flipped.
+void CheckProjectionRoleStable(QueryViewImpl *loser, QueryViewImpl *survivor);
 
 // OWN-3 (g1, D3.a.3): the SURVIVOR-RECORD POLICY. When two COMPATIBLE guard
 // annotations fold, ResolveLiveRecognition (Rel.cpp:977) AND the nested pre-pass

@@ -8,8 +8,11 @@
 #include <drlojekyll/Parse/Format.h>
 
 #include <algorithm>
+#include <map>
 #include <sstream>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "EquivalenceSet.h"
@@ -42,6 +45,38 @@ OutputStream &operator<<(OutputStream &os, Query query) {
      << "bgcolor=\"#f0f4f7\";\n"
      << "node [shape=none margin=0 nojustify=false labeljust=l font=courier];\n";
 
+  // Organize the digraph by the SCC condensation: one cluster per MULTI-VIEW
+  // stratum (the recursive fixpoints; single-view strata stay top-level —
+  // the owner DOT directive, 2026-08-03; the Stage-B regional dump's DOT
+  // twin will cluster by RegionId the same way). Membership stubs are
+  // emitted BEFORE the labeled node statements because a DOT node belongs
+  // to the first (sub)graph that mentions it; the later top-level
+  // `v<id> [label=...]` statements only attach attributes. Advisory
+  // surface (like the rest of -dot-out): never golden-pinned.
+  {
+    std::map<unsigned, std::vector<uint64_t>> stratum_members;
+    query.ForEachView([&](QueryView v) {
+      if (auto s = v.Stratum()) {
+        stratum_members[*s].push_back(v.UniqueId());
+      }
+    });
+    for (const auto &[stratum, members] : stratum_members) {
+      if (members.size() <= 1u) {
+        continue;
+      }
+      os << "subgraph cluster_stratum_" << stratum << " {\n"
+         << "label=\"stratum " << stratum << "\";\n"
+         << "style=\"rounded,dashed\";\n";
+      for (auto id : members) {
+        os << "v" << id << ";\n";
+      }
+      os << "}\n";
+    }
+  }
+
+  // Stage-A identity annotations (mirrors -contract-out; empty pre-build).
+  const RowContractMap &row_contracts = query.impl->row_contracts;
+
   auto do_table = [&](int row_span, QueryView view) {
     std::optional<unsigned> induction_id = view.InductionGroupId();
     std::optional<unsigned> induction_depth = view.InductionDepth();
@@ -59,6 +94,50 @@ OutputStream &operator<<(OutputStream &os, Query query) {
 
     if (auto stratum = view.Stratum()) {
       os << sep << "STRATUM " << *stratum;
+      sep = "<BR />";
+    }
+
+    // Stage-A identity: the projection ROLE (TUPLEs only; the enum folded
+    // into Equals identity) and the flat row-contract member KEY, rendered
+    // by column name in field order — the same facts -contract-out pins.
+    if (auto tuple = view.impl->AsTuple()) {
+      os << sep
+         << (tuple->projection_role ==
+                     QueryTupleImpl::ProjectionRole::kDistinct
+                 ? "ROLE distinct"
+                 : "ROLE member");
+      sep = "<BR />";
+    }
+    if (auto contract_it = row_contracts.find(view.impl);
+        contract_it != row_contracts.end()) {
+      std::vector<QueryColumn> cols;
+      for (auto col : view.Columns()) {
+        cols.push_back(col);
+      }
+      os << sep << "KEY (";
+      auto key_sep = "";
+      for (FieldId field : contract_it->second.member_key) {
+        os << key_sep;
+        // A FieldId is the column VALUE id (`col->id`), the same resolution
+        // the -contract-out emitter uses — never a positional index.
+        auto named = false;
+        for (auto &col : cols) {
+          if (col.Id() == field.v) {
+            if (col.IsConstantOrConstantRef()) {
+              os << "k" << field.v;
+            } else {
+              os << col.Variable();
+            }
+            named = true;
+            break;
+          }
+        }
+        if (!named) {
+          os << "f" << field.v;
+        }
+        key_sep = ",";
+      }
+      os << ")";
       sep = "<BR />";
     }
 
@@ -1430,6 +1509,219 @@ OutputStream &operator<<(OutputStream &os, QueryDF df) {
       }
     }
   });
+
+  return os;
+}
+
+// The `-contract-out` row-contract text dump (Stage A hunk H-A8). One block per
+// live view in the SAME det_seq order as the `.df` dump. Grammar
+// (df-stage-a-desired-states.md §2.3, flat-key):
+//
+//   contracts
+//
+//   <kind> ^<kind>.<id> (visible_fields...)
+//     role=<member|distinct|n/a> key=(member_key...)
+//     [input_key=(...)]                # aggregate views only (H-A5)
+//   ...
+//   census: views=<V> contracts=<V> role{distinct=<d> member=<m> na=<n>}
+//           agg_input_key_ok=<a> collapse_error=0
+//
+// Contracts are read from `impl->row_contracts` (materialized in Query::Build,
+// H-A4). Pure byte-compare, no order-free field (permcheck N/A); OPT-MODE only.
+OutputStream &operator<<(OutputStream &os, QueryContracts qc) {
+  const Query query = qc.query;
+  const RowContractMap &contracts = qc.query.impl->row_contracts;
+
+  // The SAME kind-tagged det_seq-order live traversal as `QueryDF` (per-kind
+  // DefList order; NEVER Query::ForEachView, which walks JOINs first). Stage A
+  // adds no node, so this order is byte-identical to the `.df` order.
+  enum : unsigned {
+    kCSelect, kCTuple, kCKVIndex, kCJoin, kCMap,
+    kCAggregate, kCMerge, kCNegate, kCCompare, kCInsert
+  };
+  const auto for_each_view = [&query](auto cb) {
+    const auto wrap = [&cb](QueryView v, unsigned kind, const char *tag) {
+      if (!v.impl->is_dead) {
+        cb(v, kind, tag);
+      }
+    };
+    for (auto v : query.Selects())    wrap(QueryView::From(v), kCSelect, "select");
+    for (auto v : query.Tuples())     wrap(QueryView::From(v), kCTuple, "tuple");
+    for (auto v : query.KVIndices())  wrap(QueryView::From(v), kCKVIndex, "kv_index");
+    for (auto v : query.Joins())      wrap(QueryView::From(v), kCJoin, "join");
+    for (auto v : query.Maps())       wrap(QueryView::From(v), kCMap, "map");
+    for (auto v : query.Aggregates()) wrap(QueryView::From(v), kCAggregate, "aggregate");
+    for (auto v : query.Merges())     wrap(QueryView::From(v), kCMerge, "merge");
+    for (auto v : query.Negations())  wrap(QueryView::From(v), kCNegate, "negate");
+    for (auto v : query.Compares())   wrap(QueryView::From(v), kCCompare, "compare");
+    for (auto v : query.Inserts())    wrap(QueryView::From(v), kCInsert, "insert");
+  };
+
+  // V-CONTRACT-CENSUS (always-on, fprintf+abort): the contract traversal must
+  // be exactly a det_seq bijection onto the live-view set — the same tripwire
+  // as the `.df` dump's DF-BIJECTION.
+  unsigned num_views = 0u;
+  for_each_view([&num_views](QueryView, unsigned, const char *) { ++num_views; });
+  std::vector<bool> seen(num_views, false);
+  for_each_view([&](QueryView v, unsigned, const char *) {
+    const unsigned s = v.impl->det_seq;
+    if (s >= num_views || seen[s]) {
+      fprintf(stderr,
+              "V-CONTRACT-CENSUS: view det_seq %u is out of range or duplicated "
+              "over %u live views in the -contract-out drain\n",
+              s, num_views);
+      abort();
+    }
+    seen[s] = true;
+    if (!contracts.count(v.impl)) {
+      fprintf(stderr,
+              "V-CONTRACT-CENSUS: live view reached -contract-out with no row "
+              "contract\n");
+      abort();
+    }
+  });
+
+  std::ostringstream buf;
+  OutputStream bos(os.display_manager, buf);
+  const auto take = [&buf]() {
+    auto s = buf.str();
+    buf.str("");
+    return s;
+  };
+
+  // Column NAME / typed tokens, identical to the `.df` dump's forms.
+  const auto name_tok = [&](QueryColumn c) -> std::string {
+    if (!c.IsConstantOrConstantRef()) {
+      if (auto var = c.Variable()) {
+        bos << *var;
+        return take();
+      }
+    }
+    bos << 'c' << c.Id();
+    return take();
+  };
+  const auto typed_tok = [&](QueryColumn c) -> std::string {
+    auto s = name_tok(c);
+    bos << c.Type();
+    return s + ":" + take();
+  };
+
+  // The VISIBLE columns of a view (public API): an INSERT is terminal, so its
+  // visible fields are its input columns (matching RowContract::VisibleCols and
+  // the `.df` insert header). Every other kind uses its output columns (a JOIN's
+  // `Columns()` is already pivot-then-merged order).
+  const auto visible_cols = [](QueryView v, unsigned kind) {
+    std::vector<QueryColumn> cols;
+    if (kind == kCInsert) {
+      const auto ins = QueryInsert::From(v);
+      for (auto i = 0u; i < ins.NumInputColumns(); ++i) {
+        cols.push_back(ins.NthInputColumn(i));
+      }
+    } else {
+      for (auto c : v.Columns()) {
+        cols.push_back(c);
+      }
+    }
+    return cols;
+  };
+
+  // Render a member key `(a,b,c)` (comma, no space) as the subset of `cols`
+  // whose value id is in `ids`, in visible-field order, deduped.
+  const auto render_key = [&](const std::vector<QueryColumn> &cols,
+                              const std::unordered_set<unsigned> &ids)
+      -> std::string {
+    std::string out;
+    auto sep = "";
+    std::unordered_set<unsigned> seen_ids;
+    for (auto c : cols) {
+      if (ids.count(c.Id()) && seen_ids.insert(c.Id()).second) {
+        out += sep + name_tok(c);
+        sep = ",";
+      }
+    }
+    return out;
+  };
+  const auto id_set = [](const SemanticMemberKey &k) {
+    std::unordered_set<unsigned> s;
+    for (auto f : k) {
+      s.insert(f.v);
+    }
+    return s;
+  };
+
+  // The summarized-input view of an aggregate (H-A5): producer of its
+  // aggregated / group / config columns.
+  const auto agg_input_view = [](QueryAggregateImpl *agg) -> QueryViewImpl * {
+    for (auto c : agg->aggregated_columns) {
+      if (!c->IsConstant()) return c->view;
+    }
+    for (auto c : agg->group_by_columns) {
+      if (!c->IsConstant()) return c->view;
+    }
+    for (auto c : agg->config_columns) {
+      if (!c->IsConstant()) return c->view;
+    }
+    return nullptr;
+  };
+
+  os << "contracts\n\n";
+
+  unsigned n_distinct = 0u, n_member = 0u, n_na = 0u, n_agg_ok = 0u;
+
+  for_each_view([&](QueryView v, unsigned kind, const char *tag) {
+    const auto cols = visible_cols(v, kind);
+    const RowContract &rc = contracts.at(v.impl);
+
+    // Header line: `<kind> ^<kind>.<id> (typed fields)`.
+    std::string content = std::string(tag) + " ^" + tag + "." +
+                          std::to_string(v.DeterministicOrder()) + " (";
+    auto sep = "";
+    for (auto c : cols) {
+      content += sep + typed_tok(c);
+      sep = ", ";
+    }
+    content += ")";
+    os << content << "\n";
+
+    // role= token.
+    const char *role = "n/a";
+    if (auto tuple = v.impl->AsTuple()) {
+      if (tuple->projection_role ==
+          QueryTupleImpl::ProjectionRole::kDistinct) {
+        role = "distinct";
+        ++n_distinct;
+      } else {
+        role = "member";
+        ++n_member;
+      }
+    } else {
+      ++n_na;
+    }
+
+    os << "  role=" << role << " key=(" << render_key(cols, id_set(rc.member_key))
+       << ")\n";
+
+    // input_key= (aggregate only).
+    if (auto agg = v.impl->AsAggregate()) {
+      auto in = agg_input_view(agg);
+      const auto it = in ? contracts.find(in) : contracts.end();
+      std::string ik;
+      if (it != contracts.end()) {
+        std::vector<QueryColumn> ivis;
+        for (auto c : QueryView(in).Columns()) {
+          ivis.push_back(c);
+        }
+        ik = render_key(ivis, id_set(it->second.member_key));
+        ++n_agg_ok;
+      }
+      os << "  input_key=(" << ik << ")\n";
+    }
+  });
+
+  os << "census: views=" << num_views << " contracts=" << contracts.size()
+     << " role{distinct=" << n_distinct << " member=" << n_member << " na="
+     << n_na << "}\n"
+     << "        agg_input_key_ok=" << n_agg_ok << " collapse_error=0\n";
 
   return os;
 }

@@ -55,6 +55,7 @@ static const char *gCxxOutDir = nullptr;
 
 static OutputStream *gDOTStream = nullptr;
 static OutputStream *gDFStream = nullptr;
+static OutputStream *gContractStream = nullptr;
 static OutputStream *gRelStream = nullptr;
 static OutputStream *gDRStream = nullptr;
 static OutputStream *gIRStream = nullptr;
@@ -130,6 +131,14 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   if (gDFStream) {
     (*gDFStream) << hyde::QueryDF{*query_opt};
     gDFStream->Flush();
+  }
+
+  // Stage A (H-A8): the `-contract-out` row-contract text dump, through the
+  // QueryContracts tag struct. `.df` stays byte-untouched; contracts live only
+  // here (opt-mode-pinned). Drained alongside `-df-out`.
+  if (gContractStream) {
+    (*gContractStream) << hyde::QueryContracts{*query_opt};
+    gContractStream->Flush();
   }
 
   return ret;
@@ -208,6 +217,7 @@ static int HelpMessage(const char *argv[]) {
       << "                            imported modules to PATH." << std::endl
       << "  -dot-out <PATH>           Emit the data flow graph in GraphViz DOT format to PATH." << std::endl
       << "  -df-out <PATH>            Emit the data flow IR in BB-with-arguments text form to PATH." << std::endl
+      << "  -contract-out <PATH>      Emit the Stage-A row contracts in text form to PATH." << std::endl
       << "  -rel-out <PATH>      Emit the Rel (DR-IR) flow graph in text form to PATH." << std::endl
       << "  -first-id <N>             The first integer number used for identifiers in the control-flow IR." << std::endl
       << std::endl
@@ -283,6 +293,7 @@ extern "C" int main(int argc, const char *argv[]) {
 
   std::unique_ptr<hyde::FileStream> dot_out;
   std::unique_ptr<hyde::FileStream> df_out;
+  std::unique_ptr<hyde::FileStream> contract_out;
   std::unique_ptr<hyde::FileStream> rel_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
@@ -362,6 +373,23 @@ extern "C" int main(int argc, const char *argv[]) {
                              << "' for DataFlow IR output";
         }
         hyde::gDFStream = &(df_out->os);
+      }
+
+    // Stage-A row-contract text dump (the `-contract-out` surface, H-A8).
+    } else if (!strcmp(argv[i], "--contract-out") ||
+               !strcmp(argv[i], "-contract-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "row-contract output";
+      } else {
+        contract_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!contract_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for row-contract output";
+        }
+        hyde::gContractStream = &(contract_out->os);
       }
 
     // Rel (DR-IR) text dump (the `-rel-out` surface).

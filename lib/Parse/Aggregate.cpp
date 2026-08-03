@@ -70,75 +70,16 @@ static void AnalyzeAggregateVars(ParsedAggregateImpl *impl,
 }
 
 
-// Warn when an aggregated body column is projected away before aggregation.
-// Aggregates fold over the DISTINCT tuples of the `over(...)` columns --
-// projected COLUMNS, not projected rows (docs/Language.md, Aggregation):
-// a body variable that appears exactly once and is not an `over(...)`
-// column adds no constraint, its column is dropped by the projection, and
-// duplicate source rows collapse silently. The classic trap is counting
-// `foo(A, _)` and getting the count of unique `A`s. Fires for the inline
-// `over (params) { body }` form (once per single-use non-parameter
-// variable of the synthetic body clause, in appearance order) and for a
-// wildcard argument in the direct `over pred(A, _)` form (a named
-// single-use argument there is a GROUP column and survives). WARNING
-// severity: the shape is legitimate when distinct semantics are intended
-// (count DISTINCT), so this never fails the compile.
-static void LintAggregateProjection(ParsedAggregateImpl *agg,
-                                    const ErrorLog &log) {
-  ParsedPredicateImpl *const pred = &(agg->predicate);
-  ParsedDeclarationImpl *const decl = pred->declaration;
-  if (!decl) {
-    return;  // Unmatched predicate; an error is already logged.
-  }
-
-  const DisplayRange agg_range = ParsedAggregate(agg).SpellingRange();
-
-  // Inline `over (params) { body }`: the parser synthesized an unnamed
-  // local whose most recent clause is the just-parsed body (a failed body
-  // parse adds no clause and already logged its error). Variable
-  // appearances are chained per name (CreateVariable): a chain HEADED in
-  // `body_variables` never appears among the head parameters (a
-  // parameter-name chain is headed by the `head_variables` entry), and a
-  // chain head with no `next_appearance` is a single appearance. DefList
-  // order is appearance order, so warning order is deterministic.
-  if (decl->name.Lexeme() == Lexeme::kIdentifierUnnamedAtom) {
-    const auto &clauses = decl->context->clauses;
-    if (clauses.Empty()) {
-      return;
-    }
-    ParsedClauseImpl *const body = clauses[clauses.Size() - 1u];
-    for (ParsedVariableImpl *var : body->body_variables) {
-      if (var->first_appearance != var || var->next_appearance) {
-        continue;  // Chain interior/tail, or a multi-use (join) chain.
-      }
-      const auto lexeme = var->name.Lexeme();
-      if (lexeme != Lexeme::kIdentifierVariable &&
-          lexeme != Lexeme::kIdentifierUnnamedVariable) {
-        continue;  // A literal temporary (`K = 1`), not a source variable.
-      }
-      log.AppendWarning(agg_range, ParsedVariable(var).SpellingRange())
-          << "Variable '" << var->name << "' appears only once in this "
-          << "aggregated body and is not an over(...) column, so its column "
-          << "is projected away BEFORE aggregation; the aggregate folds "
-          << "over the DISTINCT remaining tuples (projected columns, not "
-          << "rows). To count rows, carry a uniquifying column in the "
-          << "over(...) list (see docs/Language.md)";
-    }
-    return;
-  }
-
-  // Direct `over pred(...)`: a wildcard argument's column is projected away.
-  for (ParsedVariableImpl *arg : pred->argument_uses) {
-    if (arg->name.Lexeme() == Lexeme::kIdentifierUnnamedVariable) {
-      log.AppendWarning(agg_range, ParsedVariable(arg).SpellingRange())
-          << "Wildcard argument of '" << pred->name << "' under aggregation "
-          << "is projected away BEFORE aggregation; the aggregate folds "
-          << "over the DISTINCT remaining tuples (projected columns, not "
-          << "rows). To count rows, name the column and carry it through "
-          << "the aggregation (see docs/Language.md)";
-    }
-  }
-}
+// H-A6 (Stage A): the advisory `LintAggregateProjection` was DELETED here. Its
+// job — warning that an aggregated body column is projected away before the
+// fold — is now TYPED, not linted: the over(){} synthetic body-clause head is a
+// `kDistinct` projection (H-A2), so dropping a non-over() column is
+// definitionally the intended set collapse (no diagnostic), while an UNPROVEN
+// kMember collapse is a hard failure (V-NO-COLLAPSE, RowContract.cpp). The
+// multiplicity trap stays refereed by bin/Oracle. agg_distinct_1 now compiles
+// with ZERO warnings. (V-NO-COLLAPSE is a BELT-ONLY internal invariant at Stage
+// A — E-A2; a proven-minimal key that would make an unproven collapse a
+// user-facing reject is Stage-B territory.)
 
 }  // namespace
 
@@ -496,8 +437,8 @@ done:
   // Make sure the usage of variables is reasonable.
   AnalyzeAggregateVars(agg, context->error_log);
 
-  // Advise on columns the over(...) projection silently drops.
-  LintAggregateProjection(agg, context->error_log);
+  // H-A6: the over(...) projected-column advisory lint is gone (typed away by
+  // the kDistinct over-body head + V-NO-COLLAPSE; see the note above).
   return true;
 }
 

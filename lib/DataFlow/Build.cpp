@@ -531,7 +531,13 @@ static QueryViewImpl *ConvertToClauseHead(
     return view;
   }
 
-  QueryTupleImpl *tuple = query->tuples.Create();
+  // The clause-head projection is a SET boundary: the output relation is a
+  // Datalog set, so this is the kDistinct mint (H-A2). It is one of exactly two
+  // kDistinct sites; every other TUPLE mint defaults to kMember. This site also
+  // covers the over(){} synthetic body-clause head (H-A5), which is built as an
+  // ordinary clause and routes through here.
+  QueryTupleImpl *tuple =
+      query->tuples.Create(QueryTupleImpl::ProjectionRole::kDistinct);
   tuple->color = context.color;
 
 #ifndef NDEBUG
@@ -2631,6 +2637,14 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   BuildEquivalenceSets(impl.get());
   impl->Stratify(log);
   if (num_errors != log.Size()) {
+    return std::nullopt;
+  }
+
+  // Stage A (H-A4): identity is now provable over the FINAL graph. view->stratum
+  // is set (the H-A3 Phase 1 cycle rule reads it), column ids are final, const
+  // facts are ready. A PURE function; NOT stored during Optimize.
+  impl->row_contracts = InferConservativeRowContracts(impl.get());
+  if (!ValidateRowContracts(impl.get(), log)) {  // H-A7 validators.
     return std::nullopt;
   }
 

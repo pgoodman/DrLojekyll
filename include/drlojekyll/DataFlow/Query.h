@@ -20,6 +20,7 @@ namespace hyde {
 class ErrorLog;
 class QueryImpl;
 class OutputStream;
+struct QueryContracts;  // Format.h — the `-contract-out` dump tag (H-A8).
 
 enum class ComparisonOperator : int;
 class ParsedDeclaration;
@@ -1143,6 +1144,14 @@ class Query {
   Query &operator=(Query &&) noexcept = default;
 
  private:
+  // Stage A (H-A8): the `-contract-out` emitter reads `impl->row_contracts`
+  // through this Query wrapper (Format.cpp includes the private QueryImpl).
+  friend OutputStream &operator<<(OutputStream &os, QueryContracts qc);
+
+  // The GraphViz DOT dump reads `impl->row_contracts` for the Stage-A
+  // identity annotations (role/key node labels, stratum clusters).
+  friend OutputStream &operator<<(OutputStream &os, Query query);
+
   inline explicit Query(std::shared_ptr<QueryImpl> impl_) : impl(impl_) {}
 
   std::shared_ptr<QueryImpl> impl;
