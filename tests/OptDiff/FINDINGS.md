@@ -273,7 +273,7 @@ Fixed in the final session:
   as sole-live-member, correct only for singleton groups — promotion
   trigger: any multi-live-value `@recompute` KV case.
 
-### F29 [RECORD-ONLY 2026-08-02]: generated code references a Database-private index (`idx_43`) from a free flow function — bound #query over a KV-maintained relation emits non-compiling C++
+### F29 [FIXED 2026-08-03]: generated code references a Database-private index (`idx_43`) from a free flow function — bound #query over a KV-maintained relation emits non-compiling C++
 - Repro: `build/debug/bin/drlojekyll tests/OptDiff/cases/demand_kv_body_1.dr
   -cpp-out <dir>` (the PLAIN program, no -demand), then compile any driver:
   clang++ fails with "use of undeclared identifier 'idx_43'" (datalog.h:226,
@@ -292,3 +292,21 @@ Fixed in the final session:
   for promotion: any codegen work on query indexes/KV, the I0 interpreter
   stage (which will want this shape compiled), or a corpus case hitting
   CXX-FAIL on an idx_* scope error.
+- PROMOTED AND FIXED at the I0 round (2026-08-03, the named trigger fired
+  exactly: the I0 behavioral sweep's PLAIN compiles of demand_diff_pub_1 /
+  demand_diff_input_1 / demand_diff_neighborhood_witness all CXX-failed on
+  the same undeclared-idx shape — wider blast radius than recorded, since
+  those three GOLDEN witnesses had only ever been compiled under -demand,
+  where the demand rescan's own index use masked the hole). Root cause:
+  the used-state collector's IsCommitSweep case (CodeGen/CPlusPlus/
+  Database.cpp) registered the swept table but NOT its live indexes, while
+  EmitCommitSweep's CompactDead branch emits a rebuild of every live index
+  over that table — so an index whose ONLY other user is a query cursor
+  (bound #query over a differential/KV relation) was referenced by the
+  sweep flow without entering its parameter set. Fix: the collector now
+  registers every index_member-live index of the swept table (the
+  SubgraphInstance case's exact ride-as-ref-params precedent). Verified:
+  all four repro shapes' plain headers compile; FULL suite SUITE: PASS
+  (190) with zero golden churn (byte-neutral for every previously-compiling
+  program, since any flow that emitted an index reference and compiled must
+  already have carried the param).

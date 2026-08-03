@@ -742,6 +742,17 @@ void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
   } else if (region.IsCommitSweep()) {
     auto sweep = ProgramCommitSweepRegion::From(region);
     out.tables.insert(sweep.Table().Id());
+    // The compaction tail rebuilds EVERY live index over the swept table
+    // (EmitCommitSweep's CompactDead branch), so they ride as ref-params
+    // too — without this, an index whose only other user is a query cursor
+    // (bound #query over a differential/KV relation) is referenced by the
+    // sweep flow but never enters its parameter set, and the generated
+    // header does not compile (FINDINGS.md F29).
+    for (DataIndex index : sweep.Table().Indices()) {
+      if (index_member.contains(index.Id())) {
+        out.indexes.insert(index.Id());
+      }
+    }
     if (sweep.Message()) {
       out.uses_log = true;
     }
