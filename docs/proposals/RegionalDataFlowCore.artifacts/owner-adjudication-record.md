@@ -459,3 +459,29 @@ or composite index with NO name in the flat schema — the disassembler's
 (FuncEA,BlockEA) nested key and the non-linear-TC pivot. Full:
 running-example-disassembler.md.
 
+
+## Owner direction — 2026-08-03 (session 3, mid-session): adornments as a FUZZING axis + the bracket parser obligations
+
+Owner (verbatim intent, two messages): explicitly specifying the adornments is
+a TESTING OPPORTUNITY — "fuzz" a Datalog program with lots of adornments, in
+all sorts of placements, to exercise that the compiler handles them in their
+TOTALITY, not just the curated witness shapes. And the declared-bracket surface
+needs the usual parser checks around adornments.
+
+Recorded consequences (feed DIFF-R3's formalization + its test plan):
+1. PARSER OBLIGATIONS (reject, clean diagnostics, all-4-modes): bracket
+   variables must be NAMED — `foo[_]` and `foo[_A]` (wildcard/anonymous) are
+   rejected; repetitions are rejected — `foo[A,A]` is illegal (a key column
+   set, ordered, duplicate-free). The usual adornment diagnostics corpus
+   (each reject a directed witness) comes with the surface.
+2. ADORNMENT-PLACEMENT FUZZING: given a base program, mechanically enumerate/
+   sample bracket placements (head decls, body atoms, internal relations,
+   multi-adornment mixes, nested/composite non-prefix keys) and require every
+   placement either compiles to an answer-identical program (I0/eqgate
+   referee: flat == declared == nested) or draws a CLEAN diagnostic — never a
+   miscompile, never an assert. This is the evil-monkey rule applied to the
+   declared-regions surface, and slots beside the covering-array machinery
+   (a placement-enumeration harness, not hand-curated cases only).
+3. Scope note: this raises the DIFF-R3 test matrix from witness-based to
+   generator-based; the generator's oracle is I0 + the flat-demand compiler
+   (answer identity), diagnostics compared by class (PF-3 vocabulary).

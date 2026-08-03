@@ -33,8 +33,8 @@ cmake -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DDRLOJEKYLL_ENABLE_TE
 
 ```sh
 cd build/debug && ctest --output-on-failure   # DataFlowValidators, RelValidators,
-                                              # InstanceStore, MiniDisassembler,
-                                              # PointsTo, Runtime
+                                              # IdentityTypes, InstanceStore,
+                                              # MiniDisassembler, PointsTo, Runtime
 ```
 
 End-to-end tests compile a `.dr` file at build time via `compile_datalog()`
@@ -50,10 +50,10 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 180 corner-case programs as of the
-D3.a.3 multi-adornment landing — symrec_tie_1 is the standing
+(`<name>.dr` + `<name>.main.cpp`, 190 corner-case programs as of the
+RegionalDataFlowCore pre-Stage-A landing — symrec_tie_1 is the standing
 determinism witness; agg_distinct_1 pins the aggregate multiplicity
-semantics + carries the projected-column lint shape; barrier_neck_1
+semantics + carries a `.contract` golden; barrier_neck_1
 witnesses the `:-` separator, sugar for `@barrier` between every two
 body conjuncts, its df.opt golden pinning the staged-binary-vs-3-way
 join contrast and the CSE merge of the `:-`/explicit-@barrier twins) has one committed expected output in
@@ -100,7 +100,16 @@ delta-relational-IR golden policy.
   `demand_recursive_content_1` (a
   recursive-content demanded body — rejected UPSTREAM by the plain-`-demand`
   body-walk, so its `.drflags` is a bare `-demand`; it pins the shadowed
-  Build.cpp recursive-content belt); `kvindex_1` is MODE-SPLIT (compiles
+  Build.cpp recursive-content belt), `product_in_scc_diff_1` (on-cycle
+  differential @product, the F23 shape — the ViewSelfReachable fence),
+  `demand_agg_body_1`/`demand_kv_body_1`/`demand_config_agg_body_1` (an
+  over(){} aggregate / KV merge / config-@recompute aggregate inside a
+  demanded body — demand-sink/R-MAT rejects under their `-demand` .drflags;
+  each carries `.batches` + oracle/monotone goldens pinning the definitional
+  answer BEFORE any Stage-C reject lift), `demand_mutual_content_1` (mutual
+  recursion inside a demanded body, R-BODYWALK) and `demand_two_queries_1`
+  (two independent bound query names, R-1BOUND — the Stage-C lift
+  candidate); `kvindex_1` is MODE-SPLIT (compiles
   under opt/nocf where KVINDEX→TUPLE elimination fires, V-ALGEBRA-rejects
   under nodf/none). `aggregate_1` FLIPPED from diagnostic to a 4-mode
   golden at the R3 stage-C flip. The @differential-summarized-input fence was
@@ -114,8 +123,12 @@ delta-relational-IR golden policy.
   never automatically on failure, and never to make a red case green.
 
 `tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with
-repros (F1–F19 and F21 fixed as of July 2026; F20 is an open record-only
-latent-comparator note).
+repros (F1–F19, F21, and F26–F28 fixed as of August 2026; F23 promoted to
+the `product_in_scc_diff_1` pin; F20 is an open record-only latent-
+comparator note and F29 an open record-only codegen scope bug — a bound
+#query over a KV-maintained relation emits non-compiling C++ referencing a
+private `idx_*` member; promotion trigger: query-index/KV codegen work or
+the I0 interpreter wanting the shape compiled).
 
 ### Bench harness (perf, never gates correctness)
 
@@ -184,7 +197,32 @@ exact signatures before writing a driver.
   the driver in `lib/DataFlow/Optimize.cpp` (Simplify → Canonicalize fixpoint
   → CSE; `OptimizationContext` flags in `lib/DataFlow/Optimize.h`). Every
   optimization pass carries a doc comment: algorithm, pseudocode, ASCII
-  before/after diagram.
+  before/after diagram. DEAD-FLOW SPLIT (F26): the `df.dfe` PassPolicy gate
+  picks WHICH dead-flow pass runs, never whether one runs —
+  `EliminateDeadFlows` (full taint-based optimization) when on,
+  `CollectDeadCycles` (source-less-cycle collection, REQUIRED hygiene like
+  `RemoveUnusedViews`) when off; canonicalization demolishes the merge/
+  io-seam structure of user-authored dead cycles and the collection is the
+  janitor. Stratify's multi-view-SCC invariant is the always-on V-SCC-SEAM
+  validator (fprintf+abort, survives NDEBUG).
+- Stage-A identity/contract layer (RegionalDataFlowCore epoch):
+  `lib/DataFlow/Identity.h` (typed id domains + static_assert battery;
+  ctest IdentityTypes); `QueryTupleImpl::ProjectionRole` (kMember default,
+  kDistinct at exactly the two clause-head mint sites), build-stamped and
+  immutable, folded into `Equals` ONLY — never `Hash` (the Hash fold
+  perturbs hash-derived Rel/CF tie-breaks for zero CSE benefit), with the
+  V-PROJ-ROLE-STABLE belt at the single CSE merge choke point;
+  `InferConservativeRowContracts` (`lib/DataFlow/RowContract.{h,cpp}`), a
+  PURE two-phase graph function at the Query::Build tail (post-Stratify):
+  Phase-1 AllFields member keys on multi-view strata, Phase-2 acyclic
+  flat-key `{visible_fields, member_key}` transfer; validators
+  V-CONTRACT-CENSUS / V-MEMBERKEY-REALIZED / V-AGG-INPUT-KEY always-on,
+  V-NO-COLLAPSE belt-only. `-contract-out` dumps the contracts (3 blessed
+  `.contract.opt.golden`s via `.irgold` sidecars: agg_distinct_1,
+  demand_tc_witness, join_1; `.df` stays byte-untouched). The dataflow
+  `-dot-out` DOT twin renders `role=`/`KEY(...)` annotations and groups
+  multi-view strata as `subgraph cluster_stratum_<id>` (advisory
+  visualization, never byte-goldened).
 - Control-flow IR: regions in `lib/ControlFlow/Program.h` (SERIES/PARALLEL/
   INDUCTION/LET/TUPLECMP/UPDATECOUNT/CHECKMEMBER/COMMITSWEEP/CLAIM/...);
   built by `lib/ControlFlow/Build/`, optimized by
@@ -325,7 +363,13 @@ exact signatures before writing a driver.
   whose non-user side is a unit relation is never removed, and CSE never
   folds a unit SELECT into a non-unit one; a unit relation contains at most
   the row `(true)` — only the desugarer creates its INSERTs, and they insert
-  only the token; zero-pivot JOINs appear only under `@product`; a table's
+  only the token; zero-pivot JOINs appear only under `@product`; every
+  MONOTONE table-less stream INSERT gets its OWN dedup table in
+  `FillDataModel` so publishes are gated on the presence crossing (F27 —
+  1-arm-MERGE elimination can detach a published tap from its producing
+  table, and an ungated eager publish re-emits present rows; deliberately
+  NOT model-shared with a cycle insert, which would consume the crossing);
+  a table's
   member-view list holds each view at most once, by IDENTITY — never dedup
   it structurally (distinct-but-equal views sharing a model are intentional,
   the group_ids CSE guard). group_ids/InsertSetsOverlap is a CORRECTNESS
@@ -394,10 +438,11 @@ aggregating a constant (the count(*) idiom) yields 1 per group; a
 wildcard/dropped body column silently dedups. Aggregate canonicalization
 drops only constant and duplicate group-by columns (identity-preserving)
 and never drops aggregated/config columns, so a fully named over list is
-counted as written in every mode. The parse-layer ADVISORY lint
-(LintAggregateProjection, lib/Parse/Aggregate.cpp; ErrorLog::AppendWarning
-— warnings render but never fail a compile) fires on the trap shape;
-agg_distinct_1 is the corpus witness. User-facing statement: docs/Language.md
+counted as written in every mode. The former parse-layer advisory lint
+(LintAggregateProjection) was DELETED at Stage A — the trap shape is now
+covered by the contract layer (V-AGG-INPUT-KEY); agg_distinct_1 is the
+corpus witness (zero warnings, stdout untouched, plus its `.contract`
+golden). User-facing statement: docs/Language.md
 (Aggregation bullet); data/examples/average_weight.dr + its corpus twin
 compute sum/count over DISTINCT (X, Weight) pairs (edge ids projected
 away), documented in-file.
@@ -452,10 +497,11 @@ diffrun.sh append its contents to the compiler line): `demand_tc_witness` is
 the demand-ON witness, `demand_multi_adorn_1` the >1-adornment reject. The
 slice is single-adornment: >1 bound query, >1 binding pattern per name,
 NEGATE/AGG in a demanded body, left-linear propagation, stray consumers, and
-multi-clause queries are all clean diagnostics (never miscompiles). ~23% of
-corpus cases carry bound queries (38/165 at the demand-seeds seed sweep; the
-3 new cases added more) — an unconditional transform would rewrite ~a quarter
-of the goldens, so mode-gating is mandatory.
+multi-clause queries are all clean diagnostics (never miscompiles). ~27% of
+corpus cases carry bound queries (49/181 measured at the RegionalDataFlowCore
+adjudication; re-measure, never propagate the constant) — an unconditional
+transform would rewrite ~a quarter of the goldens, so mode-gating is
+mandatory.
 
 ## The keyed-instance nested lowering (`-demand-instance` — LANDED, birth-and-rebuild)
 

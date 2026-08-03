@@ -1,5 +1,9 @@
 # §20(AW) — DRAFT ledger entry
 
+LANDED 2026-08-03: both entries ((AW)+(AX)) appended to docs/proposals/
+KeyedInstances.md §20 by owner ratification; this file is the historical
+draft. The ledger copy is authoritative.
+
 DRAFT for KeyedInstances.md §20(AW). The owner decides whether/where it lands;
 KeyedInstances.md is UNTOUCHED (its ledger stops at (AV)). House idiom per (AU)/
 (AV): dense, past-tense, every claim anchored, a NEXT line at the tail. Baselines
