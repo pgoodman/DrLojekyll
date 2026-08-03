@@ -34,7 +34,11 @@
 #     and under-answer; the D3.a.3 all-free-sibling fence),
 #   negate_never_diff_1 (@never over a differential negated view — the
 #     DS-R4-10 post-fixpoint fence; the directed order-hole shape that was
-#     mode-split before D3.a.1)
+#     mode-split before D3.a.1),
+#   product_in_scc_diff_1 (on-cycle differential @product, the F23 shape:
+#     rejected by the ViewSelfReachable fence in Program::Build's pre-pass;
+#     pinned at the F26 round after the recorded opt-mode exit-139 crash
+#     stopped reproducing)
 #     — the compiler must exit 1 with a rendered diagnostic (no assert/crash)
 #     in all 4 modes (evm_func_parse: unstratified negation, rejected by the
 #     dataflow Stratify pass; agg_in_scc_1/kv_in_scc_1: unstratified
@@ -365,7 +369,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_multi_adorn_allfree_1|demand_cyclic_1|demand_recursive_content_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_multi_adorn_allfree_1|demand_cyclic_1|demand_recursive_content_1|product_in_scc_diff_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

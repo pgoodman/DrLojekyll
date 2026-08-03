@@ -66,11 +66,15 @@ static bool IsTrivialCycle(TUPLE *tuple);
 //
 //   The `TUPLE p` arm is not derived from any message, so it is deleted
 //   and unlinked from the UNION's list of merged views.
-bool QueryImpl::EliminateDeadFlows(void) {
-
-  std::unordered_set<void *> derived_from_input;
-  std::vector<VIEW *> views;
-  ForEachView([&views](VIEW *view) { views.push_back(view); });
+// The shared input-taint fixpoint of the dead-flow family: mark every live
+// view (transitively) derivable from the input boundary. The seeds are the
+// RECEIVEs of messages, SELECTs over streams, and constants (`nullptr`
+// stands for an all-constant input set); the per-node-kind propagation
+// rules are documented on `EliminateDeadFlows` above. Callers:
+// `EliminateDeadFlows` (the `df.dfe`-gated dead-flow OPTIMIZATION) and
+// `CollectDeadCycles` (the REQUIRED hygiene half; FINDINGS.md F26).
+void QueryImpl::TaintDerivedFromInput(
+    std::unordered_set<void *> &derived_from_input) {
 
   for (auto io : ios) {
     for (auto view : io->receives) {
@@ -204,8 +208,12 @@ bool QueryImpl::EliminateDeadFlows(void) {
     for (JOIN *view : joins) {
       if (should_check_view(view)) {
         auto all_tainted = true;
+        // `joined_views` is a WeakUseList: an entry nulls out when its view
+        // is reclaimed, exactly like `merged_views` below (F23 hardening —
+        // a null entry means an input that can never produce data).
         for (auto joined_view : view->joined_views) {
-          if (joined_view->is_dead || !derived_from_input.count(joined_view)) {
+          if (!joined_view || joined_view->is_dead ||
+              !derived_from_input.count(joined_view)) {
             all_tainted = false;
             break;
           }
@@ -225,6 +233,15 @@ bool QueryImpl::EliminateDeadFlows(void) {
       }
     }
   }
+}
+
+bool QueryImpl::EliminateDeadFlows(void) {
+
+  std::unordered_set<void *> derived_from_input;
+  std::vector<VIEW *> views;
+  ForEachView([&views](VIEW *view) { views.push_back(view); });
+
+  TaintDerivedFromInput(derived_from_input);
 
   // Empty-relation folding: an untainted negated view can never hold data
   // (the sweep below deletes it), so the absence check of any NEGATE over
@@ -283,6 +300,247 @@ bool QueryImpl::EliminateDeadFlows(void) {
     if (auto merge = view->AsMerge(); merge && !merge->is_dead) {
       merge->merged_views.RemoveIf([&](VIEW *merged_view) {
         return merged_view->is_dead || !derived_from_input.count(merged_view);
+      });
+    }
+  }
+
+  return RemoveUnusedViews();
+}
+
+// Collect dead cycles: the REQUIRED graph-hygiene half of the dead-flow
+// family (FINDINGS.md F26). A source-less forwarding cycle — views mutually
+// derivable only from one another, never from a message, stream, or
+// constant — denotes an unsatisfiable (empty) relation. The IR is
+// well-formed and semantically meaningful (a user may legally write
+// `p(A) : p(A).`), but canonicalization DEMOLISHES the structures that keep
+// such cycles recognizable downstream (folding one-arm MERGEs, collapsing
+// io seams, leaving pure TUPLE self-cycles), and `Stratify`'s V-SCC-SEAM
+// validator requires every surviving multi-view SCC to carry an inductive
+// MERGE or io seam. So whenever canonicalization runs, the cycles (and the
+// views whose data could only come from them) MUST be collected — this
+// collection never consults the pass policy, exactly like
+// `RemoveUnusedViews`. `EliminateDeadFlows` is a superset (it also removes
+// acyclic dead arms), so the `df.dfe` gate picks WHICH of the two runs,
+// never whether one runs.
+//
+// Membership splits the shared input-taint fixpoint by WELL-FOUNDEDNESS: an
+// untainted view is well-founded when every live predecessor is tainted or
+// well-founded — its emptiness bottoms out at leaves (an ordinary
+// empty-relation arm, kept here, removed only by the gated optimization).
+// An untainted view that is NOT well-founded sits on, or strictly
+// downstream of, a dead cycle and is deleted; deleting the whole
+// non-well-founded set at once keeps the survivors closed (no survivor
+// reads a deleted view, except MERGEs — pruned — and NEGATEs over a dying
+// negated view — folded to pass-through TUPLEs exactly as in
+// `EliminateDeadFlows`). Trivial cycles (`IsTrivialCycle`) are deleted
+// regardless of taint, as in the full pass.
+//
+//    tainted = TaintDerivedFromInput()
+//    WF: least fixpoint over live untainted views:
+//      v in WF  if every live predecessor p of v: p tainted or p in WF
+//      (MERGE: every live member; JOIN: every joined view; SELECT: every
+//       live INSERT; AGG: both incoming views; a null/constant input is
+//       vacuously settled)
+//    dying(v) := live(v) and not tainted(v) and not WF(v)
+//    fold NEGATEs with dying negated view (keep rule of the full pass)
+//    delete dying views; delete trivial-cycle TUPLEs
+//    prune dead members out of surviving MERGEs
+//    return RemoveUnusedViews()
+//
+// Before (canonicalized `p(A) : p(A).`         After:
+//         beside a live flow):
+//
+//    RECV in      TUPLE p <--.                RECV in
+//       |            |       |                   |
+//     TUPLE        TUPLE ----'                 TUPLE
+//       |         (dead cycle)                   |
+//    INSERT out                               INSERT out
+bool QueryImpl::CollectDeadCycles(void) {
+
+  std::unordered_set<void *> derived_from_input;
+  TaintDerivedFromInput(derived_from_input);
+
+  std::vector<VIEW *> views;
+  ForEachView([&views](VIEW *view) { views.push_back(view); });
+
+  // Well-foundedness fixpoint over the live untainted views.
+  std::unordered_set<VIEW *> well_founded;
+
+  auto settled = [&](VIEW *pred) {
+    return !pred || pred->is_dead || derived_from_input.count(pred) ||
+           well_founded.count(pred);
+  };
+
+  auto changed = true;
+  auto consider = [&](VIEW *view, bool is_settled) {
+    if (is_settled) {
+      well_founded.insert(view);
+      changed = true;
+    }
+  };
+  auto should_check_view = [&](VIEW *view) {
+    return !view->is_dead && !derived_from_input.count(view) &&
+           !well_founded.count(view);
+  };
+
+  while (changed) {
+    changed = false;
+
+    for (SELECT *view : selects) {
+      if (!should_check_view(view)) {
+        continue;
+      }
+      auto all_settled = true;
+      for (auto insert : view->inserts) {
+        if (insert && !insert->is_dead && !settled(insert)) {
+          all_settled = false;
+          break;
+        }
+      }
+      consider(view, all_settled);
+    }
+
+    for (TUPLE *view : tuples) {
+      if (should_check_view(view)) {
+        consider(view, settled(VIEW::GetIncomingView(view->input_columns)));
+      }
+    }
+
+    for (INSERT *view : inserts) {
+      if (should_check_view(view)) {
+        consider(view, settled(VIEW::GetIncomingView(view->input_columns)));
+      }
+    }
+
+    for (CMP *view : compares) {
+      if (should_check_view(view)) {
+        consider(view, settled(VIEW::GetIncomingView(view->input_columns,
+                                                     view->attached_columns)));
+      }
+    }
+
+    for (MAP *view : maps) {
+      if (should_check_view(view)) {
+        consider(view, settled(VIEW::GetIncomingView(view->input_columns,
+                                                     view->attached_columns)));
+      }
+    }
+
+    for (KVINDEX *view : kv_indices) {
+      if (should_check_view(view)) {
+        consider(view, settled(VIEW::GetIncomingView(view->input_columns,
+                                                     view->attached_columns)));
+      }
+    }
+
+    for (AGG *view : aggregates) {
+      if (should_check_view(view)) {
+        consider(view,
+                 settled(VIEW::GetIncomingView(view->aggregated_columns)) &&
+                     settled(VIEW::GetIncomingView(view->group_by_columns,
+                                                   view->config_columns)));
+      }
+    }
+
+    for (MERGE *view : merges) {
+      if (!should_check_view(view)) {
+        continue;
+      }
+      auto all_settled = true;
+      for (auto merged_view : view->merged_views) {
+        if (merged_view && !merged_view->is_dead && !settled(merged_view)) {
+          all_settled = false;
+          break;
+        }
+      }
+      consider(view, all_settled);
+    }
+
+    // A NEGATE's data follows its predecessor alone (the absence check
+    // reads the negated view but never supplies rows), matching the taint
+    // rule of the full pass; a dying negated view is handled by folding.
+    for (NEGATION *view : negations) {
+      if (should_check_view(view)) {
+        consider(view, settled(VIEW::GetIncomingView(view->input_columns,
+                                                     view->attached_columns)));
+      }
+    }
+
+    for (JOIN *view : joins) {
+      if (!should_check_view(view)) {
+        continue;
+      }
+      auto all_settled = true;
+      for (auto joined_view : view->joined_views) {
+        if (!settled(joined_view)) {
+          all_settled = false;
+          break;
+        }
+      }
+      consider(view, all_settled);
+    }
+  }
+
+  auto dying = [&](VIEW *view) {
+    return view && !view->is_dead && !derived_from_input.count(view) &&
+           !well_founded.count(view);
+  };
+
+  // Fold NEGATEs whose negated view dies here (and which survive
+  // themselves), mirroring the empty-relation folding of the full pass:
+  // the dying view can never hold data, so the absence check is vacuously
+  // true and the NEGATE forwards its predecessor's rows unconditionally.
+  for (NEGATION *negate : negations) {
+    if (negate->is_dead || negate->is_unsat || dying(negate) ||
+        !dying(negate->negated_view.get())) {
+      continue;
+    }
+
+    const auto first_attached_col = negate->input_columns.Size();
+    TUPLE *tuple = this->tuples.Create();
+    auto col_index = 0u;
+    for (auto col : negate->columns) {
+      tuple->columns.Create(col->var, col->type, tuple, col->id, col_index);
+
+      if (col_index < first_attached_col) {
+        tuple->input_columns.AddUse(negate->input_columns[col_index]);
+      } else {
+        tuple->input_columns.AddUse(
+            negate->attached_columns[col_index - first_attached_col]);
+      }
+
+      ++col_index;
+    }
+
+    negate->ReplaceAllUsesWith(tuple);
+    views.push_back(tuple);
+
+    // The fresh TUPLE inherits the NEGATE's classification so the sweep
+    // below keeps it (the NEGATE survives by construction here).
+    if (derived_from_input.count(negate)) {
+      derived_from_input.insert(tuple);
+    } else {
+      well_founded.insert(tuple);
+    }
+  }
+
+  for (auto view : views) {
+    if (view->is_dead) {
+      continue;
+    }
+    if (dying(view)) {
+      view->PrepareToDelete();
+
+    } else if (auto tuple = view->AsTuple(); tuple && IsTrivialCycle(tuple)) {
+      view->PrepareToDelete();
+    }
+  }
+
+  // Deleting a dying view may leave dead members inside surviving MERGEs.
+  for (auto view : views) {
+    if (auto merge = view->AsMerge(); merge && !merge->is_dead) {
+      merge->merged_views.RemoveIf([](VIEW *merged_view) {
+        return !merged_view || merged_view->is_dead;
       });
     }
   }

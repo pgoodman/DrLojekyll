@@ -122,6 +122,7 @@ Fixed in the final session:
 - Repro: `t(X, Y) @product : base(X), o(Y). t(X, Y) @product : t(X, _A), o(Y).` with `base`/`oth` @differential (o(Y) : oth(Y).) — default mode exit 139; `-disable-dataflow-opt` exits 1 cleanly (the Stage-5 fence fires on the unoptimized graph).
 - Crash frame: `QueryImpl::EliminateDeadFlows` (lib/DataFlow/DeadFlowElimination.cpp:207, the JOIN taint loop reading `joined_view->is_dead`) — EXC_BAD_ACCESS at a near-null address, i.e. a dangling/absent joined view during the taint fixpoint. Reproduces IDENTICALLY at the pre-Stage-5 baseline (730b843, verified by stash+rebuild): the defect is in `Query::Build`'s optimizer, upstream of everything Stage 5 touched, and was previously unobservable only because nothing exercised the shape (at baseline the program would have been rejected by the blanket product diagnostic — but the crash fires BEFORE that pre-pass runs, so baseline crashes too).
 - Deliberately NOT fixed in Stage 5 (dataflow optimizer, out of scope; same record-only precedent as F20). No suite case pins it — the repro lives in this entry. Trigger for promotion: any dead-flow-elimination work, or a corpus program hitting exit-139 in `EliminateDeadFlows`.
+- PROMOTED at the F26 round (2026-08-02, the trigger fired: dead-flow-elimination work): the recorded exit-139 NO LONGER REPRODUCES at tip f0c913e0 — the repro program now draws the clean on-cycle differential-@product diagnostic (exit 1) in ALL 4 modes, opt included (fixed incidentally somewhere in the Rel-epoch interval; not bisected). The shape is now pinned as the all-4-modes-diagnostic corpus case `product_in_scc_diff_1`, and the JOIN taint loop gained the same null-entry guard `merged_views` always had (`joined_views` is a WeakUseList; a reclaimed view nulls its entry), removing the latent deref the crash frame implicated.
 
 ## Round 10 (the PIN-3 class= pre-diff, Rel epoch, 2026-07-23)
 
@@ -166,3 +167,53 @@ Fixed in the final session:
 - Witness: `negate_never_diff_1` (all-4-modes-diagnostic) pins the 3-hop
   ORDER-HOLE shape, regression-fencing the fragility itself, not just the
   reject.
+
+## Round 12 (the RegionalDataFlowCore pre-Stage-A cleanup, 2026-08-02)
+
+### F26 [FIXED 2026-08-02]: `df.dfe` was load-bearing for COMPILATION — canonicalization demolishes dead-cycle structure and only the gated dead-flow pass collected the residue (SIGABRT at Stratify's SCC invariant)
+- Found by the RegionalDataFlowCore covering-array probes (design-grounding
+  session, `RegionalDataFlowCore.artifacts/covering-array-verified.md` PF1/
+  PF2): `-opt-disable=df.dfe` (canon/cse ON) aborted the compiler — SIGABRT,
+  exit 134, the debug-only assert at Stratify.cpp:420 ("every multi-view SCC
+  has an inductive MERGE or io seam") — on 4 cases: `deadflowelimination_1/
+  2/4` and `recursion`. nodf/none/all-off pass because they also disable
+  canon; the abort surfaces ONLY at the single-gate dfe-off lattice point,
+  which no golden mode reaches.
+- Root cause (verified against code): the dead cycles are USER-AUTHORED
+  legal programs (`recursion.dr`'s `direct_only(A) : direct_only(A).`)
+  denoting empty relations — well-formed, meaningful IR, not corruption.
+  The violated invariant was an UNSTATED, UNOWNED pipeline postcondition
+  maintained by COORDINATION between passes: canonicalization DESTROYS the
+  merge/io-seam structures (folds 1-arm MERGEs, collapses seams, leaves
+  pure TUPLE self-cycles) and `EliminateDeadFlows` DELETES the resulting
+  dead cycles (its doc comment names underivable recursive cycles as its
+  reason for existing; `IsTrivialCycle` handles exactly this residue).
+  canon-ON + dfe-OFF = demolition without the janitor. The codebase already
+  drew the required-hygiene-vs-optional-optimization line (`Optimize.cpp`:
+  "RemoveUnusedViews is REQUIRED graph hygiene and never consults the
+  policy") — DFE's cycle collection was MIS-BINNED on the optional side of
+  that existing line. This is the F1 disease class (an invariant maintained
+  by coordination between passes, owned by none, enforced by a debug assert
+  in a third) recurring at the optimization layer — the same smell
+  RegionalDataFlowCore diagnoses at the demand layer.
+- Fix (the hygiene/optimization split, owner-ratified D3.1): the shared
+  input-taint fixpoint is factored out (`TaintDerivedFromInput`), and the
+  `df.dfe` gate now picks WHICH dead-flow pass runs, never whether one
+  runs — `EliminateDeadFlows` (the full taint-based optimization, also
+  removes acyclic dead arms) when on, the NEW `CollectDeadCycles`
+  (source-less forwarding cycles + their dependents + trivial cycles ONLY,
+  by well-foundedness over the taint fixpoint; never consults the policy)
+  when off. The Stratify debug assert is PROMOTED to the always-on
+  V-SCC-SEAM validator (fprintf+abort, survives NDEBUG, Rel V-* style) —
+  its precondition is now unconditionally established, so a firing means a
+  real compiler bug, not a config. Rides along: the F23 promotion (see the
+  F23 entry) and the PassPolicy.h stale-prose fix (the dataflow body is 5
+  gates incl. `df.ident_join`, not 4 — brief Errata-6).
+- Verified (tip f0c913e0 + this fix): full suite SUITE: PASS (4 modes,
+  byte-identical, no golden touched); ctest green; dfe-off FULL-CORPUS
+  compile+build+run sweep = 166 golden-match + 15 expected diagnostics +
+  `product_in_scc_diff_1` rejecting (182/182, zero aborts) — the 4 former-
+  SIGABRT cases are now the directed witnesses of the split (each golden-
+  matches end-to-end under dfe-off), and covering-array carve-out B is
+  GONE.
+

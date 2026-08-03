@@ -797,11 +797,12 @@ void QueryImpl::Canonicalize(const OptimizationContext &opt,
 //    do_sink(); do_cse()
 //    Canonicalize(default: bottom-up, conservative)
 //    do_sink(); do_cse(); do_sink()
-//    for up to max INSERT depth, while EliminateDeadFlows() changes:
+//    for up to max INSERT depth, while dead flows keep changing:
 //      Canonicalize(top-down, +remove unused columns,
 //                   +replace constant inputs)
 //      do_sink()
 //      RemoveUnusedViews()
+//      EliminateDeadFlows() if df.dfe else CollectDeadCycles()
 //    do_cse(); RemoveUnusedViews()
 //
 //  Before:                            After:
@@ -881,9 +882,16 @@ void QueryImpl::Optimize(const ErrorLog &log, const PassPolicy &policy) {
     do_sink();
 
     RemoveUnusedViews();
-    // df.dfe gates EliminateDeadFlows ONLY; RemoveUnusedViews is REQUIRED
-    // graph hygiene and never consults the policy (P1 pinned contract §2b).
-    changed = policy.Gate("df.dfe") ? EliminateDeadFlows() : false;
+    // df.dfe picks WHICH dead-flow pass runs, never whether one runs:
+    // `EliminateDeadFlows` (the full taint-based OPTIMIZATION) when on,
+    // `CollectDeadCycles` (source-less-cycle collection only) when off.
+    // The cycle hygiene is REQUIRED like RemoveUnusedViews (P1 pinned
+    // contract §2b) because the canonicalization above demolishes the
+    // merge/io-seam structure of user-authored dead cycles — e.g.
+    // `p(A) : p(A).` — and Stratify's V-SCC-SEAM validator (correctly)
+    // refuses the residue (FINDINGS.md F26).
+    changed = policy.Gate("df.dfe") ? EliminateDeadFlows()
+                                    : CollectDeadCycles();
   }
 
   // Identity-join elimination (df.ident_join): the Prov-driven recognizer that

@@ -4,6 +4,8 @@
 #include <drlojekyll/Parse/Parse.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <unordered_map>
 #include <vector>
 
@@ -341,13 +343,16 @@ void QueryImpl::Stratify(const ErrorLog &log) {
     reject_in_scc_agg(kv, functor_range, "keyed");
   }
 
-#ifndef NDEBUG
-
-  // Cross-check the SCC condensation against `IdentifyInductions` (see the
-  // pass doc comment for the divergence rules).
-
-  // Strata closed only through message publish -> receive seams are
-  // invisible to IdentifyInductions; skip agreement checks inside them.
+  // V-SCC-SEAM (always-on, survives NDEBUG; promoted from a debug assert at
+  // the FINDINGS.md F26 fix): all dataflow cycles pass through UNIONs, so
+  // every multi-view SCC that isn't closed by an IO seam must contain an
+  // inductive MERGE. The precondition is unconditionally established — the
+  // canonicalization rounds that demolish a dead cycle's MERGE/io-seam
+  // structure are always followed by dead-cycle collection
+  // (`EliminateDeadFlows` under df.dfe, else `CollectDeadCycles`) — so a
+  // violation here means a source-less forwarding cycle survived to
+  // Stratify, and the induction/fixpoint machinery downstream would
+  // silently mis-schedule it.
   std::vector<bool> stratum_has_io_seam(num_strata, false);
   for (const auto &[select_index, insert_index] : io_seams) {
     if (state[select_index].stratum == state[insert_index].stratum) {
@@ -363,6 +368,25 @@ void QueryImpl::Stratify(const ErrorLog &log) {
       stratum_has_inductive_merge[state[i].stratum] = true;
     }
   }
+
+  for (auto s = 0u; s < num_strata; ++s) {
+    if (stratum_num_views[s] != 1u && !stratum_has_inductive_merge[s] &&
+        !stratum_has_io_seam[s]) {
+      fprintf(stderr,
+              "V-SCC-SEAM: stratum %u (%u views) has no inductive MERGE and "
+              "no io seam -- a dead forwarding cycle survived to Stratify\n",
+              s, stratum_num_views[s]);
+      abort();
+    }
+  }
+
+#ifndef NDEBUG
+
+  // Cross-check the SCC condensation against `IdentifyInductions` (see the
+  // pass doc comment for the divergence rules). Strata closed only through
+  // message publish -> receive seams are invisible to IdentifyInductions;
+  // the `stratum_has_io_seam` computed above skips agreement checks inside
+  // them.
 
   std::unordered_map<unsigned, unsigned> stratum_to_merge_set;
   std::unordered_map<unsigned, unsigned> merge_set_to_stratum;
@@ -411,13 +435,6 @@ void QueryImpl::Stratify(const ErrorLog &log) {
         !added) {
       assert(it->second == view_stratum);
     }
-  }
-
-  // All dataflow cycles pass through UNIONs, so every multi-view SCC that
-  // isn't closed by an IO seam contains an inductive MERGE.
-  for (auto s = 0u; s < num_strata; ++s) {
-    assert(stratum_num_views[s] == 1u || stratum_has_inductive_merge[s] ||
-           stratum_has_io_seam[s]);
   }
 
 #endif  // NDEBUG

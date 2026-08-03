@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace hyde {
@@ -1046,10 +1047,22 @@ class QueryImpl {
   void Canonicalize(const OptimizationContext &opt, const ErrorLog &,
                     const PassPolicy *policy = nullptr);
 
+  // The shared input-taint fixpoint of the dead-flow family: marks every
+  // live view (transitively) derivable from the input boundary (message
+  // RECEIVEs, stream SELECTs, constants). See DeadFlowElimination.cpp.
+  void TaintDerivedFromInput(std::unordered_set<void *> &derived_from_input);
+
   // Eliminate dead flows. This uses a taint-based approach and identifies a
   // VIEW as dead if it is not derived directly or indirectly from input
-  // messages.
+  // messages. The `df.dfe`-gated dead-flow OPTIMIZATION: a superset of
+  // `CollectDeadCycles` that also removes acyclic dead arms.
   bool EliminateDeadFlows(void);
+
+  // Collect source-less forwarding cycles (and their dependents) only: the
+  // REQUIRED graph-hygiene half of dead-flow elimination, run when `df.dfe`
+  // is gated off — never consults the pass policy, exactly like
+  // `RemoveUnusedViews` (FINDINGS.md F26).
+  bool CollectDeadCycles(void);
 
   // Apply common subexpression elimination (CSE) to the dataflow, canonicalize
   // the dataflow, and eliminate dead flows.

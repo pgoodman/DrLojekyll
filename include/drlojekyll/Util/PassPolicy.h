@@ -9,7 +9,8 @@
 //
 // Byte-identity contract: an EMPTY policy is exactly today's default
 // pipeline, and the legacy mode flags are EXACT aliases —
-//   -disable-dataflow-opt   == -opt-disable=df.cse,df.canon,df.dfe,df.sink
+//   -disable-dataflow-opt   == -opt-disable=df.cse,df.canon,df.dfe,
+//                                           df.sink,df.ident_join
 //                              (NOT df.* — df.simplify and df.demand run
 //                              OUTSIDE the optimize guard in all 4 modes)
 //   -disable-controlflow-opt == -opt-disable=cf.*
@@ -57,8 +58,8 @@ class PassPolicy {
 
   // The wholesale-skip predicate: does this policy leave at least one of the
   // level's BODY-RESIDENT optional passes enabled? (df body = cse, canon,
-  // dfe, sink; cf body = regionopt, procdedup. df.simplify / df.demand are
-  // NOT body-resident.)
+  // dfe, sink, ident_join; cf body = regionopt, procdedup. df.simplify /
+  // df.demand are NOT body-resident.)
   bool AnyBodyOptionalEnabled(PassLevel level) const;
 
   // The one call per gateable application. Filtered-out passes return false

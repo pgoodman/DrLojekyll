@@ -1,0 +1,19 @@
+; On-cycle differential @product (the F23 shape, pinned at the F26 round):
+; `t` is a cross-product of deletable data and feeds itself, so the product
+; sits inside its own recursive cycle. The `ViewSelfReachable` fence in
+; Program::Build's pre-pass rejects this cleanly in all 4 modes ("Cross-
+; products over differential (deletable) data inside recursive cycles are
+; not yet supported"). F23 recorded an opt-mode EXC_BAD_ACCESS (exit 139)
+; inside EliminateDeadFlows' JOIN taint loop on exactly this program; that
+; crash no longer reproduces (verified 2026-08-02) and this case fences the
+; clean-diagnostic outcome against regression.
+#message base(i32 X) @differential.
+#message oth(i32 Y) @differential.
+#local o(i32 Y).
+#local t(i32 X, i32 Y).
+#query out(free i32 X, free i32 Y).
+
+o(Y) : oth(Y).
+t(X, Y) @product : base(X), o(Y).
+t(X, Y) @product : t(X, _A), o(Y).
+out(X, Y) : t(X, Y).
