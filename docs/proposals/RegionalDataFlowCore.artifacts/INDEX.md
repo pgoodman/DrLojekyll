@@ -121,4 +121,25 @@ stage diffs as the brief references them.
   (interpreter-before-cutover, tagged-binary oracle, inadmissible-extraction
   semantics, extract-always-is-a-cost-policy, routed-result realization) + the
   recommended ranking. The seed the whole session grounds.
-</content>
+
+## Session 3 (2026-08-03) — region-model grounding + I0 landed
+
+- **regional-arch-pseudocode.md Part R** — the fleet-verified region-model
+  current-architecture pseudocode (R.1.1-R.1.7 + the drift ledger: 1 broken,
+  10 drifts; the kInstanceDeath gate, LowerDRRounds loop-carried state, and
+  InstanceStore two-buffer model corrections are load-bearing). Supersedes
+  region-model-pseudocode-seed.md Part 1.
+- **region-model-diffs.md** — DIFF-R1..R6 formalized (implementer-grade, on
+  Part R) + per-diff 4-lens panel records with code-refuted verdicts and
+  normative amendments. Supersedes the seed's Part 2. Panel survival rate
+  flagged un-triaged.
+- **region-model-desired-states.md** — the desired region-model IR output
+  states (.rel request-edge family, G1 -region-out blocks, DOT cluster_region
+  twins, D2.6-paused header stub) authored from fresh carrier dumps, with the
+  determinism-critique ledger applied. The Stage-C predict-then-verify targets.
+- **stage-i0-interpreter.md §7/§8** — the dated amendments (OG1-parsed /
+  OG2-tool / OG4-carve ratified; D1.3 .probes contract; the plain-compile CBF
+  adjudication) and the EXIT-GATE RECORD: I0 LANDED, 63/63, suite 190 green
+  with run_refinterp live, F29 promoted+fixed.
+- **owner-adjudication-record.md** (appended) — the adornment-fuzzing owner
+  direction (placement-enumeration harness + bracket parser obligations).

@@ -791,3 +791,911 @@ gap (finding F3) at emission grain.
        two-procedure split (§4b Step 9) under FrozenRegionalProgram, and
        Stage D must reconcile the unstratified/non-inductive keyed-instance
        reality (§4b Step 6 + the §1 fences) with "induction PER INSTANCE".
+
+---
+
+# Part R (2026-08-03, session 3) — the region-model current-architecture pseudocode, fleet-verified at tip
+
+This part SUPERSEDES `region-model-pseudocode-seed.md` Part 1. A verification
++ extraction fleet re-anchored the seed's four Part-1 sections against the
+branch tip and deep-dived the three thin areas the seed only glossed. Every
+pseudocode block below is the fleet's CORRECTED text — drifted and broken
+claims from the seed are fixed in place; the DRIFT LEDGER at the end records
+each finding as `claim -> reality -> fresh anchor`. Line anchors are at the
+`keyed-instances` tip as of 2026-08-03; re-verify before building, per the
+standing rule.
+
+Fleet tally: **anchors verified 36** (1.1: 15, 1.2: 12 exact incl. 5
+InstanceStore API points, 1.3: 6, 1.4: 6 — plus the 3 extraction areas'
+anchor tables, ~60 more file:line points, all confirmed-live), **drifted 8**
+(1.1: 4, 1.2: 5, 1.3: 1, 1.4: 1 — one 1.2 item is a confirm-unchanged, net
+7 real drifts), **broken 1** (1.2 kInstanceDeath gate). No section was found
+structurally wrong; the seed's shape held, the drift was in enclosing-function
+names, gate conditions, and data-model framing.
+
+## R.1.1 The demand transform (flat lowering) — `lib/DataFlow/Demand.cpp`
+
+`QueryImpl::ApplyDemandTransform` (Demand.cpp:385), run at the post-
+`ConnectInsertsToSelects` slot in `Build.cpp` (:2576 then :2593). MODE-GATED:
+returns a no-op when `demand_mode==false` (:393-395). The forcer-proc
+injection that ultimately consumes this pass's output registry lives in a
+DIFFERENT file/pass — `lib/ControlFlow/Build/Build.cpp` — not here (see tail,
+and R.1.5).
+
+```
+ApplyDemandTransform(module, log, demand_mode, demand_retract):        # :385
+  if not demand_mode: return true                     # :393, orthogonal to 4 golden modes
+  if module.DemandMessagesFabricated(): reject("re-entry")             # G2, :399
+  bound_queries := [ rel for rel in relations                          # :417-429
+                     if rel.decl.IsQuery() and rel.decl.Arity()>0
+                     and any(param.Binding()==kBound for param in decl.Parameters()) ]
+  if bound_queries empty: return true                                  # :431-433
+  if |bound_queries| > 1: reject("multiple bound queries")             # C14 fence, :435-439
+  q_rel, q_decl := bound_queries[0], q_rel.declaration
+  q_insert := q_rel.inserts[0]           # exactly one materialization required, :446-451
+
+  # ---- Loop 1 (Phase 1), :477-795: per adornment, LOCATE + CHECK, NO mint ----
+  seen_variants := {}                    # dedup, mirrors Build.cpp's own UniqueRedeclarations idiom
+  plan := []
+  known_consumers := {}                  # pass-level union, populated across every adornment
+  for redecl in q_decl.UniqueRedeclarations():                         # :477
+    binding := redecl.BindingPattern()
+    if binding in seen_variants: continue                              # :479
+    seen_variants.add(binding)
+    bound_indices := [param.Index() for param in redecl.Parameters() if Binding()==kBound]
+    if bound_indices empty:                                            # :489-499
+      reject("a demanded query name with an all-free sibling adornment")
+      # (fires on THIS redecl being the all-free one, not a conjunction test)
+
+    # Step 2 (:507-600): trace each bound column of q_insert back through
+    # forwarding TUPLEs / the relation's own post-Connect MERGE to a single
+    # full-width reader TUPLE `q_read` over p's MERGE `p_merge`; record
+    # `q_consumer` (q_read's sole consumer) and `p_bound` (bound positions in p).
+    # All bound columns must land on the SAME (p_merge, q_read, q_consumer);
+    # multi-clause queries / mismatched targets -> reject.
+
+    # Step 3 (:607-783): per member (rule body) of p_merge.merged_views:
+    #   - walk the body tree; reject on NEGATE/AGG (demand sink, :648-651),
+    #     a second read of p (self-join, :656-660), or any un-witnessed view.
+    #   - for each bound position, trace its source and classify ONE of three
+    #     GuardSite kinds (must agree across all bound positions of one member):
+    #       kReadAtTuple  (:684-701): member reads p_merge directly (no join),
+    #                      value already sits at its own adornment position.
+    #       kBaseAtom     (:702-709): a base rule — the value's source is a
+    #                      TUPLE reading a message-receive SELECT (a leaf atom).
+    #       kPushDown     (:721-755): a recursive rule — the value flows out of
+    #                      a JOIN whose input traces to a read of p_merge (the
+    #                      demanding subgoal); JOIN-18 push-down site.
+    #     A value NOT at its own adornment position anywhere -> "sideways
+    #     (non-From-preserving)" reject (:693, :748) — the left-linear /
+    #     second-adornment case.
+    known_consumers.add(q_consumer); known_consumers.add(site.consumer for site in sites)
+    plan.append(PerAdornment{redecl, bound_indices, p_bound, q_read, q_consumer,
+                             p_merge, sites, pushdown_reads})            # :791-794
+
+  # Step 4 (ONCE, between loops, on the PRE-MINT graph), :797-826:
+  for reader in CollectColUsers(p_merge):        # every consumer of p
+    if reader is not a full-width TUPLE over p_merge: reject(...)
+    for ruser in CollectColUsers(reader):
+      if ruser not in known_consumers: reject("untraced consumer of the demanded relation")
+
+  # ---- Loop 2 (Phase 2), :848-1193: per adornment, MINT (Steps 5-10) ----
+  pending := []               # deferred (consumer, read) -> guard/restore, for R-DUP
+  for a in plan:
+    # Step 5 (:858-914): fabricate demand__<q>_<adorn> message + "_local" decl
+    #   under the reserved lexable `demand__` prefix (G3 collision-checked
+    #   BEFORE fabrication); FabricateDemandMessage/FabricateDemandLocal live
+    #   in lib/Parse/Demand.cpp (:163-217 / :219-254) — real ParsedMessageImpl/
+    #   ParsedLocalImpl minted via a synthetic display-buffer lex (A7/G1).
+    d_msg, d_local := module.FabricateDemandMessage(...), module.FabricateDemandLocal(...)
+
+    # Step 6 (:916-1041): mint the IO+receive SELECT for d_msg (the root seed),
+    # the demand relation's MERGE (d_merge, ALWAYS a MERGE — even one-member,
+    # matching Connect's real shape), a root member (TUPLE chain over the
+    # receive) and one propagation member per distinct demanding-subgoal read
+    # (a TUPLE projecting the adornment's columns off that read), and a shared
+    # derived-d_p reader TUPLE `d_reader` over d_merge (recipe N2/N4).
+
+    # Step 7 (:1052-1084): for each body GuardSite in a.sites:
+    #   mint guard JOIN  d_reader ⋈ site.read  pivoting site.pivot_pos     # MintGuardJoin, :162-208
+    #   stamp a GuardAnnotation{kind, side=kDReader, role=kBody, ...}
+    #   if site.kind != kReadAtTuple: mint a restoring TUPLE (re-establish
+    #     site.read's original column order)                              # :212-226
+    #   pending.append(PendingRewire{site.consumer, site.read, guard, restore, kind})
+
+    # Step 8 (:1086-1127): the QUERY-PROJECTION GUARD — a SEPARATE, once-per-
+    #   adornment guard (NOT a body GuardSite): mint a fresh `raw_seed` TUPLE
+    #   over the same receive, then mint guard JOIN  q_read ⋈ raw_seed  pivoting
+    #   p_bound (JOIN-7/TABLE-23, the "raw seed" site — distinct from d_reader).
+    #   stamp GuardAnnotation{kReadAtTuple, side=kRawSeed, role=kQueryProjection}
+    #   pending.append(PendingRewire{q_consumer, q_read, guard, restore=None, kReadAtTuple})
+
+    # Step 8b (:1129-1144): register RecognizedSubgraph{forcing_index, p_merge,
+    #   p_bound, q_insert, guard_indices} — the keyed-instance census's authority.
+
+    # Step 9 (:1146-1182), ALWAYS-ON TRIPWIRE: assert d_merge has >=1 member
+    # whose TUPLE chain traces to the fabricated receive; else fprintf+abort.
+
+    # Step 10 (:1184-1191): demand_forcings.append(
+    #   QueryDemandForcing{query=a.redecl, message=d_msg, bound_params=bound_indices})
+    #   — REGISTERS ONLY. The forcer proc itself is NOT built here (see tail).
+
+  # ---- R-DUP grouped rewire, ONCE, AFTER Loop 2 (not per-adornment!), :1195-1264 ----
+  group pending by (consumer, read):
+    if group.size()==1:                          # SINGLETON: today's exact direct rewire
+      RewireConsumer(consumer, read, guard-or-restore-output-cols, replacement=guard-or-restore)
+    else:                                         # MULTI (R-DUP): >=2 adornments share a site
+      members := [ (p.restore or freshly-minted restore over p.guard) for p in group ]
+      um := MERGE(members)                        # union of restored read-schema outputs
+      RewireConsumer(consumer, read, um's cols, replacement=um)
+
+  # Step 11 (:1266-1332), ALWAYS-ON census: guard_annotations count reconciles
+  # with live-stamped-view count + folded count (OWN-3); recognized_subgraphs
+  # count == demand_forcings count; every forcing with >=1 guard has >=1 kBody
+  # guard (g8 belt — ResolveLiveRecognition/Rel.cpp needs a kBody stamp).
+
+  module.MarkDemandFabricated()                   # :1334, closes the single-shot window
+  return true
+```
+
+Key property (unchanged): the demand relation is JUST ANOTHER RELATION; the
+region call is an IMPLICIT guard-JOIN; the key stays a COLUMN. No explicit
+call/region node.
+
+TAIL, in a DIFFERENT file/pass (not part of this DataFlow transform): the
+forcer proc that actually SEEDS the demand relation at runtime is built later,
+during ControlFlow `Program::Build`, from the `demand_forcings` registry this
+pass populated — `BuildQueryInjectorFromRegistry` (lib/ControlFlow/Build/
+Build.cpp:412-494; one input var per bound param, a VECTORAPPEND onto the
+message's payload vector, a CALL into the fabricated message's handler
+procedure), dispatched per query by `BuildQueryInjectorProcedure` (:506-519,
+matched on `(query, BindingPattern)` — the D3.a.3 multi-adornment belt that
+keeps two adornments of one name from cross-wiring). Full trace: R.1.5.
+
+## R.1.2 The keyed-instance (nested) lowering — `lib/Rel/Rel.cpp`
+
+`-demand-instance` (implies `-demand`; a lowering selector, not a pass). Gated
+on `context.demand_instance_enabled`. Flag-off: zero instance ops minted
+(the stored `RecognizedSubgraph` handles are never dereferenced).
+
+```
+# lib/ControlFlow/Build/Stratum.cpp:2117
+BuildStratumPhases(impl, context, query):
+  ...
+  dr_flow := BuildDRInventory(impl, context, query, recursive_sccs)  # :2149
+  ...
+
+# lib/Rel/Rel.cpp:1803 — NOT BuildStratumPhases itself; BuildStratumPhases's
+# callee. Builds the whole DR-IR op inventory (crossovers, product arms,
+# group updates, THEN keyed instances, THEN branches/joins).
+BuildDRInventory(impl, context, query, ...):
+  ... crossovers, product arms, group updates (aggregates/KV) ...
+  if context.demand_instance_enabled:                        # :2065
+    BuildSubgraphInstanceOps(flow, impl, context, query, scc_map)   # :2066
+  ... branch/join inventory ...
+
+# lib/Rel/Rel.cpp:1036 (anchor UNCHANGED — E-142 deliberately pins it)
+BuildSubgraphInstanceOps(flow, impl, context, query, scc_map):
+  # §2.1 ABA-SAFE re-resolve: NEVER deref a stored RecognizedSubgraph
+  # QueryView (they dangle post-Optimize). Re-derives demand/input/pub
+  # tables from LIVE GuardAnnotationIndex-stamped views + parse identity.
+  lr := ResolveLiveRecognition(impl, query)     # :934-1023
+
+  for rs in query.RecognizedSubgraphs():        # :1052, one per DemandForcing
+    ri := lr.by_forcing[rs.forcing_index]
+    if ri missing or !ri.ok: continue            # fully-dead forcing, ABA-safe skip
+    pub, demand, input := ri.pub_table, ri.demand_table, ri.input_table
+
+    # HP-4 recognizer-refusal belt: input MUST be a plain table-bearing view
+    # (never MAP/NEGATE/AGG/KVIndex) — a belt, not the induction-owned fence.
+    assert not (ri.input_view.{IsMap,IsNegate,IsAggregate,IsKVIndex}())  # :1066-1070
+    # NOTE: the induction-owned / cyclic-demand fences are NOT here. They are
+    # an EARLIER, separate pre-pass in Program::Build (Build.cpp:1451-1499),
+    # gated on demand_instance, walking LIVE guard JOINs (grouped by forcing,
+    # not via RecognizedSubgraphs()) BEFORE ProgramImpl/the DR-IR even exist:
+    #   cyclic_demand      := ViewSelfReachable(guard.joined[0])   -> reject
+    #   recursive_content  := guard.joined[1].InductionGroupId() or
+    #                         ViewSelfReachable(joined[1]) or
+    #                         any predecessor.InductionGroupId()   -> reject
+    # (a THIRD historical fence, differential-summarized-input, was LIFTED at
+    # D3.a.2 — R-DIFF handles it via input_diff below, no reject remains.)
+
+    diff       := TableIsDifferential(pub)         # P-STORE
+    input_diff := input and TableIsDifferential(input)   # separate axis (D3.a.2 e3)
+    sid := flow.instances.size()
+    flow.instances.push_back(DRInstance{demanded_view, pub_view, diff, ...})
+
+    # ---- kSubgraphInstantiate: birth/rebuild + band-(b) publish ----
+    inst := DROp(kSubgraphInstantiate, ctx=kSeed, table_op_table=pub, sign=+1,
+                 demand_table=demand, input_table=input,
+                 instance_store_id=sid, forcing_index=rs.forcing_index)
+    inst.effects := InstantiateEffects(diff, input_diff, pub, demand, input)  # :782-876
+    #   band-(a1) birth:        kVecDrain(demand, NetAddition)          # :786-790
+    #   band-(a2) edge-add:     kVecDrain(input,  NetAddition)          # :792-801
+    #   band-(a2') edge-remove: kVecDrain(input,  NetRemoval)           # :803-816
+    #     present ONLY if input_diff — TWO DRAINS, NO RECYCLE (R-A2-TRIGGER)
+    #   [shared] kInstanceDemand read(demand); ONE Present-filtered leaf
+    #     kFlagRead(input, pred=kPresent) — the rescan mold ALL THREE bands
+    #     above funnel into (never 3 separate rescans)                  # :823-828
+    #   band-(b) emit_touched (ONE-NET-PAIR):
+    #     kInstanceRebuild(pub,+1); kStateEmit(pub); kStateOld(pub)      # :830-844
+    #     if diff:   for sign in {+1,-1}: kCounter + kInIReadFrozen +
+    #                kVecAppend(add/delete queue)                        # :846-865
+    #     else:      ONE kCounter(+1); ZERO appends (R-MONO)             # :866-874
+    # rederive body: ONE arm, kAccess(input, pred=kPresent,
+    #   lowering=kSectionWalk, bound=instance-key cols) -> kFold(+1) into pub
+    flow.ops.push_back(inst)                                             # :1159
+
+    # ---- kInstanceDeath (R-DIFF, D3.a.1) ----
+    # Gate is the DEMAND table's differentiality (== demand_retract, since the
+    # fabricated demand message goes @differential iff -demand-retract is on)
+    # — NOT "input differential AND demand_retract"; input_diff is unrelated.
+    if demand and TableIsDifferential(demand):                           # :1163
+      death := DROp(kInstanceDeath, ctx=kSeed, table_op_table=pub, sign=-1,
+                    demand_table=demand, instance_store_id=sid,
+                    forcing_index=rs.forcing_index)
+      death.effects := DeathEffects(pub, demand)   # :878-900, zero-counter signature:
+        # kVecDrain(demand, NetRemoval); kInstanceDemand read(demand);
+        # kStateOld(pub); kInstanceRebuild(pub,-1) — EXACTLY ZERO of
+        # {kStateEmit, kCounter, kInIReadFrozen, kVecAppend} (§18(B) teeth)
+      flow.ops.push_back(death)
+
+    # ---- kInstanceSeal (always minted; self-lowered) ----
+    flow.ops.push_back(DROp(kInstanceSeal, table_op_table=pub,
+                            instance_store_id=sid, effects=[SealEffect(pub)]))
+
+    flow.instance_stratum[sid] := 1 + max(ready_after(demand), ready_after(input))
+```
+
+Runtime state: `InstanceStore<Key,RowT>`
+(`include/drlojekyll/Runtime/InstanceStore.h`) — the keyed-instances TRANSPOSE
+of `StateCellStore` (StateCell.h): a two-WORD cell per group there becomes a
+two-BUFFER (double-buffered nested `Table<RowT>`) relation per dense instance
+id (iid) here — never conflate the two shapes (the seed's "two-word cells"
+framing borrowed the wrong sibling class):
+
+```
+InstanceStore<Key,RowT>:
+  FindInstance(key) -> iid | kNoInstance          # :103, memo lookup, no mint
+  FindOrAddInstance(key) -> iid                   # :109, mints empty current+frozen
+  TouchCurrent(iid) -> Table&                     # :134, PUBLIC band-(a) entry:
+                                                   #   Touch(iid) [private, :304] + return current buffer for the TryAdd rescan
+  Current(iid) -> Table&                          # :142, this epoch's rebuilt content
+  Frozen(iid) -> const Table&                     # :143, last epoch's sealed snapshot
+  WorkingOccupied(iid) -> bool                    # :167, current[iid].NumRows()>0
+  SealedOccupied(iid) -> bool                     # :173, batch-start occupancy bit
+  Touched() -> sorted-unique Vec<iid>              # :148, band-(b) iteration order
+  TouchedFlag(iid) -> bool                        # :153
+  KeyAt(iid) -> const Key&                        # :157
+  Seal()                                          # :180, per touched iid: pointer-swap
+                                                   #   current<->frozen, Reset new current,
+                                                   #   update sealed_occupied; R-MONO-only
+                                                   #   debug belt asserts frozen⊆current
+  RecycleCurrent(iid)                             # :222, Touch(iid) + current.Reset() —
+                                                   #   death arm + same-epoch rebuild; idempotent
+  DebugValidate()                                 # :228, seal/occupancy/non-aliasing asserts
+  # private: dense append-only iid space (NumInstances monotone-forever);
+  # open-addressing slots[] keyed by hash, Rehash() at 8/9 load — :244-300
+```
+
+So the InstanceStore ALREADY IS the memo table of activations (rows = keys);
+the recognition is subgraph-shaped (SIP-reachable), not SCC-shaped.
+
+## R.1.3 The recursion / fixpoint lowering — `lib/ControlFlow/Build/` + `Stratum.cpp` + `lib/Rel/Rel.cpp`
+
+```
+# --- Stage A: dataflow-IR stratification (runs once, at Query::Build tail) ---
+Stratify(log):                                          # QueryImpl::Stratify, Stratify.cpp:124
+  sources(v) := predecessors(v) u {negated_view(v)}
+              u {INSERT i : (i,v) is an INSERT->SELECT decl seam}   # :138-172
+  run iterative Tarjan over sources; SCC pop order = stratum id     # :174-232, num_strata :235
+  view->stratum := popped SCC id                                    # :237-240
+  model->stratum := max stratum over the model's member views       # :242-267
+  reject unstratified negation (negate->stratum == negated_view->stratum)   # :272-297
+  reject unstratified aggregation/KV (agg->stratum == input_view->stratum) # :299-344
+  V-SCC-SEAM (always-on, no NDEBUG guard; F26):                     # :346-381
+    every multi-view stratum must have an inductive MERGE (AsMerge()
+    && induction_info) OR be closed by an IO seam (message pub/recv);
+    else fprintf+abort("source-less forwarding cycle survived to Stratify")
+    # precondition: canonicalization always followed by dead-cycle
+    # collection (EliminateDeadFlows under df.dfe, else CollectDeadCycles)
+  #ifndef NDEBUG: cross-check SCC condensation vs IdentifyInductions   # :383-440
+
+# --- Stage B: the EAGER-INSERTION descent's own induction (separate, earlier) ---
+# For a view that actually gets a ProgramInductionRegion built (narrower than
+# "carries an InductionGroupId" -- Stratum.cpp:119-125), the descent
+# (Join.cpp/Product.cpp/Induction.cpp, still hand-coded) builds ITS OWN
+# INDUCTION, keyed per-view in context.view_to_induction:
+GetOrInitInduction(view, parent):                        # Induction.cpp:625
+  if context.view_to_induction[view] exists: return it
+  induction := impl->induction_regions.Create(parent)     # :659
+  register a ContinueInductionWorkItem                    # :674
+  view_to_swap_vec[view] := a fresh loop-carried swap VECTOR  # Induction.cpp/Join.cpp/Product.cpp
+  # BuildFixpointLoop (Induction.cpp:138) feeds NEW rows in via
+  # AppendToInductionInputVectors, iterates to a monotone fixpoint,
+  # and fills the induction's NET-ADDITIONS output vector
+  # (AppendToInductionOutputVectors) for non-inductive successors.
+  # NEVER does OVERDELETE/REDERIVE/INSERT -- monotone-only.
+  # (This is the mechanism the seed's 1.3 MIS-attributed to LowerDRRounds:
+  #  view_to_swap_vec + inductive-MERGE-as-loop-header is THIS, not the
+  #  stratum-phase round shells below.)
+
+# --- Stage C: the DR-IR strata authority (per-batch entry-procedure build) ---
+BuildStratumPhases(query):                                # Rel.cpp, called from Procedure.cpp
+  dr_flow := BuildDRInventory(...)                        # branch/join/crossover/product/ingest inventory
+  DeriveDRStrata(dr_flow, ...):                            # Rel.cpp:3093 -- MONOTONE INTEGER LIFT
+    owner_stratum(table) := max spec stratum over table's views
+    init: branch/join/crossover/product/group_update strata from view->stratum
+    drain_stratum[table] := owner_stratum(table)
+      for every differential table NOT induction-owned      # Rel.cpp:3119: TableIsDifferential
+                                                             #   && !TableIsInductionOwnedDR
+    fixpoint: lift(slot, value) { if slot < value: slot = value; changed = true }  # :3192-3197
+      repeat branch/join lifts (ready_after/ready_across rules) until !changed
+  ValidateDRInventory / ValidateDROps / LinearizeAndValidateDRFlow(dr_flow):
+    Kahn-linearize the op dependence graph, band-key tie-break         # Rel.cpp:5023+
+    V-LINEAR (pinned order is a topo sort) / V-LOOP (loop-carried RAW
+    has a matching WAR, drain-before-refill) / V-READY (no read of a
+    strictly-higher stratum) / V-BAND-HAZARD (intra-scope edges never
+    run backward against band-key order)
+
+  for stratum in 0..num_strata ascending:                  # Stratum.cpp:2446-2490
+    LowerDRFlow(...)          # ACYCLIC band: seeds, join section walks,
+                               #   crossovers, product arms, single-pass
+                               #   claim drains + immediate frontier filters
+    LowerDRRounds(dr_flow, stratum):                        # Stratum.cpp:1799
+      for each (OVERDELETE, INSERT) round-shell pair whose
+          drain_stratum == this stratum:                    # :1817-1827
+        scc_tables := RoundTables(dr_flow, round)            # per-table Delta frontiers, :1675-1681
+        del_loop := LowerRoundBody(round=OVERDELETE):         # :1691-1792, a FRESH INDUCTION
+          loop->vectors := {TableDeltaVector(t, ClaimedDeleteFrontier) : t in scc_tables}
+                                                              # loop-carried state = per-TABLE
+                                                              #   Delta vectors, NOT view_to_swap_vec
+          body (ACYCLIC, straight-line SERIES):
+            VECTORCLEAR each round Delta                     # :1712-1722
+            EmitClaimDrain(table, is_del) per scc_table        # split ClaimGate:
+                                                              #   kDelGateCnrNonPositive (C_nr<=0)
+            EmitJoinFire per kFixpointFire op of this sign/group
+            EmitSeedLoop (CHAIN_FOLD) per kChainFold op
+            EmitRetireFrontier per scc_table                  # :1786-1790
+        EmitRederive per scc_table into del_loop's OUTPUT region   # :1841-1843 (REDERIVE)
+        add_loop := LowerRoundBody(round=INSERT):              # mirror; ClaimGate kAddGateTotalPositive
+        EmitFrontierFilter (del then add) into add_loop's OUTPUT  # :1861-1870, DEFERRED (E-17/V-DEFER):
+                                                              #   both signed net frontiers built only
+                                                              #   AFTER INSERT quiesces (spec S5.0)
+    # DIVISION OF LABOR: a recursive SCC WITH a ProgramInductionRegion is
+    # fed/drained by Stage B's induction and left ALONE here; a recursive SCC
+    # WITHOUT one (the doc's example: JOIN-terminal linear recursion of
+    # transitive closure) gets its OVERDELETE/REDERIVE/INSERT from THIS
+    # machinery (drain_stratum populated only for non-induction-owned tables).
+
+  LowerCommitSweeps(dr_flow, seq):                           # Stratum.cpp:2067
+    # called ONCE, from Procedure.cpp:589, AFTER the whole ascending
+    # stratum loop -- the epoch-boundary SOLE publish point (full trace R.1.6)
+    for each kCommitSweep DR op:
+      emit COMMITSWEEP(table)
+      if differential + has a publish target: attach the @differential
+         transmit message (net presence changes)                # :2094-2099
+      if this table backs an R3 StateCell: attach seal_statecell_id
+         (sealed := working, AFTER emit_touched read working as "new")  # :2100-2105
+```
+
+## R.1.4 The Stage-A identity/contract layer (LANDED; verified against tip)
+
+```
+Query::Build tail (Build.cpp:2637-2649, after impl->Stratify(log) at :2638):
+  impl->row_contracts := InferConservativeRowContracts(impl.get())  # RowContract.cpp:365
+    # PRECONDITION (RowContract.h:57-59): post-Stratify (view->stratum set by
+    # every live view, Stratify.cpp:238), post-FinalizeColumnIDs, post-
+    # TrackConstAfterInit. A PURE, RECOMPUTABLE fn of the FINAL graph — never
+    # materialized during Optimize (RowContract.h:14-18, the F1 lesson: no
+    # satellite annotation for CSE/canonicalization to migrate).
+
+    views_by_depth := stable_sort(live views, by view->depth)  # :368-382
+      # READ-ONLY read of the frozen `depth` FinalizeDepths already set; must
+      # NOT call ForEachViewInDepthOrder (that RESETS depth as a side effect
+      # and would silently re-order downstream .rel/.ir/codegen).
+
+    # Phase 0 (:384-390) — per-stratum view histogram (deterministic):
+    stratum_size[s] := |{ v in views_by_depth : v.stratum == s }|
+
+    # Phase 1 (:392-400) — cyclic rule: every view on a MULTI-VIEW stratum
+    # (stratum_size>1, i.e. a recursive SCC) gets the conservative key
+    # directly from SCC structure, dissolving the would-be contract fixpoint:
+    for v in views_by_depth:
+      if v.stratum.has_value() and stratum_size[v.stratum] > 1:
+        out[v] = { visible_fields = AllFields(v), member_key = AllFields(v) }
+
+    # Phase 2 (:402-408) — acyclic per-operator transfer, ONE pass in
+    # topological (frozen-depth) order over the remaining single-view strata
+    # (cross-SCC edges go low->high depth, so depth order is topological):
+    for v in views_by_depth:
+      if v not in out:
+        out[v] = TransferContract(v, out)          # :158-248, flat-key,
+                                                     # value-id intersection
+          # TUPLE[kDistinct]         -> key = AllFields(v)          (:182-183)
+          # TUPLE[kMember]/CMP/
+          #   NEGATE/INSERT          -> key = passthrough(sole producer)
+          #                                    (:184-198)
+          # JOIN                    -> key = union of per-input mapped keys
+          #                                    (:200-215)
+          # AGGREGATE               -> key = group_by++config OUTPUT PREFIX,
+          #                             positional not id-matched (:217-230)
+          # SELECT/MERGE/MAP/
+          #   KVINDEX/other         -> key = AllFields(v)   (sound fallback,
+          #                                    :232-238)
+          # empty mapped key        -> falls back to AllFields(v); a member
+          #                            key is NEVER empty (:242-244)
+
+  ValidateRowContracts(impl.get(), log)     # RowContract.cpp:413-419, H-A7
+    # All four run UNCONDITIONALLY (no feature gate); "belt-only" below is an
+    # epistemic distinction (tautological on a correct pipeline), not a
+    # gating difference:
+    CheckContractCensus(impl)      # :254-272  ALWAYS-ON:
+                                    #   |row_contracts| == |live views|,
+                                    #   exactly one per live view
+    CheckMemberKeyRealized(impl)   # :276-296  ALWAYS-ON: every live view's
+                                    #   key non-empty (when it has columns)
+                                    #   and every FieldId resolves live
+    CheckNoCollapse(impl)          # :318-336  BELT-ONLY (E-A2, :298-317):
+                                    #   the real "unproven collapse" reject
+                                    #   is UNSOUND at Stage A's conservative-
+                                    #   AllFields-producer-key model (every
+                                    #   dropped column looks like a dropped
+                                    #   key column even for a benign
+                                    #   projection) — defers to Stage B
+                                    #   Minimize; only the sound residual
+                                    #   (mapped key nonempty, already implied
+                                    #   by V-MEMBERKEY-REALIZED) is checked
+    CheckAggInputKey(impl)         # :340-361  ALWAYS-ON: every aggregate's
+                                    #   summarized-input view has a realized
+                                    #   member key
+
+ProjectionRole (QueryTupleImpl::ProjectionRole {kMember, kDistinct},
+  Query.h:718-731, field at :765; set once at mint, never mutated) folded
+  into QueryTupleImpl::Equals ONLY (Tuple.cpp:308-310 — a role mismatch is
+  an unconditional CSE refusal branch, so a member-preserving projection can
+  never be folded into a set-collapsing one and vice versa). Deliberately
+  NOT folded into QueryTupleImpl::Hash (Tuple.cpp:25-58, NOTE(H-A2) at
+  :35-49): Hash is not on the CSE bucketing path (CSE buckets by
+  cse_color::Refine, decides membership via Equals — Optimize.cpp), and
+  folding role into Hash would perturb order-sensitive tie-breaks that DO
+  read Hash (Merge.cpp canonicalization sort, ControlFlow Program.h .Hash()
+  ordering), flipping goldens for no correctness benefit.
+
+-contract-out dump (Format.cpp:1516-1727; wired at
+  bin/drlojekyll/Main.cpp:136-142, drained alongside -df-out): flat-key
+  contracts ONLY (member_key; no support value, no candidate-key antichain —
+  Stage-A scope, RowContract.h:20-23), one block per live view in
+  KIND-TAGGED DET_SEQ order — the SAME per-kind DefList traversal QueryDF
+  (-df-out) uses, NOT a raw column/view id sort (Format.h:26-27;
+  Format.cpp:1535-1567, which also re-runs a det_seq-bijection V-CONTRACT-
+  CENSUS over the dump traversal itself). The number after the kind tag
+  (e.g. "^tuple.7") IS v.DeterministicOrder()==det_seq (Query.cpp:437-438),
+  NOT QueryColumnImpl::id/FieldId — those are the separate id space inside
+  the rendered key= tuples:
+    "<kind> ^<kind>.<det_seq> (typed visible fields)"
+    "  role=<member|distinct|n/a> key=(member_key, by column name)"
+    "  input_key=(...)"                       # aggregate views only, H-A5
+    ...
+    "census: views=<V> contracts=<V> role{distinct=<d> member=<m> na=<n>}"
+    "        agg_input_key_ok=<a> collapse_error=0"
+  Pure byte-compare, no order-free field, OPT-MODE-only pinning.
+
+-dot-out DOT twin (Format.cpp:43-141; wired at Main.cpp:123-126):
+  one "subgraph cluster_stratum_<n>" per MULTI-VIEW stratum (:56-74;
+  singleton strata stay top-level; advisory, never golden-pinned — the
+  Stage-B regional dump's DOT twin will cluster by RegionId the same way);
+  each view's node label additionally carries "ROLE <member|distinct>"
+  (TUPLEs only) and "KEY (...)" resolved from row_contracts by column
+  name/variable, falling back to "f<id>" when unresolved (:100-141).
+```
+
+## R.1.5 The forcer / injector path (bound `#query` demand-seed injection at runtime)
+
+Registry (DataFlow) -> ControlFlow injector proc -> generated C++ forcing
+surface -> one synchronous epoch -> keyed-instance tail. THE KEY PROPERTY the
+seed's one-liner ("inject the demand SEED via a forcer proc") left implicit:
+a forced query call runs a FULL EPOCH, SYNCHRONOUSLY, INLINE, before the query
+reads anything — not a deferred/async injection; there is no "pending demand"
+state visible to the driver between inject and read.
+
+```
+## A. Registry population — lib/DataFlow/Demand.cpp, Loop 2 / Phase 2
+    # struct QueryDemandForcing { ParsedQuery query; ParsedMessage message;
+    #   std::vector<unsigned> bound_params; }  — Query.h:967-979 (PUBLIC record)
+    # impl->demand_forcings : std::vector<QueryDemandForcing> — lib/DataFlow/Query.h:1199
+    ApplyDemandTransform(...):                          # Demand.cpp:385
+      ... Phase 1 locate+check ...
+      for pa in plan:                                    # Phase 2, PER ADORNMENT
+        d_msg  = FabricateDemandMessage(name, bound_types, demand_retract)  # :896
+        forcing_index = |demand_forcings|                # :1048, BEFORE guard mint
+        ... mint seed / guards / RecognizedSubgraph / TRIPWIRE ...
+        demand_forcings.emplace_back(                     # :1190-1191, STEP 10 registry write
+          QueryDemandForcing{ParsedQuery::From(pa.redecl), d_msg, bound_indices})
+    # READ SEAM (Demand.cpp:295-317):
+    #   Query::DemandForcings() -> const ref (no copy)
+    #   Query::IsDemandMessage(m) -> any(f.message==m) — sole codegen suppression predicate
+
+## B. ControlFlow: forcer proc construction — lib/ControlFlow/Build/Build.cpp
+    # Context wiring (Build.cpp:1508-1514), at Program::Build entry:
+    context.demand_forcings = &query.DemandForcings()    # empty unless -demand
+    context.demand_instance_enabled = demand_instance
+    # messsage_handler[ParsedMessage]->PROC* populated EARLIER in BuildIOProcedure
+    # (Procedure.cpp:690-762), BEFORE BuildQueryEntryPoint runs — injector target
+    # always already exists. entry_proc is the SAME PROC* for every message.
+
+    BuildQueryInjectorFromRegistry(impl, context, query, entry, is_retract):  # :412
+      assert entry.message.IsReceived()
+      assert !is_retract || entry.message.IsDifferential()
+      if !messsage_handler.count(entry.message): fprintf+abort   # ADV-8 handler-miss fence
+      proc = Create(kQueryMessageInjector)
+      proc.input_vars = [one kParameter VAR per entry.bound_params]
+      # add_vec ALWAYS created before del_vec (byte-identical id stream):
+      if is_retract: add_vec=kEmpty; del_vec=kParameter
+      else:          add_vec=kParameter; del_vec=kEmpty-if-differential
+      payload_vec = is_retract ? del_vec : add_vec
+      body = SERIES[ VECTORAPPEND(payload_vec, proc.input_vars),
+                     CALL(messsage_handler[entry.message]),   # arg_vecs: add_vec[,del_vec]
+                     RETURN(true) ]
+
+    BuildQueryInjectorProcedure(impl, context, query, is_retract):            # :506
+      for entry in *context.demand_forcings:
+        if entry.query == query                            # name+arity (operator==)
+           AND Decl(entry.query).BindingPattern() == Decl(query).BindingPattern()  # D3.a.3 belt:
+                                                            #   LOAD-BEARING — name+arity alone
+                                                            #   would cross-wire two adornments
+           AND (!is_retract || entry.message.IsDifferential()):
+          return BuildQueryInjectorFromRegistry(...)
+      if !is_retract and (pred = query.ForcingMessage()):   # legacy @first non-demand path
+        return BuildQueryForceProcedureImpl(...)
+      return nullopt
+
+    BuildQueryEntryPointImpl(...):                          # :532
+      forcer_proc  = BuildQueryInjectorProcedure(is_retract=false)
+      retract_proc = BuildQueryInjectorProcedure(is_retract=true)  # AFTER forcer (id stream)
+      impl->queries.push(ProgramQuery{query, table, scanned_index,
+                                      forcer_proc, retract_proc})
+      # Driver (:622-637): one BuildQueryEntryPointImpl per UniqueRedeclaration
+      #   -> N adornments => N ProgramQuery entries, each its OWN forcer/retract.
+
+## C. Generated C++ — lib/CodeGen/CPlusPlus/Database.cpp EmitQueryFriends (:1610)
+    # forced form deduces Log/Functors: friend q_<pattern>(db, log, functors, bound...)
+    # existence body (:1706-1723): assert(initialized_); emit_forcing_call(params) <<< INJECT
+    #   then Find()/Present(); cursor body (:1799-1819): inject BEFORE index.First(key).
+    # emit_forcing_call = inject_<id>_detail(state.., args) — DIRECT SYNCHRONOUS call.
+    # demand-message public entry SUPPRESSED (:1500-1541, IsDemandMessage) — only the
+    #   _detail twin exists, reachable ONLY via the injector's CALL.
+
+## D. RUNTIME PATH — one synchronous call chain, one epoch
+    driver: q_<pattern>(db, log, functors, K)
+      inject_<id>_detail(state.., K)                       # kQueryMessageInjector body
+        VECTORAPPEND(add_vec, [K]); <dmsg>_<arity>_detail(state.., add_vec, [del_vec])
+          if differential: NETBATCH(add_vec, del_vec)      # dedup+annihilate
+          CALL(entry_proc):                                # the §4b Step-2 whole-epoch TREE
+            ExtendEagerProcedure (ingest folds + eager web) — the demand receive is
+              JUST ANOTHER RECEIVE (MakeStageOneIngestFolds / MakeMonotoneIngestFold)
+            BuildStratumPhases: per stratum LowerDRFlow/LowerDRRounds — the demand
+              relation's guard JOINs fire in ORDINARY strata (this is how FLAT
+              -demand re-derives the demanded subset WITHIN THIS EPOCH)
+            PublishDifferentialMessageVectors:
+              LowerSubgraphInstances  # ONLY if -demand-instance; band a1/a2/a2'/b
+              LowerCommitSweeps        # commit + Seal — table now durably updated
+      # ONLY NOW does the friend read Find()/Present() or build the cursor.
+
+## E. V-INST-SOLE keying — N forcings, one pub (D3.a.3), at THREE layers
+    # 1. DataFlow: N RecognizedSubgraph, same pub_view, distinct forcing_index/demanded_view
+    # 2. DR-IR: N DRInstance (same pub_table ptr), N kSubgraphInstantiate ops
+    # 3. Codegen: N InstanceStore<Key_i,Row_i> members (distinct types), one Table<Row>
+    CheckInstanceSolePub(flow):                            # Rel.cpp:4977, V-INST-SOLE
+      inst_per_pub : map<(pub_table_ptr, forcing_index), count>   # RE-KEYED at D3.a.3
+      for op kind==kSubgraphInstantiate: ++inst_per_pub[{op.table_op_table, op.forcing_index}]
+      assert every count == 1   # forcing_index is the distinguishing half that LETS
+                                 #   N adornments share one pub without tripping the belt
+```
+
+## R.1.6 The commit-sweep / Seal epoch boundary — `LowerCommitSweeps` + `LowerSubgraphInstances`
+
+SCOPE: one received message batch == one epoch. From "all ordinary per-stratum
+DR machinery has quiesced" through "driver log callbacks fire and every store's
+double-buffer/watermark advances." The whole assignment lives inside §4b Steps
+6-8; it is NOT invoked from inside BuildStratumPhases/LowerDRFlow/LowerDRRounds.
+
+```
+BuildEntryProcedure(...):                                 # Procedure.cpp:931-1048
+  ... Steps 1-4 ingest folds / eager web / CompleteProcedure ...
+  BuildStratumPhases(...)                                  # :1042 = Rel-IR Step 5
+    # GROUP_UPDATE (agg/KV) IS emitted HERE, band 0, at the agg view's OWN lifted
+    # stratum (op_band(kGroupUpdate)=0u) — the ASYMMETRY: GROUP_UPDATE is
+    # stratified INSIDE the per-stratum walk; SUBGRAPHINSTANCE is NOT.
+  PublishDifferentialMessageVectors(...)                   # :1045 = Step 6, the epoch boundary
+
+PublishDifferentialMessageVectors(impl, proc, context):   # Procedure.cpp:505-626
+  seq := new SERIES wrapping proc->body
+  # 6a. pure-MONOTONE published messages (independent of differential machinery):
+  for (message, vec) in context.publish_vecs:
+    VECTORUNIQUE(vec); VECTORLOOP(vec){ PUBLISH(message, row, added=true) }; VECTORCLEAR(vec)
+  # 6b/6c only if the program has ANY differential machinery:
+  if context.dr_flow != null:
+    LowerSubgraphInstances(impl, context, *dr_flow, seq)   # :588 — EXACTLY ONCE, after all strata
+    LowerCommitSweeps(impl, context, *dr_flow, seq)        # :589 — AFTER (band-b publish
+                                                            #   precedes the store Seal)
+    # V-INST-EMITTED (:591-620): multiset(emitted {store_id,kind}) ==
+    #   multiset(dr_flow.ops of {Instantiate,Death,Seal}) — else abort.
+
+# --- 6b. ONE SUBGRAPHINSTANCE region per store; band order UNREORDERABLE ---
+EmitSubgraphInstance(si):                                  # Database.cpp:2341-2779
+  # band a0 — DEATH (only if kInstanceDeath minted, i.e. demand @differential / -demand-retract)
+  for d in RemovalFrontier(): iid=FindInstance(Key{d})     # NON-adding
+    if iid!=kNoInstance: RecycleCurrent(iid)               # Touch + current.Reset() -> EMPTY;
+                                                            #   band-b drop-scan retracts the whole frozen set
+  # band a1 — BIRTH (demand net-additions)
+  for k in DemandFrontier(): iid=FindOrAddInstance(Key{k})
+    if !TouchedFlag(iid): emit_instance_rescan(k)
+  # band a2 — REBUILD on input net-ADDITIONS (edge-after-demand)
+  for e in InputFrontier(): iid=FindInstance(Key{e.key})   # NON-adding
+    if iid!=kNoInstance:
+      if diff: gate on demand_table.Present(demand.Find(key))  # E8d demand-liveness gate
+      if !TouchedFlag(iid): emit_instance_rescan(e.key)
+  # band a2' — REBUILD on input net-REMOVALS (iff input @differential; R-A2-TRIGGER)
+  if InputRemovalFrontier(): same emitter as a2, third drain into the ONE shared mold
+  # -- the ONE shared rescan mold (a1/a2/a2' all call this) --
+  emit_instance_rescan(keyexprs):
+    assert !WorkingOccupied(iid)                            # V-INST-FRESH
+    cur := TouchCurrent(iid)
+    for s in input_member.rows:
+      if row.key_cols==keyexprs and (!input_diff or input_member.Present(s)):
+        cur.TryAdd(row.remaining_cols)
+  # band b — PUBLISH, once per Touched(iid) [sort-uniqued], OVERDELETE-FIRST:
+  for iid in Touched():
+    cur=Current(iid); frz=Frozen(iid)
+    if diff: for drow in frz: if cur.Find(drow)==kNoRow:    # dropped = frozen \ current
+               pub.SubDerivation(drow,kNonRecursive); DelQueue.Add(drow)   # else ++carried
+    for row in cur: if frz.Find(row)==kNoRow:               # born = current \ frozen
+      if !diff: pub.TryAdd(row) else: pub.AddDerivation(row,kNonRecursive); AddQueue.Add(row)
+    if diff: assert V-INST-PARTITION (born+carried==cur.rows && dropped+carried==frz.rows)
+    # SubDerivation/AddDerivation Touch pub's OWN DiffTable — band-b output RIDES the
+    # SAME `touched` set the later COMMITSWEEP's member.Commit() drains for pub.
+  # self-lowered SEAL (HP-1/OD-5: no separate DR op — folded into this region's tail):
+  instance_<sid>.Seal()   # per touched iid: pointer-swap current<->frozen, Reset current,
+                          #   sealed_occupied := frozen.NumRows()>0; R-MONO belt asserts frozen⊆current
+
+# --- 6c. ONE COMMITSWEEP region per table, ASCENDING TABLE-ID order, AFTER all instances ---
+EmitCommitSweep(region):                                   # Database.cpp:2890-3027
+  # MONOTONE table: member.Seal() (append-only high-watermark advance, NEVER renumbers),
+  #   then emit_seal(); return.  (assert !region.Message())
+  # DIFFERENTIAL table:
+  member.Commit(sink):
+    for id in touched:
+      (nr,r)=counts[id]; assert nr>=0 && r>=0               # per-CLASS non-negativity, asserted
+                                                            #   HERE not per-fold (phantom dips legal mid-batch)
+      was := kInI; now := (nr+r)>0
+      if was != now: sink(RowAt(id), now)                   # <<< THE publish point: if publish_target,
+                                                            #   sink = log.<message>_<arity>(fields..., added=now)
+                     num_live += now?+1:-1
+      set/clear kInI := now
+    touched.Clear()
+    # sink is a no-op lambda when op.publish_target false — Commit still runs for
+    #   counter/flag/num_live side effects on EVERY differential table.
+  #ifndef NDEBUG member.DebugValidateCounts() #endif        # re-walks EVERY row
+  if member.CompactDead():                                  # AFTER the validator (validator vs PRE-compact ids)
+    # NeedsCompaction: dead!=0 AND ( (dead>=num_live && dead>=4096)          # arm (a), documented
+    #   OR (NumRows()>=SlotCapacity()*7/8 && dead>=NumRows()/2) )            # arm (b), UNDOC in CLAUDE.md:
+    #     a near-Rehash mostly-dead table compacts+reslots in place instead of doubling a dead-heavy slots array
+    # CompactRowsInPlace: drop dead, renumber survivors densely [0,num_live); truncate counts/flags.
+    for index in table.live_indices: index.Clear()          # rebuild every index over NEW ids
+    for cid in [0,NumRows()): for index: index.Add(key_projection(RowAt(cid),index), cid)
+  emit_seal()   # STATE_SEAL tail: if region.SealStateCellId(): statecell_<id>.Seal()/SealOne per touched gid
+                #   (STATE_SEAL is NOT a separate region kind — an optional field on the COMMITSWEEP region)
+```
+
+BAND-KEY ASYMMETRY (validation key vs literal codegen placement — new from
+this trace, silent in the seed): the flow-graph's Kahn linearizer (Rel.cpp
+`key_of`, used ONLY for dep-edge derivation / V-READY / dump order — never read
+by codegen) puts kCommitSweep/kStateSeal/kInstanceSeal in a trailing sentinel
+band `Key{lead=2, stratum=max_stratum+1, band=9/10/11}`, but
+kSubgraphInstantiate/kInstanceDeath fall to the DEFAULT lead=1 arm with
+`stratum = instance_stratum[sid] = 1 + max(drain_stratum(demand),
+drain_stratum(input))` — an ordinary mid-stream number that can be well below
+`max_stratum+1`. So in the VALIDATED order Instantiate/Death sort as mid-stream
+ops (a minimum-readiness bound for hazard-edge validation), while only their
+kInstanceSeal is truly pushed to the tail; the LITERAL codegen placement is
+fixed unconditionally at the tail by LowerSubgraphInstances regardless. A reader
+who assumes "DR-op stratum == where it executes in the region tree" for
+Instantiate/Death specifically would be misled.
+
+## R.1.7 The hand-coded eager-web reachability (`BuildEagerInsertionRegions` / `BuildEagerRegion` / `ExtendEagerProcedure`)
+
+TWO INDEPENDENT AUTHORITIES compute the SAME reachable-view set and are
+cross-checked (never merged): (I) THE WALK — hand-coded, EMITS the region tree,
+temporally FIRST (BuildEntryProcedure Step 2/3); (II) THE DERIVATION —
+`BuildDREagerInventory` (Rel.cpp), graph-only, runs LATER (BuildStratumPhases
+Step 5), re-floods successors from the QUERY GRAPH alone using the SAME
+single-view cut predicate `IsCutSuccessorDR`. Agreement is asserted (SD-4),
+never assumed — SD-4 is a GATE (fprintf+abort), so a region-model rewrite must
+reproduce authority (I)'s COVERAGE exactly.
+
+```
+## THE CUT PREDICATE — IsCutSuccessorDR (Rel.cpp:1567-1573), the single-view authority
+IsCutSuccessorDR(context, succ) -> bool:
+  if succ.CanReceiveDeletions():  return true   # -> succ's OWN differential stratum phases
+                                                 #    (even when inductive — an eager induction
+                                                 #    would wrongly mark succ's head induction-owned)
+  if succ.IsAggregate() or succ.IsKVIndex(): return true   # -> GROUP_UPDATE folds input into a StateCell
+  if context.demand_instance_enabled and succ.GuardAnnotationIndex()!=kNoGuardAnnotation:
+    return true                                  # -> (GT-5/OD-4) fed by SUBGRAPH_INSTANTIATE, not the flat web
+  return false                                   # walk continues: dispatch via BuildEagerRegion
+# NOTE: an INDUCTIVE (InductionGroupId) non-deletion MERGE is NOT cut — reachability is
+# TRANSPARENT through it — but BuildEagerInsertionRegions does not recurse into it directly:
+# its arm hands off to the fixpoint machinery (Authority A), which re-invokes
+# BuildEagerInsertionRegions from INSIDE the cycle/output regions. "cut" and
+# "walk-continues-elsewhere-then-rejoins" are DISTINCT buckets.
+
+## WALK ROOTS — BuildEntryProcedure (Procedure.cpp:931-1006)
+#   Root 1: all-constant TUPLEs (IsAllConstantTupleDR, :977) under a TESTANDSET init-guard —
+#     the ONLY other view dispatchable with NO predecessor in scope; DIRECT BuildEagerRegion(:993).
+#   Root 2: every RECEIVE's non-cut Successors() via ExtendEagerProcedure (:1000).
+#     The RECEIVE ITSELF IS NEVER DISPATCHED — a pure propagation root.
+
+## PER RECEIVE — ExtendEagerProcedure (Procedure.cpp:14-124)
+#   deletion-capable receive: NO eager descent for the fold — both polarities park via
+#     UPDATECOUNT (kIngestFold pair from MakeStageOneIngestFolds); `continue` — ZERO dispatch.
+#   monotone table-bearing receive: MakeMonotoneIngestFold -> LowerIngestFold; next_parent is
+#     the UPDATECOUNT cursor (INGEST-CURSOR-SHAPE assert). >>> THE HOLE <<<
+#   monotone table-less receive (R-E42): MakeIngestLoopOp -> LowerIngestLoop; next_parent is a
+#     VECTORLOOP cursor (INGEST-LOOP-SHAPE assert). >>> THE HOLE <<<
+#   then: BuildEagerInsertionRegions(receive, next_parent, receive.Successors(), table)
+
+## THE DESCENT — BuildEagerInsertionRegionsImpl (Build.cpp:901-1063)
+BuildEagerInsertionRegionsImpl(view, parent_, successors, last_table_):
+  (parent, table, last_table) = InTryInsert(view, parent_, last_table_)   # Build.cpp:862-897:
+    # if view has a model table != already_added, emit UPDATECOUNT fold; successors run only
+    # past the FOLD'S ZERO CROSSING — the physical "a row propagates once per batch."
+  par := PARALLEL(parent)              # ALWAYS created (CSE dedups repeats)
+  # boundary append #1 (D2): deletion-capable, just-folded, non-induction-owned view seeds
+  #   its OWN add-queue frontier here.
+  any_cut_succ := false
+  for succ in successors:
+    if IsCutSuccessorDR(context, succ): any_cut_succ=true; continue   # DO NOT recurse
+    BuildEagerRegion(pred_view=view, succ, LET(par), last_table)
+  # boundary append #2 (D2'/R7): if any_cut_succ OR (monotone table is a non-@never NEGATE's
+  #   negated view): seed net-additions frontier — the cut consumer's / crossover arm's seed source.
+
+## THE DISPATCH — BuildEagerRegion (Build.cpp:1208-1323)
+# Every (kind,view) dispatch wrapped in CensusEagerMarkerAndBuild (census[{kind,view}]+=1 THEN
+#   build_fn) — census == emission multiplicity BY CONSTRUCTION.
+#   JOIN(pivots>0): kEagerJoin  -> BuildEagerJoinRegion (DEFERRED, §JOIN)
+#   JOIN(0-pivot @product): kEagerProduct -> BuildEagerProductRegion
+#   MERGE inductive: BuildEagerInductiveRegion (NO census — marker-silent)
+#   MERGE non-inductive: kEagerUnion -> InTryInsert + BuildEagerInsertionRegions(Successors)
+#   AGGREGATE/KVINDEX: return (chain-BREAKER)
+#   MAP pure: kEagerGenerate -> GENERATOR + recurse ; MAP impure: assert(false) (rejected upstream)
+#   COMPARE: kEagerCompare -> TUPLECMP + recurse per branch
+#   SELECT: kEagerSelect (reached ONLY bottom-up from an INSERT into its relation) + recurse
+#   TUPLE: kEagerForward -> pure forward recurse
+#   INSERT: kEagerInsert -> UPDATECOUNT fold; stream=TERMINAL (publish/append/nothing),
+#           relation=recurse into its SELECTs
+#   NEGATE: kNegateGate -> BuildEagerNegateRegion (CHECKMEMBER gate; only !CanReceiveDeletions
+#           negates reach here — recursive negates cut upstream)
+
+## JOIN is DEFERRED (Join.cpp:547-781), NOT immediate recursion:
+#   BuildEagerJoinRegion enqueues a ContinueJoinWorkItem (context.work_list), drained by
+#   CompleteProcedure. ContinueJoinWorkItem::Run fires ONCE per join_view (not per dispatch edge):
+#   VECTORAPPEND/VECTORUNIQUE the merged pivot vec, then MakeJoinEmitOp -> LowerJoinEmit — the
+#   ONCE-PER-JOIN TABLEJOIN emission (kJoinEmit DR op, distinct from the per-visit kEagerJoin
+#   markers — the 4-vs-2 asymmetry), then CHECKMEMBER gates + InTryInsert + recurse.
+#   (Join.cpp:772-780 direct nested-loop branch is DEAD CODE — `true ||` at :742 + assert(false).)
+
+## THE DR-IR MIRROR — BuildDREagerInventory (Rel.cpp:1681-1801)
+#   worklist floods from the SAME roots, cut by the SAME IsCutSuccessorDR, propagating straight
+#   THROUGH inductive merges (no special case). marker_views := dispatched \ inductive-merges,
+#   sorted by (Depth, DeterministicOrder). Per v: n = census[{MarkerKindOfDR(v), v}] copies.
+#   SD-4 ORACLE: assert derived_keys == walk_keys (order-free, always-on) — covers the 9
+#     DISPATCHED marker kinds (8 IsEagerMarkerKind + kNegateGate; kNegateGate is EXCLUDED from
+#     IsEagerMarkerKind but INCLUDED in SD-4).
+## V-INGEST-XCHECK Site 5 (Stratum.cpp:2189-2282): the SIBLING oracle for the 2 ENTRY kinds
+#   (kIngestFold/kIngestLoop) — never dispatched views, outside BuildDREagerInventory's walk;
+#   coverage+payload multiset compare, always-on. Together SD-4 + Site-5 fence all 11 eager kinds.
+```
+
+---
+
+## DRIFT LEDGER (Part R) — every fleet finding, `claim -> reality -> anchor`
+
+Recorded per the standing rule: existing sections above (Parts 1-D, §1-§7 of
+this file and the seed's Part 1) are NOT edited; contradictions are logged here.
+
+### Broken (1)
+
+- **B1 (1.2) — kInstanceDeath gate.** CLAIM: "if input differential AND
+  demand_retract: mint kInstanceDeath." REALITY: the mint gate is
+  `if (demand_table && TableIsDifferential(demand_table))` — it tests the
+  DEMAND (fabricated forcing-message) table's differentiality, equivalent to
+  `demand_retract` ALONE. `input_diff` is a completely separate axis gating
+  only band-(a2') inside InstantiateEffects; the code comment explicitly warns
+  against this conflation ("NEVER folded into `diff` (P-STORE) or P-DEATH").
+  A monotone-input + demand_retract-ON program DOES mint kInstanceDeath (seed
+  says it wouldn't); a diff-input + demand_retract-OFF program does NOT (seed
+  implies gate is about input). ANCHOR: lib/Rel/Rel.cpp:1161-1174 (gate),
+  :1072-1077 (anti-conflation comment).
+
+### Drifted (7 real + 1 confirm-unchanged)
+
+- **D1 (1.1) — all-free sibling reject.** CLAIM: "if redecl has BOUND and an
+  all-free sibling: reject." REALITY: the check is per-redecl, not a
+  conjunction; it fires on the iteration where THIS redecl's own bound_indices
+  is empty. An all-free-ONLY name never reaches the loop (excluded by
+  bound_queries). ANCHOR: lib/DataFlow/Demand.cpp:483-499.
+- **D2 (1.1) — guard-site taxonomy.** CLAIM: base rule "guard JOINs at the
+  raw-seed site"; two site kinds. REALITY: (a) the base-rule body site joins at
+  the body's own bound-column SOURCE ATOM (`kBaseAtom`), NOT a raw-seed;
+  "raw_seed" is a SEPARATE once-per-adornment query-projection guard (Step 8).
+  (b) A third kind `kReadAtTuple` (direct non-join read of p_merge) was
+  omitted. ANCHOR: Demand.cpp:126-140, 663-775, 1086-1127.
+- **D3 (1.1) — R-DUP nesting.** CLAIM: the R-DUP MERGE-union decision runs
+  per-adornment inside Loop 2. REALITY: it is DEFERRED and runs exactly ONCE
+  after Loop 2, grouping `pending` rewires across ALL adornments by
+  (consumer, read) — a MULTI-guard group only exists once ≥2 adornments
+  contributed. ANCHOR: Demand.cpp:848-1193 (Loop 2) vs 1195-1264 (R-DUP).
+- **D4 (1.1) — forcer injection locus.** CLAIM: "inject the demand SEED via a
+  forcer proc" is the tail action of ApplyDemandTransform. REALITY: this pass
+  only REGISTERS the forcing entry; the forcer-proc build + call-site injection
+  is a separate mechanism in lib/ControlFlow/Build/Build.cpp during ControlFlow
+  Program::Build. ANCHOR: Demand.cpp:1190-1191 vs Build.cpp:412-494, 506-519.
+- **D5 (1.2) — enclosing function name.** CLAIM: `BuildStratumPhases` calls
+  BuildSubgraphInstanceOps at Rel.cpp:2065. REALITY: the :2065 gate+call is
+  inside `BuildDRInventory` (Rel.cpp:1803); BuildStratumPhases is one layer up
+  in Stratum.cpp:2117 and calls BuildDRInventory at :2149. Line anchor correct,
+  enclosing-function name wrong. ANCHOR: Rel.cpp:1803/2065-2067,
+  Stratum.cpp:2117/2149.
+- **D6 (1.2) — induction-owned fence locus.** CLAIM: the per-`rs` loop "checks
+  rs.input not induction-owned." REALITY: no such check in the loop; what IS
+  there is the HP-4 recognizer-refusal belt (MAP/NEGATE/AGG/KVIndex reject,
+  Rel.cpp:1062-1070). The real induction-owned/cyclic-demand fences are an
+  EARLIER separate pre-pass in Program::Build (Build.cpp:1451-1499), walking
+  live guard JOINs before the DR-IR exists. ANCHOR: Build.cpp:1451-1499;
+  Rel.cpp:1062-1070.
+- **D7 (1.2) — InstanceStore data model.** CLAIM: "two-word sealed/working
+  cells; Seal()." REALITY: InstanceStore is NOT a two-word cell store (that is
+  StateCell.h). Its surface is `Current(iid)`/`Frozen(iid)` (two whole nested
+  `Table<RowT>` double-buffers per iid), `WorkingOccupied`/`SealedOccupied`;
+  Seal() is correctly named. The "two-word cells" framing borrowed the wrong
+  sibling class. ANCHOR: InstanceStore.h:3-11 (disclaimer), :142-143, :167-175.
+- **D8 (1.2) — Touch API.** CLAIM: `Touch(iid); TouchedFlag(iid)` implying
+  Touch is directly callable. REALITY: `Touch` is PRIVATE (InstanceStore.h:
+  304-311); the public band-(a) entry is `TouchCurrent(iid)->Table&` (:134),
+  which calls Touch internally. ANCHOR: InstanceStore.h:134-137, :304-311.
+- **D9 (1.3) — LowerDRRounds loop-carried state.** CLAIM: in LowerDRRounds the
+  inductive MERGE is the loop-header join point and `view_to_swap_vec` is the
+  loop-carried (semi-naive) variables. REALITY: that describes the SEPARATE,
+  earlier eager-descent induction (Induction.cpp GetOrInitInduction/
+  BuildFixpointLoop, monotone-only, built BEFORE BuildStratumPhases).
+  LowerDRRounds creates its OWN fresh INDUCTION per round whose loop-carried
+  state is per-TABLE differential Delta frontiers (TableDeltaVector), and it
+  applies ONLY to differential tables NOT induction-owned (drain_stratum gated
+  by `!TableIsInductionOwnedDR`). ANCHOR: Induction.cpp:625/138;
+  Stratum.cpp:111-133/1699-1722; Rel.cpp:3119; Program.h:1915.
+- **D10 (1.4) — "id-ordered" dump.** CLAIM: the -contract-out dump is
+  "id-ordered." REALITY: it is ordered by kind-tagged det_seq (the same
+  per-kind DefList traversal -df-out uses), NOT raw column/view value id. The
+  number after the kind tag is `DeterministicOrder()`==det_seq, not
+  QueryColumnImpl::id/FieldId (a separate id space inside the key= tuples).
+  ANCHOR: Format.cpp:1535-1567; Format.h:26-27; Query.cpp:437-438.
+- **D-confirm (1.2, not a drift) — BuildSubgraphInstanceOps anchor UNCHANGED.**
+  Verified still at Rel.cpp:1036 (E-142 deliberately pins its line count so
+  downstream D3.a anchors stay valid). Recorded so the ledger's "the line
+  anchors moved" reflex does not wrongly re-attribute this one.
+
+### Extraction-only precision notes (no seed claim contradicted)
+
+- **X1 (R.1.5) — synchronicity.** The forced-query call is one synchronous call
+  stack ending only after the WHOLE epoch (incl. LowerSubgraphInstances under
+  -demand-instance) completes, before the friend reads the table. The baseline
+  DIFF-R1's "REQUEST edge lowers to FindOrAddInstance + the activation's
+  fixpoint" must preserve or deliberately break this. No existing doc states it.
+- **X2 (R.1.6) — CompactDead second arm.** CLAUDE.md's "dead ≥ live, 4096
+  floor" is arm (a) only; NeedsCompaction OR's a second undocumented near-Rehash
+  arm `NumRows()>=SlotCapacity()*7/8 && dead>=NumRows()/2`. Table.h:541-653.
+- **X3 (R.1.7) — dead JOIN branch.** Join.cpp:742 `true ||` makes the direct
+  nested-loop-join at :772-780 (`assert(false && "Disabled")`) unreachable; a
+  region-model translation of "how BuildEagerRegion reaches a JOIN's successors"
+  must model ONLY the WorkItem-deferred ContinueJoinWorkItem::Run path.

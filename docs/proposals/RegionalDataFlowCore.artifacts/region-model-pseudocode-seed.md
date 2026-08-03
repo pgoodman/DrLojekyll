@@ -17,6 +17,17 @@ the 2026-08-03 design addenda).
 ---
 
 ## Part 1 — CURRENT ARCHITECTURE as pseudocode (the layer the region model replaces)
+##
+## SUPERSEDED 2026-08-03 (session 3): Part 1 below is SUPERSEDED by
+## `regional-arch-pseudocode.md` **Part R** (2026-08-03) — the fleet-verified
+## current-architecture pseudocode re-anchored against the branch tip, with
+## every drifted/broken seed claim corrected in place (see Part R's DRIFT
+## LEDGER; notable fixes: the kInstanceDeath gate tests the DEMAND table, not
+## the input; InstanceStore is a two-BUFFER not two-word store;
+## view_to_swap_vec belongs to the eager-descent induction, not LowerDRRounds).
+## Read Part R for the authoritative anchors. Part 1 is kept below for history
+## only; Part 2 (the path-forward diffs) remains LIVE until the formalization
+## lands.
 
 ### 1.1 The demand transform (flat lowering) — `lib/DataFlow/Demand.cpp`
 
