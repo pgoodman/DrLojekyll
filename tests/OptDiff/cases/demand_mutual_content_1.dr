@@ -1,0 +1,27 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; demand_mutual_content_1 -- mutual-recursion-in-a-demanded-body witness
+; (test-matrix C12; the stage-d E2 referee hole). A bound #query `reach`
+; over `ra`, whose body is a two-view SCC: `ra` and `rb` are mutually
+; recursive through `step` (ra <- rb <- ra). Distinct in shape from
+; demand_recursive_content_1 (a NON-recursive wrapper over a single
+; self-recursive relation) and demand_cyclic_1 (a query directly on the
+; recursive relation): here the demanded relation's OWN body sits in a
+; multi-view recursive SCC. Under -demand (.drflags = `-demand`) the reject
+; fires in the DataFlow demand body-walk ("Unsupported rule-body shape under
+; -demand") -- the shadowed recursive-content belt (R-BODYWALK) -- in ALL
+; FOUR optimization modes. The .main.cpp is inert / never compiled.
+;
+; The .batches + oracle goldens pin the DEFINITIONAL mutual-fixpoint answer
+; NOW, BEFORE the Stage-D lift that will let this compile: the oracle runs
+; the plain (undemanded) program and is the ONLY pre-lift referee for the
+; even/odd step-parity split (ra = even-step reachable from base, rb = odd).
+
+#message base(u64 K, u64 V).
+#message step(u64 V, u64 W).
+#local ra(u64 K, u64 V).
+#local rb(u64 K, u64 V).
+ra(K, V) : base(K, V).
+ra(K, W) : rb(K, V), step(V, W).
+rb(K, W) : ra(K, V), step(V, W).
+#query reach(bound u64 K, free u64 V) : ra(K, V).

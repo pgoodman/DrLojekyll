@@ -1,0 +1,5 @@
+ORACLE: OK (2 batches, 838 assertions)
+pick_of	10 20
+pick_of	20 25
+pick_of	20 30
+pick_of	30 40

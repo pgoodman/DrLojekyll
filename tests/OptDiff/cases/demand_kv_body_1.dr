@@ -1,0 +1,21 @@
+; Demanded producer is a mutable(...) KV merge (RegionalDataFlowCore test
+; matrix C5). The bound #query bal_of reads balance, whose value column is
+; mutable(add_u32) -- a KV index (the degenerate aggregate). Under -demand
+; (this case's .drflags) the demand transform tries to materialize the
+; demanded producer, but a KV/aggregate view is a single derived relation the
+; flat guard web cannot re-root, so the pass rejects with the R-MAT "single
+; derived relation" diagnostic in all 4 optimization modes. This is NOT the
+; V-ALGEBRA reject: add_u32 DECLARES its algebra (@invertible), so the KV
+; merge is well-formed -- the reject is purely the demand-over-KV fence.
+;
+; The oracle referees the DEFINITIONAL answer of the PLAIN program (no
+; -demand): the least model of the KV sum. credit is monotone (add-only), so
+; value-churn here is accumulation -- several credits fold into one per-account
+; balance via the @invertible add.
+#functor add_u32(bound u32 L, bound u32 R, free u32 Res) @invertible.
+#message credit(u64 Acct, u32 Amt).
+#local entry(u64 Acct, u32 Amt).
+entry(A, M) : credit(A, M).
+#local balance(u64 Acct, mutable(add_u32) Amt).
+balance(A, M) : entry(A, M).
+#query bal_of(bound u64 Acct, free u32 Amt) : balance(Acct, Amt).

@@ -1,0 +1,22 @@
+# demand_beside_recursion_1 oracle sidecar: mirrors demand_beside_recursion_1.main.cpp
+# exactly (the oracle sees the PLAIN program -- no demand -- and referees
+# ANSWER-identity: its final pair/pair_of rows are the full materialization
+# the demand-pruned driver answers key-by-key, and its path/path_out rows are
+# the full beside-recursion closure).
+# Batch 1: chain 10->20->30, detached edge 40->50; four seeds.
+# Batch 2: extend chain (30->60), close cycle (50->40); two more seeds.
+batch
++ edge_2 10 20
++ edge_2 20 30
++ edge_2 40 50
++ seed_2 1 100
++ seed_2 1 101
++ seed_2 2 200
++ seed_2 3 300
+end
+batch
++ edge_2 30 60
++ edge_2 50 40
++ seed_2 3 301
++ seed_2 5 500
+end

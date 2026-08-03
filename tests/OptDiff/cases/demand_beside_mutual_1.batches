@@ -1,0 +1,24 @@
+# demand_beside_mutual_1 oracle sidecar -- mirrors demand_beside_mutual_1.main.cpp.
+# The oracle runs the PLAIN (undemanded) program: it referees BOTH the mutual
+# ra<->rb SCC's published closure (ra_out/rb_out) AND the demanded pick answers
+# (pick_of over pick=step). base/step are monotone messages (adds only).
+#
+# ra(K,V):base; ra(K,W):rb(K,V),step(V,W); rb(K,W):ra(K,V),step(V,W)
+#   -> step-parity split: ra = even-step reachable from the base value, rb = odd.
+#
+# Batch 1: key 1 seeded at value 10, over the branching chain
+#   10->20, 20->30, 30->40, and the branch 20->25.
+#   ra(1,.) = {10,30,25} (even steps), rb(1,.) = {20,40} (odd steps).
+batch
++ base 1 10
++ step 10 20
++ step 20 30
++ step 30 40
++ step 20 25
+end
+# Batch 2: a second key 2 seeded at the SAME start value 10 over the same
+#   (already-present) step graph -> identical parity split under key 2.
+#   ra(2,.) = {10,30,25}, rb(2,.) = {20,40}.
+batch
++ base 2 10
+end

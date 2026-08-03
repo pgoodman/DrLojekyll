@@ -1,0 +1,37 @@
+; demand_config_agg_body_1: a CONFIG-COLUMN @recompute aggregate INSIDE a
+; DEMANDED body (test-matrix C11). peak(S, M) is a max_above(bound Threshold,
+; aggregate Val, summary Max) @recompute aggregate over a threshold/reading
+; join, and the bound #query peak_of(bound Sensor, free Max) demands peak.
+; Under `-demand` (the .drflags sidecar) an over(){} aggregate reached by the
+; SIP body walk is a clean-diagnostic REJECT (the demand-sink / R-MAT fence:
+; AGG in a demanded body is not lowered by the single-adornment demand slice)
+; in ALL 4 optimization modes -- the compiler must exit 1 with a rendered
+; diagnostic, never assert/crash. The .main.cpp is inert (never compiled).
+;
+; The oracle NEVER sees .drflags, so it referees the DEFINITIONAL answer of
+; the PLAIN program (which compiles like config_agg_2): the by-name
+; interpretation of max_above is the MAX of Val over live members with
+; Threshold <= Val, per (Sensor, Threshold) group. This pins the answer NOW,
+; before any Stage-C reject lift changes the compiled materialization.
+;
+; HAND-COMPUTED EXPECTATION (mirrors demand_config_agg_body_1.batches):
+;   Batch 1: thresholds sensor 1 -> 15, sensor 2 -> 50; readings
+;     sensor 1: {10 (<15 excluded), 20, 30}   -> max 30
+;     sensor 2: {40 (<50 excluded), 60, 100}  -> max 100
+;   Batch 2 (RETRACT 100 from sensor 2): live {40 (<50), 60} -> max 60
+;     (the descending step: the @recompute rescan drops 100, 60 is new max).
+;   Batch 3 (ADD sensor 1 reading 25 >=15): {20,30,25} -> max 30 (unchanged;
+;     group touched, new==old -> the no-op arm).
+;   Final per-group: sensor 1 -> 30, sensor 2 -> 60.
+
+#functor max_above(bound i32 Threshold, aggregate i32 Val, summary i32 Max) @recompute.
+#message add_reading(i32 Sensor, i32 Val) @differential.
+#message set_threshold(i32 Sensor, i32 Threshold).
+#local reading(i32 Sensor, i32 Val).
+#local threshold(i32 Sensor, i32 Threshold).
+reading(S, V) : add_reading(S, V).
+threshold(S, T) : set_threshold(S, T).
+#local peak(i32 Sensor, i32 Max).
+peak(S, M) : max_above(T, V, M) over (i32 S, i32 T, i32 V) {
+               threshold(S, T), reading(S, V) }.
+#query peak_of(bound i32 Sensor, free i32 Max) : peak(Sensor, Max).

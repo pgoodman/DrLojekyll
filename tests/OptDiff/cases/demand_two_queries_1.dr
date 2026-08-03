@@ -1,0 +1,16 @@
+; demand_two_queries_1 -- an ALL-4-MODES-DIAGNOSTIC case under -demand (the
+; .drflags sidecar passes the flag; flag-off this program compiles fine and
+; is exercised nowhere else). TWO INDEPENDENT bound #query NAMES (fwd/bwd,
+; each a single-adornment demand of the same recursive path(From, To))
+; pins the R-1BOUND belt in lib/DataFlow/Demand.cpp's
+; ApplyDemandTransform: `bound_queries.size() > 1u` rejects with "Multiple
+; demanded (bound) queries are not yet supported under -demand" BEFORE any
+; adornment is minted -- distinct from demand_multi_adorn_1's ONE name /
+; TWO adornments belt (the per-adornment left-linear fence). Expected to
+; lift at Stage C as a clean capability add (see runall.sh's header).
+#message edge_2(u64 From, u64 To).
+#local path(u64 From, u64 To).
+path(F, T) : edge_2(F, T).
+path(F, T) : path(F, M), edge_2(M, T).
+#query fwd(bound u64 From, free u64 To) : path(From, To).
+#query bwd(bound u64 To, free u64 From) : path(From, To).

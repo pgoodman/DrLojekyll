@@ -381,18 +381,23 @@ struct ScratchView {
 //                  group's members (@invertible: fold(+)=+v, fold(-)=-v).
 //     count_i32 -> the count of members in the group (@invertible).
 //
-//   KV-INDEX merge (the degenerate aggregate; group = key, value = the
-//   surviving merged value):
-//     new_weight_i32 (@recompute, un-annotated invertibility) -> the merge
-//                  is LAST-WRITER: a KV index holds exactly ONE value per
-//                  key, so the surviving value is that of the last-surviving
-//                  member. In the definitional from-scratch reduction there
-//                  is at most one live (From, To) member per key here (the
-//                  edge_weight key is the full (From,To,Weight) input row's
-//                  key projection), so "last wins" is well-defined: the
-//                  merged value is the value of the group's sole member; if
-//                  a key ever had multiple distinct values, the last one
-//                  interned (deterministically, input-row order) wins.
+//   KV-INDEX merge (the DEGENERATE AGGREGATE; group = key, value = the
+//   folded value): a KV index folds over the DISTINCT tuples of its
+//   (key ++ value) input projection per key via the value column's declared
+//   @-algebra merge functor — NOT last-writer (v3-spec-statecell.md; the
+//   generated <functor>_combine fold). The declared algebra selects the
+//   reduction, mirroring the aggregate name map above:
+//     @invertible  -> a combine fold over the group's live distinct values.
+//                  add_u32/add_i32/sum_i32 combine == addition, so the merged
+//                  value is the SUM of the key's live distinct values (reusing
+//                  kSum). e.g. add_u32 balance of two live credits 10 and 25
+//                  on one account is 35, not the last writer 25.
+//     @recompute   -> a per-group rescan over the live multiset. The corpus
+//                  @recompute functor (new_weight_i32) holds at most one live
+//                  value per key (the edge_weight key is the full (From,To)
+//                  key projection, one live Weight per edge), so the rescan
+//                  yields that sole live member (kMerge) — identical to a
+//                  last-surviving-member merge when the group is a singleton.
 //
 // div-by-zero rationale: div_i32 is @range(.); a range functor emitting zero
 // rows on a bad input is the modeled "produce no tuple" behavior. This
@@ -1363,8 +1368,10 @@ class Oracle {
       }
       ai.input = single_input(all_ins, "KVINDEX");
 
-      // Key ++ value layout. The KV index holds ONE value per key (last-writer
-      // merge, §4 semantics); here it degenerates to the sole live member.
+      // Key ++ value layout. A KV index is the DEGENERATE AGGREGATE: it folds
+      // over the DISTINCT (key ++ value) input tuples per key via the value
+      // column's declared @-algebra merge functor (§4; v3-spec-statecell.md),
+      // NOT last-writer. The declared algebra selects the reduction.
       for (auto c : kv.InputKeyColumns()) {
         ai.key_slots.push_back(ResolveInputSlot(c, ai.input));
       }
@@ -1373,7 +1380,27 @@ class Oracle {
              ai.head->name + ")");
       }
       ai.val_slot = ResolveInputSlot(kv.NthInputValueColumn(0), ai.input);
-      ai.kind = AggKind::kMerge;
+      const auto &merge_functor = kv.NthValueMergeFunctor(0);
+      const std::string mfname(merge_functor.NameAsString());
+      if (merge_functor.IsInvertible()) {
+        // Combine fold over live distinct values. The corpus @invertible KV
+        // combines are additive, so the folded value is the SUM (reuse kSum).
+        if (mfname == "add_u32" || mfname == "add_i32" || mfname == "sum_i32") {
+          ai.kind = AggKind::kSum;
+        } else {
+          Fail("oracle models additive @invertible KV merge functors "
+               "(add_u32/add_i32/sum_i32, combine == SUM) by name; got '" +
+               mfname + "'");
+        }
+      } else if (merge_functor.IsRecompute()) {
+        // Per-group rescan over the live multiset; the corpus @recompute KV
+        // (new_weight_i32) is one live value per key, so the rescan yields the
+        // sole live member (kMerge == last-surviving-member on a singleton).
+        ai.kind = AggKind::kMerge;
+      } else {
+        Fail("oracle KV merge functor '" + mfname +
+             "' declares no @-algebra (@invertible/@recompute)");
+      }
       ai.arity = static_cast<unsigned>(ai.key_slots.size()) + 1u;
       if (ai.arity != ai.head->arity) {
         Fail("internal: KV output arity mismatch for " + ai.head->name);

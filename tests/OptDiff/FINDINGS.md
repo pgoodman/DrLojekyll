@@ -217,3 +217,78 @@ Fixed in the final session:
   matches end-to-end under dfe-off), and covering-array carve-out B is
   GONE.
 
+### F27 [FIXED 2026-08-02]: dataflow-opt phantom re-publish — single-input-MERGE elimination detaches a monotone published tap from its table, and the eager descent publishes UNGATED
+- Found by the NEW `demand_beside_mutual_1` (the D3.3 C13 case) on its first
+  authoring run: in a monotone mutual SCC (`ra(K,W):rb,step; rb(K,W):ra,step`)
+  published via `#message ra_out/rb_out : body` taps, adding an INDEPENDENT
+  base key in a later epoch re-published already-present rb rows for the OLD
+  key (`rb+(1,20) rb+(1,40)` with added=true, twice). MODE-SPLIT: opt/nocf
+  wrong, nodf/none correct. Reproduces WITHOUT `-demand` — a plain monotone
+  published-tap defect, observable by any downstream delta consumer.
+- Root cause: `rb`'s single-rule recursion keeps its union MERGE only under
+  nodf — dataflow opt collapses the 1-arm MERGE (Merge.cpp:154), turning the
+  `rb_out` tap into a TABLE-LESS sibling fork of the producing JOIN (parallel
+  to, not downstream of, the recursive rb table). The eager-insert descent
+  emits a stream INSERT whose model has no table UNGATED (`vec.Add` outside
+  the `TryAdd(...).added` presence gate), and the value-keyed fixpoint
+  frontier re-scans same-value rows from prior epochs (`idx.First({10})`
+  matches both `ra(1,10)` and the new `ra(2,10)`), re-deriving present rows
+  straight into the publish vector. `ra_out` was asymmetric only because
+  ra's 2-arm MERGE survives and shares the table model. This is the MONOTONE
+  add-side re-publish class the fixpoint_stress_1 header anticipated —
+  distinct from the differential F17/F11 claim-gate class.
+- Fix (ControlFlow-side, `FillDataModel` in lib/ControlFlow/Build/Build.cpp):
+  every monotone (`!CanReceiveDeletions()`) stream INSERT whose model has no
+  table gets its OWN dedup table, so the publish is gated on the presence
+  crossing. Deliberately NOT dataflow-side model-sharing with the cycle
+  insert — two sibling TryAdds on one shared table would let the cycle
+  branch consume the crossing and suppress the first legitimate publish.
+  The broad predicate also hardens non-recursive table-less join taps (the
+  same cross-batch re-derivation class); behaviorally inert elsewhere.
+- Verified: minimal repro byte-identical across all 4 modes (phantom gone);
+  demand_beside_mutual_1 4-mode byte-agreement + oracle 838 assertions;
+  FULL suite green with ZERO committed-golden diffs (proving no existing
+  golden had the phantom pinned — no intended-flip needed); ctest 6/6.
+  `demand_beside_mutual_1` is the standing witness.
+
+### F28 [FIXED 2026-08-02]: the derivation-counter oracle modeled EVERY KV merge as LAST-WRITER, ignoring the declared @-algebra
+- Found by the NEW `demand_kv_body_1` (D3.3 C5) authoring run: for an
+  `@invertible` additive merge (`mutable(add_u32)`), the definitional
+  semantics (v3-spec-statecell.md; the generated `add_u32_combine` fold) is
+  the combine fold — SUM of the key's live distinct values — but
+  bin/Oracle/Main.cpp's KV branch unconditionally set `AggKind::kMerge`
+  (last-writer). Churn batches gave {100→25, 200→3} instead of {100→35,
+  200→10}. Blessing that output would have pinned a WRONG referee answer
+  for the Stage-C reject lift.
+- Fix: the KV branch selects the reduction by the value column's declared
+  algebra (`NthValueMergeFunctor(0)`): additive `@invertible` functors fold
+  (kSum over live distinct values — DISTINCT projection respected for free
+  since the input view is a set); `@recompute` keeps the per-group arm; an
+  algebra-less merge functor now fails cleanly instead of silently
+  last-writing. Doc comment corrected.
+- Blast radius: ZERO — the only corpus cases with a KV index + `.batches`
+  (average_weight, pairwise_average_weight) are `@recompute` with singleton
+  groups; all 60+ existing `.batches` oracle/monotone goldens re-verified
+  byte-identical. RESIDUAL (record): the `@recompute` KV arm still reduces
+  as sole-live-member, correct only for singleton groups — promotion
+  trigger: any multi-live-value `@recompute` KV case.
+
+### F29 [RECORD-ONLY 2026-08-02]: generated code references a Database-private index (`idx_43`) from a free flow function — bound #query over a KV-maintained relation emits non-compiling C++
+- Repro: `build/debug/bin/drlojekyll tests/OptDiff/cases/demand_kv_body_1.dr
+  -cpp-out <dir>` (the PLAIN program, no -demand), then compile any driver:
+  clang++ fails with "use of undeclared identifier 'idx_43'" (datalog.h:226,
+  233, 282, 285 at authoring time) — `flow_44` and the commit/compaction
+  region read `idx_43` (a private Database member) without receiving it as
+  a parameter (the flow signature omits it).
+- Shape: a bound `#query` whose relation is fed by a `mutable(...)` KV
+  index (a query-backing index maintained over a DiffTable/KV relation) —
+  a NEW corpus shape; nothing in the 190-case suite compiles this path
+  (demand_kv_body_1 rejects under -demand before codegen; its .batches
+  runs only the oracle). Pre-existing: today's F26/F27 edits leave the
+  full-opt pipeline byte-identical (181-case suite proof), and this
+  program's compile path is orthogonal to both fixes.
+- Deliberately not fixed in the F26 round (codegen emitter, out of the
+  pre-Stage-A cleanup scope; F20/F23/F24 record-only precedent). Trigger
+  for promotion: any codegen work on query indexes/KV, the I0 interpreter
+  stage (which will want this shape compiled), or a corpus case hitting
+  CXX-FAIL on an idx_* scope error.

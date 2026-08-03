@@ -1,0 +1,24 @@
+# demand_config_agg_body_1 oracle sidecar: the DEFINITIONAL answer of the
+# plain program (the oracle never sees .drflags). Mirrors config_agg_2's
+# config-@recompute batch flavor over the demanded-body probe's shape.
+# Batch 1: per-sensor thresholds + readings; the by-name max_above gate
+#          excludes below-threshold readings; the max is over the survivors.
+# Batch 2: RETRACT sensor 2's 100 -> the @recompute rescan LOWERS the max to 60
+#          (the descending step; -old +new change arm at emit_touched).
+# Batch 3: ADD sensor 1's 25 (>=15) -> max unchanged 30 (touched, no-op arm).
+batch
++ set_threshold 1 15
++ set_threshold 2 50
++ add_reading 1 10
++ add_reading 1 20
++ add_reading 1 30
++ add_reading 2 40
++ add_reading 2 60
++ add_reading 2 100
+end
+batch
+- add_reading 2 100
+end
+batch
++ add_reading 1 25
+end

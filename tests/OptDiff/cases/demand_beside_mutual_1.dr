@@ -1,0 +1,31 @@
+; demand_beside_mutual_1 -- POSITIVE feature-mixing witness (test-matrix C13):
+; a mutual ra<->rb recursive SCC sits BESIDE a demanded subgraph, PUBLISHED
+; and left entirely alone by the `-demand` transform.
+;
+;   base/step        ->  ra(K,V):base(K,V); ra(K,W):rb(K,V),step(V,W);
+;                        rb(K,W):ra(K,V),step(V,W)   -- one mutual SCC
+;   ra_out/rb_out    ->  monotone published outputs of that SCC
+;   pick(V,W):step   ->  a SEPARATE, non-recursive relation
+;   pick_of(bound V) ->  the demanded query (magic-sets SIP rewrite target)
+;
+; The `-demand` flag (.drflags) demands `pick_of` only: the SIP walk mints a
+; demand relation over `pick`/`step` and push-down-joins its guard, while the
+; ra/rb SCC and its ra_out/rb_out taps are NOT reached by demand and lower
+; exactly as they would flag-off. This is the POSITIVE twin of
+; demand_mutual_content_1 (which demands INTO the mutual SCC and is a clean
+; reject) and the determinism companion of demand_beside_recursion_1 (a
+; self-recursive published SCC beside demand). All 4 optimization modes must
+; produce byte-identical stdout; the derivation-counter oracle referees the
+; published ra_out/rb_out closure and the demanded pick answers.
+#message base(u64 K, u64 V).
+#message step(u64 V, u64 W).
+#local ra(u64 K, u64 V).
+#local rb(u64 K, u64 V).
+ra(K, V) : base(K, V).
+ra(K, W) : rb(K, V), step(V, W).
+rb(K, W) : ra(K, V), step(V, W).
+#message ra_out(u64 K, u64 V) : ra(K, V).
+#message rb_out(u64 K, u64 V) : rb(K, V).
+#local pick(u64 V, u64 W).
+pick(V, W) : step(V, W).
+#query pick_of(bound u64 V, free u64 W) : pick(V, W).

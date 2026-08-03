@@ -178,6 +178,29 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   for (auto kv : query.KVIndices()) {
     force_agg_tables(QueryView(kv));
   }
+
+  // A monotone message-tap publication (`#message m : body`) whose rows are NOT
+  // already backed by a table has no cross-batch presence gate: the eager
+  // descent appends every derived row to the publish vector, so a fixpoint or
+  // join that re-derives an already-present row in a later batch RE-PUBLISHES it
+  // (a spurious `added=true` for a row published in an earlier batch). This bites
+  // a single-rule recursive relation whose union `QueryImpl::Optimize` collapsed
+  // (single-input MERGE elimination): its tap becomes a table-less sibling fork
+  // off the producing JOIN, in parallel with — not downstream of — the recursive
+  // table, so the tap sees the join's raw, un-deduplicated output. (A tap whose
+  // body relation kept its table shares that table's model and is already gated
+  // by the upstream presence transition; a `@differential` tap publishes via the
+  // backing table's end-of-batch commit sweep, which reports net was!=now.) Give
+  // an otherwise-table-less monotone tap its own dedup table so
+  // `BuildEagerInsertRegion` gates the publish on a `TryAdd` presence crossing.
+  // Run last, so `model->table` reflects every table shared in above.
+  for (auto insert : query.Inserts()) {
+    const QueryView view(insert);
+    if (insert.IsStream() && !view.CanReceiveDeletions() &&
+        !impl->view_to_model[view]->FindAs<DataModel>()->table) {
+      (void) TABLE::GetOrCreate(impl, context, view);
+    }
+  }
 }
 
 // Whether `view` lies on a dataflow cycle: DFS over `Successors()` with a

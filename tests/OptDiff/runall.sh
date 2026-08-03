@@ -38,7 +38,18 @@
 #   product_in_scc_diff_1 (on-cycle differential @product, the F23 shape:
 #     rejected by the ViewSelfReachable fence in Program::Build's pre-pass;
 #     pinned at the F26 round after the recorded opt-mode exit-139 crash
-#     stopped reproducing)
+#     stopped reproducing),
+#   demand_agg_body_1, demand_kv_body_1, demand_config_agg_body_1 (the
+#     RegionalDataFlowCore pre-Stage-A landing set, owner-ratified D3.3: an
+#     over(){} aggregate / KV merge / config-@recompute aggregate inside a
+#     demanded body — each rejects via the demand-sink or R-MAT diagnostic
+#     under its -demand .drflags; each carries .batches + oracle goldens
+#     pinning the DEFINITIONAL answer now, BEFORE any Stage-C reject lift),
+#   demand_mutual_content_1 (mutual recursion INSIDE a demanded body — the
+#     shadowed recursive-content belt, R-BODYWALK; .batches + oracle goldens
+#     pin the answer for the Stage-D lift, the stage-d E2 referee hole),
+#   demand_two_queries_1 (two independent bound query names — R-1BOUND;
+#     expected to lift at Stage C as a clean capability add)
 #     — the compiler must exit 1 with a rendered diagnostic (no assert/crash)
 #     in all 4 modes (evm_func_parse: unstratified negation, rejected by the
 #     dataflow Stratify pass; agg_in_scc_1/kv_in_scc_1: unstratified
@@ -369,7 +380,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_multi_adorn_allfree_1|demand_cyclic_1|demand_recursive_content_1|product_in_scc_diff_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_multi_adorn_allfree_1|demand_cyclic_1|demand_recursive_content_1|product_in_scc_diff_1|demand_agg_body_1|demand_kv_body_1|demand_config_agg_body_1|demand_mutual_content_1|demand_two_queries_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

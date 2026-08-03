@@ -1,0 +1,19 @@
+; demand_agg_body_1 (RegionalDataFlowCore test-matrix C1): an over(){}
+; aggregate inside a DEMANDED body. `indeg` is a `count_i32` @invertible
+; aggregate summarizing `edge`, and `indeg_of` is a bound `#query` over it,
+; so under `-demand` the SIP walk pushes demand back into a body that
+; materializes an aggregate. The demand transform's single-adornment slice
+; does not admit an aggregate in a demanded body (the aggregate/KV view is a
+; branch chain-breaker: no branch traverses one), so the compiler must exit 1
+; with the demand-sink diagnostic in ALL 4 optimization modes, BEFORE any
+; Stage-C reject lift. `.drflags` carries exactly `-demand`; the `.main.cpp`
+; is INERT (never compiled). `.batches` + oracle goldens pin the DEFINITIONAL
+; aggregate answer (in-degree = count of distinct sources per destination)
+; from the PLAIN program (the oracle never sees `-demand`).
+#functor count_i32(aggregate i32 Val, summary i32 Count) @invertible.
+#message add_edge(i32 Src, i32 Dst).
+#local edge(i32 Src, i32 Dst).
+edge(S, D) : add_edge(S, D).
+#local indeg(i32 Dst, i32 Count).
+indeg(D, C) : count_i32(S, C) over (i32 D, i32 S) { edge(S, D) }.
+#query indeg_of(bound i32 Dst, free i32 Count) : indeg(Dst, Count).
