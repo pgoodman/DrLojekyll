@@ -1,0 +1,4 @@
+; A mutable(...) merge annotation must name a declared 3-argument merge
+; functor; an unknown name rejects at the declaration.
+#local kv(u64 K, mutable(nosuch) V).
+kv(1, 2).

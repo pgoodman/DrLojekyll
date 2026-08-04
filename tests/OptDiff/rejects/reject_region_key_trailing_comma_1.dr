@@ -1,0 +1,4 @@
+; R3a: a trailing comma in the bracket rejects (no dangling expect-var state).
+#message b_1(u64 X).
+#local foo[A,](u64 A).
+foo(A) : b_1(A).

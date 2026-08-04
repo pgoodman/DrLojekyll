@@ -310,3 +310,35 @@ Fixed in the final session:
   (190) with zero golden churn (byte-neutral for every previously-compiling
   program, since any flow that emitted an index reference and compiled must
   already have carried the param).
+
+## Round 13 (the reject-corpus adoption, 2026-08-04)
+
+### F30 [FIXED 2026-08-04]: the reserved-`demand__` collision pre-check was KIND-SCOPED — a user `#local` spelled like the fabricated demand MESSAGE slipped through
+
+- Found by EXPANDING the adopted ToB `parse_errors` reject corpus
+  (`tests/OptDiff/rejects/`, the branch's 30 `data/invalid_syntax_examples`
+  cases + the modern-surface tranche): probing the documented
+  "reserved `demand__` prefix is a clean-diagnostic reject" contract
+  cross-kind compiled CLEAN (rc=0).
+- Root cause: `AddDecl` enforces (name, arity) uniqueness ACROSS declaration
+  kinds ("Cannot re-declare 'foo' as a message"), but demand fabrication
+  uses `CreateDerived`, which bypasses `AddDecl`'s redeclaration map — and
+  all three G3 collision scans (`DemandFabricationWouldCollide` + the two
+  primitives' belts, lib/Parse/Demand.cpp) were scoped to their OWN kind
+  (messages for the message name, locals for the local name). A user
+  `#local demand__q_b(u64 P)` therefore coexisted with the fabricated
+  MESSAGE `demand__q_b/1` — two same-(name, arity) decls of different
+  kinds, exactly the "two decls printing the same proc name" hazard the G3
+  comment records for the same-kind case.
+- Fix: `DemandFabricationWouldCollide` now does a KIND-BLIND scan over
+  `module->declarations` (every kind) for BOTH fabricated spellings at the
+  bound arity. The reserved-prefix contract is namespace-wide, so the scan
+  is too.
+- Repros pinned: `rejects/demand_prefix_collision_local_1.dr` (the
+  cross-kind shape, this finding) and `demand_prefix_collision_msg_1.dr`
+  (the same-kind shape the old scan already caught), both under `-demand`
+  via `.drflags`, both compiling clean WITHOUT the flag.
+- Not a miscompile witness: the fabricated message's public ABI entry is
+  driver-suppressed, so no generated-code collision was demonstrated — the
+  finding is the broken documented CONTRACT (and the un-refereed namespace
+  hazard it left open), caught at the checking layer where it belongs.

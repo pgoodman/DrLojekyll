@@ -551,9 +551,41 @@ fi
 xargs -P "$JOBS" -I{} "$HERE/runall.sh" --one {} "$WORKROOT" \
     < "$WORKROOT/caselist" > "$WORKROOT/verdicts" 2>&1
 
-if grep -qE 'FAIL|DIVERGE|EXPECT-ERROR|MISSING' "$WORKROOT/verdicts"; then
+# ---- the parse/sema REJECT corpus (rejects/*.dr). Adopted from the ToB
+# parse_errors branch (2026-08-04; data/invalid_syntax_examples, 30 cases)
+# and EXPANDED for the modern surface (region-key brackets, `:-`, mutable
+# algebra, pragma misuse, the reserved demand__ prefix incl. the cross-kind
+# collision this corpus's expansion found+fixed). Each case must exit 1
+# CLEANLY in BOTH mode extremes: rc=0 is a LOST CHECK, a timeout/signal exit
+# (>=124: 134=SIGABRT assert, 139=SIGSEGV) is a CRASH finding -- either
+# fails the suite. Driverless and goldenless by design (the diagnostic TEXT
+# is not pinned; the CLASS pins live in each case's header comment).
+# Optional rejects/<name>.drflags appends per-case compiler flags.
+ls "$HERE"/rejects/*.dr 2>/dev/null | sed 's|.*/||; s|\.dr$||' \
+    | grep -E "$FILTER" > "$WORKROOT/rejectlist" || true
+while read -r rname; do
+  rflags=""
+  if [ -f "$HERE/rejects/$rname.drflags" ]; then
+    rflags=$(cat "$HERE/rejects/$rname.drflags")
+  fi
+  for rmode in "" "-disable-dataflow-opt -disable-controlflow-opt"; do
+    # shellcheck disable=SC2086
+    timeout "$TIMEOUT" "$DR" "$HERE/rejects/$rname.dr" $rmode $rflags \
+        >"$WORKROOT/$rname.reject.log" 2>&1
+    rc=$?
+    if [ $rc -ne 1 ]; then
+      if [ $rc -ge 124 ]; then
+        echo "$rname reject REJECT-CRASH($rc)" >> "$WORKROOT/verdicts"
+      else
+        echo "$rname reject REJECT-EXPECT-ERROR-GOT($rc)" >> "$WORKROOT/verdicts"
+      fi
+    fi
+  done
+done < "$WORKROOT/rejectlist"
+
+if grep -qE 'FAIL|DIVERGE|EXPECT-ERROR|MISSING|CRASH' "$WORKROOT/verdicts"; then
   echo "SUITE: FAIL"
-  grep -E 'FAIL|DIVERGE|EXPECT-ERROR|MISSING' "$WORKROOT/verdicts"
+  grep -E 'FAIL|DIVERGE|EXPECT-ERROR|MISSING|CRASH' "$WORKROOT/verdicts"
   exit 1
 fi
-echo "SUITE: PASS ($(wc -l < "$WORKROOT/caselist" | tr -d ' ') cases)"
+echo "SUITE: PASS ($(( $(wc -l < "$WORKROOT/caselist") + $(wc -l < "$WORKROOT/rejectlist") )) cases)"

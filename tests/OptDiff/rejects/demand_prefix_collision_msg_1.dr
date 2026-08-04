@@ -1,0 +1,11 @@
+; The reserved demand__ prefix, SAME-KIND: a user #message spelled exactly
+; like the would-be fabricated demand message (demand__<query>_<adorn>,
+; same arity) must reject under -demand (the original G3 scan's case).
+; Compiles fine without -demand (.drflags carries it).
+#message e_1(u64 X).
+#message demand__q_b(u64 P).
+p2(X) : demand__q_b(X).
+#local p2(u64 Z).
+#local p(u64 A).
+p(A) : e_1(A).
+#query q(bound u64 A) : p(A).

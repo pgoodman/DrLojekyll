@@ -1,0 +1,5 @@
+; The SAME (name, arity) may not be re-declared as a different kind --
+; "Cannot re-declare 'foo' as a message" (the AddDecl cross-kind map).
+#message foo(u64 X).
+#local foo(u64 X).
+foo(X) : foo(X).

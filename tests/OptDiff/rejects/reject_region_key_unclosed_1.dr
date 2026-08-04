@@ -1,0 +1,6 @@
+; Adopted-surface reject (2026-08-04, DIFF-R3 R3a): an UNCLOSED region-key
+; bracket hits an unexpected token mid-spec -- "Expected ']' to close the
+; region key" -- never a hang or a run-off-the-token-buffer.
+#message b_1(u64 X).
+#local foo[A(u64 A).
+foo(A) : b_1(A).

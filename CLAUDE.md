@@ -143,12 +143,21 @@ delta-relational-IR golden policy.
   Diagnostic `.batches` cases run interp-only. A REFINTERP-DISAGREE is
   adjudicated per the stage doc §3 (finding, never fudge; F29 was found+fixed
   this way).
+- REJECT corpus (`tests/OptDiff/rejects/*.dr`, adopted 2026-08-04 from the
+  ToB `parse_errors` branch's `data/invalid_syntax_examples` + expanded for
+  the modern surface): driverless, goldenless should-FAIL cases run by
+  runall.sh after the main sweep — each must exit 1 CLEANLY in both mode
+  extremes (rc=0 = a LOST CHECK, >=124 = a CRASH finding; either fails the
+  suite). Optional per-case `.drflags` (the demand__ reserved-prefix pair
+  runs under `-demand`). Diagnostic TEXT is not pinned — the expected class
+  lives in each case's header comment. Expanding this corpus found+fixed
+  F30 (the kind-scoped demand__ collision scan) on day one.
 - Blessing: goldens change ONLY via explicit
   `runall.sh --bless <workroot> [filter]` after reviewing a run's outputs —
   never automatically on failure, and never to make a red case green.
 
 `tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with
-repros (F1–F19, F21, and F26–F29 fixed as of August 2026; F23 promoted to
+repros (F1–F19, F21, and F26–F30 fixed as of August 2026; F23 promoted to
 the `product_in_scc_diff_1` pin; F20 is the sole open record-only note —
 the latent comparator. F29, the commit-sweep used-state collector omitting
 the swept table's live indexes, was promoted and fixed the same day the I0

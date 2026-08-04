@@ -141,15 +141,22 @@ bool ParsedModule::DemandFabricationWouldCollide(
     std::string_view msg_name, std::string_view local_name,
     size_t arity) const {
   ParsedModuleImpl *const module = impl.get();
-  for (auto existing : module->messages) {
-    if (ParsedMessage(existing).NameAsString() == msg_name &&
-        ParsedMessage(existing).Arity() == arity) {
-      return true;
+
+  // KIND-BLIND scan over EVERY declaration (messages, locals, exports,
+  // queries, functors): `AddDecl` enforces (name, arity) uniqueness ACROSS
+  // kinds ("Cannot re-declare 'foo' as a message"), but fabrication uses
+  // `CreateDerived`, which bypasses that map — so a kind-scoped scan here
+  // would let e.g. a user `#local demand__q_b` coexist with the fabricated
+  // MESSAGE `demand__q_b` of the same arity (two decls printing the same
+  // proc name; found by the reject-corpus expansion, 2026-08-04). The
+  // reserved-prefix contract is namespace-wide, so the scan is too.
+  for (ParsedDeclarationImpl *existing : module->declarations) {
+    const ParsedDeclaration decl(existing);
+    if (decl.Arity() != arity) {
+      continue;
     }
-  }
-  for (auto existing : module->locals) {
-    if (ParsedLocal(existing).NameAsString() == local_name &&
-        ParsedLocal(existing).Arity() == arity) {
+    const std::string_view existing_name = decl.NameAsString();
+    if (existing_name == msg_name || existing_name == local_name) {
       return true;
     }
   }
