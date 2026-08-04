@@ -1,0 +1,11 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; RP-10 over-declaration (bijection Arm A, declared-surplus): two @key sets
+; {A},{B} but `q` is demanded under a SINGLE adornment bf (inferred {A});
+; declared {B} has no matching demanded adornment -> Step 2b bijection Arm A
+; reject (all 4 modes). FLAGLESS (RP-6 activation).
+#message edge_2(u64 A, u64 B).
+#local rel(u64 A, u64 B) @key(A) @key(B).
+rel(A, B) : edge_2(A, B).
+#query q(bound u64 A, free u64 B).
+q(A, B) : rel(A, B).

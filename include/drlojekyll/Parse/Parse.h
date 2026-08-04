@@ -438,13 +438,14 @@ class ParsedDeclaration : public Node<ParsedDeclaration, ParsedDeclarationImpl> 
   // this relation must be materialized.
   bool HasMutableParameter(void) const noexcept;
 
-  // The optional declared region key `name[K...]` (DIFF-R3 R3a; `#local` /
-  // `#export` only). `InstanceKey()` returns parameter indices in the WRITTEN
-  // bracket order; the SET is the logical region key (the order is an inert
-  // DIFF-R5 arrangement hint). Empty unless the declaration was written
-  // with a bracket.
+  // The declared instance key(s) `@key(K...)` (RP-5/RP-9; RP-10 multi-set;
+  // `#local` / `#export` only). `HasInstanceKey()` is true iff ANY `@key` set
+  // was declared. `InstanceKeys()` returns the list of key-sets (one inner
+  // vector per `@key` pragma, each a duplicate-free column-index set in written
+  // order); the SET-of-SETS is the logical multi-adornment key. Empty list ⇒
+  // no `@key`.
   bool HasInstanceKey(void) const noexcept;
-  const std::vector<unsigned> &InstanceKey(void) const noexcept;
+  const std::vector<std::vector<unsigned>> &InstanceKeys(void) const noexcept;
 
   // Does this declaration have a clause that directly depends on a `#message`?
   bool HasDirectInputDependency(void) const noexcept;

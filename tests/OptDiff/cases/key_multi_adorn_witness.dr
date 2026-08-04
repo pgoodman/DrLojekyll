@@ -1,0 +1,12 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; key_multi_adorn_witness (K1, RP-10) -- the flagless multi-store flagship:
+; the demand_multi_adorn_witness bf/fb graph with `@key(A) @key(B)` and NO
+; `.drflags`. The two @key pragmas SELECT N=2 disjoint keyed stores flaglessly
+; (RP-9 fallback), one pub, and answer identically to the flat/mono twin.
+#message edge_2(u64 A, u64 B).
+#local rel(u64 A, u64 B) @key(A) @key(B).
+rel(A, B) : edge_2(A, B).
+#query q(bound u64 A, free u64 B).
+#query q(free u64 A, bound u64 B).
+q(A, B) : rel(A, B).

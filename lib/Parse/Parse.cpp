@@ -848,13 +848,14 @@ bool ParsedDeclaration::HasMutableParameter(void) const noexcept {
   return impl->has_mutable_parameter;
 }
 
-// The optional declared region key `name[K...]` (DIFF-R3 R3a).
+// The declared instance key(s) `@key(K...)` (RP-5/RP-9; RP-10 multi-set).
 bool ParsedDeclaration::HasInstanceKey(void) const noexcept {
-  return !impl->instance_key_param_indices.empty();
+  return !impl->instance_key_param_index_sets.empty();
 }
 
-const std::vector<unsigned> &ParsedDeclaration::InstanceKey(void) const noexcept {
-  return impl->instance_key_param_indices;
+const std::vector<std::vector<unsigned>> &
+ParsedDeclaration::InstanceKeys(void) const noexcept {
+  return impl->instance_key_param_index_sets;
 }
 
 // Does this declaration have a clause that directly depends on a `#message`?

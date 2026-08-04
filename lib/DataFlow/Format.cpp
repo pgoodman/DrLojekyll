@@ -1733,20 +1733,50 @@ OutputStream &operator<<(OutputStream &os, QueryContracts qc) {
       if (!decl.HasInstanceKey() || !seen_decls.insert(decl.Id()).second) {
         continue;
       }
-      os << "declared-key rel=" << decl.NameAsString()
-         << " declared=(";
-      auto sep = "";
-      for (unsigned pi : decl.InstanceKey()) {
-        os << sep << decl.NthParameter(pi).NameAsString();
-        sep = ", ";
+      // One line per declared @key set (pragma-written order), paired with the
+      // inferred adornment (some RecognizedSubgraph's key_cols) whose SET equals
+      // it. Post-Step-2b bijection guarantees the pairing is total. The inner
+      // rescan is O(N²) in the per-decl set count (N ≤ arity, tiny).
+      auto set_eq = [](std::vector<unsigned> a, std::vector<unsigned> b) {
+        std::sort(a.begin(), a.end());
+        std::sort(b.begin(), b.end());
+        return a == b;
+      };
+      for (const std::vector<unsigned> &dset : decl.InstanceKeys()) {
+        const std::vector<unsigned> *inferred = nullptr;
+        for (const RecognizedSubgraph &rs2 : qc.query.RecognizedSubgraphs()) {
+          if (rs2.demanded_decl.Id() == decl.Id() &&
+              set_eq(rs2.key_cols, dset)) {
+            inferred = &rs2.key_cols;
+            break;
+          }
+        }
+        // ADJ-K1-I: an always-on belt (survives NDEBUG) — unreachable on any
+        // compiled program (Step 2b's bijection already passed), so the deref
+        // below is null-safe.
+        if (!inferred) {
+          const std::string_view rel_name = decl.NameAsString();
+          fprintf(stderr, "V-DECLARED-KEY-PAIR: declared @key set on '%.*s' "
+                  "has no matching demanded forcing (Step 2b bijection "
+                  "guarantees a match)\n", static_cast<int>(rel_name.size()),
+                  rel_name.data());
+          abort();
+        }
+        os << "declared-key rel=" << decl.NameAsString()
+           << " declared=(";
+        auto sep = "";
+        for (unsigned pi : dset) {
+          os << sep << decl.NthParameter(pi).NameAsString();
+          sep = ", ";
+        }
+        os << ") inferred=(";
+        sep = "";
+        for (unsigned pi : *inferred) {
+          os << sep << decl.NthParameter(pi).NameAsString();
+          sep = ", ";
+        }
+        os << ")\n";
       }
-      os << ") inferred=(";
-      sep = "";
-      for (unsigned pi : rs.key_cols) {
-        os << sep << decl.NthParameter(pi).NameAsString();
-        sep = ", ";
-      }
-      os << ")\n";
     }
   }
 

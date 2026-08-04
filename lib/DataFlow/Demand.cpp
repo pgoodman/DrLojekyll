@@ -75,9 +75,11 @@
 #include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parse.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <set>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -886,34 +888,63 @@ bool QueryImpl::ApplyDemandTransform(
   // ---------------------------------------------------------------------
   if (p_demanded_decl.HasInstanceKey()) {
 
-    // ADJ-R3-A STRICT single-forcing scope, checked BEFORE reconciliation:
-    // `plan.size()` IS the relation's forcing count (one bound query name —
-    // R-1BOUND rejects a second name upstream; re-count across names if
-    // R-1BOUND is ever lifted).
-    if (2u <= plan.size()) {
-      log.Append(p_demanded_decl.SpellingRange())
-          << "An instance key on " << p_demanded_decl.KindName() << " '"
-          << p_demanded_decl.NameAsString() << "' is only supported when it "
-          << "is demanded under a single query adornment; fix or remove the "
-          << "@key pragma";
-      return false;
+    // RP-10 TOTAL BIJECTION (V-DECLARED-KEY, multi-set): the declared
+    // set-of-sets must EQUAL the SIP-inferred set-of-sets, order-free. Both
+    // sides are duplicate-free here (declared by the ADJ-K1-A parse dup-set
+    // reject; inferred by the seen_variants BindingPattern dedup), so
+    // set-of-sets equality IS a bijection. `plan.size()` is the forcing count
+    // (R-1BOUND: one bound query name; demand_forcings still empty here).
+    //
+    // Canonical form: each set sorted into a std::vector<unsigned>; membership
+    // via std::set<std::vector<unsigned>>. A key-set is rendered by column name
+    // for the diagnostics (RES-6: anchored at the decl, no flag/pragma suffix
+    // beyond the fix advice).
+    auto canon = [](std::vector<unsigned> v) {
+      std::sort(v.begin(), v.end());
+      return v;
+    };
+    auto names = [&](const std::vector<unsigned> &s) {
+      std::string out;
+      auto sep = "";
+      for (unsigned pos : s) {
+        out += sep;
+        out += p_demanded_decl.NthParameter(pos).NameAsString();
+        sep = ", ";
+      }
+      return out;
+    };
+
+    std::set<std::vector<unsigned>> declared_sets;
+    for (const std::vector<unsigned> &s : p_demanded_decl.InstanceKeys()) {
+      declared_sets.insert(canon(s));
+    }
+    std::set<std::vector<unsigned>> inferred_sets;
+    for (const PerAdornment &a : plan) {
+      inferred_sets.insert(canon(a.p_bound));
     }
 
-    // Set-reconciliation: declared SET == the SIP-inferred bound set
-    // (structural only — the Minimize functional-key proof is the ratified
-    // lift candidate, O-R3.5). A disagreement is UNPROVABLE-therefore-
-    // REJECT (RP-3), never warn-and-accept.
-    const std::vector<unsigned> &declared = p_demanded_decl.InstanceKey();
-    const std::unordered_set<unsigned> declared_set(declared.begin(),
-                                                    declared.end());
-    for (const PerAdornment &a : plan) {
-      const std::unordered_set<unsigned> inferred(a.p_bound.begin(),
-                                                  a.p_bound.end());
-      if (inferred != declared_set) {
+    // Arm A — a declared @key set with no matching demanded adornment
+    // (over-declaration; witness key_over_adorn_1).
+    for (const std::vector<unsigned> &d : declared_sets) {
+      if (!inferred_sets.count(d)) {
         log.Append(p_demanded_decl.SpellingRange())
-            << "Declared instance key of " << p_demanded_decl.KindName() << " '"
-            << p_demanded_decl.NameAsString() << "' disagrees with the "
-            << "demanded binding pattern; fix or remove the @key pragma";
+            << "Declared instance key (" << names(d) << ") on "
+            << p_demanded_decl.KindName() << " '"
+            << p_demanded_decl.NameAsString() << "' has no matching demanded "
+            << "query adornment; fix or remove the @key pragma";
+        return false;
+      }
+    }
+    // Arm B — a demanded adornment with no matching @key set (partial
+    // declaration; witness key_multi_adorn_1, repurposed).
+    for (const std::vector<unsigned> &i : inferred_sets) {
+      if (!declared_sets.count(i)) {
+        log.Append(p_demanded_decl.SpellingRange())
+            << "The demanded query adornment binding (" << names(i) << ") on "
+            << p_demanded_decl.KindName() << " '"
+            << p_demanded_decl.NameAsString() << "' has no matching @key "
+            << "instance key; declare @key(" << names(i) << ") or remove the "
+            << "@key pragma";
         return false;
       }
     }

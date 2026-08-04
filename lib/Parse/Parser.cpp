@@ -3,6 +3,8 @@
 
 #include "Parser.h"
 
+#include <algorithm>
+
 namespace hyde {
 
 // Lex all the tokens from a display. This fills up `tokens` with the tokens.
@@ -395,6 +397,11 @@ void ParserImpl::ParseLocalExport(
   Token key_pragma_tok;
   bool key_expect_var = false;
 
+  // RP-10: the in-progress `@key(...)` column set. Filled by state 22, and
+  // pushed onto `local->instance_key_param_index_sets` + cleared at each set's
+  // `)` close, so a second `@key` (re-entering state 21) opens a fresh set.
+  std::vector<unsigned> key_cur_set;
+
   DisplayPosition next_pos;
   Token name;
   Token highlight;
@@ -784,18 +791,9 @@ void ParserImpl::ParseLocalExport(
       case 8:
         if (Lexeme::kPragmaKey == lexeme) {
 
-          // A SECOND `@key` is a clean not-yet-supported reject (RP-5:
-          // repetition is the reserved multi-adornment lift path —
-          // `@key(A) @key(B)` → N keyed stores — not landed).
-          if (!local->instance_key_param_indices.empty()) {
-            context->error_log.Append(scope_range, tok_range)
-                << "Unexpected second '" << tok << "' pragma on "
-                << local->KindName() << " '" << local->name << "/"
-                << local->parameters.Size()
-                << "'; multiple instance keys (one per adornment) are not yet "
-                << "supported";
-            return;
-          }
+          // RP-10: a second `@key` OPENS a new instance-key set. `key_cur_set`
+          // is empty here (cleared at the prior set's `)` close, or never
+          // filled).
           key_pragma_tok = tok;
           state = 21;
           continue;
@@ -932,7 +930,7 @@ void ParserImpl::ParseLocalExport(
                 << "'; every instance key column must name a declared parameter";
             return;
           }
-          for (unsigned prev : local->instance_key_param_indices) {
+          for (unsigned prev : key_cur_set) {
             if (prev == resolved_index) {
               context->error_log.Append(scope_range, tok_range)
                   << "Duplicate column '" << tok << "' in the instance key of "
@@ -941,7 +939,7 @@ void ParserImpl::ParseLocalExport(
               return;
             }
           }
-          local->instance_key_param_indices.push_back(resolved_index);
+          key_cur_set.push_back(resolved_index);
           key_expect_var = false;
           continue;
 
@@ -964,13 +962,38 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          if (local->instance_key_param_indices.empty() || key_expect_var) {
+          if (key_cur_set.empty() || key_expect_var) {
             context->error_log.Append(scope_range, tok_range)
                 << "The instance key of " << local->KindName() << " '"
                 << local->name << "' must list at least one named column and "
                 << "may not end with a trailing comma";
             return;
           }
+
+          // ADJ-K1-A: a set-based dup check against every already-stored set
+          // (order-free — {A} vs {A} and {A,B} vs {B,A} both match). Duplicate
+          // declared sets are the single-adornment ambiguity reborn (RP-10).
+          {
+            std::vector<unsigned> canon(key_cur_set);
+            std::sort(canon.begin(), canon.end());
+            for (const std::vector<unsigned> &prev_set :
+                 local->instance_key_param_index_sets) {
+              std::vector<unsigned> prev_canon(prev_set);
+              std::sort(prev_canon.begin(), prev_canon.end());
+              if (prev_canon == canon) {
+                context->error_log.Append(scope_range,
+                                          key_pragma_tok.SpellingRange())
+                    << "Duplicate instance key on " << local->KindName() << " '"
+                    << local->name << "'; this '@key' pragma declares the same "
+                    << "column set as an earlier '@key' pragma — each instance "
+                    << "key must be a distinct column set (one per query "
+                    << "adornment)";
+                return;
+              }
+            }
+          }
+          local->instance_key_param_index_sets.push_back(std::move(key_cur_set));
+          key_cur_set.clear();  // Ready for a possible next `@key`.
           key_expect_var = false;
           state = 8;  // Back to the pragma tail (period / other pragmas).
           continue;

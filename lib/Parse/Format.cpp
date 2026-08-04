@@ -114,12 +114,14 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
   // The declared instance key `@key(K...)` (RP-5/RP-9) — printed in the written
   // order so the parser round-trip preserves the pragma byte-faithfully.
   if (decl.HasInstanceKey()) {
-    auto demand_sep = " @key(";
-    for (unsigned param_index : decl.InstanceKey()) {
-      os << demand_sep << decl.NthParameter(param_index).Name();
-      demand_sep = ", ";
+    for (const std::vector<unsigned> &key_set : decl.InstanceKeys()) {
+      auto key_sep = " @key(";
+      for (unsigned param_index : key_set) {
+        os << key_sep << decl.NthParameter(param_index).Name();
+        key_sep = ", ";
+      }
+      os << ")";
     }
-    os << ")";
   }
   if (decl.IsQuery()) {
     auto query = ParsedQuery::From(decl);

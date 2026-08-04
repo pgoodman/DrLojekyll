@@ -1533,6 +1533,17 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
   if (!demand_instance && any_forcing && all_forcings_admissible) {
     const auto &subgraphs = query.RecognizedSubgraphs();
     if (!subgraphs.empty() && subgraphs[0].demanded_decl.HasInstanceKey()) {
+
+      // INVARIANT (R-1BOUND + one demanded relation p): EVERY RecognizedSubgraph
+      // shares the ONE demanded_decl, so subgraphs[0]'s pragma bit correctly
+      // drives every forcing. State it positively rather than trust it silently
+      // — if a future slice keys distinct decls per forcing, [0] would ignore a
+      // differently-pragma'd decl at index >= 1 and this fires first.
+      for (const RecognizedSubgraph &rs : subgraphs) {
+        assert(rs.demanded_decl.Id() == subgraphs[0].demanded_decl.Id() &&
+               "K1: all forcings must share one demanded_decl (R-1BOUND)");
+        (void) rs;
+      }
       effective_demand_instance = true;
     }
   }

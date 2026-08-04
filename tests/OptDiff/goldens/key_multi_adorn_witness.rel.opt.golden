@@ -1,0 +1,76 @@
+rel
+
+instances:
+  DRInstance i#0 forcing=q key=%table:8 pub=%table:4 input=%table:11 store=I#0 key_cols=[A] row_cols=[B]
+  DRInstance i#1 forcing=q key=%table:19 pub=%table:4 input=%table:11 store=I#1 key_cols=[B] row_cols=[A]
+
+op.11 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:8
+op.8 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:8, +, NonRecursive), kVecAppend(%table:8, kNetAddition)}
+    spine: —
+    args: table=%table:8 message=demand__q_bf/1
+op.10 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:11
+op.7 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:11, +, NonRecursive), kVecAppend(%table:11, kNetAddition)}
+    spine: —
+    args: table=%table:11 message=edge_2/2
+op.12 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:19
+op.9 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:19, +, NonRecursive), kVecAppend(%table:19, kNetAddition)}
+    spine: —
+    args: table=%table:19 message=demand__q_fb/1
+op.0 kSubgraphInstantiate sign=+ ctx=seed stratum=1 i#0
+    demand=%table:8 pub=%table:4 input=%table:11 pub_row=[ik:A,row:B] nested=<B>
+    reads: Present(%table:11)
+    effects: {kVecDrain(%table:8, kNetAddition), kVecDrain(%table:11, kNetAddition), kInstanceDemand(%table:8), kInstanceRebuild(%table:4, +), kStateEmit(%table:4), kStateOld(%table:4), kCounter(%table:4, +, NonRecursive)}
+    spine: kAccess(%table:11, section-walk) -> kFold(%table:4, +, NonRecursive)
+    args: demand=%table:8 pub=%table:4 input=%table:11 store=I#0
+op.2 kSubgraphInstantiate sign=+ ctx=seed stratum=1 i#1
+    demand=%table:19 pub=%table:4 input=%table:11 pub_row=[row:A,ik:B] nested=<A>
+    reads: Present(%table:11)
+    effects: {kVecDrain(%table:19, kNetAddition), kVecDrain(%table:11, kNetAddition), kInstanceDemand(%table:19), kInstanceRebuild(%table:4, +), kStateEmit(%table:4), kStateOld(%table:4), kCounter(%table:4, +, NonRecursive)}
+    spine: kAccess(%table:11, section-walk) -> kFold(%table:4, +, NonRecursive)
+    args: demand=%table:19 pub=%table:4 input=%table:11 store=I#1
+op.4 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
+    effects: {kFlagWrite(%table:8)}
+    args: table=%table:8
+op.5 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
+    effects: {kFlagWrite(%table:11)}
+    args: table=%table:11
+op.6 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
+    effects: {kFlagWrite(%table:19)}
+    args: table=%table:19
+op.1 kInstanceSeal sign=· ctx=seed band=11 i#0
+    effects: {kStateFold(%table:4, sign=0)}
+    args: pub=%table:4 store=I#0
+op.3 kInstanceSeal sign=· ctx=seed band=11 i#1
+    effects: {kStateFold(%table:4, sign=0)}
+    args: pub=%table:4 store=I#1
+
+rounds:
+
+deps:
+  op.0 -> op.1 WAR epoch
+  op.0 -> op.1 WAW epoch
+  op.0 -> op.2 RAW epoch
+  op.0 -> op.2 WAR epoch
+  op.0 -> op.2 WAW epoch
+  op.0 -> op.3 WAR epoch
+  op.0 -> op.3 WAW epoch
+  op.0 -> op.5 WAR epoch
+  op.1 -> op.3 WAW epoch
+  op.2 -> op.1 WAR epoch
+  op.2 -> op.1 WAW epoch
+  op.2 -> op.3 WAR epoch
+  op.2 -> op.3 WAW epoch
+  op.2 -> op.5 WAR epoch
+  op.7 -> op.0 RAW epoch
+  op.7 -> op.2 RAW epoch
+  op.7 -> op.5 WAW epoch
+  op.8 -> op.4 WAW epoch
+  op.9 -> op.6 WAW epoch
+
+census: kCrossover=0 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=0 kRetire=0 kRederive=0 kFrontierFilter=0 kCommitSweep=3 kNegateGate=0 kPivotAssemble=0 kIngestFold=3 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=2 kInstanceDeath=0 kInstanceSeal=2 kEagerForward=3 kEagerInsert=0 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0 kEagerJoin=0 kEagerProduct=0 kIngestLoop=0 kJoinEmit=0 kProductEmit=0

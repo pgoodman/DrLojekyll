@@ -378,12 +378,13 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
 
   std::vector<Token> parsed_tokens;
 
-  // The optional declared region key `name[K...]` (DIFF-R3 R3a): parameter
-  // indices into `parameters`, in the WRITTEN bracket order (the order is a
-  // parse-layer capture only — a DIFF-R5 arrangement hint; R3a reconciles
-  // the SET). Empty means "no bracket" (an empty bracket rejects at parse).
+  // The declared instance key(s) `@key(K...)` (RP-5/RP-9; RP-10 multi-set).
+  // One inner vector per `@key` pragma — parameter indices into `parameters`,
+  // in written column order — and the outer vector in pragma-written order.
+  // Each set is duplicate-free (parse-enforced) and distinct from every other
+  // set on the decl (ADJ-K1-A parse-time dup-set reject). Empty ⇒ no `@key`.
   // Populated only for `#local`/`#export` declarations.
-  std::vector<unsigned> instance_key_param_indices;
+  std::vector<std::vector<unsigned>> instance_key_param_index_sets;
 
   Token name;
   std::string_view name_view;

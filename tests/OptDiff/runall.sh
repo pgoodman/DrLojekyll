@@ -112,33 +112,47 @@ if [ "${1:-}" = "--bless" ]; then
   WORKROOT=${2:?usage: runall.sh --bless <workroot> [name-filter-regex]}
   FILTER=${3:-.}
   mkdir -p "$HERE/goldens"
+  # ADJ-K1-G: never bless THROUGH a symlink. A symlink golden is a twin-
+  # equivalence claim (key_tc_witness, key_neighborhood_witness,
+  # key_multi_adorn_witness.stdout, ...); a plain `cp` writes through it and
+  # silently corrupts the TWIN's real golden, masking the very divergence the
+  # witness exists to catch. $1=produced src  $2=golden dest  $3=label.
+  bless_copy() {
+    if [ -L "$2" ]; then
+      if cmp -s "$1" "$2"; then
+        echo "skipped $3 (symlink, byte-identical)"
+      else
+        echo "BLESS-REFUSED $3: golden is a symlink and bytes diverge"
+        exit 1
+      fi
+      return 1
+    fi
+    cp "$1" "$2"
+    echo "blessed $3"
+    return 0
+  }
   n=0
   for d in "$WORKROOT"/*/; do
     name=$(basename "$d")
     echo "$name" | grep -qE "$FILTER" || continue
     src="$d$name.opt/stdout"
     if [ -f "$src" ]; then
-      cp "$src" "$HERE/goldens/$name.stdout"
-      echo "blessed $name"
-      n=$((n + 1))
+      bless_copy "$src" "$HERE/goldens/$name.stdout" "$name" && n=$((n + 1))
     fi
     osrc="$d$name.oracle/stdout"
     if [ -f "$osrc" ]; then
-      cp "$osrc" "$HERE/goldens/$name.oracle.stdout"
-      echo "blessed $name.oracle"
-      n=$((n + 1))
+      bless_copy "$osrc" "$HERE/goldens/$name.oracle.stdout" "$name.oracle" \
+        && n=$((n + 1))
     fi
     msrc="$d$name.monotone/stdout"
     if [ -f "$msrc" ]; then
-      cp "$msrc" "$HERE/goldens/$name.monotone.stdout"
-      echo "blessed $name.monotone"
-      n=$((n + 1))
+      bless_copy "$msrc" "$HERE/goldens/$name.monotone.stdout" "$name.monotone" \
+        && n=$((n + 1))
     fi
     bsrc="$d$name.refinterp/behavioral.opt"
     if [ -f "$bsrc" ]; then
-      cp "$bsrc" "$HERE/goldens/$name.behavioral.stdout"
-      echo "blessed $name.behavioral"
-      n=$((n + 1))
+      bless_copy "$bsrc" "$HERE/goldens/$name.behavioral.stdout" \
+        "$name.behavioral" && n=$((n + 1))
     fi
     # IR-golden surfaces (T3): driven by the case's .irgold sidecar; a pinned
     # surface whose produced file is missing is a HARD ERROR (never the
@@ -151,18 +165,16 @@ if [ "${1:-}" = "--bless" ]; then
           echo "FATAL: $name.irgold pins '$surface $mode' but $isrc is missing"
           exit 1
         fi
-        cp "$isrc" "$HERE/goldens/$name.$surface.$mode.golden"
-        echo "blessed $name.$surface.$mode"
-        n=$((n + 1))
+        bless_copy "$isrc" "$HERE/goldens/$name.$surface.$mode.golden" \
+          "$name.$surface.$mode" && n=$((n + 1))
       done < "$HERE/cases/$name.irgold"
     fi
   done
   # kvindex_1 runs outside diffrun.sh, so its workdir layout is flat.
   if [ -f "$WORKROOT/kvindex_1.opt/stdout" ] \
       && echo kvindex_1 | grep -qE "$FILTER"; then
-    cp "$WORKROOT/kvindex_1.opt/stdout" "$HERE/goldens/kvindex_1.stdout"
-    echo "blessed kvindex_1"
-    n=$((n + 1))
+    bless_copy "$WORKROOT/kvindex_1.opt/stdout" "$HERE/goldens/kvindex_1.stdout" \
+      "kvindex_1" && n=$((n + 1))
   fi
   echo "BLESS: $n golden(s) updated"
   exit 0
@@ -495,7 +507,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_multi_adorn_allfree_1|demand_cyclic_1|demand_recursive_content_1|product_in_scc_diff_1|demand_agg_body_1|demand_kv_body_1|demand_config_agg_body_1|demand_mutual_content_1|demand_two_queries_1|key_wildcard_1|key_anon_1|key_dup_1|key_unknown_1|key_mismatch_1|key_multi_adorn_1|key_fenced_1|key_undemanded_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|demand_multi_adorn_1|demand_multi_adorn_allfree_1|demand_cyclic_1|demand_recursive_content_1|product_in_scc_diff_1|demand_agg_body_1|demand_kv_body_1|demand_config_agg_body_1|demand_mutual_content_1|demand_two_queries_1|key_wildcard_1|key_anon_1|key_dup_1|key_unknown_1|key_mismatch_1|key_multi_adorn_1|key_over_adorn_1|key_multi_adorn_allfree_1|key_fenced_1|key_undemanded_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done
