@@ -51,8 +51,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 190 corner-case programs as of the
-RegionalDataFlowCore pre-Stage-A landing — symrec_tie_1 is the standing
+(`<name>.dr` + `<name>.main.cpp`, 199 corner-case programs as of the
+DIFF-R3 R3a landing — symrec_tie_1 is the standing
 determinism witness; agg_distinct_1 pins the aggregate multiplicity
 semantics + carries a `.contract` golden; barrier_neck_1
 witnesses the `:-` separator, sugar for `@barrier` between every two
@@ -108,9 +108,18 @@ delta-relational-IR golden policy.
   demanded body — demand-sink/R-MAT rejects under their `-demand` .drflags;
   each carries `.batches` + oracle/monotone goldens pinning the definitional
   answer BEFORE any Stage-C reject lift), `demand_mutual_content_1` (mutual
-  recursion inside a demanded body, R-BODYWALK) and `demand_two_queries_1`
+  recursion inside a demanded body, R-BODYWALK), `demand_two_queries_1`
   (two independent bound query names, R-1BOUND — the Stage-C lift
-  candidate); `kvindex_1` is MODE-SPLIT (compiles
+  candidate), and the SEVEN R3a region-key rejects (DIFF-R3, session 5):
+  `region_key_wildcard_1`/`region_key_anon_1`/`region_key_dup_1`/
+  `region_key_unknown_1` (parse/resolve obligations, `-demand`-INDEPENDENT
+  — no .drflags), `region_key_mismatch_1` (V-DECLARED-KEY: declared set ≠
+  SIP-inferred `p_bound`; a STABLE hard reject under the RP-3
+  unprovable-brackets-reject ratification), `region_key_multi_adorn_1`
+  (ADJ-R3-A strict single-forcing scope) and `region_declared_fenced_1`
+  (a MATCHING bracket + NEGATE body draws the FENCE class, never
+  V-DECLARED-KEY — O-R3.4; the last three under `-demand` .drflags,
+  flag-off the bracket is inert); `kvindex_1` is MODE-SPLIT (compiles
   under opt/nocf where KVINDEX→TUPLE elimination fires, V-ALGEBRA-rejects
   under nodf/none). `aggregate_1` FLIPPED from diagnostic to a 4-mode
   golden at the R3 stage-C flip. The @differential-summarized-input fence was
@@ -609,9 +618,10 @@ NO re-optimize) deriving request-ports (one per demand forcing), input/result
 ports (real messages only; the fabricated `demand__` messages render
 region-internal, ADJ-2), permanent roots (unforced queries, ADJ-3), and
 row-contracts (R-STORE NARROWED: one per distinct non-demand relation-INSERT
-declaration, member-key positional from the Stage-A contracts; merge-
-materialized interior models are UNNAMEABLE — the logical-origin-provenance
-necessity witness). H4: `Program::Build(const FrozenRegionalProgram&, ...)`,
+declaration, member-key positional from the Stage-A contracts; since the
+session-5 TIER-1 NAMING LIFT the demand-INTERIOR relations are nameable
+too — see the DIFF-R3 section below).
+H4: `Program::Build(const FrozenRegionalProgram&, ...)`,
 first statement `query = frozen.Query()` — the byte-preserving thin seam.
 Referees: V-FROZEN-NO-OPEN-PORT / V-OWNERSHIP-ACYCLIC at freeze + the
 ALWAYS-ON V-REGION-CENSUS recount at the ValidateDROps tail (stored census ==
@@ -623,6 +633,68 @@ demand_multi_adorn_witness × 4 modes — byte-identical cross-mode at tip but
 pinned PER-MODE; cross-mode identity is not claimed). Authority docs:
 stage-b-diff.md AMENDMENTS, regional-arch-pseudocode.md Part B,
 regional-dump-stage-b-desired-states.md §9/§9.7, stage-b-landed-seed.md.
+
+## DIFF-R3: Tier-1 interior naming + the declared-region-key bracket (R3a — LANDED, session 5)
+
+RATIFIED POLICY (2026-08-03): HINT-NOT-MANDATE — the bracket NEVER drives or
+constrains the lowering (R3b declared-driven lowering is DEAD, not deferred);
+UNPROVABLE BRACKETS REJECT (a mismatch is a stable hard compile error, never
+warn-and-accept); the Stage-B `Minimize`/`DeterminedBy` functional-key proof
+is the future provability WIDENING (O-R3.5). Authority: region-model-diffs.md
+"DIFF-R3 AMENDMENTS (session 5)" + its panel record, adjudicated resolutions
+(RES-1..6) and implementation findings; pseudocode = regional-arch-
+pseudocode.md Part R3; desired bytes = regional-dump-stage-b-desired-states
+§10.
+
+TIER-1 NAMING LIFT (hunk 1): the demanded interior relation (merge-
+materialized, no INSERT — formerly unnameable) surfaces as a `-region-out`
+row-contract. `ConnectInsertsToSelects` records `insert_proxy →
+rel->declaration` in a `Query::Build`-SCOPED map (never a QueryImpl member —
+the VIEW* keys dangle past Optimize), read once by `ApplyDemandTransform`
+(T1-DECL-MISS aborts on a miss) into `RecognizedSubgraph::demanded_decl`
+(parse identity, Optimize-stable). At freeze, interior-contract EXISTENCE +
+census COUNT are decl-driven and resolve-free (distinct `demanded_decl` Ids,
+forcing order, deduped against insert-derived decls — multi-adornment
+surfaces ONE interior contract); member-key renders the decl's AllFields
+positionally; `support=` is the OR over the forcing's live annotated guard
+JOINs of `CanReceiveDeletions()` — ROLE-BLIND (T1-IMPL-1:
+`PromoteSurvivorToBody` folds a projection guard to kBody under CSE, so a
+role-filtered resolve aborts on real corpus cases); zero live guard JOINs
+for a counted decl ABORTS the freeze (a resolve failure can never silently
+drop a contract line). 8 `.region` goldens re-blessed (demand_tc gains
+`E1 rel=path`, multi_adorn gains `E1 rel=rel` + an E0 re-pad from the
+emitter's max-over-contracts column widths; census `row-contracts` 1→2).
+Tier 1 is NOT a step toward Tier 2 (origin decl-sets on models — the
+general mechanism, its own future slice).
+
+R3a BRACKET SURFACE: `rel[K...](...)` on `#local`/`#export` only. Lexemes
+`kPuncOpenBracket`/`kPuncCloseBracket` + two Lexer.cpp arms (NO spelling
+table exists — rendering rides `Token::SpellingRange`); `ParseLocalExport`
+state 20 (named + duplicate-free vars; empty bracket, trailing comma,
+wildcard/anonymous, unexpected token all reject; EOF rides the `state != 9`
+truncation gate); unknown-column resolve reject at the accept path; storage
+`ParsedDeclarationImpl::region_key_param_indices` (WRITTEN order — parse-
+layer capture only; the SET is the logical key, the order an inert DIFF-R5
+arrangement hint) behind `ParsedDeclaration::HasRegionKey()/RegionKey()`;
+the decl formatter prints the bracket (parser round-trip). CHECKING (Step
+2b, V-DECLARED-KEY) sits POST-Loop-1 in `ApplyDemandTransform` (the first
+site the adornment count exists; fences run first, so a bracket never masks
+a fence): strict single-forcing scope, then declared-set == inferred
+`p_bound`, via a dedicated decl-anchored reject (NO "recompile without
+-demand" suffix). Flag-off the bracket is INERT (whole corpus byte-
+identical). `-contract-out` gains the bracket-scoped `declared-region-key
+rel=... declared=(...) inferred=(...)` line. `region_declared_tc_witness`
+is the no-op-overlay witness: its stdout/oracle/monotone/df/rel/ir/h/
+region×4 goldens are SYMLINKS to demand_tc_witness's (byte-identity IS the
+referee; NEVER bless its symlinked surfaces directly — bless writes THROUGH
+to demand_tc's files), contract.opt + behavioral are its OWN real goldens
+(the CBF header embeds the case name — a symlinked behavioral golden can
+never match). NO eqgate: recursive demand rejects under `-demand-instance`
+(the demand_cyclic_1 fence), so the original eqgate spec was impossible;
+a declared×nested composition witness needs a non-recursive base
+(follow-on). The key-SUBSET covering-array fuzz arm (ORDER dropped as
+inert) is the ranked-next follow-on. `region_key_dead_relation_1` pins the
+bracket-on-dead-local no-crash path.
 
 ## Other known feature gaps (clean diagnostics)
 

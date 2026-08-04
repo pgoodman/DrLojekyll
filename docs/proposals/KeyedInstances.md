@@ -6273,3 +6273,42 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     ranks Stage-C re-brief (D2.6 + §6-vs-§11 STOPs; DIFF-R1's 15 normative
     amendments to fold) vs DIFF-R3 declared regions vs the R-STORE lift;
     entry prompt = next-session-prompt.md, seed = stage-b-landed-seed.md.
+
+  - **(BA) 2026-08-03 session 5 — DIFF-R3 LANDED (Tier-1 naming lift +
+    R3a-as-lint), the full (a)-(d) method + panel in one session.** Owner
+    ranked DIFF-R3 first with the Tier-1 lift as hunk 1 and RATIFIED:
+    hint-not-mandate (R3b declared-driven lowering DEAD), unprovable
+    brackets REJECT (mismatch = stable hard error), Minimize stays the
+    provability lift candidate (O-R3.5). Session-4 Stage-B work committed
+    first (b0155bcd/dc29c4c2/a42579f8). Method artifacts: Part R3
+    pseudocode (fleet-verified; found: NO lexeme-spelling table exists;
+    p's ParsedDeclaration NOT in scope at the demand mint — the decl dies
+    at Connect); the session-5 AMENDMENTS on region-model-diffs.md (hunks
+    T1 + R3a-1..5, ADJ-R3-A..E); an 11/11-surviving adversarial panel
+    (BLOCKING: the strict-scope check as specified read the EMPTY
+    demand_forcings — moved post-Loop-1 where plan.size() IS the count;
+    MAJOR: the census-lockstep "loud failure" claim was structurally
+    false — resolved STRICTER: decl-driven existence/count + abort-on-
+    unresolvable-support); desired-states §10 (byte-exact predictions incl.
+    the multi_adorn E0 re-pad from max-over-contracts padding — verified
+    byte-exact on first build). TIER 1 (d0911997): Connect-scoped
+    proxy→decl map → RecognizedSubgraph::demanded_decl → decl-driven
+    interior contracts + census; support= role-blind OR over live guard
+    JOINs (T1-IMPL-1: the kQueryProjection-only rule was CSE-fragile —
+    PromoteSurvivorToBody promotes folded projection guards to kBody;
+    caught by the corpus, not the panel); 8 .region goldens re-blessed
+    (rel=path / rel=rel return, row-contracts 1→2). R3A (7f96f7c5): the
+    bracket surface end-to-end (lexer/parser state 20/resolve/accessors/
+    round-trip print), Step-2b V-DECLARED-KEY post-Loop-1 (fence-first),
+    dedicated decl-anchored rejects, bracket-scoped declared-region-key
+    contract-dump line; 9 new witnesses (suite 190→199): 7 diagnostics +
+    region_key_dead_relation_1 + region_declared_tc_witness (12 symlinked
+    goldens = the no-op-overlay referee; REAL behavioral golden — the CBF
+    header embeds the case name, R3A-IMPL-1: the ratified eqgate spec was
+    impossible, recursive TC fences under -demand-instance; R3A-IMPL-2:
+    the ADJ-R3-C belt is Tier-2-gated — a non-demanded bracketed relation
+    has no decl→view link without origin sets). Exit: suite PASS (199),
+    ctest 7/7, flag-off corpus byte-identical. NEXT (owner re-ranks): the
+    key-SUBSET covering-array fuzz arm (the slotted follow-on), the
+    declared×nested eqgate witness on a non-recursive base, Stage-C
+    re-brief (D2.6 + §6-vs-§11 STOPs), Tier-2 provenance mini-slice.
