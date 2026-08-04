@@ -125,8 +125,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
           if (col.Id() == field.v) {
             if (col.IsConstantOrConstantRef()) {
               os << "k" << field.v;
+            } else if (auto var = col.Variable()) {
+              os << *var;  // K6-6: guard the optional — never `_MissingVar`.
             } else {
-              os << col.Variable();
+              os << "f" << field.v;  // Fabricated demand column (no source var).
             }
             named = true;
             break;
@@ -158,8 +160,10 @@ OutputStream &operator<<(OutputStream &os, Query query) {
     if (col.IsConstantOrConstantRef()) {
       do_const(QueryConstant::From(col));
 
+    } else if (auto var = col.Variable()) {
+      os << *var;  // K6-6: guard the optional — never `_MissingVar`.
     } else {
-      os << col.Variable(); // << ":" << *(col.Index());
+      os << "c" << col.Id();  // Fabricated demand column (no source var).
     }
 //    os << ", Id:" << col.Id();
 //    NOTE(pag): the per-column taint-set debug dump used to live here; the

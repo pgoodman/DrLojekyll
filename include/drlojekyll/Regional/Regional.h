@@ -110,6 +110,12 @@ struct RegionalContract {
   std::string rel_name;
   std::string member_key_text;  // "(From, To)"
   std::string support_text;     // "monotone" | "differential"
+
+  // K6-7a: does the relation carry an `@key` instance-key pragma? Rendered as
+  // a " declared-key" badge in the -region-dot-out DOT twin ONLY (never in the
+  // -region-out TEXT emitter — the 16 `.region.<mode>` goldens stay
+  // byte-identical). Default false.
+  bool declared_key = false;
 };
 
 // Derive the Stage-B census from the Query graph's PUBLIC surface only — a

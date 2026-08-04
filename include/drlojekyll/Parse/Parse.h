@@ -447,6 +447,11 @@ class ParsedDeclaration : public Node<ParsedDeclaration, ParsedDeclarationImpl> 
   bool HasInstanceKey(void) const noexcept;
   const std::vector<std::vector<unsigned>> &InstanceKeys(void) const noexcept;
 
+  // Per-set spelling ranges (K6-3), parallel to `InstanceKeys()` (same index =
+  // same `@key` set): the `@key(` token through the closing `)`. Empty ⇒ no
+  // `@key`. Used for tight diagnostic anchoring on the offending set.
+  const std::vector<DisplayRange> &InstanceKeyRanges(void) const noexcept;
+
   // Does this declaration have a clause that directly depends on a `#message`?
   bool HasDirectInputDependency(void) const noexcept;
 

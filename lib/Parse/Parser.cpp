@@ -4,6 +4,7 @@
 #include "Parser.h"
 
 #include <algorithm>
+#include <set>
 
 namespace hyde {
 
@@ -954,7 +955,7 @@ void ParserImpl::ParseLocalExport(
           if (key_expect_var) {
             context->error_log.Append(scope_range, tok_range)
                 << "Expected named variable (capitalized identifier) in the "
-                << "demand key of " << local->KindName() << " '"
+                << "instance key of " << local->KindName() << " '"
                 << local->name << "', but got '" << tok << "' instead";
             return;
           }
@@ -992,6 +993,12 @@ void ParserImpl::ParseLocalExport(
               }
             }
           }
+          // K6-3: capture this set's own spelling range (`@key(` .. `)`),
+          // parallel to the index set. `key_pragma_tok` holds this set's own
+          // `@key` token (overwritten only on the NEXT state-21 entry, after
+          // this push); `tok` is the closing `)`.
+          local->instance_key_ranges.push_back(
+              DisplayRange(key_pragma_tok.Position(), tok.NextPosition()));
           local->instance_key_param_index_sets.push_back(std::move(key_cur_set));
           key_cur_set.clear();  // Ready for a possible next `@key`.
           key_expect_var = false;
@@ -1462,6 +1469,24 @@ void ParserImpl::RemoveDecl(ParsedDeclarationImpl *decl) {
 
 // Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
 // with any prior declarations of the same name.
+// K6-4 (owner-ratified 2026-08-04): order-free set-of-sets equality for the
+// IDENTICAL-OR-ABSENT cross-redeclaration `@key` check. Sort each inner set,
+// collect into a std::set, compare — the SAME canonicalization the landed
+// demand Step 2b uses (Demand.cpp:902-905), transcribed LOCALLY rather than
+// hoisted across the lib boundary (the necessity panel's point).
+static bool SameKeySetOfSets(const std::vector<std::vector<unsigned>> &a,
+                             const std::vector<std::vector<unsigned>> &b) {
+  auto canon = [](const std::vector<std::vector<unsigned>> &v) {
+    std::set<std::vector<unsigned>> out;
+    for (std::vector<unsigned> s : v) {
+      std::sort(s.begin(), s.end());
+      out.insert(std::move(s));
+    }
+    return out;
+  };
+  return canon(a) == canon(b);
+}
+
 bool ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
 
   const auto scope_range = SubTokenRange();
@@ -1508,7 +1533,13 @@ bool ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
     return true;
   }
 
-  ParsedDeclarationImpl *const prev_decl = redecls[num_redecls - 1u];
+  // F31 (2026-08-04): `redecls` already contains the CURRENT decl (both ctors
+  // AddUse(this) at construction, Parse.cpp:166/:178), so [-1] aliases `decl`
+  // itself and every consistency check below compared a decl to itself. The
+  // true previous redecl is [-2]; num_redecls >= 2 is guaranteed by the guard
+  // above.
+  assert(num_redecls >= 2u);
+  ParsedDeclarationImpl *const prev_decl = redecls[num_redecls - 2u];
   const ParsedDeclaration prev_decl_pub(prev_decl);
   const DisplayRange prev_decl_range = prev_decl_pub.SpellingRange();
   assert(prev_decl->parameters.Size() == num_params);
@@ -1615,6 +1646,34 @@ bool ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
 
     RemoveDecl(decl);
     return false;
+  }
+
+  // IDENTICAL-OR-ABSENT (owner-ratified 2026-08-04, K6-4): a redeclaration
+  // carrying `@key` must declare the identical set-of-sets (order-free, per-set
+  // AND across-sets) as the prior; a pragma-free redecl inherits silently
+  // (empty ⇒ no claim). Only a divergence between two NON-EMPTY declarations is
+  // an error.
+  {
+    const auto &pk = prev_decl->instance_key_param_index_sets;
+    const auto &ck = decl->instance_key_param_index_sets;
+    if (!pk.empty() && !ck.empty() && !SameKeySetOfSets(pk, ck)) {
+      const DisplayRange decl_key_range =
+          !decl->instance_key_ranges.empty() ? decl->instance_key_ranges.front()
+                                             : decl_pub.SpellingRange();
+      const DisplayRange prev_key_range =
+          !prev_decl->instance_key_ranges.empty()
+              ? prev_decl->instance_key_ranges.front()
+              : prev_decl_range;
+      auto err = context->error_log.Append(scope_range, decl_key_range);
+      err << "Instance key declared here differs from a previous redeclaration "
+          << "of " << decl_pub.KindName() << " '" << decl->name
+          << "'; every `@key`-bearing redeclaration must declare the identical "
+          << "column set(s), or omit `@key` to inherit";
+      auto note = err.Note(prev_decl_range, prev_key_range);
+      note << "Previous instance key is declared here";
+      RemoveDecl(decl);
+      return false;
+    }
   }
 
   const DeclarationKind prev_decl_kind = prev_decl->context->kind;

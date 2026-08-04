@@ -4,7 +4,17 @@
 ; the demand_multi_adorn_witness bf/fb graph with `@key(A) @key(B)` and NO
 ; `.drflags`. The two @key pragmas SELECT N=2 disjoint keyed stores flaglessly
 ; (RP-9 fallback), one pub, and answer identically to the flat/mono twin.
+;
+; K6-4 note (ADJ-K6-B): the pragma-FREE redeclaration below (FIRST, before the
+; key-bearing decl) is the F-K6-SHADOW guard shape. Post-fix (ADJ-K6-A(b), the
+; resolve-through-redeclarations accessors) it inherits the sibling's key
+; SILENTLY (IDENTICAL-OR-ABSENT, absent arm) and compiles BYTE-IDENTICAL to the
+; single-decl form; pre-fix it silently dropped the pragma
+; (kSubgraphInstantiate 2 to 0), flipping every golden: the loud-regression
+; guard. It hits the non-empty short-circuit, so it never reaches
+; SameKeySetOfSets (that TRUE branch is exercised by reject_key_redecl_1).
 #message edge_2(u64 A, u64 B).
+#local rel(u64 A, u64 B).                 ; absent redecl - inherits @key silently
 #local rel(u64 A, u64 B) @key(A) @key(B).
 rel(A, B) : edge_2(A, B).
 #query q(bound u64 A, free u64 B).

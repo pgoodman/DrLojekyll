@@ -179,7 +179,9 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDOT d) {
     os << "contract_e" << contract.edge_index << " [label=\"E"
        << contract.edge_index << " rel=" << contract.rel_name
        << " member-key=" << contract.member_key_text
-       << " support=" << contract.support_text << "\"];\n";
+       << " support=" << contract.support_text
+       << (contract.declared_key ? " declared-key" : "")  // K6-7a badge.
+       << "\"];\n";
   }
   os << "}\n";
 

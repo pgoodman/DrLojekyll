@@ -1,0 +1,11 @@
+# demand_multi_adorn_witness -- the oracle's input batch (the SAME edge stream
+# the driver sends). One epoch. The oracle evaluates the plain (undemanded)
+# program; `q` is the full (A,B) copy of `edge_2`, subsuming both bf/fb probe
+# answers by inspection.
+batch
++ edge_2 1 2
++ edge_2 1 3
++ edge_2 2 4
++ edge_2 10 11
++ edge_2 11 12
+end

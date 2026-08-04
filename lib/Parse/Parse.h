@@ -386,6 +386,11 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   // Populated only for `#local`/`#export` declarations.
   std::vector<std::vector<unsigned>> instance_key_param_index_sets;
 
+  // Per-set spelling range (K6-3): the `@key(` token .. the closing `)`
+  // NextPosition. Parallel to `instance_key_param_index_sets` (same index =
+  // same set). Additive/format-inert rider for tight diagnostic anchoring.
+  std::vector<DisplayRange> instance_key_ranges;
+
   Token name;
   std::string_view name_view;
   Token rparen;

@@ -1,0 +1,16 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; expect: instance-key redeclaration divergence (IDENTICAL-OR-ABSENT, DIFF-K6-4).
+; Three @key-bearing redecls of `rel`: @key(A), @key(A), @key(B). Distinct query
+; name `q` so no cross-kind AddDecl collision masks the K6-4 check. The MIDDLE
+; redecl (@key(A) vs the first @key(A)) exercises SameKeySetOfSets == TRUE (no
+; reject) en route to the divergence: the third @key(B) vs the second @key(A)
+; hits SameKeySetOfSets == FALSE and rejects rc=1. Compiles rc=0 pre-DIFF-K6-4
+; (the check absent = a LOST CHECK), rejects rc=1 once it lands.
+#message edge_2(u64 A, u64 B).
+#local rel(u64 A, u64 B) @key(A).
+#local rel(u64 A, u64 B) @key(A).
+#local rel(u64 A, u64 B) @key(B).
+rel(A, B) : edge_2(A, B).
+#query q(bound u64 A, free u64 B).
+q(A, B) : rel(A, B).

@@ -476,8 +476,9 @@ bool QueryImpl::ApplyDemandTransform(
     // pragma would be a silent lie (RP-6: unprovable/unrealizable rejects).
     if (pragma_activated) {
       const ParsedDeclaration d = demand_key_decls[0];
-      log.Append(d.SpellingRange())
-          << "'" << d.NameAsString() << "' declares a demand key but no "
+      const auto &d_ranges = d.InstanceKeyRanges();
+      log.Append(d_ranges.empty() ? d.SpellingRange() : d_ranges[0])
+          << "'" << d.NameAsString() << "' declares an instance key but no "
           << "bound #query exists to seed demand; remove the @key pragma "
           << "or add a bound query";
       return false;
@@ -870,8 +871,9 @@ bool QueryImpl::ApplyDemandTransform(
   // ---------------------------------------------------------------------
   for (const ParsedDeclaration &d : demand_key_decls) {
     if (d.Id() != p_demanded_decl.Id()) {
-      log.Append(d.SpellingRange())
-          << "'" << d.NameAsString() << "' declares a demand key but is not "
+      const auto &d_ranges = d.InstanceKeyRanges();
+      log.Append(d_ranges.empty() ? d.SpellingRange() : d_ranges[0])
+          << "'" << d.NameAsString() << "' declares an instance key but is not "
           << "the demanded relation ('" << p_demanded_decl.NameAsString()
           << "' is); remove the @key pragma";
       return false;
@@ -924,10 +926,16 @@ bool QueryImpl::ApplyDemandTransform(
     }
 
     // Arm A — a declared @key set with no matching demanded adornment
-    // (over-declaration; witness key_over_adorn_1).
-    for (const std::vector<unsigned> &d : declared_sets) {
+    // (over-declaration; witness key_over_adorn_1). K6-3: index-preserving
+    // iteration so each set's OWN pragma range anchors the diagnostic (the
+    // canonicalized `declared_sets` element carries no index; iterate the
+    // parallel `InstanceKeys()`/`InstanceKeyRanges()` by index).
+    const auto &decl_ranges = p_demanded_decl.InstanceKeyRanges();
+    for (unsigned j = 0u; j < p_demanded_decl.InstanceKeys().size(); ++j) {
+      std::vector<unsigned> d = canon(p_demanded_decl.InstanceKeys()[j]);
       if (!inferred_sets.count(d)) {
-        log.Append(p_demanded_decl.SpellingRange())
+        log.Append(j < decl_ranges.size() ? decl_ranges[j]
+                                          : p_demanded_decl.SpellingRange())
             << "Declared instance key (" << names(d) << ") on "
             << p_demanded_decl.KindName() << " '"
             << p_demanded_decl.NameAsString() << "' has no matching demanded "
@@ -1044,7 +1052,9 @@ bool QueryImpl::ApplyDemandTransform(
     log.Append(q_decl.SpellingRange())
         << "Cannot fabricate the demand declarations for '" << base_name
         << "': a user declaration collides with the reserved demand__ "
-        << "prefix; rename it or recompile without -demand";
+        << "prefix; rename it"
+        << (pragma_activated ? " or remove the @key pragma"
+                             : " or recompile without -demand");
     return false;
   }
 
@@ -1054,7 +1064,9 @@ bool QueryImpl::ApplyDemandTransform(
     log.Append(q_decl.SpellingRange())
         << "Cannot fabricate the demand message '" << base_name
         << "': a user declaration collides with the reserved demand__ "
-        << "prefix; rename it or recompile without -demand";
+        << "prefix; rename it"
+        << (pragma_activated ? " or remove the @key pragma"
+                             : " or recompile without -demand");
     return false;
   }
   const ParsedMessage d_msg = *msg_opt;
@@ -1065,7 +1077,9 @@ bool QueryImpl::ApplyDemandTransform(
     log.Append(q_decl.SpellingRange())
         << "Cannot fabricate the demand relation '" << base_name
         << "_local': a user declaration collides with the reserved demand__ "
-        << "prefix; rename it or recompile without -demand";
+        << "prefix; rename it"
+        << (pragma_activated ? " or remove the @key pragma"
+                             : " or recompile without -demand");
     return false;
   }
 

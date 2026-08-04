@@ -849,13 +849,42 @@ bool ParsedDeclaration::HasMutableParameter(void) const noexcept {
 }
 
 // The declared instance key(s) `@key(K...)` (RP-5/RP-9; RP-10 multi-set).
+//
+// F-K6-SHADOW (ADJ-K6-A(b)): the READ resolves ACROSS the shared
+// redeclaration context — the first impl carrying a non-empty set wins — so a
+// non-first `@key` is no longer silently invisible. IDENTICAL-OR-ABSENT
+// (checked at parse) makes "first non-empty" well-defined (all non-empty
+// siblings are identical) and moot for an absent-inherit sibling.
 bool ParsedDeclaration::HasInstanceKey(void) const noexcept {
-  return !impl->instance_key_param_index_sets.empty();
+  for (ParsedDeclarationImpl *redecl : impl->context->redeclarations) {
+    if (!redecl->instance_key_param_index_sets.empty()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const std::vector<std::vector<unsigned>> &
 ParsedDeclaration::InstanceKeys(void) const noexcept {
-  return impl->instance_key_param_index_sets;
+  for (ParsedDeclarationImpl *redecl : impl->context->redeclarations) {
+    if (!redecl->instance_key_param_index_sets.empty()) {
+      return redecl->instance_key_param_index_sets;
+    }
+  }
+  return impl->instance_key_param_index_sets;  // Empty fallback (no @key sibling).
+}
+
+// K6-3: per-set spelling ranges, parallel to `InstanceKeys()`. Resolves through
+// the redeclaration context identically (returns the first non-empty sibling's
+// parallel range vector, so the two vectors index-align).
+const std::vector<DisplayRange> &
+ParsedDeclaration::InstanceKeyRanges(void) const noexcept {
+  for (ParsedDeclarationImpl *redecl : impl->context->redeclarations) {
+    if (!redecl->instance_key_param_index_sets.empty()) {
+      return redecl->instance_key_ranges;
+    }
+  }
+  return impl->instance_key_ranges;  // Empty fallback (no @key sibling).
 }
 
 // Does this declaration have a clause that directly depends on a `#message`?

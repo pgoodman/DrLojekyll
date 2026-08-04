@@ -1257,4 +1257,9 @@ void CheckInstanceSolePub(const DRFlowGraph &flow);
 void SetRelDumpStream(OutputStream *stream);
 void DumpRelIfEnabled(const DRFlowGraph &flow);
 
+// K6-7b — the `-rel-dot-out` DR-IR DOT twin. Same install-before-build +
+// PRE-guarded drain pattern as the `-rel-out` sink; advisory, never goldened.
+void SetRelDotDumpStream(OutputStream *stream);
+void DumpRelDotIfEnabled(const DRFlowGraph &flow);
+
 }  // namespace hyde

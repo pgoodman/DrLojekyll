@@ -515,6 +515,7 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
     contract.member_key_text = std::move(key);
     contract.support_text =
         view.CanReceiveDeletions() ? "differential" : "monotone";
+    contract.declared_key = decl.HasInstanceKey();  // K6-7a (DOT-only badge).
     out.contracts.push_back(std::move(contract));
   }
 
@@ -532,6 +533,7 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
     contract.member_key_text = std::string(AllParamNames(decl));
     contract.support_text =
         ResolveInteriorSupport(query, decl) ? "differential" : "monotone";
+    contract.declared_key = decl.HasInstanceKey();  // K6-7a (DOT-only badge).
     out.contracts.push_back(std::move(contract));
   }
 

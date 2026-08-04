@@ -2295,6 +2295,7 @@ void BuildStratumPhases(ProgramImpl *impl, Context &context, Query query) {
   // block) reading the stashed `flow` ref, BEFORE the no-phase early return
   // below so no-phase programs still emit a dump (spec §2.1-2.2).
   DumpRelIfEnabled(flow);
+  DumpRelDotIfEnabled(flow);  // K6-7b: the advisory DR-IR DOT twin.
 
   // R3: publish one StateCell store descriptor per GROUP_UPDATE for codegen
   // (the `statecell_<id>` member + Key/Reduce types + commit-tail Seal). The

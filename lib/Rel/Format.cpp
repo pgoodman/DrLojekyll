@@ -21,6 +21,7 @@
 #include <drlojekyll/Parse/Parse.h>
 
 #include <algorithm>
+#include <map>
 #include <tuple>
 #include <cstdint>
 #include <cstdio>
@@ -1152,8 +1153,53 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
   }
 }
 
+// K6-7b — the `-rel-dot-out` DR-IR DOT twin. MINIMAL and faithful: ops as
+// nodes (clustered per DR stratum, the DataFlow/Format.cpp:56-75 idiom), vecs
+// as nodes, def/use edges (op->vec for a def, vec->op for a use). Census-free,
+// advisory, never goldened. Node labels are ids + enum spellings only, so no
+// quote-escaping is needed.
+static void EmitDRFlowDOT(OutputStream &os, const DRFlowGraph &flow) {
+  os << "digraph {\n"
+     << "node [shape=box fontname=courier];\n";
+
+  // Cluster per DR stratum, ops walked in the checked linearization order.
+  std::map<unsigned, std::vector<unsigned>> stratum_ops;
+  for (unsigned pi = 0u; pi < flow.pinned_order.size(); ++pi) {
+    const unsigned oi = flow.pinned_order[pi];
+    stratum_ops[DROpStratum(flow, flow.ops[oi])].push_back(oi);
+  }
+  for (const auto &[stratum, ops] : stratum_ops) {
+    os << "subgraph cluster_stratum_" << stratum << " {\n"
+       << "label=\"stratum " << stratum << "\";\n"
+       << "style=\"rounded,dashed\";\n";
+    for (unsigned oi : ops) {
+      os << "op" << oi << " [label=\"op." << oi << " "
+         << DROpKindName(flow.ops[oi].kind) << "\"];\n";
+    }
+    os << "}\n";
+  }
+
+  // Vecs (id-ordered by mint).
+  for (unsigned vi = 0u; vi < flow.vecs.size(); ++vi) {
+    os << "vec" << vi << " [shape=ellipse label=\"vec." << vi << "\"];\n";
+  }
+
+  // def/use edges: op -> vec (def), vec -> op (use). Field names are
+  // `.defs`/`.uses` (Rel.h) per A-K6-7b.
+  for (unsigned vi = 0u; vi < flow.vecs.size(); ++vi) {
+    for (unsigned oi : flow.vecs[vi].defs) {
+      os << "op" << oi << " -> vec" << vi << ";\n";
+    }
+    for (unsigned oi : flow.vecs[vi].uses) {
+      os << "vec" << vi << " -> op" << oi << ";\n";
+    }
+  }
+  os << "}\n";
+}
+
 // The lib/Rel-owned sink (spec §2.1 (i)).
 static OutputStream *gRelDumpStream = nullptr;
+static OutputStream *gRelDotDumpStream = nullptr;  // K6-7b DOT twin.
 
 }  // namespace
 
@@ -1165,6 +1211,17 @@ void DumpRelIfEnabled(const DRFlowGraph &flow) {
   if (gRelDumpStream) {  // PRE-guard: format only when a stream is set.
     EmitDRFlow(*gRelDumpStream, flow);
     gRelDumpStream->Flush();
+  }
+}
+
+void SetRelDotDumpStream(OutputStream *stream) {
+  gRelDotDumpStream = stream;
+}
+
+void DumpRelDotIfEnabled(const DRFlowGraph &flow) {
+  if (gRelDotDumpStream) {  // PRE-guard, same as DumpRelIfEnabled.
+    EmitDRFlowDOT(*gRelDotDumpStream, flow);
+    gRelDotDumpStream->Flush();
   }
 }
 

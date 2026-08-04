@@ -16,6 +16,11 @@ class OutputStream;
 // `Program::Build`). Passing nullptr (the default) disables the dump.
 void SetRelDumpStream(OutputStream *stream);
 
+// K6-7b — install the `-rel-dot-out` DR-IR DOT twin stream (advisory GraphViz
+// render of the Rel flow graph; wired like `SetRelDumpStream`, drained inside
+// `Program::Build`). Passing nullptr (the default) disables the dump.
+void SetRelDotDumpStream(OutputStream *stream);
+
 OutputStream &operator<<(OutputStream &os, DataColumn col);
 OutputStream &operator<<(OutputStream &os, DataIndex index);
 OutputStream &operator<<(OutputStream &os, DataTable table);

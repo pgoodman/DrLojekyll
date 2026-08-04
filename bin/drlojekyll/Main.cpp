@@ -58,6 +58,7 @@ static OutputStream *gDOTStream = nullptr;
 static OutputStream *gDFStream = nullptr;
 static OutputStream *gContractStream = nullptr;
 static OutputStream *gRelStream = nullptr;
+static OutputStream *gRelDotStream = nullptr;  // K6-7b DR-IR DOT twin.
 static OutputStream *gDRStream = nullptr;
 static OutputStream *gIRStream = nullptr;
 static OutputStream *gRegionStream = nullptr;
@@ -96,6 +97,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   // top-level drain like -dot-out/-df-out). Null-safe: unset leaves the sink
   // a guarded no-op.
   SetRelDumpStream(gRelStream);
+  SetRelDotDumpStream(gRelDotStream);  // K6-7b: DR-IR DOT twin (same pattern).
 
   auto program_opt =
       Program::Build(*frozen_opt, error_log, gFirstId, gPassPolicy,
@@ -237,6 +239,7 @@ static int HelpMessage(const char *argv[]) {
       << "  -df-out <PATH>            Emit the data flow IR in BB-with-arguments text form to PATH." << std::endl
       << "  -contract-out <PATH>      Emit the Stage-A row contracts in text form to PATH." << std::endl
       << "  -rel-out <PATH>      Emit the Rel (DR-IR) flow graph in text form to PATH." << std::endl
+      << "  -rel-dot-out <PATH>       Emit the Rel (DR-IR) flow graph as GraphViz DOT to PATH." << std::endl
       << "  -region-out <PATH>        Emit the Stage-B frozen regional program in text form to PATH." << std::endl
       << "  -region-dot-out <PATH>    Emit the frozen regional program in GraphViz DOT format to PATH." << std::endl
       << "  -first-id <N>             The first integer number used for identifiers in the control-flow IR." << std::endl
@@ -317,6 +320,7 @@ extern "C" int main(int argc, const char *argv[]) {
   std::unique_ptr<hyde::FileStream> df_out;
   std::unique_ptr<hyde::FileStream> contract_out;
   std::unique_ptr<hyde::FileStream> rel_out;
+  std::unique_ptr<hyde::FileStream> rel_dot_out;  // K6-7b.
   std::unique_ptr<hyde::FileStream> region_out;
   std::unique_ptr<hyde::FileStream> region_dot_out;
   std::unique_ptr<hyde::FileStream> ir_out;
@@ -431,6 +435,23 @@ extern "C" int main(int argc, const char *argv[]) {
                              << "' for Rel IR output";
         }
         hyde::gRelStream = &(rel_out->os);
+      }
+
+    // Rel (DR-IR) GraphViz DOT twin (the `-rel-dot-out` surface, K6-7b).
+    } else if (!strcmp(argv[i], "--rel-dot-out") ||
+               !strcmp(argv[i], "-rel-dot-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "Rel IR DOT output";
+      } else {
+        rel_dot_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!rel_dot_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for Rel IR DOT output";
+        }
+        hyde::gRelDotStream = &(rel_dot_out->os);
       }
 
     // Stage-B frozen-regional-program text dump (the `-region-out` surface).

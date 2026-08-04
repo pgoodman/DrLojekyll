@@ -342,3 +342,53 @@ Fixed in the final session:
   driver-suppressed, so no generated-code collision was demonstrated — the
   finding is the broken documented CONTRACT (and the un-refereed namespace
   hazard it left open), caught at the checking layer where it belongs.
+
+## Round 14 (the K6-riders panel, 2026-08-04)
+
+### F31 [FIXED 2026-08-04]: `prev_decl` aliased the CURRENT decl — every cross-redeclaration consistency check was DEAD (comparing a decl against itself)
+
+- Found by the K6-riders critique panel (lldb-anchored + empirically
+  proven), while grounding the DIFF-K6-4 cross-redeclaration `@key` check on
+  a real `prev_decl`.
+- Root cause: `ParserImpl::FinalizeDeclAndCheckConsistency`
+  (`lib/Parse/Parser.cpp`) computed
+  `prev_decl = redecls[num_redecls - 1u]`. But BOTH `ParsedDeclarationImpl`
+  ctors `AddUse(this)` to `context->redeclarations` at construction
+  (`Parse.cpp:166`/`:178`), and the function runs AFTER the current decl is
+  constructed — so `redecls[num_redecls - 1u]` IS the current decl, i.e.
+  `prev_decl == decl`. EVERY consistency check in the body (parameter type
+  differs, externally-visible parameter name differs, `@first`,
+  `@differential`, inline, mutable-merge, range) was therefore comparing a
+  decl against ITSELF and silently accepted all divergences.
+- Empirical proof (message made USED so the "never published/received"
+  guard does not mask): `#message foo(u64 A). #message foo(i32 A).` + a using
+  clause compiles rc=0 despite the `u64`/`i32` type divergence
+  (`k6probe/f31_type2.dr`); the name-divergent twin `foo(u64 A)`/`foo(u64 B)`
+  likewise compiled rc=0 (`f31_name2.dr`).
+- Fix: index the TRUE previous redecl,
+  `prev_decl = redecls[num_redecls - 2u]` (guarded by the existing
+  `num_redecls >= 2` early-return, plus an `assert`). This REVIVES the type
+  / externally-visible-name / `@first` / `@differential` / inline /
+  mutable-merge checks. Verified: both F31 probes now reject rc=1 in both
+  mode extremes (type-differs / name-differs); FULL suite SUITE: PASS with
+  ZERO green-case fallout (the only same-name redecls are the 6
+  multi-adornment `#query` that survive the kQuery-excluded binding check
+  with identical names/types, and 2 `#functor a` redecls already living in
+  `rejects/`).
+- F-K6-SHADOW (folded here — the same panel's orchestrator probe): a
+  pragma-free redeclaration FIRST + the `@key`-bearing decl SECOND compiled
+  rc=0 with the pragma SILENTLY DROPPED (`kSubgraphInstantiate` 1→0), a
+  NEC-2 silent lie reachable by declaration ORDER. Root cause: the
+  `HasInstanceKey()`/`InstanceKeys()` accessors read `impl->` directly, so a
+  non-first pragma was invisible to the canonical-first activation gate
+  (`k6probe/shadow_first.dr`). Fixed alongside F31 (ADJ-K6-A(b)): the
+  accessors now RESOLVE across the shared redeclaration context (first impl
+  carrying a non-empty set wins), well-defined because the new
+  IDENTICAL-OR-ABSENT cross-redecl check (DIFF-K6-4) makes all non-empty
+  siblings identical. Repros: `shadow_first.dr` (was broken, now
+  `kSubgraphInstantiate=1`) and its byte-inert `@key`-first twin
+  `shadow_after.dr`. The `key_multi_adorn_witness` corpus case gained a
+  pragma-free-FIRST redeclaration as the standing loud-regression guard
+  (byte-identical goldens post-fix); `rejects/reject_key_redecl_1.dr` pins
+  the divergence reject (`@key(A)`/`@key(A)`/`@key(B)`, the middle identical
+  pair exercising `SameKeySetOfSets == TRUE`).
