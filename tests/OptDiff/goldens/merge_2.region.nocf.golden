@@ -1,0 +1,19 @@
+region-program
+program-root {
+  input-abi   m1/2(X:i32, Y:i32)               -> R0 via P0
+  input-abi   m2/2(X:i32, Y:i32)               -> R0 via P1
+  input-abi   m3/2(X:i32, Y:i32)               -> R0 via P2
+  query-abi   q_outer(X:free i32, Y:free i32)  -> permanent-root
+  query-abi   q_proj(X:free i32)               -> permanent-root
+  output-abi  <none>
+}
+region R0  owner=program-root  parents=()  children=() {
+  input-port      P0  message=m1/2  fields=(X, Y)
+  input-port      P1  message=m2/2  fields=(X, Y)
+  input-port      P2  message=m3/2  fields=(X, Y)
+  permanent-root  q_outer(X, Y)
+  permanent-root  q_proj(X)
+  row-contract    E0  rel=q_outer  member-key=(X, Y)  support=monotone
+  row-contract    E1  rel=q_proj   member-key=(X)     support=monotone
+}
+census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=3 result-ports=0 row-contracts=2

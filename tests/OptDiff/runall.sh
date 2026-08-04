@@ -319,6 +319,7 @@ if [ "${1:-}" = "--one" ]; then
           -df-out "$iout/df.$mode.out" \
           -contract-out "$iout/contract.$mode.out" \
           -rel-out "$iout/rel.$mode.out" \
+          -region-out "$iout/region.$mode.out" \
           -ir-out "$iout/ir.$mode.out" \
           -cpp-out "$iout/cpp.$mode" \
           >"$iout/dr.$mode.log" 2>&1; then
