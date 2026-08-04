@@ -6345,3 +6345,32 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     NEXT candidates: multi-@demand repetition (the multi-adornment surface
     lift), the auto-sweep strict-vs-best-effort STOP, the key-subset fuzz
     arm, Stage-C re-brief, Tier-2 provenance.
+
+  - **(BC) 2026-08-04 session 6 close — RP-9: the `@key` rename + the
+    nested-fallback arm; ALL PUSHED (tip 48cd0a4f, 9 commits
+    8a4520d9..48cd0a4f).** The pragma's final spelling is `@key(Col, ...)`
+    (owner: "trigger keyed instances" — the durable fact is the INSTANCE
+    KEY; the @key-for-FD reservation dissolved by convergence with the
+    Minimize/O-R3.5 proof). THE FALLBACK ARM: `@key` SELECTS the nested
+    keyed-instance lowering where every forcing admits it
+    (key_neighborhood_witness: flagless kSubgraphInstantiate=1,
+    byte-identical to the -demand -demand-instance twin compile; stdout
+    symlinked to the flat golden = per-mode nested-vs-flat answer
+    identity) and falls back SILENTLY to flat where not (recursive —
+    key_tc_witness); -demand-instance stays the STRICT override, its
+    fences stay diagnostics. Realization: per-forcing admissibility flags
+    computed once in Program::Build, consumed by both arms; pragma bit =
+    RecognizedSubgraph::demanded_decl.HasInstanceKey() (no new plumbing).
+    Parse API = HasInstanceKey/InstanceKey; contract token = declared-key;
+    witness family = key_*. Suite PASS (246 = 200 + 46 rejects), ctest
+    7/7. DOT audit (owner question): activation is fully visible in
+    -dot-out (the demand web) and -region-dot-out (permanent-root ->
+    request-port flip); declared-vs-inferred and nested-vs-flat are NOT
+    DOT-visible (riders recorded); found the `KEY (_MissingVar)` render
+    wart on demand-minted views (cosmetic). Whole-program seed for the
+    next session = key-pragma-landed-seed.md (Part 1 pipeline, Part 2
+    DIFF-NEXT-K1..K6, Part 3 verify-first); regional-arch-pseudocode.md
+    Part R3 is recorded STALE-BY-SUPERSESSION there. NEXT (owner ranks):
+    K1 multi-@key repetition, K2 the auto-sweep STOP, K3 Stage-C re-brief
+    (kills the injected forcing seam — the owner's stated intent), K4
+    fuzz arm, K5 Tier-2 provenance.
