@@ -1451,7 +1451,18 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
   // (FENCE (ii) mid-stream monotone edge-add is no longer a gap: R-a2's
   // band-(a2) rebuilds the standing instance via a full edge-frontier rescan,
   // so an edge-after-demand is HANDLED, not fenced — no reject here.)
-  if (demand_instance) {
+  // The per-forcing admissibility flags are computed ONCE and consumed by
+  // TWO arms with DIFFERENT outcomes (RP-9, session 6): under the explicit
+  // `-demand-instance` FLAG an inadmissible forcing is a STRICT reject (the
+  // developer override asked for the nested lowering; demand_cyclic_1 /
+  // demand_recursive_content_1 stay diagnostics); under `@key` PRAGMA
+  // activation an inadmissible forcing means a SILENT FLAT FALLBACK — the
+  // pragma fixes the keyed SEMANTICS, the compiler picks the arrangement
+  // (hint-not-mandate), and both lowerings realize the same answers (the
+  // eqgate contract).
+  bool any_forcing = false;
+  bool all_forcings_admissible = true;
+  {
     const auto &annots = query.GuardAnnotations();
     std::unordered_map<unsigned, std::vector<std::pair<QueryView, unsigned>>>
         fguards;
@@ -1463,6 +1474,7 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
       fguards[annots[ai].forcing_index].emplace_back(v, ai);
     });
     for (auto &fe : fguards) {
+      any_forcing = true;
       bool recursive_content = false, cyclic_demand = false;
       for (auto &[v, ai] : fe.second) {
         if (!v.IsJoin()) {
@@ -1490,19 +1502,39 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
           cyclic_demand = true;
         }
       }
-      if (cyclic_demand) {
-        log.Append() << "Recursive demand relations are not yet supported "
-                        "under -demand-instance";
-      } else if (recursive_content) {
-        log.Append() << "Demanded subgraphs with recursive (induction-owned) "
-                        "content are not yet supported under -demand-instance "
-                        "(a keyed-instance feature gap)";
+      if (cyclic_demand || recursive_content) {
+        all_forcings_admissible = false;
+      }
+      if (demand_instance) {
+        if (cyclic_demand) {
+          log.Append() << "Recursive demand relations are not yet supported "
+                          "under -demand-instance";
+        } else if (recursive_content) {
+          log.Append() << "Demanded subgraphs with recursive (induction-owned) "
+                          "content are not yet supported under -demand-instance "
+                          "(a keyed-instance feature gap)";
+        }
       }
     }
   }
 
   if (num_errors != log.Size()) {
     return std::nullopt;
+  }
+
+  // RP-9 (the fallback arm): an explicit `@key` pragma SELECTS the nested
+  // keyed-instance lowering when EVERY forcing admits it (with R-1BOUND all
+  // forcings share the one demanded relation, so admissibility is
+  // all-or-nothing by construction — recorded rule: any inadmissible
+  // forcing sends the WHOLE program to the flat arm). The pragma bit rides
+  // `RecognizedSubgraph::demanded_decl` (parse identity, Optimize-stable) —
+  // no new plumbing.
+  bool effective_demand_instance = demand_instance;
+  if (!demand_instance && any_forcing && all_forcings_admissible) {
+    const auto &subgraphs = query.RecognizedSubgraphs();
+    if (!subgraphs.empty() && subgraphs[0].demanded_decl.HasInstanceKey()) {
+      effective_demand_instance = true;
+    }
   }
 
   auto impl = std::make_shared<ProgramImpl>(query, first_id);
@@ -1516,11 +1548,13 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
   // injector builder consults it for demand-transformed queries (recipe F2).
   context.demand_forcings = &query.DemandForcings();
 
-  // Keyed-instance nested lowering selector (D2.b `-demand-instance`). Gates the
-  // DR-IR mint (BuildSubgraphInstanceOps), the census recount, the eager-walk
-  // chain-breaker excision + OD-4 provisioning, and the three feature-gap
-  // fences. OFF the PassPolicy registry (a lowering selector, not a pass).
-  context.demand_instance_enabled = demand_instance;
+  // Keyed-instance nested lowering selector: the `-demand-instance` flag OR
+  // the RP-9 `@key`-pragma selection (nested where every forcing admits it,
+  // silent flat fallback otherwise). Gates the DR-IR mint
+  // (BuildSubgraphInstanceOps), the census recount, the eager-walk
+  // chain-breaker excision + OD-4 provisioning, and the feature-gap fences.
+  // OFF the PassPolicy registry (a lowering selector, not a pass).
+  context.demand_instance_enabled = effective_demand_instance;
 
   // Stage B: the frozen regional census, recounted by V-REGION-CENSUS at the
   // ValidateDROps tail (lib/Rel/Rel.cpp) — the positive-presence referee.

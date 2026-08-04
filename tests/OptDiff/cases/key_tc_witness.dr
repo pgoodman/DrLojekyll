@@ -1,6 +1,6 @@
-; demand_key_tc_witness -- the @demand ACTIVATION-EQUIVALENCE witness
+; key_tc_witness -- the @key ACTIVATION-EQUIVALENCE witness
 ; (RP-6, session 6; formerly region_declared_tc_witness, the R3a bracket
-; no-op-overlay witness). The pragma `@demand(From)` FORCE-ACTIVATES the
+; no-op-overlay witness). The pragma `@key(From)` FORCE-ACTIVATES the
 ; demand transform FLAGLESS (no .drflags), declaring exactly the
 ; SIP-inferred key. Referees: stdout / oracle / monotone / df.opt / rel.opt
 ; / ir.opt / h.opt / region x4 goldens are committed SYMLINKS to
@@ -15,7 +15,7 @@
 
 #message edge_2(u64 From, u64 To).
 
-#local path(u64 From, u64 To) @demand(From).
+#local path(u64 From, u64 To) @key(From).
 path(F, T) : edge_2(F, T).
 path(F, T) : path(F, M), edge_2(M, T).
 

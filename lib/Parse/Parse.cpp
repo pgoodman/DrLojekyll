@@ -849,12 +849,12 @@ bool ParsedDeclaration::HasMutableParameter(void) const noexcept {
 }
 
 // The optional declared region key `name[K...]` (DIFF-R3 R3a).
-bool ParsedDeclaration::HasDemandKey(void) const noexcept {
-  return !impl->demand_key_param_indices.empty();
+bool ParsedDeclaration::HasInstanceKey(void) const noexcept {
+  return !impl->instance_key_param_indices.empty();
 }
 
-const std::vector<unsigned> &ParsedDeclaration::DemandKey(void) const noexcept {
-  return impl->demand_key_param_indices;
+const std::vector<unsigned> &ParsedDeclaration::InstanceKey(void) const noexcept {
+  return impl->instance_key_param_indices;
 }
 
 // Does this declaration have a clause that directly depends on a `#message`?

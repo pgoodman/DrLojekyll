@@ -1051,7 +1051,7 @@ class Query {
   // DemandSeeds.artifacts/d1-demand-seed-mechanism.md) runs as a dedicated
   // pass immediately before `Optimize` when ACTIVATED: either globally via
   // `demand_mode == true` (the `-demand` CLI flag — the auto layer) or
-  // per-relation via an explicit `@demand(K...)` pragma (RP-6 force-opt-in,
+  // per-relation via an explicit `@key(K...)` pragma (RP-6/RP-9 force-opt-in,
   // flagless). With neither, NOTHING is minted and the graph is bit-for-bit
   // identical. Orthogonal to the four golden optimization modes (never a
   // fifth mode).

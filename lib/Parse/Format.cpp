@@ -111,11 +111,11 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
 
   os << ")";
 
-  // The declared demand key `@demand(K...)` (RP-5) — printed in the written
+  // The declared instance key `@key(K...)` (RP-5/RP-9) — printed in the written
   // order so the parser round-trip preserves the pragma byte-faithfully.
-  if (decl.HasDemandKey()) {
-    auto demand_sep = " @demand(";
-    for (unsigned param_index : decl.DemandKey()) {
+  if (decl.HasInstanceKey()) {
+    auto demand_sep = " @key(";
+    for (unsigned param_index : decl.InstanceKey()) {
       os << demand_sep << decl.NthParameter(param_index).Name();
       demand_sep = ", ";
     }

@@ -1,0 +1,5 @@
+; A literal inside the @key argument list -- key columns are named
+; variables only.
+#message b_1(u64 X).
+#local foo(u64 A) @key(A, 7).
+foo(A) : b_1(A).

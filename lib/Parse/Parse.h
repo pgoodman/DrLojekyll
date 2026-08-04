@@ -383,7 +383,7 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   // parse-layer capture only — a DIFF-R5 arrangement hint; R3a reconciles
   // the SET). Empty means "no bracket" (an empty bracket rejects at parse).
   // Populated only for `#local`/`#export` declarations.
-  std::vector<unsigned> demand_key_param_indices;
+  std::vector<unsigned> instance_key_param_indices;
 
   Token name;
   std::string_view name_view;

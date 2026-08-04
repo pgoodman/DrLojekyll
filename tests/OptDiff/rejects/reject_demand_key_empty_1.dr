@@ -1,4 +1,0 @@
-; An EMPTY @demand() -- a demand key must list at least one named column.
-#message b_1(u64 X).
-#local foo(u64 A) @demand().
-foo(A) : b_1(A).

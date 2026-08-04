@@ -2630,3 +2630,33 @@ construction, exactly as designed). RULE going forward: any NEW
 definitional/demand-blind consumer of `Query::Build` must pass
 `suppress_demand=true`; the demand-AWARE consumers are the compiler and
 nothing else.
+
+**RP-9 (owner, 2026-08-04, same conversation — RENAME + THE FALLBACK ARM,
+supersedes RP-5's spelling and closes the lowering-selection question).**
+The pragma is **`@key(K...)`**, not `@demand(...)`: the owner's intent is
+"trigger KEYED INSTANCES", and the durable semantic fact is the relation's
+INSTANCE KEY — `@demand` named the mechanism era. The earlier `@key`
+reservation for a functional-dependency pragma DISSOLVES by convergence:
+the Stage-B Minimize/DeterminedBy direction (O-R3.5) is exactly "prove the
+declared columns are a real key of the region answer" — one concept,
+checked structurally today, provable later. LOWERING (the fallback arm,
+ratified): `@key` SELECTS the nested keyed-instance lowering where EVERY
+forcing admits it (with R-1BOUND, all-or-nothing by construction) and
+falls back to the flat guard web SILENTLY where not (recursive shapes) —
+the pragma fixes the keyed SEMANTICS, the compiler picks the ARRANGEMENT
+(hint-not-mandate); `-demand-instance` stays the STRICT developer override
+(its fences remain diagnostics — demand_cyclic_1 unchanged). Realization:
+the per-forcing admissibility flags are computed once in Program::Build
+and consumed by both arms; the pragma bit rides
+`RecognizedSubgraph::demanded_decl.HasInstanceKey()` (no new plumbing).
+Witnesses: `key_neighborhood_witness` (NEW) pins flagless NESTED selection
+(`kSubgraphInstantiate=1` in its own rel.opt golden; stdout SYMLINK to the
+flat twin's golden = nested-vs-flat answer identity per mode; the nested
+compile verified byte-identical to the twin's `-demand -demand-instance`
+compile at landing); `key_tc_witness` (recursive) pins the silent FLAT
+fallback (its symlink referee stack unchanged). The demand-era spellings
+survive only in the MECHANISM layer (flags, `demand__` fabrication,
+internal pass names) — the source surface and the parse-layer API
+(`HasInstanceKey`/`InstanceKey`) speak instance keys. The injected forcing
+seam itself still dies at Stage C (request edges), unchanged by this
+slice.

@@ -743,7 +743,7 @@ class Oracle {
     // Unoptimized dataflow: the oracle interprets the graph the aggressive
     // optimization pass never touched. DEMAND-BLIND (suppress_demand): the
     // oracle referees ANSWER-identity by evaluating the FULL closure, so a
-    // `@demand` pragma in the source must not activate the transform here
+    // `@key` pragma in the source must not activate the transform here
     // (flagless RP-6 activation would otherwise demand-gate a graph the
     // oracle never seeds, yielding an empty non-answer).
     query = hyde::Query::Build(*module_opt, error_log,

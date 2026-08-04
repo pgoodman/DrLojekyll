@@ -1,8 +1,8 @@
-; demand_key_dup_1 -- @demand PARSER OBLIGATION 2 (all-4-modes reject,
+; key_dup_1 -- @demand PARSER OBLIGATION 2 (all-4-modes reject,
 ; flag-INDEPENDENT -- no .drflags: the malformed pragma rejects at parse
-; before any transform runs): a demand key is a duplicate-free ordered column set; `@demand(From, From)`
+; before any transform runs): a instance key is a duplicate-free ordered column set; `@key(From, From)`
 ; draws the duplicate-column diagnostic.
 #message edge_2(u64 From, u64 To).
-#local path(u64 From, u64 To) @demand(From, From).
+#local path(u64 From, u64 To) @key(From, From).
 path(F, T) : edge_2(F, T).
 #query reachable_from(bound u64 From, free u64 To) : path(From, To).

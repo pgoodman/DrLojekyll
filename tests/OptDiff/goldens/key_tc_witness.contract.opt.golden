@@ -40,6 +40,6 @@ merge ^merge.18 (c33:u64)
   role=n/a key=(c33)
 insert ^insert.19 (From:u64, To:u64)
   role=n/a key=(From,To)
-declared-demand-key rel=path declared=(From) inferred=(From)
+declared-key rel=path declared=(From) inferred=(From)
 census: views=20 contracts=20 role{distinct=1 member=10 na=9}
         agg_input_key_ok=0 collapse_error=0

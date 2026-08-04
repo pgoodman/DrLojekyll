@@ -1,0 +1,44 @@
+rel
+
+instances:
+  DRInstance i#0 forcing=neighborhood key=%table:8 pub=%table:4 input=%table:11 store=I#0 key_cols=[From] row_cols=[To]
+
+op.7 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:8
+op.5 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:8, +, NonRecursive), kVecAppend(%table:8, kNetAddition)}
+    spine: —
+    args: table=%table:8 message=demand__neighborhood_bf/1
+op.6 kEagerForward sign=· ctx=eager stratum=0
+    args: table=%table:11
+op.4 kIngestFold sign=+ ctx=eager stratum=0
+    effects: {kCounter(%table:11, +, NonRecursive), kVecAppend(%table:11, kNetAddition)}
+    spine: —
+    args: table=%table:11 message=add_edge/2
+op.0 kSubgraphInstantiate sign=+ ctx=seed stratum=1 i#0
+    demand=%table:8 pub=%table:4 input=%table:11 pub_row=[ik:From,row:To] nested=<To>
+    reads: Present(%table:11)
+    effects: {kVecDrain(%table:8, kNetAddition), kVecDrain(%table:11, kNetAddition), kInstanceDemand(%table:8), kInstanceRebuild(%table:4, +), kStateEmit(%table:4), kStateOld(%table:4), kCounter(%table:4, +, NonRecursive)}
+    spine: kAccess(%table:11, section-walk) -> kFold(%table:4, +, NonRecursive)
+    args: demand=%table:8 pub=%table:4 input=%table:11 store=I#0
+op.2 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
+    effects: {kFlagWrite(%table:8)}
+    args: table=%table:8
+op.3 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
+    effects: {kFlagWrite(%table:11)}
+    args: table=%table:11
+op.1 kInstanceSeal sign=· ctx=seed band=11 i#0
+    effects: {kStateFold(%table:4, sign=0)}
+    args: pub=%table:4 store=I#0
+
+rounds:
+
+deps:
+  op.0 -> op.1 WAR epoch
+  op.0 -> op.1 WAW epoch
+  op.0 -> op.3 WAR epoch
+  op.4 -> op.0 RAW epoch
+  op.4 -> op.3 WAW epoch
+  op.5 -> op.2 WAW epoch
+
+census: kCrossover=0 kProductArm=0 kSeedFold=0 kFixpointFire=0 kChainFold=0 kClaimDrain=0 kRetire=0 kRederive=0 kFrontierFilter=0 kCommitSweep=2 kNegateGate=0 kPivotAssemble=0 kIngestFold=2 kGroupUpdate=0 kStateSeal=0 kSubgraphInstantiate=1 kInstanceDeath=0 kInstanceSeal=1 kEagerForward=2 kEagerInsert=0 kEagerCompare=0 kEagerGenerate=0 kEagerUnion=0 kEagerSelect=0 kEagerJoin=0 kEagerProduct=0 kIngestLoop=0 kJoinEmit=0 kProductEmit=0

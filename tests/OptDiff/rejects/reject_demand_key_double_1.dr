@@ -1,6 +1,0 @@
-; A SECOND @demand pragma on one declaration -- the RESERVED multi-adornment
-; lift path (`@demand(A) @demand(B)` -> N keyed stores) draws a clean
-; not-yet-supported reject today.
-#message b_1(u64 X, u64 Y).
-#local foo(u64 A, u64 B) @demand(A) @demand(B).
-foo(A, B) : b_1(A, B).

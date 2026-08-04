@@ -387,13 +387,13 @@ void ParserImpl::ParseLocalExport(
   std::vector<Token> clause_toks;
   bool has_embedded_clauses = false;
 
-  // The `@demand(K...)` pragma (RP-5, session 6): parameters are already
+  // The `@key(K...)` pragma (RP-5/RP-9, session 6): parameters are already
   // bound when the pragma parses (post-parameter-list position), so each
   // key column resolves IMMEDIATELY to a parameter index — no deferred
-  // resolve. `demand_expect_var` is the in-arg-list sub-state; the pragma
+  // resolve. `key_expect_var` is the in-arg-list sub-state; the pragma
   // token itself anchors diagnostics.
-  Token demand_pragma_tok;
-  bool demand_expect_var = false;
+  Token key_pragma_tok;
+  bool key_expect_var = false;
 
   DisplayPosition next_pos;
   Token name;
@@ -433,11 +433,11 @@ void ParserImpl::ParseLocalExport(
           continue;
 
         // A bracket here is the RETIRED `rel[K...]` surface (RP-5 replaced
-        // it with the post-parameter-list `@demand(K...)` pragma); draw a
+        // it with the post-parameter-list `@key(K...)` pragma); draw a
         // pointed diagnostic rather than the generic expected-paren one.
         } else if (Lexeme::kPuncOpenBracket == lexeme) {
           context->error_log.Append(scope_range, tok_range)
-              << "Declared demand keys are written as '@demand(Col, ...)' "
+              << "Declared instance keys are written as '@key(Col, ...)' "
               << "after the parameter list of " << introducer_tok << " '"
               << name << "', not as a bracket before it";
           return;
@@ -782,21 +782,21 @@ void ParserImpl::ParseLocalExport(
         }
 
       case 8:
-        if (Lexeme::kPragmaDemand == lexeme) {
+        if (Lexeme::kPragmaKey == lexeme) {
 
-          // A SECOND `@demand` is a clean not-yet-supported reject (RP-5:
+          // A SECOND `@key` is a clean not-yet-supported reject (RP-5:
           // repetition is the reserved multi-adornment lift path —
-          // `@demand(A) @demand(B)` → N keyed stores — not landed).
-          if (!local->demand_key_param_indices.empty()) {
+          // `@key(A) @key(B)` → N keyed stores — not landed).
+          if (!local->instance_key_param_indices.empty()) {
             context->error_log.Append(scope_range, tok_range)
                 << "Unexpected second '" << tok << "' pragma on "
                 << local->KindName() << " '" << local->name << "/"
                 << local->parameters.Size()
-                << "'; multiple demand keys (one per adornment) are not yet "
+                << "'; multiple instance keys (one per adornment) are not yet "
                 << "supported";
             return;
           }
-          demand_pragma_tok = tok;
+          key_pragma_tok = tok;
           state = 21;
           continue;
 
@@ -887,30 +887,30 @@ void ParserImpl::ParseLocalExport(
 
       case 10: continue;
 
-      // The `@demand(K...)` argument list (RP-5, session 6). Parameters are
+      // The `@key(K...)` argument list (RP-5/RP-9, session 6). Parameters are
       // already bound (`local` exists, post-paren position), so each column
       // resolves IMMEDIATELY. Every token class has an explicit transition;
       // a pragma left open at EOF exits the loop mid-state and the
       // `state != 9` gate below draws the incomplete-declaration diagnostic
       // (no bespoke EOF arm needed).
-      case 21:  // After `@demand`: the argument list's `(`.
+      case 21:  // After `@key`: the argument list's `(`.
         if (Lexeme::kPuncOpenParen == lexeme) {
-          demand_expect_var = true;
+          key_expect_var = true;
           state = 22;
           continue;
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected '(' after '" << demand_pragma_tok
+              << "Expected '(' after '" << key_pragma_tok
               << "' on " << local->KindName() << " '" << local->name
               << "', but got '" << tok << "' instead";
           return;
         }
 
-      case 22:  // Inside `@demand( ... )`.
+      case 22:  // Inside `@key( ... )`.
         if (Lexeme::kIdentifierVariable == lexeme) {
-          if (!demand_expect_var) {
+          if (!key_expect_var) {
             context->error_log.Append(scope_range, tok_range)
-                << "Expected ',' or ')' in the demand key of "
+                << "Expected ',' or ')' in the instance key of "
                 << local->KindName() << " '" << local->name << "', but got '"
                 << tok << "' instead";
             return;
@@ -926,58 +926,58 @@ void ParserImpl::ParseLocalExport(
           }
           if (resolved_index == ~0u) {
             context->error_log.Append(scope_range, tok_range)
-                << "Unknown key column '" << tok << "' in the demand key of "
+                << "Unknown key column '" << tok << "' in the instance key of "
                 << local->KindName() << " '" << local->name << "/"
                 << local->parameters.Size()
-                << "'; every demand key column must name a declared parameter";
+                << "'; every instance key column must name a declared parameter";
             return;
           }
-          for (unsigned prev : local->demand_key_param_indices) {
+          for (unsigned prev : local->instance_key_param_indices) {
             if (prev == resolved_index) {
               context->error_log.Append(scope_range, tok_range)
-                  << "Duplicate column '" << tok << "' in the demand key of "
+                  << "Duplicate column '" << tok << "' in the instance key of "
                   << local->KindName() << " '" << local->name
-                  << "'; a demand key is a duplicate-free ordered column set";
+                  << "'; an instance key is a duplicate-free ordered column set";
               return;
             }
           }
-          local->demand_key_param_indices.push_back(resolved_index);
-          demand_expect_var = false;
+          local->instance_key_param_indices.push_back(resolved_index);
+          key_expect_var = false;
           continue;
 
         } else if (Lexeme::kIdentifierUnnamedVariable == lexeme) {
           context->error_log.Append(scope_range, tok_range)
-              << "Demand key columns of " << local->KindName() << " '"
+              << "Instance key columns of " << local->KindName() << " '"
               << local->name << "' must be named; wildcard/anonymous "
               << "variables ('" << tok << "') are not permitted";
           return;
 
         } else if (Lexeme::kPuncComma == lexeme) {
-          if (demand_expect_var) {
+          if (key_expect_var) {
             context->error_log.Append(scope_range, tok_range)
                 << "Expected named variable (capitalized identifier) in the "
                 << "demand key of " << local->KindName() << " '"
                 << local->name << "', but got '" << tok << "' instead";
             return;
           }
-          demand_expect_var = true;
+          key_expect_var = true;
           continue;
 
         } else if (Lexeme::kPuncCloseParen == lexeme) {
-          if (local->demand_key_param_indices.empty() || demand_expect_var) {
+          if (local->instance_key_param_indices.empty() || key_expect_var) {
             context->error_log.Append(scope_range, tok_range)
-                << "The demand key of " << local->KindName() << " '"
+                << "The instance key of " << local->KindName() << " '"
                 << local->name << "' must list at least one named column and "
                 << "may not end with a trailing comma";
             return;
           }
-          demand_expect_var = false;
+          key_expect_var = false;
           state = 8;  // Back to the pragma tail (period / other pragmas).
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected ')' to close the demand key of "
+              << "Expected ')' to close the instance key of "
               << local->KindName() << " '" << local->name << "', but got '"
               << tok << "' instead";
           return;

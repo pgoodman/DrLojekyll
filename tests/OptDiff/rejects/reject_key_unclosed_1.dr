@@ -1,0 +1,5 @@
+; An UNCLOSED @key argument list hits the terminating period -- "Expected
+; ')' to close the instance key" -- never a hang or run-off-the-buffer.
+#message b_1(u64 X).
+#local foo(u64 A) @key(A.
+foo(A) : b_1(A).

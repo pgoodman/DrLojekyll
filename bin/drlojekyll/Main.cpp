@@ -248,7 +248,7 @@ static int HelpMessage(const char *argv[]) {
       << "  -disable-controlflow-opt  Skip control-flow IR optimization (region flattening, no-op removal," << std::endl
       << "                            procedure deduplication)." << std::endl
       << "  -demand                   Enable the live demand transform (magic-sets) for bound queries" << std::endl
-      << "                            globally. An explicit @demand(Col, ...) pragma on a #local/#export" << std::endl
+      << "                            globally. An explicit @key(Col, ...) pragma on a #local/#export" << std::endl
       << "                            force-activates the transform for that relation with NO flag." << std::endl
       << "  -demand-instance          Enable the keyed-instance nested lowering for demanded subgraphs (implies -demand)." << std::endl
       << "  -demand-retract           Enable demand retraction (implies -demand): bound queries gain a <name>_<bindings>_retract entry point." << std::endl

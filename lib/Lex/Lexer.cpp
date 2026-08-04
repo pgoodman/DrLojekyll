@@ -507,9 +507,9 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
         basic.Store<Lexeme>(Lexeme::kPragmaDifferential);
         basic.Store<lex::SpellingWidth>(impl->data.size());
 
-      } else if (impl->data == "@demand") {
+      } else if (impl->data == "@key") {
         auto &basic = ret.As<lex::BasicToken>();
-        basic.Store<Lexeme>(Lexeme::kPragmaDemand);
+        basic.Store<Lexeme>(Lexeme::kPragmaKey);
         basic.Store<lex::SpellingWidth>(impl->data.size());
 
       } else if (impl->data == "@unique") {

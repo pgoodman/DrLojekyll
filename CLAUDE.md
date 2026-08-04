@@ -110,16 +110,16 @@ delta-relational-IR golden policy.
   answer BEFORE any Stage-C reject lift), `demand_mutual_content_1` (mutual
   recursion inside a demanded body, R-BODYWALK), `demand_two_queries_1`
   (two independent bound query names, R-1BOUND — the Stage-C lift
-  candidate), and the EIGHT `@demand` rejects (DIFF-R3, sessions 5-6, ALL
+  candidate), and the EIGHT `@key` rejects (DIFF-R3, sessions 5-6, ALL
   FLAGLESS — RP-6 activation makes every one fire with no .drflags):
-  `demand_key_wildcard_1`/`demand_key_anon_1`/`demand_key_dup_1`/
-  `demand_key_unknown_1` (pragma arg-list obligations),
-  `demand_key_mismatch_1` (V-DECLARED-KEY: declared set ≠ SIP-inferred
-  `p_bound`; a STABLE hard reject, RP-3), `demand_key_multi_adorn_1`
+  `key_wildcard_1`/`key_anon_1`/`key_dup_1`/
+  `key_unknown_1` (pragma arg-list obligations),
+  `key_mismatch_1` (V-DECLARED-KEY: declared set ≠ SIP-inferred
+  `p_bound`; a STABLE hard reject, RP-3), `key_multi_adorn_1`
   (strict single-forcing scope; repetition is the reserved lift),
-  `demand_key_fenced_1` (a MATCHING pragma + NEGATE body draws the FENCE
-  class, never V-DECLARED-KEY — O-R3.4) and `demand_key_undemanded_1`
-  (an @demand no bound query seeds — the RP-6 realization reject); `kvindex_1` is MODE-SPLIT (compiles
+  `key_fenced_1` (a MATCHING pragma + NEGATE body draws the FENCE
+  class, never V-DECLARED-KEY — O-R3.4) and `key_undemanded_1`
+  (an @key on an undemanded relation — the RP-6 realization reject); `kvindex_1` is MODE-SPLIT (compiles
   under opt/nocf where KVINDEX→TUPLE elimination fires, V-ALGEBRA-rejects
   under nodf/none). `aggregate_1` FLIPPED from diagnostic to a 4-mode
   golden at the R3 stage-C flip. The @differential-summarized-input fence was
@@ -643,46 +643,52 @@ pinned PER-MODE; cross-mode identity is not claimed). Authority docs:
 stage-b-diff.md AMENDMENTS, regional-arch-pseudocode.md Part B,
 regional-dump-stage-b-desired-states.md §9/§9.7, stage-b-landed-seed.md.
 
-## DIFF-R3: Tier-1 interior naming + the `@demand` surface (LANDED, sessions 5-6)
+## DIFF-R3: Tier-1 interior naming + the `@key` surface (LANDED, sessions 5-6)
 
 RATIFIED POLICY (RP-1..8, region-model-diffs.md session-5 AMENDMENTS + the
 session-6 @DEMAND section): HINT-NOT-MANDATE — the declared key NEVER drives
 or constrains the lowering (R3b is DEAD); UNPROVABLE/UNREALIZABLE REJECTS
 (mismatch, unseeded, undemanded — all stable hard errors, never
 warn-and-accept); Minimize/DeterminedBy is the future provability WIDENING
-(O-R3.5); `@key` is RESERVED for a possible functional-dependency pragma.
+(O-R3.5); the old `@key`-for-FD reservation DISSOLVED by convergence (RP-9: the Minimize-backed key proof and the instance key are ONE concept).
 
-THE SURFACE (RP-5/RP-7): `#local rel(u64 A, u64 B) @demand(A).` — a
+THE SURFACE (RP-5/RP-7/RP-9): `#local rel(u64 A, u64 B) @key(A).` — a
 post-parameter-list pragma on `#local`/`#export` ONLY (declaration-level; a
 per-clause key has no semantic referent — one keyed store per relation).
 Parsed in the ParseLocalExport pragma tail with IMMEDIATE arg resolution
 (params are bound at the pragma site); named + duplicate-free + known
-columns enforced; ONE pragma per decl today (repetition `@demand(A)
-@demand(B)` is the RESERVED multi-adornment lift path — a second pragma is
+columns enforced; ONE pragma per decl today (repetition `@key(A)
+@key(B)` is the RESERVED multi-adornment lift path — a second pragma is
 a clean not-yet-supported reject); the retired `rel[K...]` bracket draws a
 pointed redirect diagnostic (the bracket LEXEMES remain, parser-unconsumed;
 `rel[Bound](Free)` stays design-doc/dump notation). The decl formatter
 round-trips the pragma.
 
-ACTIVATION (RP-6/RP-8): `@demand` is a flagless FORCE-OPT-IN — the demand
+ACTIVATION (RP-6/RP-8): `@key` is a flagless FORCE-OPT-IN — the demand
 transform runs for a pragma-bearing module with NO `-demand` flag, strict
 (every fence + V-DECLARED-KEY applies; rejects say "fix or remove the
-@demand pragma", never "recompile without -demand" — dropping the flag
+@key pragma", never "recompile without -demand" — dropping the flag
 would not deactivate the pragma). The activation gate scans the PARSED
 module (a #local's flows are proxied out of `relations` by Connect — the
 decl is the durable carrier); a module with no pragma and no flag
 short-circuits before any walk (the containment gate: the pragma-free
-corpus is byte-identical). REJECTS: an @demand with NO bound query
+corpus is byte-identical). REJECTS: an @key with NO bound query
 (unseeded), or on a relation that is NOT the demanded target (inert pragma
-= silent lie). `-demand` remains the GLOBAL AUTO layer ("try auto-demand
+= silent lie). LOWERING (RP-9 fallback arm): `@key` SELECTS the nested
+keyed-instance lowering where every forcing admits it (the
+key_neighborhood_witness pin: flagless kSubgraphInstantiate=1,
+byte-identical to the -demand -demand-instance compile of the pragma-free
+twin) and falls back SILENTLY to the flat guard web where not (recursive
+shapes — key_tc_witness); `-demand-instance` stays the STRICT override
+whose fences remain diagnostics. `-demand` remains the GLOBAL AUTO layer ("try auto-demand
 after the user-specified ones"); with R-1BOUND it composes trivially today;
 whether the auto sweep stays STRICT or becomes BEST-EFFORT (fence -> skip,
 not reject) is an OPEN owner STOP. V-DECLARED-KEY sits POST-Loop-1 in
 ApplyDemandTransform (the first site the adornment count exists; fences run
 first — a pragma never masks a fence): strict single-forcing scope, then
 declared-set == inferred `p_bound`. `-contract-out` gains the
-pragma-scoped `declared-demand-key rel=... declared=(...) inferred=(...)`
-line. `demand_key_tc_witness` is the ACTIVATION-EQUIVALENCE witness: its
+pragma-scoped `declared-key rel=... declared=(...) inferred=(...)`
+line. `key_tc_witness` is the ACTIVATION-EQUIVALENCE witness: its
 stdout/oracle/monotone/df/rel/ir/h/region goldens are SYMLINKS to
 demand_tc_witness's (pragma-activated compile == `-demand`-activated
 compile, byte-for-byte; NEVER bless its symlinked surfaces directly),
@@ -709,7 +715,7 @@ zero live guard JOINs for a counted decl ABORTS the freeze. The 8 demand
 models — the general mechanism, its own future slice; also gates the
 deferred ADJ-R3-C column-survival belt). The key-SUBSET covering-array fuzz
 arm (ORDER dropped as inert) is the ranked-next follow-on. Recorded
-obligation: cross-REDECLARATION @demand consistency is unchecked.
+obligation: cross-REDECLARATION @key consistency is unchecked.
 
 ## Other known feature gaps (clean diagnostics)
 

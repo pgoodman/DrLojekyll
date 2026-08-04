@@ -439,12 +439,12 @@ class ParsedDeclaration : public Node<ParsedDeclaration, ParsedDeclarationImpl> 
   bool HasMutableParameter(void) const noexcept;
 
   // The optional declared region key `name[K...]` (DIFF-R3 R3a; `#local` /
-  // `#export` only). `DemandKey()` returns parameter indices in the WRITTEN
+  // `#export` only). `InstanceKey()` returns parameter indices in the WRITTEN
   // bracket order; the SET is the logical region key (the order is an inert
   // DIFF-R5 arrangement hint). Empty unless the declaration was written
   // with a bracket.
-  bool HasDemandKey(void) const noexcept;
-  const std::vector<unsigned> &DemandKey(void) const noexcept;
+  bool HasInstanceKey(void) const noexcept;
+  const std::vector<unsigned> &InstanceKey(void) const noexcept;
 
   // Does this declaration have a clause that directly depends on a `#message`?
   bool HasDirectInputDependency(void) const noexcept;

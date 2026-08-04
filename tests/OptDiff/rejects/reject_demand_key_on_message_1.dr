@@ -1,3 +1,0 @@
-; @demand rides ONLY on #local/#export -- a #message carrying it draws the
-; message parser's diagnostic (messages are I/O, never demand-materialized).
-#message b_1(u64 X) @demand(X).
