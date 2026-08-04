@@ -1031,6 +1031,13 @@ struct RecognizedSubgraph {
   std::vector<unsigned> key_cols;       // the forcing's bound α positions
   QueryView pub_view;                   // the answer INSERT target
   std::vector<unsigned> guard_annotation_indices;  // its guards
+
+  // The demanded interior relation p's declaration — the Tier-1 naming-lift
+  // mint-time SNAPSHOT (parse identity, Optimize-stable, never migrated).
+  // Carried from the Connect-time proxy mint (where the decl is last live)
+  // so the Regional freeze can NAME the merge-materialized interior model
+  // (`QueryMergeImpl` carries no decl link — the R-STORE unnameability).
+  ParsedDeclaration demanded_decl;
 };
 
 // A query.

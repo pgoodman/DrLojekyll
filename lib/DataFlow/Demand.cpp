@@ -382,9 +382,10 @@ static std::vector<VIEW *> CollectColUsers(QueryImpl *query, VIEW *producer) {
   return users;
 }
 
-bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
-                                     const ErrorLog &log, bool demand_mode,
-                                     bool demand_retract) {
+bool QueryImpl::ApplyDemandTransform(
+    const ParsedModule &module, const ErrorLog &log, bool demand_mode,
+    bool demand_retract,
+    const std::unordered_map<VIEW *, ParsedDeclaration> &proxy_view_to_decl) {
 
   // MODE GATE. When the `-demand` flag is off (the default), this pass is a
   // total no-op: nothing is minted, no module state is mutated, the id-stream
@@ -794,6 +795,21 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
                                 std::move(sites), std::move(pushdown_reads)});
   }  // Loop 1 (Phase 1)
 
+  // Tier-1 naming lift: resolve the demanded relation p's declaration ONCE
+  // from the Connect-time correlation map (all adornments share the one
+  // p_merge, asserted above; p_merge IS the Connect `insert_proxy`). The map
+  // is Build-scoped and pre-Optimize-valid HERE and nowhere later. A miss is
+  // a broken compiler invariant (Step 2 only lands on post-Connect proxy
+  // MERGEs on this slice) — abort loudly, never name-guess.
+  const auto p_decl_it = proxy_view_to_decl.find(plan.front().p_merge);
+  if (p_decl_it == proxy_view_to_decl.end()) {
+    fprintf(stderr,
+            "T1-DECL-MISS: demanded relation's post-Connect MERGE has no "
+            "Connect-time declaration record\n");
+    abort();
+  }
+  const ParsedDeclaration p_demanded_decl = p_decl_it->second;
+
   // ---------------------------------------------------------------------
   // 4. Stray-consumer accounting (ONCE, between the loops, on the PRE-MINT
   //    graph): every reader of p must be one we traced (the query's read or a
@@ -1140,7 +1156,8 @@ bool QueryImpl::ApplyDemandTransform(const ParsedModule &module,
     }
     recognized_subgraphs.push_back(
         RecognizedSubgraph{forcing_index, QueryView(p_merge), p_bound,
-                           QueryView(q_insert), std::move(guard_indices)});
+                           QueryView(q_insert), std::move(guard_indices),
+                           p_demanded_decl});
   }
 
   // ---------------------------------------------------------------------

@@ -2573,7 +2573,14 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     }
   }
 
-  if (!impl->ConnectInsertsToSelects(log)) {
+  // The Tier-1 naming-lift correlation map (RES-3(a)): a `Query::Build`-
+  // SCOPED local — written by `ConnectInsertsToSelects` (proxy view -> its
+  // relation decl), read ONLY by `ApplyDemandTransform` below, destroyed at
+  // return. Never a QueryImpl member: its VIEW* keys dangle after
+  // `Optimize`, so nothing may outlive this two-call window.
+  std::unordered_map<VIEW *, ParsedDeclaration> proxy_view_to_decl;
+
+  if (!impl->ConnectInsertsToSelects(log, proxy_view_to_decl)) {
     return std::nullopt;
   }
 
@@ -2590,7 +2597,8 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   // limit silently neutering it would also silently drop its clean
   // diagnostics (the demand_multi_adorn_1 reject class). A future stage may
   // define LOUD composition semantics; until then -demand alone decides.
-  if (!impl->ApplyDemandTransform(module, log, demand_mode, demand_retract)) {
+  if (!impl->ApplyDemandTransform(module, log, demand_mode, demand_retract,
+                                  proxy_view_to_decl)) {
     return std::nullopt;
   }
   if (num_errors != log.Size()) {

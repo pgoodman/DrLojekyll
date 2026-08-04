@@ -946,9 +946,9 @@ TAIL, in a DIFFERENT file/pass (not part of this DataFlow transform): the
 forcer proc that actually SEEDS the demand relation at runtime is built later,
 during ControlFlow `Program::Build`, from the `demand_forcings` registry this
 pass populated — `BuildQueryInjectorFromRegistry` (lib/ControlFlow/Build/
-Build.cpp:412-494; one input var per bound param, a VECTORAPPEND onto the
+Build.cpp:413-490; one input var per bound param, a VECTORAPPEND onto the
 message's payload vector, a CALL into the fabricated message's handler
-procedure), dispatched per query by `BuildQueryInjectorProcedure` (:506-519,
+procedure), dispatched per query by `BuildQueryInjectorProcedure` (:507-520,
 matched on `(query, BindingPattern)` — the D3.a.3 multi-adornment belt that
 keeps two adornments of one name from cross-wiring). Full trace: R.1.5.
 
@@ -1263,7 +1263,7 @@ ProjectionRole (QueryTupleImpl::ProjectionRole {kMember, kDistinct},
   ordering), flipping goldens for no correctness benefit.
 
 -contract-out dump (Format.cpp:1516-1727; wired at
-  bin/drlojekyll/Main.cpp:136-142, drained alongside -df-out): flat-key
+  bin/drlojekyll/Main.cpp:154-160, drained alongside -df-out): flat-key
   contracts ONLY (member_key; no support value, no candidate-key antichain —
   Stage-A scope, RowContract.h:20-23), one block per live view in
   KIND-TAGGED DET_SEQ order — the SAME per-kind DefList traversal QueryDF
@@ -1281,7 +1281,7 @@ ProjectionRole (QueryTupleImpl::ProjectionRole {kMember, kDistinct},
     "        agg_input_key_ok=<a> collapse_error=0"
   Pure byte-compare, no order-free field, OPT-MODE-only pinning.
 
--dot-out DOT twin (Format.cpp:43-141; wired at Main.cpp:123-126):
+-dot-out DOT twin (Format.cpp:43-141; wired at Main.cpp:141-144):
   one "subgraph cluster_stratum_<n>" per MULTI-VIEW stratum (:56-74;
   singleton strata stay top-level; advisory, never golden-pinned — the
   Stage-B regional dump's DOT twin will cluster by RegionId the same way);
@@ -1317,14 +1317,14 @@ state visible to the driver between inject and read.
     #   Query::IsDemandMessage(m) -> any(f.message==m) — sole codegen suppression predicate
 
 ## B. ControlFlow: forcer proc construction — lib/ControlFlow/Build/Build.cpp
-    # Context wiring (Build.cpp:1508-1514), at Program::Build entry:
+    # Context wiring (Build.cpp:1517-1523), at Program::Build entry:
     context.demand_forcings = &query.DemandForcings()    # empty unless -demand
     context.demand_instance_enabled = demand_instance
     # messsage_handler[ParsedMessage]->PROC* populated EARLIER in BuildIOProcedure
     # (Procedure.cpp:690-762), BEFORE BuildQueryEntryPoint runs — injector target
     # always already exists. entry_proc is the SAME PROC* for every message.
 
-    BuildQueryInjectorFromRegistry(impl, context, query, entry, is_retract):  # :412
+    BuildQueryInjectorFromRegistry(impl, context, query, entry, is_retract):  # :413
       assert entry.message.IsReceived()
       assert !is_retract || entry.message.IsDifferential()
       if !messsage_handler.count(entry.message): fprintf+abort   # ADV-8 handler-miss fence
@@ -1338,7 +1338,7 @@ state visible to the driver between inject and read.
                      CALL(messsage_handler[entry.message]),   # arg_vecs: add_vec[,del_vec]
                      RETURN(true) ]
 
-    BuildQueryInjectorProcedure(impl, context, query, is_retract):            # :506
+    BuildQueryInjectorProcedure(impl, context, query, is_retract):            # :507
       for entry in *context.demand_forcings:
         if entry.query == query                            # name+arity (operator==)
            AND Decl(entry.query).BindingPattern() == Decl(query).BindingPattern()  # D3.a.3 belt:
@@ -1350,12 +1350,12 @@ state visible to the driver between inject and read.
         return BuildQueryForceProcedureImpl(...)
       return nullopt
 
-    BuildQueryEntryPointImpl(...):                          # :532
+    BuildQueryEntryPointImpl(...):                          # :533
       forcer_proc  = BuildQueryInjectorProcedure(is_retract=false)
       retract_proc = BuildQueryInjectorProcedure(is_retract=true)  # AFTER forcer (id stream)
       impl->queries.push(ProgramQuery{query, table, scanned_index,
                                       forcer_proc, retract_proc})
-      # Driver (:622-637): one BuildQueryEntryPointImpl per UniqueRedeclaration
+      # Driver (:623-638): one BuildQueryEntryPointImpl per UniqueRedeclaration
       #   -> N adornments => N ProgramQuery entries, each its OWN forcer/retract.
 
 ## C. Generated C++ — lib/CodeGen/CPlusPlus/Database.cpp EmitQueryFriends (:1610)
@@ -1386,7 +1386,7 @@ state visible to the driver between inject and read.
     # 1. DataFlow: N RecognizedSubgraph, same pub_view, distinct forcing_index/demanded_view
     # 2. DR-IR: N DRInstance (same pub_table ptr), N kSubgraphInstantiate ops
     # 3. Codegen: N InstanceStore<Key_i,Row_i> members (distinct types), one Table<Row>
-    CheckInstanceSolePub(flow):                            # Rel.cpp:4977, V-INST-SOLE
+    CheckInstanceSolePub(flow):                            # Rel.cpp:5009, V-INST-SOLE
       inst_per_pub : map<(pub_table_ptr, forcing_index), count>   # RE-KEYED at D3.a.3
       for op kind==kSubgraphInstantiate: ++inst_per_pub[{op.table_op_table, op.forcing_index}]
       assert every count == 1   # forcing_index is the distinguishing half that LETS
@@ -1640,7 +1640,7 @@ this file and the seed's Part 1) are NOT edited; contradictions are logged here.
   forcer proc" is the tail action of ApplyDemandTransform. REALITY: this pass
   only REGISTERS the forcing entry; the forcer-proc build + call-site injection
   is a separate mechanism in lib/ControlFlow/Build/Build.cpp during ControlFlow
-  Program::Build. ANCHOR: Demand.cpp:1190-1191 vs Build.cpp:412-494, 506-519.
+  Program::Build. ANCHOR: Demand.cpp:1190-1191 vs Build.cpp:413-490, 507-520.
 - **D5 (1.2) — enclosing function name.** CLAIM: `BuildStratumPhases` calls
   BuildSubgraphInstanceOps at Rel.cpp:2065. REALITY: the :2065 gate+call is
   inside `BuildDRInventory` (Rel.cpp:1803); BuildStratumPhases is one layer up
@@ -2316,3 +2316,352 @@ f0c913e0 tip) against tip 8a4520d9.
   an ALREADY-CLEAN wrapper boundary; the frozen accessor's budget is B.4's
   table, and `Program::Query()` (`Program.cpp:260-262`) is the one seam that
   must survive verbatim for CodeGen.
+
+
+---
+
+
+# Part R3 (2026-08-03, session 5) — the DIFF-R3 grain, fleet-verified at tip
+
+DIFF-R3 adds a USER-DECLARED region-key surface (bracket syntax on `#local`/
+`#export`), forks the demand pass between KEY INFERENCE and a V-DECLARED-KEY
+check, and (DIFF-NEXT-3 Tier 1) makes the demanded INTERIOR relation NAMEABLE
+in the Regional dump by carrying its `ParsedDeclaration` from mint to freeze.
+Four surfaces, at Part-R grain, fleet-corrected at the `keyed-instances` tip.
+Earlier sections are NOT edited beyond the in-place SHIFTED-anchor fixes logged
+in the DRIFT LEDGER (Part R3).
+
+## R3.1 The bracket surface in the CURRENT lexer/parser
+
+**Lex layer — TWO enumerators + TWO char-dispatch arms, ZERO spelling edits.**
+`Token.h:224-252` is the `kPunc*` enum block (`kPuncOpenParen`=224,
+`kPuncCloseParen`=225, `kPuncOpenBrace`=227, ...); **no `kPuncOpenBracket`/
+`kPuncCloseBracket` exists anywhere in Token.h** (grep-confirmed). A bracket
+surface adds two enumerators beside 224-225.
+
+`Lexer.cpp:105` opens `switch (ch) {`; the `'('` arm at `Lexer.cpp:138-143` is
+the verbatim idiom every new single-char punctuation arm mirrors — and **no
+`'['`/`']'` case exists anywhere in that switch today**:
+
+```
+case '(': {                                   # Lexer.cpp:138-143
+  auto &basic = ret.As<lex::BasicToken>();
+  basic.Store<Lexeme>(Lexeme::kPuncOpenParen);
+  basic.Store<lex::SpellingWidth>(1);
+  return true;
+}
+```
+
+`As<lex::BasicToken>()` + `Store<Lexeme>` + `Store<SpellingWidth>(1)` is the
+ENTIRE per-char contract. There is **NO Lexeme->string spelling table** (the
+seed's "punctuation-spelling table" framing was WRONG — see DRIFT LEDGER):
+`Token.cpp` has only `Token::SpellingRange()` (`Token.cpp:70`, recomputes a
+`DisplayRange` from stored `Position`/`SpellingWidth`), and rendering is the
+single default branch of `operator<<(OutputStream&, Token)` at
+`Format.cpp:9-16` (`default: os << tok.SpellingRange();` at `:13`). So a
+future `kPuncOpenBracket` renders correctly with **ZERO edits to Token.cpp /
+Format.cpp** — only the two Token.h enumerators + the two Lexer.cpp arms.
+
+**Parser state machine.** `ParserImpl::ParseLocalExport` (`Parser.cpp:354`) is
+a template `<NodeTypeImpl, kDeclKind, kIntroducerLexeme>` with two instantiation
+call sites — `Parser.cpp:1174` (`ParsedExportImpl`) and `:1183`
+(`ParsedLocalImpl`) — so **a state-1a amendment written ONCE here covers both
+`#local` and `#export` for free**. Idiom: `int state = 0;` (`:374`) drives a
+`switch (state)` (`:406`) inside the sub-token loop `for (next_pos =
+tok.NextPosition(); ReadNextSubToken(tok); ...)` (`:396`); each branch does
+`state = N; ...; continue;`. The `(name-atom)->kPuncOpenParen` transition is
+`case 1` at `Parser.cpp:421-433`:
+
+```
+case 1:                                       # Parser.cpp:421-433
+  if (Lexeme::kPuncOpenParen == lexeme) {
+    state = 2;
+    clause_toks.push_back(tok);
+    continue;
+  } else {
+    context->error_log.Append(scope_range, tok_range)
+        << "Expected opening parenthesis here to begin parameter list of "
+        << introducer_tok << " '" << name << "', but got '" << tok
+        << "' instead";
+    return;
+  }
+```
+
+The reject idiom is uniform (`case 0` at `:414-419`): `error_log.Append(
+scope_range, tok_range) << "Expected ..." << ... << "but got '" << tok <<
+"' instead"; return;`. **EOF/termination**: the `switch` has NO per-state EOF
+branch; the loop simply exits when `ReadNextSubToken(tok)` returns false, and
+the external gate at `Parser.cpp:856-869` is the real terminator — `state 9`
+(reached only via the terminating-period transition in `case 8`, `:786-794`,
+target `:840`) is the SOLE accept state; **any other state at loop-exit
+(including a mid-parse EOF) hits `RemoveDecl(local)`**:
+
+```
+if (state != 9) {                             # Parser.cpp:856-869
+  err << (local ? "...must end with a period"
+                : "Incomplete declaration; ...must end with a period");
+  RemoveDecl(local);
+} else { ...FinalizeDeclAndCheckConsistency(local)... }
+```
+
+A new bracket-bearing `state 1a` (after the name atom, before the `(`) must
+mirror this: its own in-switch reject branch for a malformed bracket body, and
+reliance on the external `state != 9` truncation gate for a bracket left open
+at EOF (it never advances to a period, so RemoveDecl fires — no bespoke EOF
+handling needed inside the switch).
+
+**Accessor home.** `#local`/`#export` are DISTINCT public wrappers —
+`ParsedLocal` (`Parse.h:606-632`), `ParsedExport` (`Parse.h:567-594`), both
+convertible to the shared `ParsedDeclaration` handle (`Parse.h:405-498`), NOT
+unified. Region-key is `#local`/`#export`-only, so the accessor pair (e.g.
+`HasRegionKey()`/`RegionKey()`) is scoped to `ParsedLocal`/`ParsedExport`, a
+sibling of `HasMutableParameter` (`Parse.h:439`) / `IsInline` (`:468`). Storage
+lives on the shared impl `ParsedDeclarationImpl` (`lib/Parse/Parse.h:341`, a
+plain-field aggregate — `std::vector<Token> parsed_tokens;` at `:379`): a
+`std::vector<unsigned> region_key_param_indices` field fits as a sibling of
+`parsed_tokens`, left empty for non-local/export decls (as
+`has_mutable_parameter` does). Accessors are out-of-line in
+`lib/Parse/Parse.cpp` (idiom: `HasMutableParameter` `:847`, `IsInline` `:959`),
+forwarding through `impl->`.
+
+## R3.2 The inference-vs-check fork — Step 2 -> [Step 2b V-DECLARED-KEY] -> Step 3
+
+The demand pass currently INFERS the key (`p_bound`) purely from graph shape;
+the bracket surface adds a CHECK arm that validates the inferred key against
+the user's declaration. The fork slots BETWEEN the two existing steps in the
+per-adornment Loop-1 body:
+
+```
+Step 2 (Demand.cpp:507-600):  infer p_bound from the projection chain
+Step 2b [V-DECLARED-KEY, NEW]: reconcile p_bound vs p's declared region key
+Step 3 (Demand.cpp:607-783):  locate every guard site (uses the checked key)
+```
+
+`p_bound` is declared `std::vector<unsigned> p_bound;` at `Demand.cpp:510`,
+filled `p_bound.push_back(in_col->Index());` at `:576`, and stashed
+per-adornment at `:792-794` (`plan.push_back(PerAdornment{redecl,
+std::move(bound_indices), std::move(p_bound), ...})`).
+
+**THE SCOPING PROBLEM (load-bearing).** The bracket is ONE relation-scoped
+declaration (a property of `p`), but the inference runs PER ADORNMENT inside
+the Loop-1 head:
+
+```
+for (ParsedDeclaration redecl : q_decl.UniqueRedeclarations()) {   # Demand.cpp:477
+  ...
+  std::vector<unsigned> p_bound;                                    # :510, FRESH per iteration
+  ...                                                               # filled at :576
+}
+```
+
+`p_bound` is a fresh local per adornment; two adornments of one query name
+(`q(bound,free)`, `q(free,bound)`) produce DIFFERENT `p_bound` over the SAME
+relation `p`. V-DECLARED-KEY must NOT re-derive the declared key per adornment
+— it checks each adornment's inferred `p_bound` (equivalently the transferred
+member key) for CONSISTENCY with the single relation-scoped bracket, rejecting
+adornments whose demanded key disagrees with what the user declared.
+
+**Clean-reject idiom (TWO tiers).** In-pass, every fence returns the local
+`reject` lambda (`Demand.cpp:407-411`):
+
+```
+const auto reject = [&](const char *what) -> bool {                # Demand.cpp:407-411
+  log.Append(module.SpellingRange())
+      << what << "; recompile without -demand";
+  return false;
+};
+```
+
+so V-DECLARED-KEY is `return reject("declared region key disagrees with the
+demanded binding pattern");`. The outer gate is at the CALL SITE
+(`Build.cpp:2593-2598`): `if (!impl->ApplyDemandTransform(...)) return
+std::nullopt;` followed by `if (num_errors != log.Size()) return
+std::nullopt;`. NOTE: V-DECLARED-KEY needs `p`'s `ParsedDeclaration` to read
+the bracket — which is **NOT in scope here today** (see R3.3(i)); the check
+depends on the same new plumbing as the naming lift.
+
+## R3.3 The Tier-1 naming lift (DIFF-NEXT-3 Tier 1)
+
+**(i) Mint-time snapshot — and its missing variable.** The recognition is
+minted at `Demand.cpp:1141-1143` (a 3-line push, NOT a bare `:1142`):
+
+```
+recognized_subgraphs.push_back(                                    # Demand.cpp:1141-1143
+    RecognizedSubgraph{forcing_index, QueryView(p_merge), p_bound,
+                       QueryView(q_insert), std::move(guard_indices)});
+```
+
+`RecognizedSubgraph` (`Query.h:1028-1034`) has NO `ParsedDeclaration` field;
+Tier 1 adds one (a `pub_decl`/`demanded_decl` twin beside the existing
+`pub_view`/`demanded_view` QueryView identities). **But `p`'s ParsedDeclaration
+is NOT reachable at the mint site.** The only ParsedDeclaration-typed locals in
+the whole function are for the QUERY (`q_decl` at `:442`, `redecl` at
+`:457`/`:477`) and the two FABRICATED demand decls (`d_msg_decl` `:923`,
+`d_local_decl` `:944`). `p` is identified PURELY STRUCTURALLY as `p_merge` (a
+`MERGE*`), landed by the Step-2 graph descent at `Demand.cpp:573`
+(`p_merge = m;`) — no `REL*`/`ParsedDeclaration` for `p` is ever obtained.
+`QueryRelationImpl` (`Query.h:130-146`) DOES carry `const ParsedDeclaration
+declaration;`, but nothing walks `impl->relations` to map `p_merge` back to its
+REL — that reverse lookup **does not exist anywhere today**. The declaration
+lives transiently in Connect's per-relation loop as `rel->declaration` at the
+moment `insert_proxy` (== `p_merge`) is minted:
+
+```
+for (REL *rel : relations) {                                       # Connect.cpp:229
+  ...
+  VIEW *const insert_proxy = CreateProxyForMutableParams(           # Connect.cpp:260-261
+      this, CreateProxyOfInserts(this, rel->inserts), rel->declaration);
+  ...                                                               # rel->declaration then DISCARDED
+}
+```
+
+So Tier 1 needs NEW plumbing: **(a)** stash a `ParsedDeclaration` back-pointer
+on the created `insert_proxy` view at `Connect.cpp:260-261` (single-writer,
+cleanest) threaded to Demand; OR **(b)** a `relations`-list correlation pass in
+Demand.cpp mapping `p_merge`->REL. The variable that reaches `p`'s decl at its
+ONLY live site is `rel->declaration` (`Connect.cpp:260-261`), NOT anything at
+`:1141-1143`.
+
+**(ii) Freeze-time resolve — a ProgramImpl-FREE clone of
+`ResolveLiveRecognition`.** The Rel.cpp original is at `Rel.cpp:936-1025`. Its
+ONLY ProgramImpl dependency is one lambda: `model_table = [&](QueryView v) ->
+TABLE* { auto it = impl->view_to_model.find(v); return ... it->second->
+FindAs<DataModel>()->table; }` and its three call sites `model_table(jl[0])`,
+`model_table(jl[1])`, `model_table(iv)`. **CARRIES OVER verbatim to a Regional
+clone in `lib/Regional/Planning.cpp` (pure `Query`/`QueryView` graph API, no
+ProgramImpl):**
+  - `query.GuardAnnotations()` / `query.DemandForcings()`;
+  - the bucketing walk `query.ForEachView([&](QueryView v){ ai =
+    v.GuardAnnotationIndex(); if (ai == QueryView::kNoGuardAnnotation) return;
+    guards[annots[ai].forcing_index].emplace_back(v, ai); })` — pure view-flag
+    read (`kNoGuardAnnotation = ~0u`, `Query.h:445-446`);
+  - the per-forcing JOIN decomposition `v.IsJoin()`,
+    `QueryJoin::From(v).JoinedViews()` -> `jl[0]`=demand side, `jl[1]`=body
+    guard's summarized monotone input; the `annots[ai].role ==
+    GuardAnnotation::kBody` filter; `instance_key = annots[ai].instance_key`;
+  - the pub-resolution walk: `ParsedDeclaration q_decl(forcings[fidx].query)`,
+    iterate `query.Inserts()`, match `ins.Declaration().Id() == q_decl.Id()`,
+    `QueryView::From(ins)`, walk `iv.Predecessors()` for the name-view /
+    column names.
+**DOES NOT EXIST at freeze time (ProgramImpl-only):** the `model_table` lambda
+and any `TABLE*` — `impl->view_to_model` / the DataModel tables are built inside
+`Program::Build`, AFTER the Regional freeze. So the clone resolves the live
+INTERIOR relation as a `QueryView` (the guard JOIN `v` == `demanded_view`, or
+`jl[1]` the summarized input) but CANNOT turn it into a `TABLE*` storage
+identity (`demand_table`/`input_table`/`pub_table`). Portable anchor:
+`GuardAnnotationIndex` stamp + DefList-ordered `ForEachView` (HP-9); Tier-1
+names `p` from parse identity (the new `Connect`-stashed field, or re-derived
+from the resolved QueryView), never via a table.
+
+**(iii) Contract emission + census arm — R-STORE loop determinism.** A new
+contract for the interior relation slots into the SAME single deterministic
+walk `CollectContractInserts` (`Planning.cpp:178-196`) drives. Its stated rule
+(doc comment `:171-177`): distinct non-demand relation-insert declarations,
+`demand__`-prefixed skipped (`starts_with("demand__")`), FIRST-encounter order
+over the `query.Inserts()` DefList range — **a source-position sort is
+deliberately NOT used** ("the first-encounter order is already a pure function
+of the final graph"). The render loop is `Planning.cpp:390-432` (member-key
+positional render `:403-423`), `edge_index` numbering `unsigned edge = 0u;`
+incremented per entry (`:389`). A SECOND contract source (the interior `path`/
+`rel`) must obey the SAME discipline: derived from a deterministic, graph-pure
+traversal (NOT a side registry iterated in pointer/hash order), with its own
+DISJOINT `edge_index` numbering or merged into the same `E0,E1,...` sequence.
+`DeriveRegionalCensus` (`Planning.cpp:200-217`) is the single census authority,
+re-derived independently and cross-checked at `:434-461` (fprintf+abort,
+V-REGION-CENSUS) — a new arm must bump `census.row_contracts` in BOTH the
+stored count and the independent recount. Emitters: the row-contract line at
+`Format.cpp:133-138` (`row-contract  E<i>  rel=...  member-key=(...)
+support=<monotone|differential>`) and the census line at `Format.cpp:145-151`.
+
+## R3.4 The verified witness ground truth
+
+In BOTH current goldens the lone `row-contract` names the PUBLISHED
+query-answer relation, NOT the interior demanded relation — R-STORE walks
+`query.Inserts()` for relation-backed INSERTs, and under `-demand` the interior
+view is guard-materialized/inlined (no standalone relation-insert), so only the
+answer relation surfaces today. Tier 1 makes the interior relation nameable (a
+second `row-contract`, `row-contracts` census += 1).
+
+**`demand_tc_witness.dr`** — `#message edge_2(u64 From, u64 To).` +
+`#local path(u64 From, u64 To).` (two clauses) + `#query
+reachable_from(bound u64 From, free u64 To) : path(From, To).`. Interior
+relation nameable under Tier 1 = **`path`**. Current
+`demand_tc_witness.region.opt.golden` (14 lines):
+
+```
+region-program
+program-root {
+  input-abi   edge_2/2(From:u64, To:u64)                   -> R0 via P1
+  query-abi   reachable_from(From:bound u64, To:free u64)  -> R0 via P0
+  output-abi  <none>
+}
+region R0  owner=program-root  parents=()  children=() {
+  request-port     P0  query=reachable_from  fields=(From)
+  input-port       P1  message=edge_2/2      fields=(From, To)
+  region-internal  demand__reachable_from_bf/1(p0:u64)  [fabricated, driver-suppressed]
+  row-contract     E0  rel=reachable_from  member-key=(From, To)  support=monotone
+}
+census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=1 result-ports=0 row-contracts=1
+```
+
+**`demand_multi_adorn_witness.dr`** — `#message edge_2(u64 A, u64 B).` +
+`#local rel(u64 A, u64 B).` + `rel(A, B) : edge_2(A, B).` + `#query
+q(bound u64 A, free u64 B).` + `#query q(free u64 A, bound u64 B).` +
+`q(A, B) : rel(A, B).`. Interior relation nameable = **`rel`** (note the
+collision with the dump's own `rel=` token — a Tier-1 emitter test must not
+confuse the relation named `rel` with the `rel=` field). Current
+`demand_multi_adorn_witness.region.opt.golden` (16 lines):
+
+```
+region-program
+program-root {
+  input-abi   edge_2/2(A:u64, B:u64)                -> R0 via P2
+  query-abi   q(A:bound u64, B:free u64)  adorn=bf  -> R0 via P0
+  query-abi   q(A:free u64, B:bound u64)  adorn=fb  -> R0 via P1
+  output-abi  <none>
+}
+region R0  owner=program-root  parents=()  children=() {
+  request-port     P0  query=q  adorn=bf  fields=(A)
+  request-port     P1  query=q  adorn=fb  fields=(B)
+  input-port       P2  message=edge_2/2   fields=(A, B)
+  region-internal  demand__q_bf/1(p0:u64)  [fabricated, driver-suppressed]
+  region-internal  demand__q_fb/1(p0:u64)  [fabricated, driver-suppressed]
+  row-contract     E0  rel=q  member-key=(A, B)  support=monotone
+}
+census: regions=1 child-calls=0 program-roots=1 request-ports=2 input-ports=1 result-ports=0 row-contracts=1
+```
+
+## DRIFT LEDGER (Part R3)
+
+- **SHIFTED anchors fixed in place this session** (Part R / R.1.x, edited per
+  the task's explicit override of the append-only convention):
+  `Build.cpp` `412-494`->`413-490` (BuildQueryInjectorFromRegistry, at the
+  R.1.1 tail, the `# :412`->`# :413` op-line, and D4),
+  `506-519`->`507-520` (BuildQueryInjectorProcedure, R.1.1 tail + `# :506`->
+  `# :507` + D4), `532`->`533` (BuildQueryEntryPointImpl),
+  `622-637`->`623-638` (BuildQueryEntryPoint driver),
+  `1508-1514`->`1517-1523` (Context wiring); `Main.cpp` `123-126`->`141-144`
+  (-dot-out wire, R.1.4), `136-142`->`154-160` (-contract-out wire, R.1.4);
+  `Rel.cpp` `4977`->`5009` (CheckInstanceSolePub / V-INST-SOLE, +32 file-wide).
+- **Part B B.1/B.5 are STALE-BY-CONSTRUCTION, not merely shifted** (NOT patched
+  in place — logged here). B.1's title "bin/drlojekyll/Main.cpp, 621 lines" is
+  now WRONG: Main.cpp is **677 lines**, and `CompileModule` now really runs
+  `auto frozen_opt = FrozenRegionalProgram::Build(*query_opt, error_log);`
+  (`Main.cpp:81`) between `Query::Build` and `Program::Build`, drains
+  `-region-out`/`-region-dot-out` (`:85-92`), and calls `Program::Build(
+  *frozen_opt, ...)` (`:100-102`). B.5's cited `Program::Build(const
+  ::hyde::Query &query, ...)` signature is WRONG: the parameter is now `const
+  FrozenRegionalProgram &frozen` (`Build.cpp:1333`) with `const ::hyde::Query
+  &query = frozen.Query();` as the new first statement (`:1337`) — this is
+  H1-ALT / H4 (Query::Build's own signature UNCHANGED, confirmed
+  `return Query(std::move(impl));` at `Build.cpp:2638`ff), the LANDED Stage-B
+  freeze the earlier Part B treated as a hypothetical future hunk. The whole
+  B.1/B.5 line tables need fresh grep-based re-derivation before use (new lines
+  were INSERTED, not flat-shifted): e.g. `num_errors` is now `Build.cpp:1343`.
+- **Corrected seed framing (lex-parse item 3): there is NO punctuation-spelling
+  table.** Any plan that edits a "Lexeme->string table" for brackets is chasing
+  a non-existent artifact — bracket spellings render free via
+  `Token::SpellingRange()` (`Token.cpp:70`) + the `Format.cpp:9-16` default
+  branch. Bracket lex needs ONLY Token.h enumerators + Lexer.cpp arms.
+- **Corrected mint anchor:** the RecognizedSubgraph mint is `Demand.cpp:
+  1141-1143` (a 3-line push), not a bare `:1142`.

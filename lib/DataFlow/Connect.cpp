@@ -159,7 +159,9 @@ static void ProxySelects(QueryImpl *impl, UseList<QueryViewImpl> &selects,
 
 // Connect INSERT nodes to SELECT nodes when the "full state" of the relation
 // does not need to be visible for point queries.
-bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
+bool QueryImpl::ConnectInsertsToSelects(
+    const ErrorLog &log,
+    std::unordered_map<VIEW *, ParsedDeclaration> &proxy_view_to_decl) {
 
   // First, deal with all messages.
   for (IO *io : ios) {
@@ -259,6 +261,13 @@ bool QueryImpl::ConnectInsertsToSelects(const ErrorLog &log) {
 
     VIEW *const insert_proxy = CreateProxyForMutableParams(
         this, CreateProxyOfInserts(this, rel->inserts), rel->declaration);
+
+    // Tier-1 naming-lift snapshot: `rel->declaration` is discarded right
+    // below (`rel->inserts.Clear()` severs the only REL->proxy edge), so the
+    // proxy->decl correlation is recorded HERE or nowhere. Single writer;
+    // the single reader is `ApplyDemandTransform` (pre-`Optimize`).
+    proxy_view_to_decl.emplace(insert_proxy, rel->declaration);
+
     rel->inserts.Clear();
 
     // If there are no SELECTs on this declaration, then any INSERTs are

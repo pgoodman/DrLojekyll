@@ -977,3 +977,98 @@ assumed facts the graph does not carry):
 The 16 `.region` goldens were blessed ONCE from a reviewed subset run via
 `runall.sh --bless`. The V-REGION-CENSUS recount (stored vs
 `DeriveRegionalCensus(query)`) is live corpus-wide, always-on.
+
+## 10. TIER-1 DESIRED STATES (2026-08-03, session 5) — the naming-lift golden diffs, byte-exact, determinism-critiqued
+
+Authority chain: region-model-diffs.md "DIFF-R3 AMENDMENTS (session 5)"
+HUNK T1 as corrected by ADJUDICATED RESOLUTIONS RES-2/RES-4; emitter =
+lib/Regional/Format.cpp:120-151 (column widths are a MAX over ALL contracts
+— rel_w = max(4+len(name))+2, key_w = max(11+len(key))+2, etok_w =
+max(1+len(idx))+2; kind_w is the shared port-kind width, 17 at both
+witnesses). Predictions verified against the emitter arithmetic AND fresh
+4-mode dumps of the CURRENT compiler (all 8 byte-match the blessed goldens
+pre-implementation; -contract-out confirms the interior merge's Stage-A
+member key is AllFields in every mode for both witnesses — ORC-3).
+
+### 10.1 demand_tc_witness.region.<mode> (x4 — one diff, all four modes identical)
+
+rel_w stays 20 (`reachable_from` dominates), key_w stays 23, etok_w stays 4:
+the EXISTING E0 line is byte-UNCHANGED. Diff:
+
+```diff
+   region-internal  demand__reachable_from_bf/1(p0:u64)  [fabricated, driver-suppressed]
+   row-contract     E0  rel=reachable_from  member-key=(From, To)  support=monotone
++  row-contract     E1  rel=path            member-key=(From, To)  support=monotone
+ }
+-census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=1 result-ports=0 row-contracts=1
++census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=1 result-ports=0 row-contracts=2
+```
+
+(`rel=path` is 8 chars, padded to rel_w=20 → 12 trailing spaces — the
+t16/RES-4 correction.)
+
+### 10.2 demand_multi_adorn_witness.region.<mode> (x4 — one diff, all four modes identical)
+
+`rel` (len 3) beside `q` (len 1) widens rel_w 7→9: the EXISTING E0 line
+RE-PADS (+2 spaces after `rel=q`) — the t15/ORC-1 whole-block-padding
+consequence. key_w stays 19. Two forcings demand the one `rel` decl →
+ONE interior contract (RES-2 decl-Id dedup). Diff:
+
+```diff
+   region-internal  demand__q_fb/1(p0:u64)  [fabricated, driver-suppressed]
+-  row-contract     E0  rel=q  member-key=(A, B)  support=monotone
++  row-contract     E0  rel=q    member-key=(A, B)  support=monotone
++  row-contract     E1  rel=rel  member-key=(A, B)  support=monotone
+ }
+-census: regions=1 child-calls=0 program-roots=1 request-ports=2 input-ports=1 result-ports=0 row-contracts=1
++census: regions=1 child-calls=0 program-roots=1 request-ports=2 input-ports=1 result-ports=0 row-contracts=2
+```
+
+(Emitter-test hazard from Part R3.4: the relation NAMED `rel` vs the
+`rel=` field token — the desired bytes above are the discriminating pin.)
+
+### 10.3 The other 8 .region pins + the whole suite
+
+join_1 / merge_2 `.region.<mode>` (x8): byte-IDENTICAL (no demand forcing →
+no RecognizedSubgraph → the interior arm derives the EMPTY set). Every
+other golden in the suite (bespoke stdout, oracle, monotone, behavioral,
+eqgate, df/rel/ir/h/contract irgold pins): byte-IDENTICAL — T1 mints no
+node, changes no lowering, and the -region-out drain is the only consumer
+of the new fields. Referee: the full suite run must show EXACTLY 8 divergent
+goldens at the bless review, all `.region`, none else.
+
+### 10.4 Determinism critique (the §5 lens applied to the interior arm)
+
+- Interior-contract ORDER: ascending FIRST-forcing order of the distinct
+  demanded decl Ids (RES-2) — a pure function of `RecognizedSubgraphs()`
+  append order, which is the demand pass's own deterministic per-forcing
+  stamp order (HP-9-clean: no pointer order, no UniqueId order). Dedup via
+  a `seen` set keyed by decl Id, first-wins — insertion-order stable.
+- E-numbering: one merged dense counter, insert-derived contracts first
+  (their indices UNCHANGED — the RES-4 weakened-but-true invariant), then
+  interior contracts. Fully positional; zero order-free tokens (the §9.2
+  identity-referee discipline holds).
+- `support=`: the OR over the decl's forcings' live annotated guard JOINs
+  of `v.CanReceiveDeletions()` (role-blind — see the T1-IMPL-1 amendment in
+  region-model-diffs.md; the kQueryProjection-only rule was CSE-fragile)
+  (post-Optimize live view, RES-2); resolve failure ABORTS at freeze —
+  no mode can silently drop a line (existence is decl-counted).
+- Mode-stability: member-key is decl-sourced (mode-free by construction);
+  the guard-JOIN resolve must succeed in all 4 modes — SETTLED at
+  implementation: the 4-mode dump diff shows the identical §10.1/§10.2
+  bytes in every mode, and the corpus-wide suite compiles every demand
+  case in every mode post-T1-IMPL-1 (the role-filtered rule failed
+  exactly here and was amended; a divergence is a STOP, not a bless).
+
+### 10.5 R3a desired dump states (deferred to the R3a hunk — recorded here as the target shape)
+
+For `region_declared_tc_witness` (the bracket-annotated demand_tc twin):
+- `-region-out`: byte-EQUAL to demand_tc_witness's post-T1 bytes (10.1) —
+  the bracket adds no port/contract/census field.
+- `-contract-out` (its OWN real golden, oracle-4/RES-5): equal to
+  demand_tc_witness's contract dump MODULO exactly two added lines on the
+  demanded relation's views, the declared-key and scoped inferred-key
+  annotations (exact spelling fixed at R3a implementation; pinned by
+  `region_declared_tc_witness.contract.opt.golden`).
+- `df/rel/ir/h opt`: SYMLINK goldens to demand_tc_witness's (RES-5) —
+  byte-identity IS the referee that the overlay changes no lowering.

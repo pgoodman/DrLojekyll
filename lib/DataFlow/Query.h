@@ -1067,7 +1067,17 @@ class QueryImpl {
 
   // Connect INSERT nodes to SELECT nodes when the "full state" of the relation
   // does not need to be visible for point queries.
-  bool ConnectInsertsToSelects(const ErrorLog &log);
+  //
+  // `proxy_view_to_decl` is the Tier-1 naming-lift correlation vehicle
+  // (RES-3(a), a `Query::Build`-SCOPED local — never a QueryImpl member): the
+  // per-relation loop stamps `insert_proxy -> rel->declaration` at the one
+  // site where the decl is still live. SINGLE-READER discipline: consumed
+  // ONLY by `ApplyDemandTransform` (pre-`Optimize`, while the proxy handles
+  // are valid); it must never be read after `Optimize` runs (the VIEW* keys
+  // dangle — the RecognizedSubgraph "NEVER read at freeze" idiom).
+  bool ConnectInsertsToSelects(
+      const ErrorLog &log,
+      std::unordered_map<QueryViewImpl *, ParsedDeclaration> &proxy_view_to_decl);
 
   // The LIVE DEMAND TRANSFORM (magic-sets / SLDMagic). See
   // lib/DataFlow/Demand.cpp for the algorithm, pseudocode, and before/after
@@ -1076,8 +1086,10 @@ class QueryImpl {
   // `false` on a clean-diagnostic reject (multi-adornment, or demand through
   // a negation/aggregate sink). `module` is threaded so the pass can
   // fabricate demand messages and reach the display manager for interning.
-  bool ApplyDemandTransform(const ParsedModule &module, const ErrorLog &log,
-                            bool demand_mode, bool demand_retract);
+  bool ApplyDemandTransform(
+      const ParsedModule &module, const ErrorLog &log, bool demand_mode,
+      bool demand_retract,
+      const std::unordered_map<QueryViewImpl *, ParsedDeclaration> &proxy_view_to_decl);
 
   // Canonicalize the dataflow. This tries to put each node into its current
   // "most optimal" form. Previously it was more about re-arranging columns

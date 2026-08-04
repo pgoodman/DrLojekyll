@@ -11,6 +11,7 @@ region R0  owner=program-root  parents=()  children=() {
   input-port       P2  message=edge_2/2   fields=(A, B)
   region-internal  demand__q_bf/1(p0:u64)  [fabricated, driver-suppressed]
   region-internal  demand__q_fb/1(p0:u64)  [fabricated, driver-suppressed]
-  row-contract     E0  rel=q  member-key=(A, B)  support=monotone
+  row-contract     E0  rel=q    member-key=(A, B)  support=monotone
+  row-contract     E1  rel=rel  member-key=(A, B)  support=monotone
 }
-census: regions=1 child-calls=0 program-roots=1 request-ports=2 input-ports=1 result-ports=0 row-contracts=1
+census: regions=1 child-calls=0 program-roots=1 request-ports=2 input-ports=1 result-ports=0 row-contracts=2

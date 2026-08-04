@@ -1817,3 +1817,703 @@ DIFF-R6 modifies **no lowering line** of Part R. The `+/-` diffs are (a) additiv
   - EVIDENCE: H-R6.2 states 'Linear recursion (M∨M·E) costs Z_S per round'. CostModel.md §2.6:284-285 gives linear per-round work as 'Σ_r δ_{r-1}·(1+f) ≈ Z_S·(1+f) — once per closure row', and §3.3:384 states 'Σ_r δ_r = Z_S (frontiers partition the closure)' — Z_S is the TOTAL across all rounds, not a per-round quantity. 'Z_S per round' misstates the figure by a factor of R_S and would mislead a bin/Cost implementer wiring §2.6 at the LowerDRRounds anchor the hunk sits on.
   - AMENDMENT (normative): Change the H-R6.2 comment to: 'linear recursion (M∨M·E) costs δ_{r-1}·(1+f) per round, Σ = Z_S·(1+f) total; non-linear (M∨M·M) costs §2.6's Σ_r δ_{r-1}·|accum_{r-1}|' — quoting §2.6's exact per-round/total split rather than 'Z_S per round'.
 - Refuted: DIFF-R6-necessity-3
+
+---
+
+## DIFF-R3 AMENDMENTS (2026-08-03, session 5) — the ratified slice: Tier-1 naming lift + R3a-as-lint
+
+**This section SUPERSEDES the un-amended hunks of the `## DIFF-R3 — User-DECLARED
+regions` section above.** Wherever a claim here conflicts with the original
+R3-P1/R3-P2/R3-P3 body, the SOUNDNESS OBLIGATIONS, the TEST/WITNESS PLAN, or the
+OPEN OWNER ITEMS of that section, THIS section governs. The original section's
+14-finding PANEL RECORD is retained above as the derivation trail; every finding's
+normative AMENDMENT is folded in below and mapped in the AMENDMENT LEDGER at the
+end. Anchors are Part R3 of `regional-arch-pseudocode.md` (session 5,
+fleet-verified at the `keyed-instances` tip) or re-verified in-line this pass;
+Part R3's DRIFT LEDGER supersedes any shifted anchor in the original section.
+
+### RATIFIED POLICY (owner, 2026-08-03 session-opening message — DECIDED, not
+re-litigated here)
+
+- **RP-1 Ranking.** DIFF-R3 lands FIRST of the ranked slices; the **Tier-1 naming
+  lift is DIFF-R3's FIRST hunk** (HUNK T1), not a standalone rider. (Resolves the
+  DIFF-NEXT-3 Tier-1 DECISION RULE in `stage-b-landed-seed.md` Part 2.)
+- **RP-2 Hint-not-mandate.** The bracket NEVER drives or constrains the lowering.
+  It is a CHECKED DECLARATION / planner input only. **R3b (declared-driven
+  lowering) is OFF THE TABLE — dead, not "deferred."** The original section's
+  R3-STOP, R3b rows, and every "driving reading" / "MANDATE-arm" clause are
+  RETIRED. There is no hint-vs-mandate STOP anymore: the checking reading is the
+  only reading, permanently.
+- **RP-3 Unprovable brackets REJECT.** A bracket the compiler cannot PROVE
+  consistent with the inference is a **clean hard compile reject** — never
+  warn-and-accept. Consequently `region_key_mismatch_1` is a STABLE hard-reject
+  golden (this RESOLVES panel finding correctness-lifecycle-3: encode it in
+  `runall.sh` now, no re-bless caveat, only a one-line case comment recording the
+  RP-2/RP-3 ratification).
+- **RP-4 Minimize stays the LIFT CANDIDATE.** The Stage-B `Minimize`/`DeterminedBy`
+  functional-key proof is the honest future WIDENING of provability. O-R3.5 is
+  UNCHANGED as a deferral: R3a proves only the structural property (declared ==
+  inferred set); the true functional-key proof rides the Minimize lift.
+
+### ORCHESTRATOR ADJUDICATIONS of the panel's option forks (applied session 5)
+
+- **ADJ-R3-A (findings correctness-lifecycle-1 + termination-confluence-1,
+  multi-adornment scoping) — OPTION (a) STRICT, adjudicated session 5.** An R3a
+  bracket is VALID only on a relation demanded under EXACTLY ONE forcing. A
+  bracketed relation demanded under ≥2 forcings draws a clean reject REGARDLESS of
+  whether the bound sets happen to agree (unprovable-therefore-reject per RP-3, and
+  strictly smaller than reconciling-against-a-disjunction). Witness
+  `region_key_multi_adorn_1`. The `demand_multi_adorn_witness` positive-reuse
+  bullet is **DELETED** from the TEST/WITNESS PLAN.
+- **ADJ-R3-B (finding necessity-1, capability) — OPTION (b) SHRINK, adjudicated
+  session 5.** R3a is EXACTLY: the parser surface + the Step-2b equality lint + the
+  ONE scoped belt (HUNK R3a-4) + the `declared_key=` dump + the witnesses. Its
+  stated value is precisely two things: **(i) the lint itself** (a compile-time
+  "the key I wrote is the key you inferred" assertion), and **(ii) surface-laying
+  for the future Minimize-backed widening** (RP-4). Nothing more is claimed; a
+  no-op overlay is honestly labeled a lint.
+- **ADJ-R3-C (finding necessity-2, belt) — KEEP-BUT-SCOPE, adjudicated session 5.**
+  `CheckDeclaredRegionKey` survives, scoped to the ONE non-redundant property:
+  column-survival-over-optimization (every declared-key column of a bracketed
+  relation still resolves to a live visible column of the canonical contract view
+  in the FINAL graph), with the lifecycle-2 canonical-view rule + dead-view
+  early-skip + `region_key_dead_relation_1`.
+- **ADJ-R3-D (findings oracle-3 + necessity-3 + necessity-4, ORDER) — DROP ORDER,
+  adjudicated session 5.** ORDER leaves the covering array AND the contract
+  layer/dump entirely. The ordered list is captured at the PARSE layer ONLY
+  (`ParsedDeclarationImpl` field + `ParsedLocal`/`ParsedExport` accessors);
+  reconciliation is over the SET; there is NO `order=` dump token in R3a (pin
+  `declared_key=` only, per oracle-4). The key-SUBSET × redeclaration
+  covering-array fuzz arm is KEPT (necessity-3).
+- **ADJ-R3-E (finding oracle-5, inferred-key dump) — SCOPED emit, adjudicated
+  session 5.** Emit the INFERRED demand key into `-contract-out` scoped to
+  relations carrying a bracket (no churn of existing demand contract goldens).
+
+---
+
+### HUNK T1 (FIRST — the Tier-1 naming lift, rider-sized, answer-inert)
+
+Tier 1 makes the demanded INTERIOR relation NAMEABLE in the `-region-out` dump by
+carrying its `ParsedDeclaration` from the demand mint to the freeze. It mints no
+node, changes no lowering, and (RP-1) is DIFF-R3's first hunk because HUNK R3a-3's
+Step-2b lint needs the very same decl plumbing to find whether `p`'s relation
+carries a bracket. It is answer-inert (the `-region-out` block is never on the
+runtime path; only the 8 demand-pair `.region` goldens move).
+
+**T1.1 The problem (Part R3.3(i) fact).** `RecognizedSubgraph` (`Query.h:1028-1034`,
+re-verified) has NO `ParsedDeclaration` field, and `p`'s decl is **NOT in scope at
+the mint** (`Demand.cpp:1141-1143`): `p` is identified purely structurally as
+`p_merge` (a `MERGE*`, set at `Demand.cpp:573` `p_merge = m;`). The only
+`ParsedDeclaration`-typed locals in `ApplyDemandTransform` are the QUERY's
+(`q_decl` `:442`, `redecl` `:457`/`:477`) and the two fabricated `demand__` decls
+(`:923`/`:944`). No reverse `p_merge -> REL` lookup exists.
+
+**T1.2 The plumbing CHOICE — option (a): a `QueryImpl` satellite map stamped at
+the Connect erasure site.** The decl for `p` is live at exactly ONE place —
+`Connect.cpp:229` per-relation loop, as `rel->declaration`, at the moment the
+proxy view (`insert_proxy`, which becomes `p_merge`) is minted at
+`Connect.cpp:260-261`:
+
+```diff
+  # lib/DataFlow/Connect.cpp:260-262 (inside `for (REL *rel : relations)`, :229)
+    VIEW *const insert_proxy = CreateProxyForMutableParams(
+        this, CreateProxyOfInserts(this, rel->inserts), rel->declaration);
++   // Tier-1 naming-lift snapshot: stamp the proxy view -> its relation decl on a
++   // QueryImpl satellite map BEFORE `rel->declaration` is discarded. Written
++   // once per relation (single writer); read once at the Demand Step-2 mint.
++   this->proxy_view_to_decl.emplace(insert_proxy, rel->declaration);
+    rel->inserts.Clear();
+```
+
+Consumed by `ApplyDemandTransform` at the post-`ConnectInsertsToSelects` slot
+(pre-`Optimize`, so the proxy handle is still live): when Step 2 identifies
+`p_merge` (`Demand.cpp:573`), look it up in `proxy_view_to_decl` and SNAPSHOT the
+resulting `ParsedDeclaration` onto a new `RecognizedSubgraph` field:
+
+```diff
+  # include/drlojekyll/DataFlow/Query.h:1028-1034 — RecognizedSubgraph gains ONE field:
+  struct RecognizedSubgraph {
+    unsigned forcing_index;
+    QueryView demanded_view;
+    std::vector<unsigned> key_cols;
+    QueryView pub_view;
+    std::vector<unsigned> guard_annotation_indices;
++   ParsedDeclaration demanded_decl;   // the interior relation p's decl (Tier-1
++                                      // naming lift; a parse-identity SNAPSHOT,
++                                      // Optimize-stable — never migrated)
+  };
+  # lib/DataFlow/Demand.cpp:1141-1143 — carry it into the mint:
+    recognized_subgraphs.push_back(
+        RecognizedSubgraph{forcing_index, QueryView(p_merge), p_bound,
+-                          QueryView(q_insert), std::move(guard_indices)});
++                          QueryView(q_insert), std::move(guard_indices),
++                          p_demanded_decl});   # looked up at :573 from proxy_view_to_decl
+```
+
+**Necessity argument (why (a), not (b) — the simpler alternative, in one line).**
+The considered simpler alternative (b) — correlate `p_merge -> REL` via a
+`query.impl->relations` walk at Step 2 — is UNAVAILABLE: `Connect.cpp:262`
+executes `rel->inserts.Clear();` (re-verified this pass), severing the only
+REL→proxy edge after Connect, so at Step 2 there is NO live edge from a `REL` to
+`p_merge` to correlate against. The decl MUST therefore be captured at the proxy
+mint (where `rel->declaration` is provably in scope) before it is discarded —
+single-writer at `Connect.cpp:261`, single-reader at the Demand mint. Option (a)
+is chosen. (The satellite is short-lived — Connect→Demand, within `Query::Build`,
+never crossing `Optimize` — and is snapshotted to a parse-identity
+`ParsedDeclaration` immediately, so it is inside the F1 discipline: the DIFF-R1
+necessity-4 "mint-time snapshot, nothing to migrate" argument.)
+
+**T1.3 Freeze-time resolve — a `ProgramImpl`-FREE clone of
+`ResolveLiveRecognition`.** The stored `demanded_view`/`pub_view` QueryView
+handles on `RecognizedSubgraph` DANGLE after `Optimize` (which runs inside
+`Query::Build`, before the freeze) — they are NEVER read at freeze. Instead a
+Regional-layer clone of `Rel.cpp:936-1025`'s guard-bucketing walk resolves the
+LIVE interior view per forcing, PURELY from parse identity + `GuardAnnotationIndex`
+bucketing (Part R3.3(ii)):
+  - drop the `model_table` lambda and every `TABLE*` field of `ResolvedInstance`
+    (`Rel.cpp:940-945`, and `ri.ok`'s table conjuncts at `:1019`) — `view_to_model`
+    is EMPTY at freeze (built inside `Program::Build`, AFTER the freeze), so ANY
+    table read here returns null. The clone resolves ONLY QueryView handles.
+  - keep verbatim: `query.GuardAnnotations()`/`query.DemandForcings()`; the
+    `query.ForEachView` bucketing by `v.GuardAnnotationIndex()` (skip
+    `kNoGuardAnnotation == ~0u`, `Query.h:445-446`); the per-forcing JOIN
+    decomposition (`v.IsJoin()`, `QueryJoin::From(v).JoinedViews()` → `jl[1]` the
+    summarized monotone input under the `annots[ai].role == GuardAnnotation::kBody`
+    filter, `Rel.cpp:963-985`); the resolved interior handle is `jl[1]` (else the
+    guard JOIN `v` itself as the fallback, `Rel.cpp:1016-1017`).
+
+**T1.4 Which live view supplies the interior member-key + support — CHOICE +
+verification status.** The interior contract's fields are sourced as follows:
+  - **member-key: the SNAPSHOTTED decl's AllFields, rendered POSITIONALLY** (all
+    declared parameters, `decl.NthParameter(i).NameAsString()`, the exact R-STORE
+    render idiom at `Planning.cpp:403-423`). RATIONALE: a demanded relation `p`
+    keeps `AllFields`/passthrough as its contract (original R3-P3), so its member
+    key is the WHOLE row — every declared parameter. Sourcing the key from the
+    decl (not from a live-view row-contract) is what makes T1 robust to the
+    dangling-handle problem AND makes the candidate "does `jl[1]`'s column set
+    align 1:1 with the decl's parameters" question **MOOT for the key** — we never
+    read the live view's columns for the key. This is the SMALLER choice.
+  - **support: the resolved live view's `CanReceiveDeletions()`** (a `QueryView`
+    method, `Query.h:757` — table-free, freeze-safe), rendering `monotone` /
+    `differential` exactly as `Planning.cpp:429-430` does for R-STORE contracts.
+  - **OPEN VERIFICATION (for the desired-states phase, stated explicitly per the
+    task).** I could NOT verify by reading alone that the guard-bucketing clone
+    resolves a live interior handle for EVERY forcing in ALL FOUR modes (the
+    `none`/`nodf` modes ran less canonicalization, so the guard-JOIN shape and
+    hence `jl[1]`'s `CanReceiveDeletions()` MAY differ from `opt`). The 8 demand
+    goldens were byte-identical cross-mode at Stage B (a strong signal the guard
+    structure is mode-stable), but the desired-states phase MUST settle it with
+    fresh `-region-out` dumps in all four modes and confirm `support=monotone`
+    holds for `path`/`rel` in every mode. Since member-key comes from the decl,
+    the ONLY mode-sensitive field is `support=`; a mode where the resolve fails to
+    find an interior handle would drop the second contract entirely (census
+    divergence caught by V-REGION-CENSUS) — a loud failure, not a silent one.
+
+**T1.5 Contract emission + census arm (Part R3.3(iii)).** The interior contracts
+APPEND AFTER the insert-derived R-STORE contracts of `CollectContractInserts`
+(`Planning.cpp:178-196`, render loop `:389-432`), in ascending forcing order, on
+the SAME merged `E0,E1,…` `edge` counter (`Planning.cpp:389` `unsigned edge =
+0u;`) so `EdgeId` stays dense. Dedup by decl `Id()`:
+  - against OTHER forcings (multi_adorn: two forcings demand the same `rel` →ONE
+    interior contract), and
+  - against the insert-derived decls (a relation that is BOTH demanded and
+    insert-materialized surfaces once, as its R-STORE contract — no interior twin).
+Appending AFTER keeps every existing R-STORE contract line byte-stable (its `E<i>`
+index unchanged). `DeriveRegionalCensus` (`Planning.cpp:200-217`) gains the SAME
+interior arm — the SINGLE-AUTHORITY rule (`stage-b-diff.md` H9-AMEND): both the
+freeze recount (`Planning.cpp:434-461`) and the `Rel.cpp` V-REGION-CENSUS recount
+(`Rel.cpp:4634-4661`, re-verified) consult `DeriveRegionalCensus`, so the
+`row_contracts` bump moves in lockstep automatically — no second edit to Rel.cpp's
+count logic. The interior arm's traversal MUST be graph-pure and deterministic
+(the guard-bucketing DefList walk, HP-9 — no pointer/hash-ordered side registry),
+per the R-STORE determinism discipline.
+
+**T1.6 Predicted golden deltas (predict-then-verify).** ONLY the 8 demand-pair
+`.region` goldens change; the WHOLE rest of the suite is byte-identical.
+  - `demand_tc_witness.region.<mode>` (×4): GAINS one line inside R0, after the
+    existing `row-contract E0 rel=reachable_from …` —
+    `  row-contract     E1  rel=path  member-key=(From, To)  support=monotone`
+    — and the census `row-contracts=1` → `row-contracts=2`.
+  - `demand_multi_adorn_witness.region.<mode>` (×4): GAINS, after
+    `row-contract E0 rel=q …` (the two forcings deduped to ONE interior `rel`) —
+    `  row-contract     E1  rel=rel  member-key=(A, B)  support=monotone`
+    — and census `row-contracts=1` → `row-contracts=2`. (Emitter test note from
+    Part R3.4: do NOT confuse the relation *named* `rel` with the `rel=` field
+    token.)
+  - `join_1` / `merge_2` `.region` goldens: BYTE-IDENTICAL (no demand forcing → no
+    RecognizedSubgraph → no interior arm fires).
+  - Column-alignment caveat: none for the KEY (decl-sourced AllFields). The
+    `support=` field carries the T1.4 open-verification caveat.
+
+**T1.7 Boundary restatement (DIFF-NEXT-3).** Tier 1 is **NOT a step toward Tier 2**
+(the general origin-DECL-SETS-on-models mechanism, `stage-b-landed-seed.md`
+Part 2): different mechanism family (a demand-scoped mint-time snapshot vs a
+maintained union-only satellite on models across CSE/proxy folds). Tier 1 buys
+DIFF-R3 its INFERENCE-side record — the decl HUNK R3a-3 reconciles a declared
+bracket against — nothing more.
+
+**Obligations.** DISCHARGED: answer-inertness (no node, no lowering; only the
+`-region-out` render moves) — by construction, refereed by the 8 re-blessed
+`.region` goldens + the always-on V-REGION-CENSUS recount (a stubbed interior arm
+that mis-counts ABORTS corpus-wide). DEFERRED: the T1.4 `support=` cross-mode
+verification, to the desired-states phase. SMALLER-NOT-LARGER: member-key from the
+decl's AllFields (not a live-view row-contract lookup) removes the
+`jl[1]`-column-alignment obligation entirely and needs no `view_to_model`.
+
+---
+
+### HUNK R3a-1 (lexer / token) — from Part R3.1's verified idioms
+
+TWO enumerators + TWO char-dispatch arms, **ZERO `Token.cpp`/`Format.cpp` spelling
+edits** (Part R3.1's corrected finding: there is NO Lexeme→string spelling table;
+a new punctuation lexeme renders free via `Token::SpellingRange()` `Token.cpp:70`
++ the `Format.cpp:9-16` default branch at `:13`). The original section's
+`Token.cpp` "add both spellings" line is RETIRED.
+
+```diff
+  # include/drlojekyll/Lex/Token.h, kPunc* enum (:224-252, beside kPuncOpenParen=224/kPuncCloseParen=225)
++ kPuncOpenBracket,     // `[` — region key-spec opener
++ kPuncCloseBracket,    // `]`
+  # lib/Lex/Lexer.cpp switch(ch) at :105 — mirror the `(` arm verbatim (:138-143):
++ case '[': { auto &b = ret.As<lex::BasicToken>();
++   b.Store<Lexeme>(Lexeme::kPuncOpenBracket); b.Store<lex::SpellingWidth>(1);
++   return true; }
++ case ']': { ... Store<Lexeme>(Lexeme::kPuncCloseBracket); ... }
+```
+
+**SMALLER-NOT-LARGER:** two files (Token.h, Lexer.cpp), zero Token.cpp/Format.cpp
+churn — the Part R3.1 correction shrinks the original R3-P1 lexer hunk.
+**Obligation:** none new (lex is `-demand`-independent, exercised by every R3a
+witness's parse).
+
+---
+
+### HUNK R3a-2 (parser) — state 1a, complete transition table, resolve check, accessors
+
+**Parser state machine (Part R3.1).** `ParserImpl::ParseLocalExport`
+(`Parser.cpp:354`) is a template with two call sites (`:1174` `ParsedExportImpl`,
+`:1183` `ParsedLocalImpl`) — **state 1a written ONCE covers `#local` AND
+`#export`**. The `(name-atom)→kPuncOpenParen` transition is `case 1` at
+`Parser.cpp:421-433`. The NEW optional bracket slots between the name and the `(`:
+
+```diff
+  # Parser.cpp case 1 (:421-433): after the name atom
+    case 1:
++     if (Lexeme::kPuncOpenBracket == lexeme) { state = /*1a*/ N; continue; }
+      if (Lexeme::kPuncOpenParen == lexeme) { state = 2; ...; continue; }
+      else { error_log.Append(...) << "Expected opening parenthesis ..."; return; }
++   case /*1a*/ N:   # inside `[ … ]` — an ORDERED, duplicate-free list of NAMED vars
++     if (Lexeme::kIdentifierVariable == lexeme) { record var; state = N; continue; }
++     if (Lexeme::kPuncComma == lexeme && a var was just recorded) { state = N; continue; }
++     if (Lexeme::kPuncCloseBracket == lexeme) { stash ordered key-var list; state = 1; continue; }
++       # (state=1 so the following `(` is required, reusing case 1's kPuncOpenParen arm)
++     # PARSER OBLIGATION 1 (all-4-modes reject): kIdentifierUnnamedVariable (`_`) /
++     #   any wildcard -> reject "region key columns must be named".
++     # PARSER OBLIGATION 2 (all-4-modes reject): a repeated var -> reject
++     #   "a region key is a duplicate-free ordered column set".
++     # TERMINATION (finding termination-confluence-2): on EOF or ANY other token,
++     #   reject via the uniform idiom "expected `]` to close region key spec" /
++     #   "unexpected token in region key" and `return;` (in-switch), so the loop
++     #   provably exits on every input.
+```
+
+**Complete transition table for state 1a** (every input class has an edge — the
+finiteness argument the original R3-P1 lacked):
+
+| in-state | token | action | next |
+| --- | --- | --- | --- |
+| 1a | `kIdentifierVariable` (new) | record var | 1a |
+| 1a | `kIdentifierVariable` (dup of a recorded var) | reject OBLIGATION 2 | — (return) |
+| 1a | `kIdentifierUnnamedVariable` / wildcard | reject OBLIGATION 1 | — (return) |
+| 1a | `kPuncComma` (after a var) | continue list | 1a |
+| 1a | `kPuncComma` (leading/double) | reject "unexpected token in region key" | — (return) |
+| 1a | `kPuncCloseBracket` | stash ordered list | 1 (→ require `(`) |
+| 1a | EOF (`ReadNextSubToken` false) | external gate `state != 9` → `RemoveDecl` | (loop exit) |
+| 1a | any other token | reject "expected `]` to close region key spec" | — (return) |
+
+The EOF row leans on the VERIFIED external terminator (Part R3.1): state 9 (via
+the period transition in `case 8`, `:786-794`) is the SOLE accept; any other state
+at loop-exit — including a bracket left open at EOF — hits `RemoveDecl(local)` at
+`Parser.cpp:856-869`. No bespoke in-switch EOF handling is needed, but state 1a
+STILL carries its own in-switch reject for a malformed bracket BODY (the "any other
+token" row) so a `foo[A B](…)` fails cleanly rather than silently truncating.
+
+**RESOLVE-time unknown-column reject.** After parameter names bind, reject any
+bracket var that is not one of this relation's declared parameters — "unknown key
+column" (`region_key_unknown_1`). This is the FinalizeDeclAndCheckConsistency path
+(the `state == 9` else-arm at `:856-869`).
+
+**Storage + accessors (Part R3.1 accessor home).** Storage on the shared impl
+`ParsedDeclarationImpl` (`lib/Parse/Parse.h:341`, plain-field aggregate): a
+`std::vector<unsigned> region_key_param_indices;` sibling of `parsed_tokens`
+(`:379`), left empty for non-local/export decls (as `has_mutable_parameter` does).
+The ORDERED list is captured (ADJ-R3-D: parse-layer ONLY). Accessors are
+`ParsedLocal`/`ParsedExport`-scoped (region-key is `#local`/`#export`-only) —
+`HasRegionKey()` / `RegionKey()` (parameter indices), siblings of
+`HasMutableParameter` (`Parse.h:439`) / `IsInline` (`:468`), defined out-of-line in
+`lib/Parse/Parse.cpp` (idiom `:847`/`:959`) forwarding through `impl->`. **Keep
+`HasRegionKey()` as a readable convenience predicate** (finding necessity-4: do NOT
+collapse it into `!RegionKey().empty()`).
+
+**Obligations.** DISCHARGED: termination of the one new parser loop (the complete
+table above + the external `state != 9` gate). All three of Obligation-1/2 +
+resolve are `-demand`-independent (fire on the malformed decl before any transform)
+→ genuine all-4-modes witnesses (R3a-5). **SMALLER-NOT-LARGER:** state 1a returns
+to `state = 1` on `]` (not a bespoke `state 2`), reusing case 1's existing
+`kPuncOpenParen` requirement instead of duplicating it.
+
+---
+
+### HUNK R3a-3 (the Step-2b lint) — depends on HUNK T1's decl plumbing
+
+**Why T1 is first (explicit dependency).** Step 2b must read `p`'s
+`ParsedDeclaration` to learn whether `p`'s relation carries a bracket — and that
+decl is **NOT in scope at Demand today** (Part R3.2's closing NOTE:
+"V-DECLARED-KEY needs `p`'s ParsedDeclaration … which is NOT in scope here today").
+HUNK T1's `proxy_view_to_decl` snapshot (read at `Demand.cpp:573` when `p_merge` is
+identified, stored as `RecognizedSubgraph::demanded_decl`) is the SAME plumbing
+Step 2b consumes. This is why RP-1 orders T1 first.
+
+**The fork (Part R3.2): Step 2 → [Step 2b] → Step 3.** `p_bound` is
+`std::vector<unsigned>` at `Demand.cpp:510`, filled `:576`, stashed per-adornment
+`:792-794`. The check inserts BETWEEN Step 2 (`:507-600`) and Step 3 (`:607-783`),
+inside the per-adornment Loop-1 (`for redecl : q_decl.UniqueRedeclarations()`,
+`Demand.cpp:477`):
+
+```diff
+    # Demand.cpp, between Step 2 (:507-600) and Step 3 (:607-783), inside Loop 1 (:477):
++   # Step 2b [V-DECLARED-KEY, NEW] — only when p's relation carries a bracket:
++   if (p_demanded_decl.HasRegionKey()) {                     # from HUNK T1 plumbing
++     # ADJ-R3-A STRICT single-forcing scope, checked BEFORE set-reconciliation:
++     if (NumForcingsOfName(forcings, this query name) >= 2) {
++       return reject("a region-key bracket is only valid on a relation demanded "
++                     "under a single query adornment");     # region_key_multi_adorn_1
++     }
++     # set-reconciliation (R3a is SET-only, no Minimize; RP-4 defers the real
++     # functional-key proof):
++     if (set(p_bound) != set(p_demanded_decl.RegionKey())) {
++       return reject("declared region key disagrees with the demanded binding "
++                     "pattern");                             # region_key_mismatch_1 (RP-3 STABLE)
++     }
++   }  # else: p_bound stays inferred — byte-identical to today (COMPLEMENT, not replace).
+    # Step 3 (:607-783): all fences run UNCHANGED (a declared key lifts no fence).
+```
+
+The `reject` lambda is `Demand.cpp:407-411`; the outer gate is at the call site
+`Build.cpp:2593-2598` (`if (!ApplyDemandTransform(...)) return nullptr;` +
+`if (num_errors != log.Size()) return nullptr;`). The STRICT single-forcing check
+(ADJ-R3-A) fires BEFORE set-reconciliation, so a ≥2-forcing bracketed relation
+rejects on the scope class regardless of whether the bound sets agree (resolving
+findings correctness-lifecycle-1 + termination-confluence-1: there is now no
+"single relation-scoped bracket vs per-adornment `p_bound`" ambiguity — a
+multi-adornment demanded relation with a bracket is simply rejected, so the
+"no single referent" defect cannot arise).
+
+**Obligations.** DISCHARGED: O-R3.1 answer-identity BY CONSTRUCTION (matching
+bracket = no mint, no lowering change → byte-identical; mismatch/multi-adorn =
+clean reject). O-R3.4 fence-preservation: Step 2b is a MATCHING-or-reject gate
+before Step 3; a matching bracket falls through to the UNCHANGED fences (witnessed
+by `region_declared_fenced_1`, R3a-5). **SMALLER-NOT-LARGER:** the STRICT scope
+check makes the multi-adornment reconciliation SEMANTICS unnecessary — the smallest
+of the panel's options (a)/(b)/(c).
+
+---
+
+### HUNK R3a-4 (the scoped belt + dumps)
+
+**`CheckDeclaredRegionKey` — KEEP-BUT-SCOPE (ADJ-R3-C / findings necessity-2 +
+correctness-lifecycle-2).** Added as one always-on arm of `ValidateRowContracts`
+(`RowContract.cpp:413-419`, re-verified — the sibling of `CheckContractCensus` /
+`CheckMemberKeyRealized` / `CheckNoCollapse` / `CheckAggInputKey`):
+
+```diff
+  # RowContract.cpp ValidateRowContracts (:413-419):
+    bool ValidateRowContracts(QueryImpl *impl, const ErrorLog &) {
+      CheckContractCensus(impl); CheckMemberKeyRealized(impl);
+      CheckNoCollapse(impl); CheckAggInputKey(impl);
++     CheckDeclaredRegionKey(impl);   # column-survival-over-optimization ONLY
+      return true;
+    }
+```
+
+`CheckDeclaredRegionKey` is SCOPED to the ONE property parse/resolve cannot
+provide: every declared-key column of a bracketed relation still resolves to a LIVE
+visible column of that relation's CANONICAL CONTRACT VIEW in the FINAL (post-
+Optimize) graph. This catches the canonicalization-column-drop scenario a
+pre-optimization resolve check misses (a NON-demanded bracketed `#local` whose
+declared-key column is dropped by canonicalization survives resolve but is absent
+from the final graph). It does NOT re-do the `declared ⊆ params` resolve check
+(vacuous for demanded relations keeping AllFields) nor Step-2b's `declared ==
+p_bound` (that content lives in R3a-3).
+  - **Canonical contract view (finding correctness-lifecycle-2):** the demanded
+    relation's MERGE view `p_merge`, else the full-width reader TUPLE — `row_contracts`
+    is keyed per-LIVE-VIEW (`RowContract.cpp` `.at(v)`/`.count(v)`), so the check
+    consults that view's `visible_fields`.
+  - **Dead-view early-skip:** if the bracketed relation has NO live view in
+    `impl->row_contracts` (dead-flow-eliminated), SKIP — well-formedness is already
+    discharged by R3a-2 parse/resolve. Witness `region_key_dead_relation_1` proves
+    the checker neither crashes nor rejects a dead bracketed relation.
+
+**Dump fields (ADJ-R3-D + oracle-4 + oracle-5).**
+  - `declared_key=` into `-contract-out`, SCOPED to relations carrying a bracket
+    (rendered by column name). **NO `order=` token in R3a** (ADJ-R3-D: order is
+    parse-layer only; the store stays positionally derived, so `order=` has no R3a
+    consumer — deferred to the Minimize/D5 widening).
+  - The INFERRED demand key (`p_bound`, by column name) into `-contract-out`,
+    SCOPED to relations carrying a bracket (ADJ-R3-E / oracle-5) — so the
+    match/mismatch boundary is OBSERVABLE and `region_declared_tc_witness` can be
+    authored without guessing the SIP result, WITHOUT churning any existing demand
+    contract golden (the scope condition is "bracket present," which no current
+    corpus case satisfies).
+  - **Contract golden pin (oracle-4):** `region_declared_tc_witness.contract.opt.golden`
+    pins a non-empty `declared_key=` line + the scoped inferred-key line, byte-
+    fixing the emitter (the standing IR-observability pattern).
+
+**Obligations.** DISCHARGED: O-R3.3 well-formed-key final-graph belt (scoped +
+dead-skip); the new dump surface is refereed (oracle-4 golden). **SMALLER-NOT-
+LARGER:** the belt shrinks from "declared ⊆ visible_fields AND reconciliation"
+(two authorities, one vacuous) to the single non-redundant column-survival check;
+`order=` capture/dump DELETED from the contract layer (necessity-4).
+
+---
+
+### HUNK R3a-5 (witnesses + fuzz)
+
+**Directed reject witnesses (all-4-modes, `-demand`-independent unless noted;
+encode in `runall.sh`).**
+- `region_key_wildcard_1` — `foo[_](…)` → OBLIGATION 1 "region key columns must be
+  named."
+- `region_key_anon_1` — `foo[_A](…)` → OBLIGATION 1 (anonymous/wildcard var).
+- `region_key_dup_1` — `foo[A,A](…)` → OBLIGATION 2 "duplicate-free ordered column
+  set."
+- `region_key_unknown_1` — a bracket var absent from `foo`'s parameters → resolve
+  "unknown key column."
+- `region_key_multi_adorn_1` (NEW, ADJ-R3-A) — a bracket on a query-demanded
+  relation whose name carries >1 binding pattern → the STRICT single-forcing scope
+  reject (`.drflags` `-demand`). This REPLACES the deleted `demand_multi_adorn_witness`
+  positive-reuse.
+- `region_key_dead_relation_1` (NEW, ADJ-R3-C) — a bracket on an unused `#local`
+  eliminated by dead-flow → the checker SKIPS (neither crash nor reject); it is an
+  ACCEPT case (compiles clean, stdout unaffected), not a diagnostic.
+- `region_key_mismatch_1` (STABLE hard-reject, RP-3) — a bracket whose set ≠ the
+  SIP-inferred `p_bound` (`.drflags` `-demand`) → V-DECLARED-KEY reject. Encode in
+  `runall.sh` NOW with a one-line case comment: "checking-only surface; RP-2/RP-3
+  ratified 2026-08-03 — a bracket the compiler cannot prove is a HARD reject, never
+  warn-and-accept; no re-bless contingency." (Resolves correctness-lifecycle-3: no
+  STOP gate remains.)
+- `region_declared_fenced_1` (NEW, oracle-2) — a bracket that MATCHES the inferred
+  `p_bound` (so Step 2b PASSES) AND a NEGATE/AGG or second-self-read body → the
+  reject is classified as the FENCE class (PF-3 demand-sink / R-BODYWALK / the
+  self-join belt at `Demand.cpp:657-659`), NOT V-DECLARED-KEY. The ONLY construction
+  that discriminates "the bracket did not lift the fence" (O-R3.4).
+
+**Positive witness (eqgate + IR byte-equal cross-compare, oracle-1).**
+- `region_declared_tc_witness` — the `demand_tc_witness` graph re-authored with a
+  bracket on `path` declaring exactly the SIP-inferred key (`path[From](From, To)`
+  under `q(bound From, free To)` → `p_bound = {0}`). `.drflags` `-demand`, `.eqgate`
+  `-demand -demand-instance`. REFEREE (oracle-1, the "changes no lowering" check):
+  its `-df` / `-rel` / `-ir` / `-h` dumps in all 4 modes are BYTE-EQUAL to
+  `demand_tc_witness`'s existing `*.opt.golden` files (a same-file cross-compare, NO
+  new golden blessed); `-contract` equals `demand_tc_witness`'s contract golden
+  MODULO exactly the added `declared_key=` + scoped inferred-key lines (pinned
+  separately per oracle-4); the stdout eqgate (flat == declared == nested + sorted
+  published-delta identity) sits on top as the answer check.
+- The `demand_multi_adorn_witness` positive-reuse bullet is **DELETED** (ADJ-R3-A).
+
+**Key-SUBSET covering-array fuzz (ADJ-R3-D / findings oracle-3 + necessity-3),
+slotted AFTER the directed witnesses land.**
+- Generator over the base programs (`demand_tc_witness`, `tc_nonlinear_diff`,
+  `demand_neighborhood_witness`, `tests/MiniDisassembler/database.dr`): a strength-2
+  covering array over (relation × key-SUBSET × per-redeclaration) — **ORDER DROPPED**
+  (inert in R3a; the store stays positionally derived, so order discriminates zero
+  eqgate behavior and its sole observable — the deleted `order=` field — is never
+  emitted). The arity ceiling / sampling fallback and covering-array machinery
+  reuse are unchanged.
+- Oracle: flat (`-demand`) == declared (`-demand`) == nested (`-demand-instance`)
+  answer-identity, OR a CLEAN PF-3-classified diagnostic; NEVER SIGABRT (134) /
+  stack-overflow (139). The key-SUBSET dimension exercises V-DECLARED-KEY's boundary
+  (exact-match subset accepts byte-identical; every OTHER subset draws a clean reject
+  and never aborts) — real, non-tautological signal (finding necessity-3), not mere
+  parser robustness. No new golden blessed (identity falls out transitively from the
+  flat diffrun).
+
+**Obligations.** DISCHARGED: O-R3.1 (region_declared_tc_witness IR byte-equal +
+stdout eqgate), O-R3.4 (region_declared_fenced_1), the dump referee (oracle-4
+contract golden), the match-boundary observability (oracle-5 scoped inferred-key
+dump). **SMALLER-NOT-LARGER:** ORDER dropped from the covering array (one fewer
+axis); the multi_adorn positive-reuse deleted; region_key_mismatch_1 needs no
+gated/contingent bless (RP-3 makes it stable).
+
+---
+
+### AMENDMENT LEDGER (DIFF-R3, session 5) — 14 panel findings → resolution
+
+| Finding | Sev | Resolved by | Adjudication / ratification |
+| --- | --- | --- | --- |
+| correctness-lifecycle-1 (multi-adorn scoping) | MAJOR | HUNK R3a-3 (STRICT single-forcing scope) + R3a-5 (`region_key_multi_adorn_1`; multi_adorn positive-reuse DELETED) | ADJ-R3-A option (a) STRICT |
+| correctness-lifecycle-2 (no singular contract view; dead relation) | MAJOR→spec-clarity | HUNK R3a-4 (canonical-view rule: `p_merge` else full-width reader TUPLE; dead-view early-skip; `region_key_dead_relation_1`) | ADJ-R3-C |
+| correctness-lifecycle-3 (mismatch golden vs un-ratified STOP) | MINOR | HUNK R3a-5 (`region_key_mismatch_1` STABLE, encode now with RP comment) | RP-2 (STOP retired) + RP-3 (unprovable→hard reject) |
+| termination-confluence-1 (no single `p_bound` referent) | MAJOR | HUNK R3a-3 (STRICT scope eliminates the ambiguity — dup of lifecycle-1 fix) | ADJ-R3-A option (a) STRICT |
+| termination-confluence-2 (state 1a no EOF/error edge) | MINOR | HUNK R3a-2 (complete transition table incl. EOF external-gate + in-switch malformed-body reject) | Part R3.1 verified terminator (`:414-419`, `:856-869`) |
+| testability-oracle-1 (stdout-only, not IR-equal) | MAJOR→scoped | HUNK R3a-5 (region_declared_tc_witness: `-df/-rel/-ir/-h` byte-equal to demand_tc goldens; `-contract` equal modulo declared_key/inferred lines; stdout eqgate on top) | oracle-1 amendment (excl. `-contract` from strict set) |
+| testability-oracle-2 (O-R3.4 fence unrefereed) | MAJOR | HUNK R3a-5 (`region_declared_fenced_1` — matching bracket + NEGATE/AGG/self-read → FENCE class) | oracle-2 amendment |
+| testability-oracle-3 (ORDER axis inert in fuzz) | MAJOR | HUNK R3a-5 (ORDER DROPPED from covering array; key-SUBSET kept) | ADJ-R3-D |
+| testability-oracle-4 (dump fields unpinned) | MAJOR | HUNK R3a-4 (`region_declared_tc_witness.contract.opt.golden` pins `declared_key=`) | oracle-4 (pin `declared_key=` only) |
+| testability-oracle-5 (inferred key unobservable) | MINOR | HUNK R3a-4 (emit inferred `p_bound` into `-contract-out`, SCOPED to bracketed relations) | ADJ-R3-E (no demand-corpus golden churn) |
+| necessity-1 (capability-free overlay) | MAJOR | Whole section (R3a = lint + surface-laying) | ADJ-R3-B option (b) SHRINK; value = (i) the lint, (ii) Minimize surface-laying |
+| necessity-2 (belt duplicates resolve) | MAJOR→scoped | HUNK R3a-4 (`CheckDeclaredRegionKey` scoped to column-survival-over-optimization) | ADJ-R3-C KEEP-BUT-SCOPE |
+| necessity-3 (fuzz arm disproportionate) | MAJOR→scoped | HUNK R3a-5 (DROP ORDER, KEEP key-SUBSET × redeclaration covering array) | ADJ-R3-D |
+| necessity-4 (inert ORDER capture/dump) | MINOR | HUNK R3a-2 (ORDER captured at PARSE layer only; `HasRegionKey()` kept) + R3a-4 (no `order=` dump, no contract-layer order) | ADJ-R3-D (resolves the oracle-4 tension: `declared_key=` now, `order=` at the widening) |
+
+**Un-amended-hunk supersession recap.** Superseded from the original DIFF-R3
+section: the two-tier R3a/R3b split (R3b RETIRED, RP-2); the R3-STOP row +
+hint-vs-mandate OPEN item (RETIRED); `Token.cpp` spelling edits (R3a-1, Part R3.1
+correction); relation-scoped Step-2b reconciliation (R3a-3, now STRICT
+single-forcing); `CheckDeclaredRegionKey`'s `declared ⊆ visible_fields`
++ reconciliation framing (R3a-4, now column-survival-only); the `order=` contract
+field + ORDER covering-array axis (DROPPED, ADJ-R3-D); the `demand_multi_adorn_witness`
+positive-reuse (DELETED, ADJ-R3-A). O-R3.5 (functional-key proof deferred to
+Minimize) is UNCHANGED and REAFFIRMED (RP-4).
+
+### PANEL RECORD (session 5) — 11 findings on the session-5 amendment section, 11 survived refutation
+
+Adversarial panel (correctness/lifecycle, termination/confluence,
+testability/oracle, necessity), REFUTE-VERIFIED against code; refuters
+defaulted to REFUTED absent code evidence. 11 found / 11 survived (the
+finders pre-refuted; the seeded probes were dense). Two orchestrator
+findings (ORC-1 emitter max-padding, ORC-2 support-source semantics) were
+independently confirmed by the panel (t15/t16) or adjudicated against a
+panel counter-position (NEC-1) below.
+
+| id | lens | verdict | severity | one-line |
+| --- | --- | --- | --- | --- |
+| TC-R3-1 | termination-confluence | CONFIRMED | BLOCKING | the ADJ-R3-A strict check as placed reads `demand_forcings`, which is EMPTY until Loop 2 (`Demand.cpp:1191`) — the ratified reject can never fire |
+| TC-R3-2 | termination-confluence | SOFTENED | MAJOR | T1.4's "census divergence caught by V-REGION-CENSUS" contradicts T1.5's single-authority lockstep — both operands drop the interior contract together, silently |
+| CL-1 | correctness-lifecycle | SOFTENED | MINOR | same core as TC-R3-2, plus: V-REGION-CENSUS's row-contracts arm compares `DeriveRegionalCensus(query)` against ITSELF (`Rel.cpp:4639/4660` vs `Planning.cpp:435`) — trivially self-equal, catches only a stubbed derive |
+| CL-2 | correctness-lifecycle | CONFIRMED | MINOR | ditto TC-R3-1's dead-collection read; `NumForcingsOfName` is a Planning.cpp dump-only static, out of scope in Demand.cpp |
+| CL-3 | correctness-lifecycle | CONFIRMED | MINOR | the `:573` map read (Loop 1) and the `:1141-1143` mint (Loop 2) are in different loops — the local cannot flow; needs a `PerAdornment` carrier |
+| oracle-crosscompare | testability-oracle | SOFTENED | MINOR | runall.sh has no cross-CASE compare; the 4-mode IR byte-equal clause is impossible (demand_tc pins df/rel/ir/h at OPT only) |
+| t15-bytestable | testability-oracle | SOFTENED | MINOR | "existing contract lines byte-stable" is FALSE: `Format.cpp:123-132` pads by the MAX over ALL contracts (== ORC-1) |
+| t16-predicted-bytes | testability-oracle | CONFIRMED | MINOR | T1.6's `rel=path` line has 2 trailing pad spaces; the emitter yields 12 (`rel_w=20` dominated by `reachable_from`) |
+| NEC-1 | necessity | SOFTENED | MINOR | challenge "clone oversized for one support bit" REFUTED in part: post-Optimize provenance symmetry with R-STORE is normative; resolve retained |
+| NEC-2 | necessity | CONFIRMED | MINOR | the shared `reject` lambda anchors at `module.SpellingRange()` and appends "; recompile without -demand" — wrong anchor and ACTIVELY WRONG advice for a proven-inconsistent bracket (dropping -demand un-validates it) |
+| NEC-3 | necessity | CONFIRMED | MINOR | `proxy_view_to_decl` as a QueryImpl member with no clear survives into Optimize with dangling VIEW* keys — the "never crossing Optimize" claim was asserted, not enforced |
+
+### ADJUDICATED RESOLUTIONS (session 5, orchestrator) — normative, supersede the conflicting hunk text above
+
+- **RES-1 (TC-R3-1 + CL-2 + CL-3 — the Step-2b placement + plumbing).** Adopt
+  TC-R3-1's realization: Loop-1 "Step 2b" REDUCES to a per-adornment STASH
+  (when `p_demanded_decl.HasRegionKey()`: record this adornment's
+  `set(p_bound)`; the shared `p_demanded_decl` rides the CL-3 `PerAdornment`
+  carrier — new field `demanded_decl`, stashed at `Demand.cpp:792-794`,
+  reconstructed at the Phase-2 loop head so the mint at `:1141-1143` has it in
+  scope). BOTH region-key checks move to a NEW post-Loop-1 / pre-Loop-2 gate
+  beside Step 4 (`Demand.cpp:809-826`, the one-shared-`p_merge` invariant
+  asserted at `:791`): first the ADJ-R3-A STRICT scope check —
+  `plan.size() >= 2` IS the forcing count for the one query name (the FIRST
+  site the complete count exists; `demand_forcings` is still empty) — then the
+  per-adornment set-reconciliation over the stashed bound-sets. R-1BOUND
+  DEPENDENCY (recorded): `plan.size()` equals the relation's total forcing
+  count ONLY because R-1BOUND rejects a second bound query name upstream; if
+  R-1BOUND is ever lifted (the Stage-C candidate), the strict check must
+  re-count across names. CONSEQUENCE (supersedes the oracle-2 masking note):
+  Step-3 fences now run BEFORE the region-key checks, so a mismatched bracket
+  no longer masks a fence — `region_declared_fenced_1` still lands as the
+  discriminating witness, and the diagnostic ORDER for a program with both
+  defects is fence-first (encode that in the witness comment).
+- **RES-2 (CL-1 + TC-R3-2 + NEC-1 + ORC-2 — the interior arm redesign;
+  STRICTER than the panel's documentation-only patch).** Interior-contract
+  EXISTENCE and the census COUNT are both DECL-DRIVEN and resolve-free: the
+  set of distinct `RecognizedSubgraphs()[i].demanded_decl` Ids (ascending
+  first-forcing order) minus insert-covered decl Ids — a pure function of the
+  frozen Query, mode-stable by construction, identical in `DeriveRegionalCensus`
+  and the contract build (single-authority lockstep PRESERVED and now
+  trivially count-correct). The freeze-time resolve SHRINKS to the ONE field
+  the decl cannot supply — `support=` — and is sourced from the
+  **kQueryProjection guard JOIN's `jl[1]`** (the full-width live read of p's
+  content: post-Optimize provenance, symmetric with R-STORE's final-view
+  render per NEC-1's ratified principle, and semantically p's OWN
+  deletability). ORC-2 rationale recorded: the kBody guard's `jl[1]` is the
+  SUMMARIZED INPUT, and first-wins over multiple kBody guards could render a
+  monotone input's bit while the content is differential — the projection
+  guard's read cannot. If the resolve finds NO kQueryProjection guard JOIN
+  with a `jl[1]` for a counted decl, the freeze ABORTS (fprintf, the
+  V-FROZEN house style) — the "loud failure" claim of T1.4 becomes TRUE by
+  construction instead of being struck: existence is decl-counted, so a
+  support-resolve failure cannot silently drop the line; it can only abort.
+  T1.4's cross-mode OPEN VERIFICATION narrows to: the projection-guard
+  resolve must SUCCEED in all 4 modes (settled empirically at the
+  desired-states phase; a failure aborts the suite loudly, not silently).
+  The CL-1 finding about V-REGION-CENSUS's self-equal row-contracts arm is
+  RECORDED as a standing limitation of that validator (it referees stored-vs-
+  rederived, not emitted-vs-derived; the emitted-vs-derived tie lives at
+  `Planning.cpp:460`).
+- **RES-3 (NEC-3 — the satellite lifetime).** Adopt option (a): the
+  correlation map is a `Query::Build`-SCOPED LOCAL
+  (`std::unordered_map<VIEW*, ParsedDeclaration>`) passed by reference into
+  `ConnectInsertsToSelects` (writer) and `ApplyDemandTransform` (reader),
+  destroyed at `Query::Build` return — never a QueryImpl member, no dangling
+  key can outlive its two-call window, nothing to clear. SINGLE-READER
+  discipline note added (the RecognizedSubgraph "NEVER read at freeze" idiom).
+- **RES-4 (t15 + t16 + ORC-1 — corrected byte predictions).** The T1.6
+  predictions are CORRECTED (authoritative desired bytes live in the
+  desired-states doc §10): demand_tc's E0 line is UNCHANGED and the new line
+  is `  row-contract     E1  rel=path            member-key=(From, To)  support=monotone`
+  (12 pad spaces after `rel=path`, `rel_w=20`); multi_adorn's EXISTING E0
+  line RE-PADS (`rel=q` gains 2 spaces, `rel_w` 7→9) and the new line is
+  `  row-contract     E1  rel=rel  member-key=(A, B)  support=monotone`.
+  The "existing lines byte-stable" claim is STRUCK; the invariant is the
+  weaker true one: E-INDICES of insert-derived contracts are stable; padding
+  is a whole-block function (the G1 column discipline).
+- **RES-5 (oracle-crosscompare — the realizable referee).** Adopt the
+  SYMLINK mechanism at the OPT grain: `region_declared_tc_witness.irgold`
+  pins `df/rel/ir/h opt` via goldens committed as SYMLINKS to
+  `demand_tc_witness`'s corresponding `*.opt.golden` (cmp follows symlinks;
+  no new golden CONTENT; a demand_tc re-bless auto-propagates). The 4-mode
+  answer-inertness is carried by the stdout eqgate, NOT the IR compare
+  (demand_tc itself pins IR surfaces at OPT only). `-contract` is pinned as
+  its own REAL golden for the bracketed witness (the `declared_key=` +
+  inferred-key lines make it legitimately different — oracle-4).
+- **RES-6 (NEC-2 — the dedicated reject path).** The two region-key rejects
+  (mismatch, multi-adorn scope) emit via a DEDICATED error path anchored at
+  the offending declaration (`p_demanded_decl.SpellingRange()` or the bracket
+  token range), with NO "; recompile without -demand" suffix — the message
+  instructs fixing/removing the bracket. The shared `reject` lambda remains
+  for the genuine feature-gap fences only.
+
+Survival: 11/11 (the ~22% calibration did not bind — the finder pass was
+probe-seeded and pre-refuted; volume was low and precision high). The
+BLOCKING finding (TC-R3-1) is closed by RES-1 before any implementation.
+
+### IMPLEMENTATION FINDING + AMENDMENT (2026-08-03, session 5) — RES-2's support resolve was CSE-FRAGILE; amended to the role-blind OR
+
+**FINDING (T1-IMPL-1, found live at the predict-then-verify suite run).** The
+RES-2 rule "support= from the kQueryProjection guard JOIN's `jl[1]`" ABORTED
+(TIER1-SUPPORT-RESOLVE) on `demand_neighborhood_mono_witness`,
+`demand_beside_mutual_1`, and `demand_beside_recursion_1` in the `opt`/`nocf`
+modes (dataflow opt ON): `PromoteSurvivorToBody` (View.cpp, the g1
+SURVIVOR-RECORD POLICY) deliberately promotes a kQueryProjection guard that
+CSE-folds into a body guard to kBody — so under `df` opt NO live view may
+carry the projection role, and a role-FILTERED resolve finds nothing. The
+panel's oracle probes could not catch this (the two `.region`-pinned
+witnesses happen to keep their projection guards live under opt); the
+corpus-wide suite run did — the evil-monkey rule working as designed.
+
+**AMENDMENT (normative, supersedes the RES-2 support-source sentence and the
+§10.4 desired-states line).** `support=` is the OR over ALL live annotated
+guard JOINs of the decl's forcings of `v.CanReceiveDeletions()` — ROLE-BLIND
+(aligned with the codebase's own survivorship convention: recognition
+derives from whatever stamp survives the fold) and ORDER-FREE (an OR has no
+DefList-position dependence, strictly better than the struck first-wins).
+Semantics: each guard JOIN's output IS a demanded slice of p's content, so
+the OR is the deletability of p's demanded content — including demand-side
+retraction, which is CORRECT under `-demand-retract` (retracting demand
+retracts the guarded rows; the flat lowering's own death machinery). The
+ORC-2 objection (a kBody `jl[1]` is the summarized INPUT) is resolved by
+reading the JOIN ITSELF, not `jl[1]` — no JoinedViews decomposition at all
+(smaller). Zero live annotated guard JOINs for a counted decl still ABORTS
+(the loud-failure construction is unchanged; existence stays decl-counted).
+Verified post-amendment: the three aborting cases freeze cleanly in all
+modes (interior contracts `rel=edge`/`rel=pick`/`rel=pair`, all monotone),
+and the 8 pinned `.region` dumps are byte-UNCHANGED from the verified §10
+predictions.

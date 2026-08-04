@@ -195,6 +195,92 @@ CollectContractInserts(const ::hyde::Query &query) {
   return out;
 }
 
+// Tier-1 naming lift: the demand-INTERIOR contracts. The demanded relation's
+// model is merge-materialized (no relation-INSERT), so R-STORE cannot name
+// it; the mint-time `RecognizedSubgraph::demanded_decl` snapshot can.
+// EXISTENCE and COUNT are DECL-DRIVEN and resolve-free (RES-2): the distinct
+// `demanded_decl` Ids over `RecognizedSubgraphs()` (append order == forcing
+// order — the pass's own deterministic stamp order, HP-9-clean), skipping
+// decls already surfaced by an insert-derived R-STORE contract. A pure
+// function of the frozen Query, mode-stable by construction, consulted
+// IDENTICALLY by `DeriveRegionalCensus` and the contract build below.
+static std::vector<ParsedDeclaration> CollectDemandInteriorDecls(
+    const ::hyde::Query &query) {
+  std::unordered_set<uint64_t> insert_decl_ids;
+  for (const auto &[decl, ins] : CollectContractInserts(query)) {
+    insert_decl_ids.insert(decl.Id());
+  }
+  std::vector<ParsedDeclaration> out;
+  std::unordered_set<uint64_t> seen;
+  for (const RecognizedSubgraph &rs : query.RecognizedSubgraphs()) {
+    const ParsedDeclaration decl = rs.demanded_decl;
+    if (insert_decl_ids.count(decl.Id())) {
+      continue;  // Demanded AND insert-materialized: R-STORE already names it.
+    }
+    if (!seen.insert(decl.Id()).second) {
+      continue;  // First forcing wins (multi-adornment: one shared interior).
+    }
+    out.push_back(decl);
+  }
+  return out;
+}
+
+// The ONE field the decl cannot supply — `support=` — resolves off the LIVE
+// post-Optimize graph (provenance symmetry with the R-STORE render, NEC-1):
+// support = the OR over ALL live annotated guard JOINs of the decl's
+// forcings of `v.CanReceiveDeletions()` — the deletability of p's demanded
+// content (each guard JOIN's output IS a demanded slice of p; the OR covers
+// multi-body content and includes demand-side retraction, which is correct
+// under `-demand-retract`: retracting demand retracts the guarded rows).
+// ROLE-BLIND by design: a kQueryProjection-only resolve is CSE-FRAGILE —
+// `PromoteSurvivorToBody` (View.cpp, the g1 survivor policy) promotes a
+// projection guard folded into a body guard to kBody, so under `df` opt no
+// live view may carry the projection role at all (found live on
+// demand_neighborhood_mono_witness at implementation). The OR is order-free
+// (no DefList-position dependence); the stored `RecognizedSubgraph` view
+// handles dangle post-Optimize and are NEVER read — the walk buckets live
+// views by the CSE-migrating `GuardAnnotationIndex` stamp only. A counted
+// decl with ZERO live annotated guard JOINs ABORTS the freeze — existence
+// is decl-counted above, so a resolve failure can never silently drop a
+// contract line (the RES-2 loud-failure construction).
+static bool ResolveInteriorSupport(const ::hyde::Query &query,
+                                   ParsedDeclaration decl) {
+  const std::vector<GuardAnnotation> &annots = query.GuardAnnotations();
+  const std::vector<RecognizedSubgraph> &subgraphs =
+      query.RecognizedSubgraphs();
+
+  std::unordered_set<unsigned> decl_forcings;
+  for (const RecognizedSubgraph &rs : subgraphs) {
+    if (rs.demanded_decl.Id() == decl.Id()) {
+      decl_forcings.insert(rs.forcing_index);
+    }
+  }
+
+  bool resolved = false;
+  bool support = false;
+  query.ForEachView([&](QueryView v) {
+    const unsigned ai = v.GuardAnnotationIndex();
+    if (ai == QueryView::kNoGuardAnnotation || ai >= annots.size()) {
+      return;
+    }
+    if (!decl_forcings.count(annots[ai].forcing_index) || !v.IsJoin()) {
+      return;  // Proxy-TUPLE annotation carriers gate nothing; JOINs do.
+    }
+    resolved = true;
+    support = support || v.CanReceiveDeletions();
+  });
+
+  if (!resolved) {
+    fprintf(stderr,
+            "TIER1-SUPPORT-RESOLVE: no live annotated guard JOIN for "
+            "demanded interior relation (rel=%.*s)\n",
+            static_cast<int>(decl.NameAsString().size()),
+            decl.NameAsString().data());
+    abort();
+  }
+  return support;
+}
+
 }  // namespace
 
 RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
@@ -209,7 +295,8 @@ RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
   census.result_ports = static_cast<unsigned>(published.size());
 
   census.row_contracts =
-      static_cast<unsigned>(CollectContractInserts(query).size());
+      static_cast<unsigned>(CollectContractInserts(query).size() +
+                            CollectDemandInteriorDecls(query).size());
 
   // regions=1, child_calls=0, program_roots=1 are the Stage-B constants
   // (the struct defaults): one ProgramRoot, one observation-root region.
@@ -428,6 +515,23 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
     contract.member_key_text = std::move(key);
     contract.support_text =
         view.CanReceiveDeletions() ? "differential" : "monotone";
+    out.contracts.push_back(std::move(contract));
+  }
+
+  // ---- Tier-1 demand-INTERIOR contracts, APPENDED after the insert-derived
+  // R-STORE contracts (their E-indices stay stable), in ascending
+  // first-forcing order, on the same dense `edge` counter. member-key is the
+  // SNAPSHOTTED decl's AllFields rendered positionally (a demanded relation
+  // keeps the AllFields/passthrough contract — verified empirically across
+  // all 4 modes at the desired-states phase, ORC-3); `support=` resolves off
+  // the live projection-guard read (abort on failure — never a silent drop).
+  for (ParsedDeclaration decl : CollectDemandInteriorDecls(query)) {
+    RegionalContract contract;
+    contract.edge_index = edge++;
+    contract.rel_name = std::string(decl.NameAsString());
+    contract.member_key_text = std::string(AllParamNames(decl));
+    contract.support_text =
+        ResolveInteriorSupport(query, decl) ? "differential" : "monotone";
     out.contracts.push_back(std::move(contract));
   }
 
