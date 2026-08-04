@@ -51,8 +51,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 199 corner-case programs as of the
-DIFF-R3 R3a landing — symrec_tie_1 is the standing
+(`<name>.dr` + `<name>.main.cpp`, 203 corner-case programs as of the
+K1 multi-@key landing — symrec_tie_1 is the standing
 determinism witness; agg_distinct_1 pins the aggregate multiplicity
 semantics + carries a `.contract` golden; barrier_neck_1
 witnesses the `:-` separator, sugar for `@barrier` between every two
@@ -110,13 +110,17 @@ delta-relational-IR golden policy.
   answer BEFORE any Stage-C reject lift), `demand_mutual_content_1` (mutual
   recursion inside a demanded body, R-BODYWALK), `demand_two_queries_1`
   (two independent bound query names, R-1BOUND — the Stage-C lift
-  candidate), and the EIGHT `@key` rejects (DIFF-R3, sessions 5-6, ALL
-  FLAGLESS — RP-6 activation makes every one fire with no .drflags):
-  `key_wildcard_1`/`key_anon_1`/`key_dup_1`/
+  candidate), and the TEN `@key` rejects (DIFF-R3 sessions 5-6 + K1
+  session 7, ALL FLAGLESS — RP-6 activation makes every one fire with no
+  .drflags): `key_wildcard_1`/`key_anon_1`/`key_dup_1`/
   `key_unknown_1` (pragma arg-list obligations),
   `key_mismatch_1` (V-DECLARED-KEY: declared set ≠ SIP-inferred
   `p_bound`; a STABLE hard reject, RP-3), `key_multi_adorn_1`
-  (strict single-forcing scope; repetition is the reserved lift),
+  (RP-10 bijection Arm B: partial declaration — `@key(A)` alone against
+  inferred {A},{B}; repurposed at K1 from the retired single-forcing
+  reject), `key_over_adorn_1` (Arm A: a declared set with no inferred
+  match), `key_multi_adorn_allfree_1` (the all-free-sibling fence fires
+  upstream of the bijection, pragma-activated),
   `key_fenced_1` (a MATCHING pragma + NEGATE body draws the FENCE
   class, never V-DECLARED-KEY — O-R3.4) and `key_undemanded_1`
   (an @key on an undemanded relation — the RP-6 realization reject); `kvindex_1` is MODE-SPLIT (compiles
@@ -154,7 +158,12 @@ delta-relational-IR golden policy.
   F30 (the kind-scoped demand__ collision scan) on day one.
 - Blessing: goldens change ONLY via explicit
   `runall.sh --bless <workroot> [filter]` after reviewing a run's outputs —
-  never automatically on failure, and never to make a red case green.
+  never automatically on failure, and never to make a red case green. Since
+  K1 the bless loop's `bless_copy` helper MECHANIZES the symlink rule: a
+  symlink golden is never written through — byte-identical produces a skip
+  line, divergence is a loud BLESS-REFUSED + exit 1 (the twin-equivalence
+  witnesses key_tc_witness / key_neighborhood_witness /
+  key_multi_adorn_witness stay safe under an unfiltered bless).
 
 `tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with
 repros (F1–F19, F21, and F26–F30 fixed as of August 2026; F23 promoted to
@@ -643,26 +652,44 @@ pinned PER-MODE; cross-mode identity is not claimed). Authority docs:
 stage-b-diff.md AMENDMENTS, regional-arch-pseudocode.md Part B,
 regional-dump-stage-b-desired-states.md §9/§9.7, stage-b-landed-seed.md.
 
-## DIFF-R3: Tier-1 interior naming + the `@key` surface (LANDED, sessions 5-6)
+## DIFF-R3: Tier-1 interior naming + the `@key` surface (LANDED, sessions 5-7)
 
-RATIFIED POLICY (RP-1..8, region-model-diffs.md session-5 AMENDMENTS + the
-session-6 @DEMAND section): HINT-NOT-MANDATE — the declared key NEVER drives
+RATIFIED POLICY (RP-1..10, region-model-diffs.md session-5 AMENDMENTS + the
+session-6 @DEMAND section + the SESSION-7 RATIFICATIONS): HINT-NOT-MANDATE —
+the declared key NEVER drives
 or constrains the lowering (R3b is DEAD); UNPROVABLE/UNREALIZABLE REJECTS
 (mismatch, unseeded, undemanded — all stable hard errors, never
 warn-and-accept); Minimize/DeterminedBy is the future provability WIDENING
-(O-R3.5); the old `@key`-for-FD reservation DISSOLVED by convergence (RP-9: the Minimize-backed key proof and the instance key are ONE concept).
+(O-R3.5); the old `@key`-for-FD reservation DISSOLVED by convergence (RP-9: the Minimize-backed key proof and the instance key are ONE concept);
+RP-10 (K1, session 7): a multi-adornment relation declares its keys by
+PRAGMA REPETITION under TOTAL BIJECTION — declared set-of-sets ==
+SIP-inferred set-of-sets, order-free, never subset coverage. The RP-8
+auto-sweep STOP is RESOLVED strict-for-now (no goldens moved; best-effort
+re-opens only on an explicit owner call).
 
-THE SURFACE (RP-5/RP-7/RP-9): `#local rel(u64 A, u64 B) @key(A).` — a
-post-parameter-list pragma on `#local`/`#export` ONLY (declaration-level; a
-per-clause key has no semantic referent — one keyed store per relation).
+THE SURFACE (RP-5/RP-7/RP-9/RP-10): `#local rel(u64 A, u64 B) @key(A)
+@key(B).` — post-parameter-list pragmas on `#local`/`#export` ONLY
+(declaration-level; a
+per-clause key has no semantic referent — one keyed store per adornment).
 Parsed in the ParseLocalExport pragma tail with IMMEDIATE arg resolution
 (params are bound at the pragma site); named + duplicate-free + known
-columns enforced; ONE pragma per decl today (repetition `@key(A)
-@key(B)` is the RESERVED multi-adornment lift path — a second pragma is
-a clean not-yet-supported reject); the retired `rel[K...]` bracket draws a
+columns enforced per pragma; N pragmas per decl since K1 (storage
+`instance_key_param_index_sets`, accessor `InstanceKeys()`; a REPEATED
+column SET across pragmas is a parse-time order-free reject —
+reject_key_double_1 pins it WITH a bound query so dropping the check is a
+LOST CHECK, not a masked one); Step 2b V-DECLARED-KEY is the two-arm
+RP-10 bijection (Arm A declared-surplus / Arm B inferred-surplus,
+named-set diagnostics; N=1 byte-compatible with the retired single-set
+check); the retired `rel[K...]` bracket draws a
 pointed redirect diagnostic (the bracket LEXEMES remain, parser-unconsumed;
 `rel[Bound](Free)` stays design-doc/dump notation). The decl formatter
-round-trips the pragma.
+round-trips all N pragmas. `-contract-out` emits ONE `declared-key` line
+per set (written-pragma order, always-on no-match belt);
+`key_multi_adorn_witness` is the flagless N=2 witness (stdout SYMLINK to
+demand_multi_adorn_witness = nested-vs-flat answer identity; own rel.opt
+golden pins `kSubgraphInstantiate=2`; own contract.opt golden byte-locks
+the two-line declared-key pairing). Working authority: k1-multikey.md
+(Parts A-C + the 12-finding panel record).
 
 ACTIVATION (RP-6/RP-8): `@key` is a flagless FORCE-OPT-IN — the demand
 transform runs for a pragma-bearing module with NO `-demand` flag, strict
@@ -685,10 +712,11 @@ after the user-specified ones"); with R-1BOUND it composes trivially today;
 whether the auto sweep stays STRICT or becomes BEST-EFFORT (fence -> skip,
 not reject) is an OPEN owner STOP. V-DECLARED-KEY sits POST-Loop-1 in
 ApplyDemandTransform (the first site the adornment count exists; fences run
-first — a pragma never masks a fence): strict single-forcing scope, then
-declared-set == inferred `p_bound`. `-contract-out` gains the
+first — a pragma never masks a fence): since K1 the two-arm RP-10
+set-of-sets bijection (was: strict single-forcing scope + single
+declared-set == inferred `p_bound`). `-contract-out` gains the
 pragma-scoped `declared-key rel=... declared=(...) inferred=(...)`
-line. `key_tc_witness` is the ACTIVATION-EQUIVALENCE witness: its
+line(s), one per declared set. `key_tc_witness` is the ACTIVATION-EQUIVALENCE witness: its
 stdout/oracle/monotone/df/rel/ir/h/region goldens are SYMLINKS to
 demand_tc_witness's (pragma-activated compile == `-demand`-activated
 compile, byte-for-byte; NEVER bless its symlinked surfaces directly),

@@ -2660,3 +2660,27 @@ internal pass names) — the source surface and the parse-layer API
 (`HasInstanceKey`/`InstanceKey`) speak instance keys. The injected forcing
 seam itself still dies at Stage C (request edges), unchanged by this
 slice.
+
+## SESSION-7 RATIFICATIONS (2026-08-04, owner conversation) — the K-ranking
+
+**RATIFIED (owner, 2026-08-04, session-7 opening):**
+- **RANKING:** DIFF-NEXT-K1 (multi-`@key` repetition — the multi-adornment
+  surface lift) is ranked FIRST. K5/K4/K3 unranked behind it; K3 stays
+  design-only (blocked on the D2.6 reader-handle + §6-vs-§11 routing STOPs).
+- **RP-10 (K1 semantics — TOTAL BIJECTION):** a multi-`@key` relation must
+  declare EVERY SIP-inferred adornment and every declared key set must match
+  an inferred one — order-free set-of-sets equality (bijection), never
+  subset coverage. Rationale (seed, ratified): a partially-declared
+  multi-adornment relation is the single-adornment ambiguity reborn.
+- **RP-8 RESOLUTION (the auto-sweep STOP): STRICT stays, for now.** The
+  `-demand` flag keeps every fence a hard reject; no `demand_*_body_1`
+  goldens move. The best-effort endpoint remains the recorded candidate,
+  deferred until pragma adoption gives evidence — re-open only on an
+  explicit owner call.
+
+Working authority for K1: `k1-multikey.md` (this directory) — Part A the
+tip-grounded fine-grain pseudocode, Part B the dated diffs, panel record
+appended there. Session-7 anchor re-verification: 39 anchors, 35 confirmed;
+the 4 drifts recorded in k1-multikey.md's header (seed-text grain errors +
+one K6 rider: the `demand__`-collision rejects do not fork their advice on
+`pragma_activated`).

@@ -6374,3 +6374,40 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     K1 multi-@key repetition, K2 the auto-sweep STOP, K3 Stage-C re-brief
     (kills the injected forcing seam — the owner's stated intent), K4
     fuzz arm, K5 Tier-2 provenance.
+  - **(BD) 2026-08-04 session 7 — K1 LANDED: multi-`@key` repetition
+    under RP-10 TOTAL BIJECTION (impl e641be46 + the docs commit).**
+    Owner ratified at open: K1 ranked first; RP-10 = declared set-of-sets
+    == SIP-inferred set-of-sets, order-free, NEVER subset; the RP-8
+    auto-sweep STOP RESOLVED strict-for-now (no goldens moved). Method =
+    the full (a)-(d) chain via Workflow orchestration: 39-anchor fleet
+    re-verify of the s6 seed (35 confirmed; 4 drifts recorded — among
+    them the demand__-collision advice-fork gap, now a rider), Part-A
+    grounded pseudocode, Part-B dated diffs DIFF-K1-1..5, a 4-lens
+    adversarial panel (12 findings: 5 confirmed / 4 downgraded / 3
+    refuted, every finding refute-verified; adjudications ADJ-K1-A..J),
+    Part-C byte-exact desired states — all in k1-multikey.md, the K1
+    working authority. Landed: N `@key` pragmas per decl
+    (instance_key_param_index_sets / InstanceKeys(); ADJ-K1-A parse-time
+    order-free duplicate-SET reject), Step 2b = the two-arm bijection
+    (Arm A declared-surplus / Arm B inferred-surplus, named-set
+    diagnostics; N=1 byte-compatible), per-set `declared-key` contract
+    lines (written-pragma order + ADJ-K1-I always-on no-match belt), the
+    ADJ-K1-D subgraphs[0] shared-demanded_decl assert, and ADJ-K1-G
+    `bless_copy` — `--bless` now REFUSES to write through symlink goldens
+    (the panel finding whose refuter died; orchestrator-confirmed at the
+    code). Witnesses: key_multi_adorn_witness (flagless N=2 nested,
+    kSubgraphInstantiate=2, stdout symlink to demand_multi_adorn_witness,
+    own rel.opt + contract.opt goldens — the contract golden byte-locks
+    the pairing AND the written-pragma order), key_over_adorn_1,
+    key_multi_adorn_allfree_1, key_multi_adorn_1 repurposed to Arm B,
+    reject_key_double_1 reshaped WITH a bound query (ADJ-K1-F: Step 2b's
+    std::set PROVABLY dedups duplicate declared sets, so the parse reject
+    is the sole defense and its witness must be able to LOSE the check).
+    Gates G1-G6 all passed predict-then-verify (rel + contract dumps
+    byte-matched Part C BEFORE golden install; zero existing-golden
+    changes). Suite PASS (249 = 203 + 46), ctest 7/7. Riders recorded in
+    k1-multikey.md: R-K1-BATCHES (definitional referee for the
+    multi-adornment family), the advice-fork gap, pragma DisplayRange
+    (K6-ii), the "demand key"/"instance key" wording drift. NEXT (owner
+    ranks): K5 Tier-2 provenance, K4 fuzz arm, K3 Stage-C re-brief
+    (design-only until the D2.6 + §6-vs-§11 STOPs), the K6 riders.
