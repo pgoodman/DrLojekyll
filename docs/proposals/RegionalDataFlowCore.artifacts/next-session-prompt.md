@@ -36,11 +36,34 @@ thin orchestrator, structured findings (COMPLETE text in fields). MODEL
 TIERING: sonnet for mechanical extraction, opus for judgment. SILENT tests
 (capture to files, print only failures). NEVER bless a golden to make
 anything pass; bless only via explicit `runall.sh --bless` after review —
-and NEVER bless `region_declared_tc_witness`'s symlinked surfaces directly
+and NEVER bless `demand_key_tc_witness`'s symlinked surfaces directly
 (bless writes THROUGH symlinks into demand_tc_witness's goldens; verify
 byte-identity BEFORE any bless that touches it). Do not commit/push unless
 asked; identity `Peter Goodman <peter.goodman@gmail.com>`; keep
 tool/model/provider details out of commits and artifacts.
+
+## SESSION-6 DELTA (2026-08-04, read FIRST): the @demand surface + force-activation LANDED
+
+Session 6 (owner-driven design conversation, ratified live): the declared
+demand key is now the flagless post-paramlist pragma `@demand(K...)` on
+`#local`/`#export` (RP-5), a strict FORCE-OPT-IN to the demand transform
+(RP-6 — no `-demand` needed; unseeded/undemanded/mismatched pragmas all
+hard-reject); `-demand` is reframed as the AUTO layer (RP-8) with the
+STRICT-vs-BEST-EFFORT sweep question an OPEN STOP; placement is
+declaration-only (RP-7). The R3a bracket surface is RETIRED (lexemes kept,
+pointed redirect diagnostic). Witness family renamed demand_key_* (all
+flagless); demand_key_tc_witness is the ACTIVATION-EQUIVALENCE witness
+(symlinked goldens: pragma-compile == flag-compile byte-for-byte). ALSO
+landed: tests/OptDiff/rejects/ (46 should-fail cases: 30 adopted from the
+ToB parse_errors branch + 16 modern; found+fixed F30, the kind-scoped
+demand__ collision scan) and S6-IMPL-1 (`suppress_demand` on Query::Build
+— bin/Oracle is demand-blind by contract; ANY new definitional consumer
+must pass true). Suite PASS (245), ctest 7/7. Authority:
+region-model-diffs.md "THE @DEMAND SURFACE + FORCE-ACTIVATION (session
+6)"; CLAUDE.md's DIFF-R3 section; ledger §20(BB). NEW ranked-next
+candidates joining the list below: multi-@demand REPETITION (`@demand(A)
+@demand(B)` → N stores — the multi-adornment surface lift) and the RP-8
+auto-sweep STOP.
 
 ## State at session open (session-5 close — DIFF-R3 LANDED)
 
@@ -64,8 +87,9 @@ tool/model/provider details out of commits and artifacts.
 
 ## Phase 0 (housekeeping)
 
-1. `git status` / `git log -5`; expect a clean tree at 7f96f7c5. Rebuild
-   debug; suite SILENT (expect `SUITE: PASS (199)`); ctest (expect 7/7).
+1. `git status` / `git log -5`; expect a clean tree at the session-6 tip.
+   Rebuild debug; suite SILENT (expect `SUITE: PASS (245)` — 199 cases +
+   46 rejects); ctest (expect 7/7).
 2. Read: the session-5 AMENDMENTS + RESOLUTIONS + findings sections in
    region-model-diffs.md (the landed contract), Part R3, desired-states
    §10, and the ranked slice's own docs.

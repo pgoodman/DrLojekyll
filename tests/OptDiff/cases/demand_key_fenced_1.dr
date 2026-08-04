@@ -1,0 +1,15 @@
+; demand_key_fenced_1 -- O-R3.4 fence preservation (all-4-modes reject,
+; FLAGLESS via RP-6 activation): the pragma `@demand(From)` MATCHES the
+; SIP-inferred key, so V-DECLARED-KEY passes -- and the NEGATE in the
+; demanded body still draws the demand-sink FENCE reject (Step-3 fences run
+; per adornment BEFORE the post-Loop-1 key checks, RES-1). The one
+; construction that discriminates "the pragma did not lift the fence"; note
+; the fence advice now reads "fix or remove the @demand pragma" (the
+; pragma-activated reject path), never "recompile without -demand".
+#message edge_2(u64 From, u64 To).
+#message block_2(u64 From, u64 To).
+#local blocked(u64 From, u64 To).
+blocked(F, T) : block_2(F, T).
+#local path(u64 From, u64 To) @demand(From).
+path(F, T) : edge_2(F, T), !blocked(F, T).
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

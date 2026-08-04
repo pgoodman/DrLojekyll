@@ -290,6 +290,12 @@ enum class Lexeme : uint8_t {
   // publish removals.
   kPragmaDifferential,
 
+  // `@demand(K...)` on a `#local`/`#export`: the declared demand key — a
+  // FORCE-OPT-IN to demand/keyed-instance materialization for that relation
+  // (RP-5/RP-6, region-model-diffs.md session 6). Flagless; checked against
+  // the SIP-inferred key (unprovable rejects).
+  kPragmaDemand,
+
   // `@highlight` is a debugging pragma, used to mark data flow nodes associated
   // with a particular clause body as "highlighted" so they are easier to
   // spot in the data flow IR visualizations.

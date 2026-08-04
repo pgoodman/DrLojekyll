@@ -72,6 +72,7 @@
 #include "Query.h"
 
 #include <drlojekyll/Parse/ErrorLog.h>
+#include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parse.h>
 
 #include <cassert>
@@ -384,14 +385,47 @@ static std::vector<VIEW *> CollectColUsers(QueryImpl *query, VIEW *producer) {
 
 bool QueryImpl::ApplyDemandTransform(
     const ParsedModule &module, const ErrorLog &log, bool demand_mode,
-    bool demand_retract,
+    bool demand_retract, bool suppress_demand,
     const std::unordered_map<VIEW *, ParsedDeclaration> &proxy_view_to_decl) {
 
-  // MODE GATE. When the `-demand` flag is off (the default), this pass is a
-  // total no-op: nothing is minted, no module state is mutated, the id-stream
-  // is untouched, and the QueryImpl graph is byte-identical to today. This is
-  // the hard containment gate for the existing corpus.
-  if (!demand_mode) {
+  // DEMAND-BLIND consumer override (bin/Oracle): the definitional referee
+  // evaluates the FULL closure — a pragma-activated build inside it would
+  // demand-gate a graph nothing seeds and referee nothing. Overrides both
+  // the flag AND the pragmas; the compiler proper never sets it.
+  if (suppress_demand) {
+    return true;
+  }
+
+  // ACTIVATION GATE (RP-6, session 6). The transform runs when EITHER the
+  // global `-demand` flag is set OR any relation carries an explicit
+  // `@demand(K...)` pragma — the pragma is a flagless FORCE-OPT-IN. A
+  // module with neither short-circuits before any walk: nothing is minted,
+  // no module state is mutated, the id-stream is untouched, and the
+  // QueryImpl graph is byte-identical — the hard containment gate for the
+  // pragma-free corpus. The scan is over the PARSED module (a #local whose
+  // flows were proxied away by Connect no longer lives in `relations` —
+  // the decl is the durable carrier), deduped by decl Id across
+  // sub-modules, decl order (deterministic).
+  std::vector<ParsedDeclaration> demand_key_decls;
+  {
+    std::unordered_set<uint64_t> seen_decl_ids;
+    for (ParsedModule sub_module : ParsedModuleIterator(module)) {
+      for (ParsedLocal l : sub_module.Locals()) {
+        const ParsedDeclaration d(l);
+        if (d.HasDemandKey() && seen_decl_ids.insert(d.Id()).second) {
+          demand_key_decls.push_back(d);
+        }
+      }
+      for (ParsedExport e : sub_module.Exports()) {
+        const ParsedDeclaration d(e);
+        if (d.HasDemandKey() && seen_decl_ids.insert(d.Id()).second) {
+          demand_key_decls.push_back(d);
+        }
+      }
+    }
+  }
+  const bool pragma_activated = !demand_key_decls.empty();
+  if (!demand_mode && !pragma_activated) {
     return true;
   }
 
@@ -405,9 +439,14 @@ bool QueryImpl::ApplyDemandTransform(
     return false;
   }
 
+  // Pragma-activated programs get pragma-appropriate advice: "recompile
+  // without -demand" would be the NEC-2 silent-lie (dropping the flag does
+  // not deactivate an explicit @demand).
   const auto reject = [&](const char *what) -> bool {
     log.Append(module.SpellingRange())
-        << what << "; recompile without -demand";
+        << what
+        << (pragma_activated ? "; fix or remove the @demand pragma"
+                             : "; recompile without -demand");
     return false;
   };
 
@@ -430,6 +469,17 @@ bool QueryImpl::ApplyDemandTransform(
   }
 
   if (bound_queries.empty()) {
+    // Under pure flag activation this is a benign no-op — but an explicit
+    // `@demand` with nothing to seed it is UNREALIZABLE, and an inert
+    // pragma would be a silent lie (RP-6: unprovable/unrealizable rejects).
+    if (pragma_activated) {
+      const ParsedDeclaration d = demand_key_decls[0];
+      log.Append(d.SpellingRange())
+          << "'" << d.NameAsString() << "' declares a demand key but no "
+          << "bound #query exists to seed demand; remove the @demand pragma "
+          << "or add a bound query";
+      return false;
+    }
     return true;  // Nothing to demand-transform; a benign no-op.
   }
 
@@ -811,15 +861,30 @@ bool QueryImpl::ApplyDemandTransform(
   const ParsedDeclaration p_demanded_decl = p_decl_it->second;
 
   // ---------------------------------------------------------------------
-  // Step 2b (R3a, V-DECLARED-KEY; RES-1 placement): the declared-region-key
+  // RP-6 realization check: every `@demand` relation must BE the demanded
+  // target the walk located. An @demand on any OTHER relation is inert-by-
+  // construction (nothing demands it), and an inert pragma is a silent lie
+  // — reject, anchored at the offending declaration.
+  // ---------------------------------------------------------------------
+  for (const ParsedDeclaration &d : demand_key_decls) {
+    if (d.Id() != p_demanded_decl.Id()) {
+      log.Append(d.SpellingRange())
+          << "'" << d.NameAsString() << "' declares a demand key but is not "
+          << "the demanded relation ('" << p_demanded_decl.NameAsString()
+          << "' is); remove the @demand pragma";
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Step 2b (V-DECLARED-KEY; RES-1 placement): the declared-demand-key
   // checks, at the FIRST site the complete adornment count exists (Loop-1
   // Step-3 fences have already run per adornment — fence-first diagnostic
   // order; `demand_forcings` is still empty here, populated only in Loop 2).
   // RES-6: these are USER-DECLARATION errors, anchored at the offending
-  // declaration, with NO "recompile without -demand" suffix (dropping
-  // -demand would silently un-validate the bracket).
+  // declaration, with NO flag/pragma-advice suffix beyond the fix itself.
   // ---------------------------------------------------------------------
-  if (p_demanded_decl.HasRegionKey()) {
+  if (p_demanded_decl.HasDemandKey()) {
 
     // ADJ-R3-A STRICT single-forcing scope, checked BEFORE reconciliation:
     // `plan.size()` IS the relation's forcing count (one bound query name —
@@ -827,10 +892,10 @@ bool QueryImpl::ApplyDemandTransform(
     // R-1BOUND is ever lifted).
     if (2u <= plan.size()) {
       log.Append(p_demanded_decl.SpellingRange())
-          << "A region key on " << p_demanded_decl.KindName() << " '"
+          << "A demand key on " << p_demanded_decl.KindName() << " '"
           << p_demanded_decl.NameAsString() << "' is only supported when it "
           << "is demanded under a single query adornment; fix or remove the "
-          << "bracket";
+          << "@demand pragma";
       return false;
     }
 
@@ -838,7 +903,7 @@ bool QueryImpl::ApplyDemandTransform(
     // (structural only — the Minimize functional-key proof is the ratified
     // lift candidate, O-R3.5). A disagreement is UNPROVABLE-therefore-
     // REJECT (RP-3), never warn-and-accept.
-    const std::vector<unsigned> &declared = p_demanded_decl.RegionKey();
+    const std::vector<unsigned> &declared = p_demanded_decl.DemandKey();
     const std::unordered_set<unsigned> declared_set(declared.begin(),
                                                     declared.end());
     for (const PerAdornment &a : plan) {
@@ -846,9 +911,9 @@ bool QueryImpl::ApplyDemandTransform(
                                                   a.p_bound.end());
       if (inferred != declared_set) {
         log.Append(p_demanded_decl.SpellingRange())
-            << "Declared region key of " << p_demanded_decl.KindName() << " '"
+            << "Declared demand key of " << p_demanded_decl.KindName() << " '"
             << p_demanded_decl.NameAsString() << "' disagrees with the "
-            << "demanded binding pattern; fix or remove the bracket";
+            << "demanded binding pattern; fix or remove the @demand pragma";
         return false;
       }
     }

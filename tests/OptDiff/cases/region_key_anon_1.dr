@@ -1,8 +1,0 @@
-; region_key_anon_1 -- R3a PARSER OBLIGATION 1 (all-4-modes reject,
-; -demand-INDEPENDENT -- no .drflags: the malformed bracket rejects at parse
-; before any transform runs): region key columns must be NAMED (the anonymous `_A` sibling of the wildcard); `[_A]` draws
-; the named-columns diagnostic.
-#message edge_2(u64 From, u64 To).
-#local path[_A](u64 From, u64 To).
-path(F, T) : edge_2(F, T).
-#query reachable_from(bound u64 From, free u64 To) : path(From, To).

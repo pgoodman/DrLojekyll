@@ -1,0 +1,7 @@
+; The RP-6 no-seed reject (flagless): `foo` declares a demand key but the
+; module has NO bound #query at all -- nothing can ever seed demand, so the
+; pragma is unrealizable.
+#message b_1(u64 X).
+#local foo(u64 A) @demand(A).
+foo(A) : b_1(A).
+#query qf(free u64 A) : foo(A).

@@ -1,0 +1,13 @@
+; demand_key_multi_adorn_1 -- ADJ-R3-A STRICT single-forcing scope
+; (all-4-modes reject, FLAGLESS via RP-6 activation): ONE @demand pragma on
+; a relation demanded under >=2 query adornments rejects -- one declared key
+; has no single reconciliation referent across N disjoint inferred keys.
+; The RESERVED lift path is pragma REPETITION (`@demand(A) @demand(B)` ->
+; N keyed stores); a second @demand today is its own clean
+; not-yet-supported reject (see rejects/reject_demand_key_double_1).
+#message edge_2(u64 A, u64 B).
+#local rel(u64 A, u64 B) @demand(A).
+rel(A, B) : edge_2(A, B).
+#query q(bound u64 A, free u64 B).
+#query q(free u64 A, bound u64 B).
+q(A, B) : rel(A, B).

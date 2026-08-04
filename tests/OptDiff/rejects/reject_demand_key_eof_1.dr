@@ -1,0 +1,3 @@
+; EOF INSIDE the @demand argument list -- the state!=9 truncation gate
+; draws the incomplete-declaration diagnostic (no bespoke EOF arm).
+#local foo(u64 A) @demand(

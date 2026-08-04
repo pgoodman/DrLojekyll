@@ -1088,7 +1088,7 @@ class QueryImpl {
   // fabricate demand messages and reach the display manager for interning.
   bool ApplyDemandTransform(
       const ParsedModule &module, const ErrorLog &log, bool demand_mode,
-      bool demand_retract,
+      bool demand_retract, bool suppress_demand,
       const std::unordered_map<QueryViewImpl *, ParsedDeclaration> &proxy_view_to_decl);
 
   // Canonicalize the dataflow. This tries to put each node into its current

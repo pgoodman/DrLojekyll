@@ -1,0 +1,14 @@
+; demand_key_undemanded_1 -- the RP-6 realization reject (all-4-modes,
+; FLAGLESS): `foo` declares a demand key but the bound query demands `p`,
+; not `foo` -- an @demand that no bound query seeds is inert-by-
+; construction, and an inert pragma is a silent lie (the force-opt-in
+; semantics: unrealizable rejects). Supersedes the R3a-era
+; region_key_dead_relation_1 GOLDEN case, which pinned the bracket
+; compiling inertly on a dead relation -- under RP-6 there is no inert
+; bracket/pragma to pin.
+#message edge_2(u64 From, u64 To).
+#local foo(u64 X, u64 Y) @demand(X).
+foo(X, Y) : edge_2(X, Y).
+#local p(u64 A, u64 B).
+p(A, B) : edge_2(A, B).
+#query q(bound u64 A, free u64 B) : p(A, B).

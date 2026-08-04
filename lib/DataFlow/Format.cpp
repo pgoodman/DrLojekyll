@@ -1718,7 +1718,7 @@ OutputStream &operator<<(OutputStream &os, QueryContracts qc) {
     }
   });
 
-  // Declared-region-key reconciliation lines (R3a, ADJ-R3-E: SCOPED to
+  // Declared-demand-key reconciliation lines (R3a, ADJ-R3-E: SCOPED to
   // relations carrying a bracket — a bracket-free module emits nothing here,
   // so the existing demand contract goldens are byte-untouched). One line
   // per bracketed demanded relation (single-forcing by the Step-2b strict
@@ -1730,13 +1730,13 @@ OutputStream &operator<<(OutputStream &os, QueryContracts qc) {
     for (const RecognizedSubgraph &rs :
          qc.query.RecognizedSubgraphs()) {
       const ParsedDeclaration decl = rs.demanded_decl;
-      if (!decl.HasRegionKey() || !seen_decls.insert(decl.Id()).second) {
+      if (!decl.HasDemandKey() || !seen_decls.insert(decl.Id()).second) {
         continue;
       }
-      os << "declared-region-key rel=" << decl.NameAsString()
+      os << "declared-demand-key rel=" << decl.NameAsString()
          << " declared=(";
       auto sep = "";
-      for (unsigned pi : decl.RegionKey()) {
+      for (unsigned pi : decl.DemandKey()) {
         os << sep << decl.NthParameter(pi).NameAsString();
         sep = ", ";
       }

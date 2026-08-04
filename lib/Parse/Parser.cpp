@@ -387,13 +387,13 @@ void ParserImpl::ParseLocalExport(
   std::vector<Token> clause_toks;
   bool has_embedded_clauses = false;
 
-  // The optional `name[K...]` region-key spec (DIFF-R3 R3a). Bracket var
-  // tokens in written order; resolved to parameter indices at the accept
-  // path (parameter names bind only after the parameter list parses). The
-  // bracket tokens deliberately do NOT join `clause_toks` — the clause
-  // interpretation of the decl is bracket-free.
-  std::vector<Token> region_key_toks;
-  bool bracket_expect_var = false;  // in-bracket sub-state (var vs , / ])
+  // The `@demand(K...)` pragma (RP-5, session 6): parameters are already
+  // bound when the pragma parses (post-parameter-list position), so each
+  // key column resolves IMMEDIATELY to a parameter index — no deferred
+  // resolve. `demand_expect_var` is the in-arg-list sub-state; the pragma
+  // token itself anchors diagnostics.
+  Token demand_pragma_tok;
+  bool demand_expect_var = false;
 
   DisplayPosition next_pos;
   Token name;
@@ -432,14 +432,15 @@ void ParserImpl::ParseLocalExport(
           clause_toks.push_back(tok);
           continue;
 
-        // Optional region-key spec `[K...]` between the name and the
-        // parameter list — only valid BEFORE the bracket has been seen
-        // (a second bracket falls through to the reject below).
-        } else if (Lexeme::kPuncOpenBracket == lexeme &&
-                   region_key_toks.empty() && !bracket_expect_var) {
-          bracket_expect_var = true;
-          state = 20;
-          continue;
+        // A bracket here is the RETIRED `rel[K...]` surface (RP-5 replaced
+        // it with the post-parameter-list `@demand(K...)` pragma); draw a
+        // pointed diagnostic rather than the generic expected-paren one.
+        } else if (Lexeme::kPuncOpenBracket == lexeme) {
+          context->error_log.Append(scope_range, tok_range)
+              << "Declared demand keys are written as '@demand(Col, ...)' "
+              << "after the parameter list of " << introducer_tok << " '"
+              << name << "', not as a bracket before it";
+          return;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
@@ -781,7 +782,25 @@ void ParserImpl::ParseLocalExport(
         }
 
       case 8:
-        if (Lexeme::kPragmaPerfInline == lexeme) {
+        if (Lexeme::kPragmaDemand == lexeme) {
+
+          // A SECOND `@demand` is a clean not-yet-supported reject (RP-5:
+          // repetition is the reserved multi-adornment lift path —
+          // `@demand(A) @demand(B)` → N keyed stores — not landed).
+          if (!local->demand_key_param_indices.empty()) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Unexpected second '" << tok << "' pragma on "
+                << local->KindName() << " '" << local->name << "/"
+                << local->parameters.Size()
+                << "'; multiple demand keys (one per adornment) are not yet "
+                << "supported";
+            return;
+          }
+          demand_pragma_tok = tok;
+          state = 21;
+          continue;
+
+        } else if (Lexeme::kPragmaPerfInline == lexeme) {
 
           // Found more than one `@inline` attributes
           if (local->inline_attribute.IsValid()) {
@@ -868,67 +887,99 @@ void ParserImpl::ParseLocalExport(
 
       case 10: continue;
 
-      // Inside the region-key spec `[K...]` (DIFF-R3 R3a). Every token class
-      // has an explicit transition (the termination-confluence-2 amendment);
-      // a bracket left open at EOF exits the loop mid-state and the
+      // The `@demand(K...)` argument list (RP-5, session 6). Parameters are
+      // already bound (`local` exists, post-paren position), so each column
+      // resolves IMMEDIATELY. Every token class has an explicit transition;
+      // a pragma left open at EOF exits the loop mid-state and the
       // `state != 9` gate below draws the incomplete-declaration diagnostic
       // (no bespoke EOF arm needed).
-      case 20:
+      case 21:  // After `@demand`: the argument list's `(`.
+        if (Lexeme::kPuncOpenParen == lexeme) {
+          demand_expect_var = true;
+          state = 22;
+          continue;
+        } else {
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected '(' after '" << demand_pragma_tok
+              << "' on " << local->KindName() << " '" << local->name
+              << "', but got '" << tok << "' instead";
+          return;
+        }
+
+      case 22:  // Inside `@demand( ... )`.
         if (Lexeme::kIdentifierVariable == lexeme) {
-          if (!bracket_expect_var) {
+          if (!demand_expect_var) {
             context->error_log.Append(scope_range, tok_range)
-                << "Expected ',' or ']' in the region key of "
-                << introducer_tok << " '" << name << "', but got '" << tok
-                << "' instead";
+                << "Expected ',' or ')' in the demand key of "
+                << local->KindName() << " '" << local->name << "', but got '"
+                << tok << "' instead";
             return;
           }
-          for (const Token &prev : region_key_toks) {
-            if (prev.IdentifierId() == tok.IdentifierId()) {
+
+          // IMMEDIATE resolution against the just-parsed parameters.
+          unsigned resolved_index = ~0u;
+          for (ParsedParameterImpl *param : local->parameters) {
+            if (param->name.IdentifierId() == tok.IdentifierId()) {
+              resolved_index = param->index;
+              break;
+            }
+          }
+          if (resolved_index == ~0u) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Unknown key column '" << tok << "' in the demand key of "
+                << local->KindName() << " '" << local->name << "/"
+                << local->parameters.Size()
+                << "'; every demand key column must name a declared parameter";
+            return;
+          }
+          for (unsigned prev : local->demand_key_param_indices) {
+            if (prev == resolved_index) {
               context->error_log.Append(scope_range, tok_range)
-                  << "Duplicate column '" << tok << "' in the region key of "
-                  << introducer_tok << " '" << name
-                  << "'; a region key is a duplicate-free ordered column set";
+                  << "Duplicate column '" << tok << "' in the demand key of "
+                  << local->KindName() << " '" << local->name
+                  << "'; a demand key is a duplicate-free ordered column set";
               return;
             }
           }
-          region_key_toks.push_back(tok);
-          bracket_expect_var = false;
+          local->demand_key_param_indices.push_back(resolved_index);
+          demand_expect_var = false;
           continue;
 
         } else if (Lexeme::kIdentifierUnnamedVariable == lexeme) {
           context->error_log.Append(scope_range, tok_range)
-              << "Region key columns of " << introducer_tok << " '" << name
-              << "' must be named; wildcard/anonymous variables ('" << tok
-              << "') are not permitted";
+              << "Demand key columns of " << local->KindName() << " '"
+              << local->name << "' must be named; wildcard/anonymous "
+              << "variables ('" << tok << "') are not permitted";
           return;
 
         } else if (Lexeme::kPuncComma == lexeme) {
-          if (bracket_expect_var) {
+          if (demand_expect_var) {
             context->error_log.Append(scope_range, tok_range)
                 << "Expected named variable (capitalized identifier) in the "
-                << "region key of " << introducer_tok << " '" << name
-                << "', but got '" << tok << "' instead";
+                << "demand key of " << local->KindName() << " '"
+                << local->name << "', but got '" << tok << "' instead";
             return;
           }
-          bracket_expect_var = true;
+          demand_expect_var = true;
           continue;
 
-        } else if (Lexeme::kPuncCloseBracket == lexeme) {
-          if (region_key_toks.empty() || bracket_expect_var) {
+        } else if (Lexeme::kPuncCloseParen == lexeme) {
+          if (local->demand_key_param_indices.empty() || demand_expect_var) {
             context->error_log.Append(scope_range, tok_range)
-                << "Region key of " << introducer_tok << " '" << name
-                << "' must list at least one named column and may not end "
-                << "with a trailing comma";
+                << "The demand key of " << local->KindName() << " '"
+                << local->name << "' must list at least one named column and "
+                << "may not end with a trailing comma";
             return;
           }
-          bracket_expect_var = false;
-          state = 1;  // The parameter list's `(` must follow.
+          demand_expect_var = false;
+          state = 8;  // Back to the pragma tail (period / other pragmas).
           continue;
 
         } else {
           context->error_log.Append(scope_range, tok_range)
-              << "Expected ']' to close the region key of " << introducer_tok
-              << " '" << name << "', but got '" << tok << "' instead";
+              << "Expected ')' to close the demand key of "
+              << local->KindName() << " '" << local->name << "', but got '"
+              << tok << "' instead";
           return;
         }
     }
@@ -951,29 +1002,6 @@ void ParserImpl::ParseLocalExport(
 
   // Add the local/export to the module.
   } else {
-    // Resolve the region-key spec (R3a): every bracket var must name one of
-    // this declaration's parameters. Runs BEFORE finalize/clause parsing so
-    // a reject skips both (the malformed-decl idiom).
-    for (const Token &ktok : region_key_toks) {
-      unsigned resolved_index = ~0u;
-      for (ParsedParameterImpl *param : local->parameters) {
-        if (param->name.IdentifierId() == ktok.IdentifierId()) {
-          resolved_index = param->index;
-          break;
-        }
-      }
-      if (resolved_index == ~0u) {
-        context->error_log.Append(scope_range, ktok.SpellingRange())
-            << "Unknown key column '" << ktok << "' in the region key of "
-            << local->KindName() << " '" << local->name << "/"
-            << local->parameters.Size()
-            << "'; every region key column must name a declared parameter";
-        RemoveDecl(local);
-        return;
-      }
-      local->region_key_param_indices.push_back(resolved_index);
-    }
-
     const auto decl_for_clause = local;
     FinalizeDeclAndCheckConsistency(local);
 

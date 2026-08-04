@@ -6312,3 +6312,36 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     key-SUBSET covering-array fuzz arm (the slotted follow-on), the
     declared×nested eqgate witness on a non-recursive base, Stage-C
     re-brief (D2.6 + §6-vs-§11 STOPs), Tier-2 provenance mini-slice.
+
+  - **(BB) 2026-08-04 session 6 — the @demand SURFACE + FORCE-ACTIVATION
+    (RP-5..8) + the reject-corpus adoption + F30.** Owner-driven design
+    conversation ratified: brackets are per-relation FORCE-OPT-IN (not
+    flag-reliant) → then `-demand` reframed as the AUTO layer ("try auto
+    AFTER user-specified"; strict-vs-best-effort for the auto sweep = OPEN
+    STOP) → placement litigated (declaration-only; per-clause-head keys
+    have no semantic referent) → surface swapped to the post-paramlist
+    pragma `@demand(K...)` over brackets (repetition = the multi-adornment
+    lift path; immediate arg resolution; `@key` reserved). LANDED same day
+    (commits: reject corpus 8c54597a; the @demand slice follows): lexeme +
+    parser states 21/22 (bracket surface removed, lexemes retained with a
+    pointed redirect diagnostic), region_key→demand_key rename, RP-6
+    activation gate (module-decl scan — a #local's flows leave `relations`
+    at Connect, the decl is the durable carrier), unseeded/undemanded
+    rejects, pragma-aware reject advice, `declared-demand-key` contract
+    line. FINDINGS: S6-IMPL-1 — flagless activation reaches EVERY
+    Query::Build consumer; bin/Oracle (demand-blind by contract) built a
+    demand-gated graph it never seeds → empty non-answer; fix =
+    `suppress_demand` param, oracle passes true, rule recorded. F30
+    (FINDINGS.md round 13, from the adopted ToB parse_errors corpus's
+    expansion): the demand__ collision pre-check was kind-scoped while
+    fabrication bypasses AddDecl's cross-kind map — now kind-blind.
+    Witnesses: demand_key_* family ALL FLAGLESS (8 diagnostics incl.
+    undemanded_1 — the R3a dead-relation GOLDEN case flipped diagnostic
+    under RP-6); demand_key_tc_witness = the ACTIVATION-EQUIVALENCE
+    witness (12 symlinked goldens: pragma-compile == -demand-compile
+    byte-for-byte). tests/OptDiff/rejects/ = 46 driverless should-FAIL
+    cases (30 adopted ToB + 16 modern) run in both mode extremes
+    (rc=0=lost check, >=124=crash finding). Suite PASS (245), ctest 7/7.
+    NEXT candidates: multi-@demand repetition (the multi-adornment surface
+    lift), the auto-sweep strict-vs-best-effort STOP, the key-subset fuzz
+    arm, Stage-C re-brief, Tier-2 provenance.

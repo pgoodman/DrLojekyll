@@ -1,3 +1,0 @@
-; R3a: the bracket rides ONLY on #local/#export -- a #message with a bracket
-; draws the message parser's expected-parenthesis diagnostic.
-#message b[X](u64 X).

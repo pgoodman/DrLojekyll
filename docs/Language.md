@@ -248,6 +248,7 @@ The full set of `@` pragmas the lexer accepts, and where each is legal:
 | Pragma | Where | Meaning |
 |---|---|---|
 | `@differential` | `#message` | message carries removals as well as additions |
+| `@demand(Col, ...)` | `#local`, `#export` | opt this relation into demand-driven (magic-sets) materialization, keyed by the listed columns — no compiler flag needed. The columns must be declared parameters, named and duplicate-free, and must equal the bound-column set of the `#query` that demands the relation (a mismatch, an unseeded pragma, or a pragma on an undemanded relation is a compile error). One `@demand` per declaration today; the demanded relation then materializes only the rows demanded through the query's bound arguments |
 | `@range(.` \| `?` \| `*` \| `+)` | `#functor` | output multiplicity per bound input |
 | `@impure` | `#functor` | parses, then rejected ("not yet supported") |
 | `@inline` / `@inline(code)` | `#functor`, `#local`, `#export` | inlining hint; on functors, optionally with the code to inline |

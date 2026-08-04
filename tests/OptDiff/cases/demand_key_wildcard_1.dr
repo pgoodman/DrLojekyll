@@ -1,0 +1,8 @@
+; demand_key_wildcard_1 -- @demand PARSER OBLIGATION 1 (all-4-modes reject,
+; flag-INDEPENDENT -- no .drflags: the malformed pragma rejects at parse
+; before any transform runs): demand key columns must be NAMED; `@demand(_)`
+; draws the named-columns diagnostic.
+#message edge_2(u64 From, u64 To).
+#local path(u64 From, u64 To) @demand(_).
+path(F, T) : edge_2(F, T).
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

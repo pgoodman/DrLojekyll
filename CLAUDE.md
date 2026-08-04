@@ -110,16 +110,16 @@ delta-relational-IR golden policy.
   answer BEFORE any Stage-C reject lift), `demand_mutual_content_1` (mutual
   recursion inside a demanded body, R-BODYWALK), `demand_two_queries_1`
   (two independent bound query names, R-1BOUND — the Stage-C lift
-  candidate), and the SEVEN R3a region-key rejects (DIFF-R3, session 5):
-  `region_key_wildcard_1`/`region_key_anon_1`/`region_key_dup_1`/
-  `region_key_unknown_1` (parse/resolve obligations, `-demand`-INDEPENDENT
-  — no .drflags), `region_key_mismatch_1` (V-DECLARED-KEY: declared set ≠
-  SIP-inferred `p_bound`; a STABLE hard reject under the RP-3
-  unprovable-brackets-reject ratification), `region_key_multi_adorn_1`
-  (ADJ-R3-A strict single-forcing scope) and `region_declared_fenced_1`
-  (a MATCHING bracket + NEGATE body draws the FENCE class, never
-  V-DECLARED-KEY — O-R3.4; the last three under `-demand` .drflags,
-  flag-off the bracket is inert); `kvindex_1` is MODE-SPLIT (compiles
+  candidate), and the EIGHT `@demand` rejects (DIFF-R3, sessions 5-6, ALL
+  FLAGLESS — RP-6 activation makes every one fire with no .drflags):
+  `demand_key_wildcard_1`/`demand_key_anon_1`/`demand_key_dup_1`/
+  `demand_key_unknown_1` (pragma arg-list obligations),
+  `demand_key_mismatch_1` (V-DECLARED-KEY: declared set ≠ SIP-inferred
+  `p_bound`; a STABLE hard reject, RP-3), `demand_key_multi_adorn_1`
+  (strict single-forcing scope; repetition is the reserved lift),
+  `demand_key_fenced_1` (a MATCHING pragma + NEGATE body draws the FENCE
+  class, never V-DECLARED-KEY — O-R3.4) and `demand_key_undemanded_1`
+  (an @demand no bound query seeds — the RP-6 realization reject); `kvindex_1` is MODE-SPLIT (compiles
   under opt/nocf where KVINDEX→TUPLE elimination fires, V-ALGEBRA-rejects
   under nodf/none). `aggregate_1` FLIPPED from diagnostic to a 4-mode
   golden at the R3 stage-C flip. The @differential-summarized-input fence was
@@ -643,67 +643,73 @@ pinned PER-MODE; cross-mode identity is not claimed). Authority docs:
 stage-b-diff.md AMENDMENTS, regional-arch-pseudocode.md Part B,
 regional-dump-stage-b-desired-states.md §9/§9.7, stage-b-landed-seed.md.
 
-## DIFF-R3: Tier-1 interior naming + the declared-region-key bracket (R3a — LANDED, session 5)
+## DIFF-R3: Tier-1 interior naming + the `@demand` surface (LANDED, sessions 5-6)
 
-RATIFIED POLICY (2026-08-03): HINT-NOT-MANDATE — the bracket NEVER drives or
-constrains the lowering (R3b declared-driven lowering is DEAD, not deferred);
-UNPROVABLE BRACKETS REJECT (a mismatch is a stable hard compile error, never
-warn-and-accept); the Stage-B `Minimize`/`DeterminedBy` functional-key proof
-is the future provability WIDENING (O-R3.5). Authority: region-model-diffs.md
-"DIFF-R3 AMENDMENTS (session 5)" + its panel record, adjudicated resolutions
-(RES-1..6) and implementation findings; pseudocode = regional-arch-
-pseudocode.md Part R3; desired bytes = regional-dump-stage-b-desired-states
-§10.
+RATIFIED POLICY (RP-1..8, region-model-diffs.md session-5 AMENDMENTS + the
+session-6 @DEMAND section): HINT-NOT-MANDATE — the declared key NEVER drives
+or constrains the lowering (R3b is DEAD); UNPROVABLE/UNREALIZABLE REJECTS
+(mismatch, unseeded, undemanded — all stable hard errors, never
+warn-and-accept); Minimize/DeterminedBy is the future provability WIDENING
+(O-R3.5); `@key` is RESERVED for a possible functional-dependency pragma.
 
-TIER-1 NAMING LIFT (hunk 1): the demanded interior relation (merge-
-materialized, no INSERT — formerly unnameable) surfaces as a `-region-out`
-row-contract. `ConnectInsertsToSelects` records `insert_proxy →
-rel->declaration` in a `Query::Build`-SCOPED map (never a QueryImpl member —
-the VIEW* keys dangle past Optimize), read once by `ApplyDemandTransform`
-(T1-DECL-MISS aborts on a miss) into `RecognizedSubgraph::demanded_decl`
-(parse identity, Optimize-stable). At freeze, interior-contract EXISTENCE +
-census COUNT are decl-driven and resolve-free (distinct `demanded_decl` Ids,
-forcing order, deduped against insert-derived decls — multi-adornment
-surfaces ONE interior contract); member-key renders the decl's AllFields
-positionally; `support=` is the OR over the forcing's live annotated guard
-JOINs of `CanReceiveDeletions()` — ROLE-BLIND (T1-IMPL-1:
-`PromoteSurvivorToBody` folds a projection guard to kBody under CSE, so a
-role-filtered resolve aborts on real corpus cases); zero live guard JOINs
-for a counted decl ABORTS the freeze (a resolve failure can never silently
-drop a contract line). 8 `.region` goldens re-blessed (demand_tc gains
-`E1 rel=path`, multi_adorn gains `E1 rel=rel` + an E0 re-pad from the
-emitter's max-over-contracts column widths; census `row-contracts` 1→2).
-Tier 1 is NOT a step toward Tier 2 (origin decl-sets on models — the
-general mechanism, its own future slice).
+THE SURFACE (RP-5/RP-7): `#local rel(u64 A, u64 B) @demand(A).` — a
+post-parameter-list pragma on `#local`/`#export` ONLY (declaration-level; a
+per-clause key has no semantic referent — one keyed store per relation).
+Parsed in the ParseLocalExport pragma tail with IMMEDIATE arg resolution
+(params are bound at the pragma site); named + duplicate-free + known
+columns enforced; ONE pragma per decl today (repetition `@demand(A)
+@demand(B)` is the RESERVED multi-adornment lift path — a second pragma is
+a clean not-yet-supported reject); the retired `rel[K...]` bracket draws a
+pointed redirect diagnostic (the bracket LEXEMES remain, parser-unconsumed;
+`rel[Bound](Free)` stays design-doc/dump notation). The decl formatter
+round-trips the pragma.
 
-R3a BRACKET SURFACE: `rel[K...](...)` on `#local`/`#export` only. Lexemes
-`kPuncOpenBracket`/`kPuncCloseBracket` + two Lexer.cpp arms (NO spelling
-table exists — rendering rides `Token::SpellingRange`); `ParseLocalExport`
-state 20 (named + duplicate-free vars; empty bracket, trailing comma,
-wildcard/anonymous, unexpected token all reject; EOF rides the `state != 9`
-truncation gate); unknown-column resolve reject at the accept path; storage
-`ParsedDeclarationImpl::region_key_param_indices` (WRITTEN order — parse-
-layer capture only; the SET is the logical key, the order an inert DIFF-R5
-arrangement hint) behind `ParsedDeclaration::HasRegionKey()/RegionKey()`;
-the decl formatter prints the bracket (parser round-trip). CHECKING (Step
-2b, V-DECLARED-KEY) sits POST-Loop-1 in `ApplyDemandTransform` (the first
-site the adornment count exists; fences run first, so a bracket never masks
-a fence): strict single-forcing scope, then declared-set == inferred
-`p_bound`, via a dedicated decl-anchored reject (NO "recompile without
--demand" suffix). Flag-off the bracket is INERT (whole corpus byte-
-identical). `-contract-out` gains the bracket-scoped `declared-region-key
-rel=... declared=(...) inferred=(...)` line. `region_declared_tc_witness`
-is the no-op-overlay witness: its stdout/oracle/monotone/df/rel/ir/h/
-region×4 goldens are SYMLINKS to demand_tc_witness's (byte-identity IS the
-referee; NEVER bless its symlinked surfaces directly — bless writes THROUGH
-to demand_tc's files), contract.opt + behavioral are its OWN real goldens
-(the CBF header embeds the case name — a symlinked behavioral golden can
-never match). NO eqgate: recursive demand rejects under `-demand-instance`
-(the demand_cyclic_1 fence), so the original eqgate spec was impossible;
-a declared×nested composition witness needs a non-recursive base
-(follow-on). The key-SUBSET covering-array fuzz arm (ORDER dropped as
-inert) is the ranked-next follow-on. `region_key_dead_relation_1` pins the
-bracket-on-dead-local no-crash path.
+ACTIVATION (RP-6/RP-8): `@demand` is a flagless FORCE-OPT-IN — the demand
+transform runs for a pragma-bearing module with NO `-demand` flag, strict
+(every fence + V-DECLARED-KEY applies; rejects say "fix or remove the
+@demand pragma", never "recompile without -demand" — dropping the flag
+would not deactivate the pragma). The activation gate scans the PARSED
+module (a #local's flows are proxied out of `relations` by Connect — the
+decl is the durable carrier); a module with no pragma and no flag
+short-circuits before any walk (the containment gate: the pragma-free
+corpus is byte-identical). REJECTS: an @demand with NO bound query
+(unseeded), or on a relation that is NOT the demanded target (inert pragma
+= silent lie). `-demand` remains the GLOBAL AUTO layer ("try auto-demand
+after the user-specified ones"); with R-1BOUND it composes trivially today;
+whether the auto sweep stays STRICT or becomes BEST-EFFORT (fence -> skip,
+not reject) is an OPEN owner STOP. V-DECLARED-KEY sits POST-Loop-1 in
+ApplyDemandTransform (the first site the adornment count exists; fences run
+first — a pragma never masks a fence): strict single-forcing scope, then
+declared-set == inferred `p_bound`. `-contract-out` gains the
+pragma-scoped `declared-demand-key rel=... declared=(...) inferred=(...)`
+line. `demand_key_tc_witness` is the ACTIVATION-EQUIVALENCE witness: its
+stdout/oracle/monotone/df/rel/ir/h/region goldens are SYMLINKS to
+demand_tc_witness's (pragma-activated compile == `-demand`-activated
+compile, byte-for-byte; NEVER bless its symlinked surfaces directly),
+contract.opt + behavioral are its OWN real goldens (the CBF header embeds
+the case name). NO eqgate (recursive TC fences under `-demand-instance`).
+
+TIER-1 NAMING LIFT (session 5, unchanged by the surface swap): the demanded
+interior relation (merge-materialized, no INSERT — formerly unnameable)
+surfaces as a `-region-out` row-contract. `ConnectInsertsToSelects` records
+`insert_proxy → rel->declaration` in a `Query::Build`-SCOPED map (never a
+QueryImpl member — the VIEW* keys dangle past Optimize), read once by
+`ApplyDemandTransform` (T1-DECL-MISS aborts on a miss) into
+`RecognizedSubgraph::demanded_decl` (parse identity, Optimize-stable). At
+freeze, interior-contract EXISTENCE + census COUNT are decl-driven and
+resolve-free (distinct `demanded_decl` Ids, forcing order, deduped against
+insert-derived decls — multi-adornment surfaces ONE interior contract);
+member-key renders the decl's AllFields positionally; `support=` is the OR
+over the forcing's live annotated guard JOINs of `CanReceiveDeletions()` —
+ROLE-BLIND (T1-IMPL-1: `PromoteSurvivorToBody` folds a projection guard to
+kBody under CSE, so a role-filtered resolve aborts on real corpus cases);
+zero live guard JOINs for a counted decl ABORTS the freeze. The 8 demand
+`.region` goldens carry `E1 rel=path` / `E1 rel=rel` + census
+`row-contracts=2`. Tier 1 is NOT a step toward Tier 2 (origin decl-sets on
+models — the general mechanism, its own future slice; also gates the
+deferred ADJ-R3-C column-survival belt). The key-SUBSET covering-array fuzz
+arm (ORDER dropped as inert) is the ranked-next follow-on. Recorded
+obligation: cross-REDECLARATION @demand consistency is unchecked.
 
 ## Other known feature gaps (clean diagnostics)
 

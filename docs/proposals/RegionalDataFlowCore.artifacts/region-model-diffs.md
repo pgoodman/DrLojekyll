@@ -2562,3 +2562,71 @@ predictions.
   goldens byte-untouched); 7 all-4-modes diagnostic witnesses + 2 positive
   witnesses. The key-SUBSET covering-array fuzz arm is the ranked-next
   follow-on (slotted after the directed witnesses per the plan).
+
+## THE @DEMAND SURFACE + FORCE-ACTIVATION (2026-08-04, session 6) — owner-ratified, supersedes the R3a bracket surface
+
+**RATIFIED (owner, 2026-08-04 conversation):**
+- **RP-5 (surface):** the declared demand key is the post-parameter-list
+  pragma `@demand(K...)` on `#local`/`#export` — NOT the `rel[K...]` bracket
+  (which stays design-doc/dump NOTATION only; the bracket LEXEMES are
+  retained for diagnostics + future surfaces, with no parser consumer).
+  Rationale ratified with it: pragma-position consistency with every other
+  decl annotation; IMMEDIATE arg resolution (params already bound — the
+  deferred resolve-at-accept machinery deletes); natural REPETITION as the
+  multi-adornment lift path (`@demand(A) @demand(B)` → N stores; a second
+  `@demand` is a clean not-yet-supported reject THIS slice); argument-list
+  room for future knobs (retraction). `@key` is RESERVED for a possible
+  future functional-dependency/uniqueness pragma (Minimize-adjacent) — not
+  spent here.
+- **RP-6 (activation):** `@demand` is a FORCE-OPT-IN to demand/keyed-instance
+  materialization for that relation — flagless. Activation =
+  `demand_mode || any decl carries a demand key`; the transform, its fences,
+  and Step-2b V-DECLARED-KEY run STRICT for pragma-activated programs (the
+  user asked; a fence or an unrealizable pragma is a hard reject). A
+  `@demand` relation that is NOT the demanded target (no bound query seeds
+  it, or the walk lands elsewhere) REJECTS — an inert pragma would be the
+  NEC-2 silent-lie reinstated. Containment: a module with no `@demand` and
+  no `-demand` short-circuits before any walk — the bracket-free/pragma-free
+  corpus is byte-identical by construction.
+- **RP-7 (placement):** declaration-only. Clause heads carry no annotations
+  (a per-clause key has no semantic referent — one keyed store per relation,
+  all bodies guarded against it); a bracket/pragma attempt on a clause head
+  or `#message` stays a clean reject. Cross-REDECLARATION consistency is a
+  recorded obligation of this surface.
+- **RP-8 (the flag):** `-demand` becomes the AUTO layer — conceptually "try
+  auto-demand AFTER the user-specified ones". THIS SLICE changes no flag
+  semantics (with R-1BOUND there is at most one target, so phase-1 pragma
+  activation + today's strict `-demand` compose exactly); the
+  STRICT-vs-BEST-EFFORT question for the auto sweep is an OPEN STOP
+  (best-effort is the recommended endpoint — bracket=contract/strict,
+  flag=advisory/cost-ranked — but it flips the demand_*_body_1 reject
+  goldens and waits on the owner's explicit call).
+
+**Witness consequences (this slice):** the `region_key_*` family re-lands as
+`demand_key_*` pragma forms, FLAGLESS where activation now implies the
+check (mismatch/multi-adorn/fenced drop their `.drflags`);
+`region_key_dead_relation_1` FLIPS golden→diagnostic as
+`demand_key_undemanded_1` (RP-6); `region_declared_tc_witness` re-lands as
+`demand_key_tc_witness` with NO `.drflags` — its symlinked-golden
+byte-identity against `demand_tc_witness` (which still uses `-demand`)
+UPGRADES from a no-op-overlay referee to the ACTIVATION-EQUIVALENCE
+referee: pragma-activated compile == flag-activated compile, byte-for-byte,
+every surface. The rejects corpus's bracket-shape cases re-land as
+`@demand` arg-list misuse + one retained bracket-attempt pin.
+
+**IMPLEMENTATION FINDING (S6-IMPL-1, found at the suite run): flagless
+activation reaches every `Query::Build` consumer — demand-blind referees
+need an explicit override.** `bin/Oracle` builds the Query graph itself
+(the second live `Query::Build` caller, Part B's H1 ripple fact) and is
+DEMAND-BLIND BY CONTRACT (it referees answer-identity by evaluating the
+full closure). Under RP-6 a `@demand` pragma activated the transform
+INSIDE the oracle, demand-gating a graph the oracle never seeds — the
+definitional answer collapsed to empty (162 vs 1337 assertions on the tc
+witness, zero rows) and the oracle refereed nothing. FIX: `Query::Build`
+gains `suppress_demand` (default false) — overrides the flag AND the
+pragmas; the oracle passes true; the compiler proper never sets it.
+RefInterp needed nothing (OG1-parsed, links no DataFlow — demand-blind by
+construction, exactly as designed). RULE going forward: any NEW
+definitional/demand-blind consumer of `Query::Build` must pass
+`suppress_demand=true`; the demand-AWARE consumers are the compiler and
+nothing else.

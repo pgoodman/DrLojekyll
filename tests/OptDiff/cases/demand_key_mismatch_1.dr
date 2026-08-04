@@ -1,0 +1,11 @@
+; demand_key_mismatch_1 -- V-DECLARED-KEY (all-4-modes reject, FLAGLESS --
+; RP-6: the @demand pragma force-activates the transform, so the check runs
+; with no .drflags at all): the declared demand key `@demand(To)` disagrees
+; with the SIP-inferred demand key {From} of the bound query. RATIFIED
+; (RP-3): a mismatch is a STABLE HARD reject -- never warn-and-accept; the
+; Minimize functional-key proof is the provability lift candidate (O-R3.5).
+#message edge_2(u64 From, u64 To).
+#local path(u64 From, u64 To) @demand(To).
+path(F, T) : edge_2(F, T).
+path(F, T) : path(F, M), edge_2(M, T).
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

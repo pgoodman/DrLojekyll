@@ -1047,18 +1047,26 @@ class Query {
   // graph is built and canonicalized, but the aggressive whole-graph
   // optimization pass (CSE, union sinking, dead flow elimination) is skipped.
   //
-  // When `demand_mode` is `true`, the live demand transform (magic-sets /
-  // SLDMagic; DemandSeeds.artifacts/d1-demand-seed-mechanism.md) runs as a
-  // dedicated pass immediately before `Optimize`, mode-gated so that with
-  // `demand_mode == false` (the default) NOTHING is minted and the graph is
-  // bit-for-bit identical to today. It is ORTHOGONAL to the four golden
-  // optimization modes (never a fifth mode); it is exercised only under the
-  // `-demand` CLI flag.
+  // The live demand transform (magic-sets / SLDMagic;
+  // DemandSeeds.artifacts/d1-demand-seed-mechanism.md) runs as a dedicated
+  // pass immediately before `Optimize` when ACTIVATED: either globally via
+  // `demand_mode == true` (the `-demand` CLI flag — the auto layer) or
+  // per-relation via an explicit `@demand(K...)` pragma (RP-6 force-opt-in,
+  // flagless). With neither, NOTHING is minted and the graph is bit-for-bit
+  // identical. Orthogonal to the four golden optimization modes (never a
+  // fifth mode).
+  //
+  // `suppress_demand == true` forces the transform OFF regardless of flags
+  // AND pragmas — for DEMAND-BLIND definitional consumers (bin/Oracle: the
+  // oracle referees ANSWER-identity by evaluating the full closure, so a
+  // pragma-activated build inside the oracle would referee nothing). The
+  // compiler proper never sets it.
   static std::optional<Query> Build(const ParsedModule &module,
                                     const ErrorLog &log,
                                     const PassPolicy &policy,
                                     bool demand_mode = false,
-                                    bool demand_retract = false);
+                                    bool demand_retract = false,
+                                    bool suppress_demand = false);
 
   ~Query(void);
 

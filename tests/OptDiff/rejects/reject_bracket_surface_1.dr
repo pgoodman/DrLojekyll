@@ -1,0 +1,7 @@
+; The RETIRED bracket surface (RP-5): `rel[K...]` was replaced by the
+; post-parameter-list `@demand(K...)` pragma; a bracket draws the pointed
+; redirect diagnostic ("written as '@demand(Col, ...)' after the parameter
+; list"), never silent acceptance.
+#message b_1(u64 X).
+#local foo[A](u64 A).
+foo(A) : b_1(A).
