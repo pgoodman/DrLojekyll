@@ -166,11 +166,18 @@ delta-relational-IR golden policy.
   key_multi_adorn_witness stay safe under an unfiltered bless).
 
 `tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with
-repros (F1–F19, F21, and F26–F30 fixed as of August 2026; F23 promoted to
+repros (F1–F19, F21, and F26–F31 fixed as of August 2026; F23 promoted to
 the `product_in_scc_diff_1` pin; F20 is the sole open record-only note —
 the latent comparator. F29, the commit-sweep used-state collector omitting
 the swept table's live indexes, was promoted and fixed the same day the I0
-sweep fired its named trigger).
+sweep fired its named trigger. F31, the redeclaration-consistency
+off-by-one — `prev_decl` aliased the CURRENT decl, so the parameter
+type/name divergence checks had been dead forever — was found by the K6
+adversarial panel and fixed the same session, together with its
+F-K6-SHADOW corollary: a `@key` on a non-first redeclaration was silently
+dropped; the accessors now resolve through the declaration context, and
+`reject_key_redecl_1` + the shadow-shaped `key_multi_adorn_witness`
+header pin both).
 
 ### Bench harness (perf, never gates correctness)
 
@@ -264,7 +271,11 @@ exact signatures before writing a driver.
   demand_tc_witness, join_1; `.df` stays byte-untouched). The dataflow
   `-dot-out` DOT twin renders `role=`/`KEY(...)` annotations and groups
   multi-view strata as `subgraph cluster_stratum_<id>` (advisory
-  visualization, never byte-goldened).
+  visualization, never byte-goldened; since K6 fabricated demand-minted
+  columns render a sane field label, no `_MissingVar`). Since K6 the Rel
+  IR has its own advisory DOT twin, `-rel-dot-out` (cluster-per-stratum,
+  id-ordered ops/vecs with def/use edges, census-free, never goldened),
+  and `-region-dot-out` badges `declared-key` contracts.
 - Control-flow IR: regions in `lib/ControlFlow/Program.h` (SERIES/PARALLEL/
   INDUCTION/LET/TUPLECMP/UPDATECOUNT/CHECKMEMBER/COMMITSWEEP/CLAIM/...);
   built by `lib/ControlFlow/Build/`, optimized by
@@ -742,8 +753,10 @@ zero live guard JOINs for a counted decl ABORTS the freeze. The 8 demand
 `row-contracts=2`. Tier 1 is NOT a step toward Tier 2 (origin decl-sets on
 models — the general mechanism, its own future slice; also gates the
 deferred ADJ-R3-C column-survival belt). The key-SUBSET covering-array fuzz
-arm (ORDER dropped as inert) is the ranked-next follow-on. Recorded
-obligation: cross-REDECLARATION @key consistency is unchecked.
+arm (ORDER dropped as inert) is the ranked-next follow-on. Cross-
+REDECLARATION @key consistency is CHECKED since K6 (identical-or-absent,
+enforced at the F31-revived consistency site; order-independent via
+context-resolving accessors).
 
 ## Other known feature gaps (clean diagnostics)
 

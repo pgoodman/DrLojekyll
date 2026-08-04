@@ -2684,3 +2684,36 @@ appended there. Session-7 anchor re-verification: 39 anchors, 35 confirmed;
 the 4 drifts recorded in k1-multikey.md's header (seed-text grain errors +
 one K6 rider: the `demand__`-collision rejects do not fork their advice on
 `pragma_activated`).
+
+### THE SUBGRAPH-AUTHORITY FRAMING (owner conversation, 2026-08-04 s7 — a
+### NORMATIVE INPUT to the K3/Stage-C re-brief)
+
+The owner probed whether `@key` yields "explicit subgraphs" and whether the
+system holds two-or-three versions of "what is logically a subgraph." The
+adjudicated framing, to be carried into stage-c-diff.md when K3 is ranked:
+
+- Today one logical demanded subgraph has ONE MINT AUTHORITY + two CHECKED
+  projections + a runtime realization: `RecognizedSubgraph` (the demand
+  pass's recognition record — the sole discoverer) → the frozen regional
+  view (request ports / Tier-1 interior contract / roots; derived,
+  V-REGION-CENSUS recount ties it) → the DR-IR lifecycle ops
+  (kSubgraphInstantiate/Seal/Death; derived, V-INST-SOLE + census tie it)
+  → runtime InstanceStore instances. Not three competing definitions —
+  the same multi-IR shape as a join (QueryJoin → DR pivot/emit ops →
+  TABLEJOIN region), held together by validators, and inherent to the
+  pipeline discipline to that extent.
+- The TRANSITIONAL part (the actual debt): the authority lives in the
+  WRONG LAYER for the owner's end-state. A rewrite pass (demand) owns the
+  durable subgraph identity while the regional layer — architecturally
+  the home of subprograms — is a rendering of it. That inversion is the
+  residue of landing H4 with the degenerate no-extraction planner.
+- STAGE C IS THE OWNERSHIP FLIP: request edges + instance lifecycle
+  become first-class in the frozen regional program; the injector seam
+  dies; `RecognizedSubgraph` demotes to an internal handoff between the
+  demand walk and region extraction (or dissolves if extraction can
+  consume the walk directly). Post-flip: one home (the region), one
+  derived lowering (DR-IR ops), one runtime realization.
+- SHARPENED READING OF THE D2.6 STOP: the reader-handle question is
+  really "do readers hand onto the REGION (the post-flip authority) or
+  onto the STORE (the current lowering artifact)?" — answering it fixes
+  which object survives the flip as the stable external surface.

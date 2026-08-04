@@ -6411,3 +6411,40 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     (K6-ii), the "demand key"/"instance key" wording drift. NEXT (owner
     ranks): K5 Tier-2 provenance, K4 fuzz arm, K3 Stage-C re-brief
     (design-only until the D2.6 + §6-vs-§11 STOPs), the K6 riders.
+  - **(BE) 2026-08-04 session 7 (continued) — the K6 RIDERS LANDED
+    (impl b95d3d29 + the close docs), and the panel found F31.** Owner
+    ranked the K6 riders next (all seven; cross-redecl semantics
+    IDENTICAL-OR-ABSENT, ratified). The (a)-(d) chain on `k6-riders.md`
+    surfaced TWO live tip bugs: **F31** — `prev_decl =
+    redecls[num_redecls-1u]` aliased the CURRENT decl (both ctors append
+    self pre-finalize), so EVERY redeclaration consistency check
+    (parameter type/name divergence) had been dead for the project's
+    whole life (panel-found, lldb-proven, `#message foo(u64 A). #message
+    foo(i32 A).` compiled rc=0); and **F-K6-SHADOW** — per-impl key
+    storage + canonical-first resolution silently DROPPED a `@key` on
+    any non-first redeclaration (orchestrator probe: pragma-free-first
+    compiled rc=0 with kSubgraphInstantiate=0, no diagnostic — the NEC-2
+    silent lie by declaration order). Both fixed in the slice: F31
+    revived the dead checks (zero corpus fallout, mechanism-proven then
+    suite-confirmed), the accessors resolve through the declaration
+    context, and IDENTICAL-OR-ABSENT enforcement landed on the revived
+    site. Also landed: the collision-advice fork, three "instance key"
+    normalizations, per-pragma DisplayRanges with Arm-A pragma-anchored
+    carets, the `_MissingVar` fix, the region declared-key DOT badge,
+    the NEW `-rel-dot-out` Rel-IR DOT twin, and R-K1-BATCHES (the
+    multi-adornment family gains .batches/.probes + oracle/monotone/
+    behavioral referees; key twin symlinks oracle/monotone per
+    precedent, real behavioral). Witness discipline: the previously-
+    BROKEN shadow shape now OPENS key_multi_adorn_witness.dr
+    (byte-identical goldens pin order-independence — the ADJ-K1-F guard
+    property); reject_key_redecl_1's identical middle pair exercises the
+    comparator TRUE branch. Suite 250 (203 + 47), ctest 7/7, zero
+    pre-existing golden changes. FINDINGS.md Round 14 records both.
+    THE SUBGRAPH-AUTHORITY FRAMING recorded in region-model-diffs.md
+    (owner conversation): one mint authority (RecognizedSubgraph) +
+    checked projections, authority in the wrong layer, Stage C = the
+    ownership flip, D2.6 sharpened to region-vs-store reader handles.
+    Whole-program seed for next session = `k6-landed-seed.md`
+    (DIFF-NEXT-S1..S4); next-session-prompt.md rewritten. NEXT (owner
+    ranks): S1/K5 Tier-2, S2/K4 fuzz, S3/K3 the ownership flip (two
+    STOPs), S4 residuals.
