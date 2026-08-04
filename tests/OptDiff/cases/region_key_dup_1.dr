@@ -1,0 +1,8 @@
+; region_key_dup_1 -- R3a PARSER OBLIGATION 2 (all-4-modes reject,
+; -demand-INDEPENDENT -- no .drflags: the malformed bracket rejects at parse
+; before any transform runs): a region key is a duplicate-free ordered column set; `[From, From]` draws
+; the duplicate-column diagnostic.
+#message edge_2(u64 From, u64 To).
+#local path[From, From](u64 From, u64 To).
+path(F, T) : edge_2(F, T).
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

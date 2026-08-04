@@ -848,6 +848,15 @@ bool ParsedDeclaration::HasMutableParameter(void) const noexcept {
   return impl->has_mutable_parameter;
 }
 
+// The optional declared region key `name[K...]` (DIFF-R3 R3a).
+bool ParsedDeclaration::HasRegionKey(void) const noexcept {
+  return !impl->region_key_param_indices.empty();
+}
+
+const std::vector<unsigned> &ParsedDeclaration::RegionKey(void) const noexcept {
+  return impl->region_key_param_indices;
+}
+
 // Does this declaration have a clause that directly depends on a `#message`?
 bool ParsedDeclaration::HasDirectInputDependency(void) const noexcept {
   auto context = impl->context.get();

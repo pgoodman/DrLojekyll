@@ -1,0 +1,13 @@
+; region_key_dead_relation_1 -- the R3a no-crash/no-reject POSITIVE witness
+; (4-mode golden, no .drflags; the correctness-lifecycle-2 amendment's
+; directed case): a WELL-FORMED bracket on a #local whose flows are dead
+; (defined, never consumed -- dead-flow-eliminated under df opt, unused-view
+; collected otherwise) parses, resolves, and then constrains NOTHING: no
+; demand ever reaches `dead`, Step-2b never runs, and no belt crashes over
+; the eliminated views. The program compiles and answers in all 4 modes.
+#message edge_2(u64 From, u64 To).
+#local live(u64 From, u64 To).
+live(F, T) : edge_2(F, T).
+#local dead[X](u64 X, u64 Y).
+dead(X, Y) : edge_2(X, Y).
+#query q_all(free u64 From, free u64 To) : live(From, To).

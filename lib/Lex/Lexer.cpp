@@ -149,6 +149,20 @@ bool Lexer::TryGetNextToken(const StringPool &string_pool, Token *tok_out) {
       return true;
     }
 
+    case '[': {
+      auto &basic = ret.As<lex::BasicToken>();
+      basic.Store<Lexeme>(Lexeme::kPuncOpenBracket);
+      basic.Store<lex::SpellingWidth>(1);
+      return true;
+    }
+
+    case ']': {
+      auto &basic = ret.As<lex::BasicToken>();
+      basic.Store<Lexeme>(Lexeme::kPuncCloseBracket);
+      basic.Store<lex::SpellingWidth>(1);
+      return true;
+    }
+
     case '{': {
       auto &basic = ret.As<lex::BasicToken>();
       basic.Store<Lexeme>(Lexeme::kPuncOpenBrace);

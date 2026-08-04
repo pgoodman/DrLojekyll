@@ -1,0 +1,13 @@
+; region_key_mismatch_1 -- V-DECLARED-KEY (all-4-modes reject under the
+; .drflags `-demand`): the declared region key `[To]` disagrees with the
+; SIP-inferred demand key {From} of the bound query. RATIFIED (session 5,
+; RP-3 unprovable-brackets-reject): the mismatch is a STABLE HARD reject --
+; hint-not-mandate resolved AGAINST warn-and-accept; the Minimize
+; functional-key proof is the provability lift candidate (O-R3.5), never a
+; softening of this outcome. Without `-demand` the bracket is inert and this
+; program compiles (Step-2b is demand-gated; NEC-2 records that).
+#message edge_2(u64 From, u64 To).
+#local path[To](u64 From, u64 To).
+path(F, T) : edge_2(F, T).
+path(F, T) : path(F, M), edge_2(M, T).
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

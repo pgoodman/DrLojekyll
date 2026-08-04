@@ -2517,3 +2517,48 @@ Verified post-amendment: the three aborting cases freeze cleanly in all
 modes (interior contracts `rel=edge`/`rel=pick`/`rel=pair`, all monotone),
 and the 8 pinned `.region` dumps are byte-UNCHANGED from the verified §10
 predictions.
+
+### R3a IMPLEMENTATION FINDINGS + DEVIATIONS (2026-08-03, session 5) — two honest corrections found live
+
+- **R3A-IMPL-1 (the eqgate spec was impossible).** The ratified test plan gave
+  `region_declared_tc_witness` an `.eqgate` of `-demand -demand-instance` —
+  but the TC shape is RECURSIVE, and recursive demand draws the
+  `demand_cyclic_1` fence under `-demand-instance` (found live at the smoke
+  test; `demand_tc_witness` itself is not an eqgate case for exactly this
+  reason — neither the original DIFF-R3 author nor the 14-finding panel
+  caught the composition). LANDED WITHOUT an eqgate: the witness's referee
+  stack is the SYMLINK set (stdout, oracle, monotone, behavioral, df/rel/
+  ir/h opt, region ×4 — byte-identity to demand_tc_witness's goldens IS the
+  no-op-overlay check, RES-5 extended from 4 surfaces to 12) + its OWN real
+  `contract.opt` golden (differs by exactly the `declared-region-key` line).
+  A declared×nested eqgate composition witness needs a NON-recursive base
+  (e.g. a bracketed `demand_neighborhood_mono_witness` variant) — recorded
+  as a follow-on candidate, not landed (smaller).
+- **R3A-IMPL-2 (the ADJ-R3-C belt is Tier-2-gated — DESCOPED).** The scoped
+  `CheckDeclaredRegionKey` belt ("every declared-key column still resolves
+  to a live visible column in the FINAL graph") is UNIMPLEMENTABLE in this
+  slice for its one non-redundant scenario: a NON-demanded bracketed
+  relation has NO decl→view link in the post-Connect graph at all (the very
+  R-STORE unnameability Tier 1 fixed FOR DEMANDED relations via
+  RecognizedSubgraphs; the general link IS Tier 2's origin decl-sets). For
+  a DEMANDED bracketed relation the belt duplicates Step-2b (declared ⊆
+  params at parse-resolve + declared == p_bound at Step-2b subsumes
+  column-survival). DESCOPED to: parse/resolve obligations + Step-2b + the
+  `region_key_dead_relation_1` no-crash witness (which lands as planned).
+  The belt rides Tier 2 — necessity-2's canonicalization-column-drop
+  scenario becomes checkable exactly when origin sets exist.
+- **Landed inventory (R3a):** Token.h `kPuncOpenBracket`/`kPuncCloseBracket`
+  + the two Lexer.cpp arms (zero spelling edits, per Part R3.1);
+  `ParseLocalExport` state 20 (complete transition table incl. trailing-
+  comma/empty-bracket rejects; EOF rides the `state != 9` gate);
+  resolve-at-accept (unknown-column reject, `RemoveDecl` idiom);
+  `ParsedDeclarationImpl::region_key_param_indices` + the
+  `ParsedDeclaration::HasRegionKey()/RegionKey()` accessors; the decl
+  formatter prints the bracket (parser round-trip fidelity); Step-2b at the
+  RES-1 post-Loop-1 slot (STRICT scope first, then set-reconciliation, both
+  via the RES-6 dedicated decl-anchored path, no `-demand` suffix); the
+  `-contract-out` `declared-region-key rel=... declared=(...) inferred=(...)`
+  line, ADJ-R3-E-scoped to bracketed relations (existing demand contract
+  goldens byte-untouched); 7 all-4-modes diagnostic witnesses + 2 positive
+  witnesses. The key-SUBSET covering-array fuzz arm is the ranked-next
+  follow-on (slotted after the directed witnesses per the plan).

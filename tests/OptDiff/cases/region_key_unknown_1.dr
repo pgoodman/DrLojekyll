@@ -1,0 +1,8 @@
+; region_key_unknown_1 -- R3a PARSER RESOLVE obligation (all-4-modes reject,
+; -demand-INDEPENDENT -- no .drflags: the malformed bracket rejects at parse
+; before any transform runs): every region key column must name a declared parameter; `[Missing]` draws
+; the unknown-key-column resolve diagnostic.
+#message edge_2(u64 From, u64 To).
+#local path[Missing](u64 From, u64 To).
+path(F, T) : edge_2(F, T).
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

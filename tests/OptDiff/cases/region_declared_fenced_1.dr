@@ -1,0 +1,14 @@
+; region_declared_fenced_1 -- O-R3.4 fence preservation (oracle-2; all-4-
+; modes reject under the .drflags `-demand`): the bracket `[From]` MATCHES
+; the SIP-inferred key, so V-DECLARED-KEY passes -- and the NEGATE in the
+; demanded body still draws the demand-sink FENCE reject (Step-3 runs per
+; adornment BEFORE the post-Loop-1 bracket checks, RES-1). This is the one
+; construction that discriminates "the bracket did not lift the fence": a
+; mismatched bracket would reject on V-DECLARED-KEY and prove nothing.
+#message edge_2(u64 From, u64 To).
+#message block_2(u64 From, u64 To).
+#local blocked(u64 From, u64 To).
+blocked(F, T) : block_2(F, T).
+#local path[From](u64 From, u64 To).
+path(F, T) : edge_2(F, T), !blocked(F, T).
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

@@ -811,6 +811,50 @@ bool QueryImpl::ApplyDemandTransform(
   const ParsedDeclaration p_demanded_decl = p_decl_it->second;
 
   // ---------------------------------------------------------------------
+  // Step 2b (R3a, V-DECLARED-KEY; RES-1 placement): the declared-region-key
+  // checks, at the FIRST site the complete adornment count exists (Loop-1
+  // Step-3 fences have already run per adornment — fence-first diagnostic
+  // order; `demand_forcings` is still empty here, populated only in Loop 2).
+  // RES-6: these are USER-DECLARATION errors, anchored at the offending
+  // declaration, with NO "recompile without -demand" suffix (dropping
+  // -demand would silently un-validate the bracket).
+  // ---------------------------------------------------------------------
+  if (p_demanded_decl.HasRegionKey()) {
+
+    // ADJ-R3-A STRICT single-forcing scope, checked BEFORE reconciliation:
+    // `plan.size()` IS the relation's forcing count (one bound query name —
+    // R-1BOUND rejects a second name upstream; re-count across names if
+    // R-1BOUND is ever lifted).
+    if (2u <= plan.size()) {
+      log.Append(p_demanded_decl.SpellingRange())
+          << "A region key on " << p_demanded_decl.KindName() << " '"
+          << p_demanded_decl.NameAsString() << "' is only supported when it "
+          << "is demanded under a single query adornment; fix or remove the "
+          << "bracket";
+      return false;
+    }
+
+    // Set-reconciliation: declared SET == the SIP-inferred bound set
+    // (structural only — the Minimize functional-key proof is the ratified
+    // lift candidate, O-R3.5). A disagreement is UNPROVABLE-therefore-
+    // REJECT (RP-3), never warn-and-accept.
+    const std::vector<unsigned> &declared = p_demanded_decl.RegionKey();
+    const std::unordered_set<unsigned> declared_set(declared.begin(),
+                                                    declared.end());
+    for (const PerAdornment &a : plan) {
+      const std::unordered_set<unsigned> inferred(a.p_bound.begin(),
+                                                  a.p_bound.end());
+      if (inferred != declared_set) {
+        log.Append(p_demanded_decl.SpellingRange())
+            << "Declared region key of " << p_demanded_decl.KindName() << " '"
+            << p_demanded_decl.NameAsString() << "' disagrees with the "
+            << "demanded binding pattern; fix or remove the bracket";
+        return false;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // 4. Stray-consumer accounting (ONCE, between the loops, on the PRE-MINT
   //    graph): every reader of p must be one we traced (the query's read or a
   //    rule-body read), and every consumer of a reader must be a guard-site

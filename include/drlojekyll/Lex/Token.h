@@ -224,6 +224,11 @@ enum class Lexeme : uint8_t {
   kPuncOpenParen,
   kPuncCloseParen,
 
+  // Region/instance key spec brackets: `rel[K...](...)` on `#local` /
+  // `#export` declarations (DIFF-R3 R3a — the declared-region surface).
+  kPuncOpenBracket,
+  kPuncCloseBracket,
+
   kPuncOpenBrace,
   kPuncCloseBrace,
 

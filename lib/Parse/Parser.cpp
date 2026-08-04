@@ -387,6 +387,14 @@ void ParserImpl::ParseLocalExport(
   std::vector<Token> clause_toks;
   bool has_embedded_clauses = false;
 
+  // The optional `name[K...]` region-key spec (DIFF-R3 R3a). Bracket var
+  // tokens in written order; resolved to parameter indices at the accept
+  // path (parameter names bind only after the parameter list parses). The
+  // bracket tokens deliberately do NOT join `clause_toks` — the clause
+  // interpretation of the decl is bracket-free.
+  std::vector<Token> region_key_toks;
+  bool bracket_expect_var = false;  // in-bracket sub-state (var vs , / ])
+
   DisplayPosition next_pos;
   Token name;
   Token highlight;
@@ -422,6 +430,15 @@ void ParserImpl::ParseLocalExport(
         if (Lexeme::kPuncOpenParen == lexeme) {
           state = 2;
           clause_toks.push_back(tok);
+          continue;
+
+        // Optional region-key spec `[K...]` between the name and the
+        // parameter list — only valid BEFORE the bracket has been seen
+        // (a second bracket falls through to the reject below).
+        } else if (Lexeme::kPuncOpenBracket == lexeme &&
+                   region_key_toks.empty() && !bracket_expect_var) {
+          bracket_expect_var = true;
+          state = 20;
           continue;
 
         } else {
@@ -850,6 +867,70 @@ void ParserImpl::ParseLocalExport(
       }
 
       case 10: continue;
+
+      // Inside the region-key spec `[K...]` (DIFF-R3 R3a). Every token class
+      // has an explicit transition (the termination-confluence-2 amendment);
+      // a bracket left open at EOF exits the loop mid-state and the
+      // `state != 9` gate below draws the incomplete-declaration diagnostic
+      // (no bespoke EOF arm needed).
+      case 20:
+        if (Lexeme::kIdentifierVariable == lexeme) {
+          if (!bracket_expect_var) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Expected ',' or ']' in the region key of "
+                << introducer_tok << " '" << name << "', but got '" << tok
+                << "' instead";
+            return;
+          }
+          for (const Token &prev : region_key_toks) {
+            if (prev.IdentifierId() == tok.IdentifierId()) {
+              context->error_log.Append(scope_range, tok_range)
+                  << "Duplicate column '" << tok << "' in the region key of "
+                  << introducer_tok << " '" << name
+                  << "'; a region key is a duplicate-free ordered column set";
+              return;
+            }
+          }
+          region_key_toks.push_back(tok);
+          bracket_expect_var = false;
+          continue;
+
+        } else if (Lexeme::kIdentifierUnnamedVariable == lexeme) {
+          context->error_log.Append(scope_range, tok_range)
+              << "Region key columns of " << introducer_tok << " '" << name
+              << "' must be named; wildcard/anonymous variables ('" << tok
+              << "') are not permitted";
+          return;
+
+        } else if (Lexeme::kPuncComma == lexeme) {
+          if (bracket_expect_var) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Expected named variable (capitalized identifier) in the "
+                << "region key of " << introducer_tok << " '" << name
+                << "', but got '" << tok << "' instead";
+            return;
+          }
+          bracket_expect_var = true;
+          continue;
+
+        } else if (Lexeme::kPuncCloseBracket == lexeme) {
+          if (region_key_toks.empty() || bracket_expect_var) {
+            context->error_log.Append(scope_range, tok_range)
+                << "Region key of " << introducer_tok << " '" << name
+                << "' must list at least one named column and may not end "
+                << "with a trailing comma";
+            return;
+          }
+          bracket_expect_var = false;
+          state = 1;  // The parameter list's `(` must follow.
+          continue;
+
+        } else {
+          context->error_log.Append(scope_range, tok_range)
+              << "Expected ']' to close the region key of " << introducer_tok
+              << " '" << name << "', but got '" << tok << "' instead";
+          return;
+        }
     }
   }
 
@@ -870,6 +951,29 @@ void ParserImpl::ParseLocalExport(
 
   // Add the local/export to the module.
   } else {
+    // Resolve the region-key spec (R3a): every bracket var must name one of
+    // this declaration's parameters. Runs BEFORE finalize/clause parsing so
+    // a reject skips both (the malformed-decl idiom).
+    for (const Token &ktok : region_key_toks) {
+      unsigned resolved_index = ~0u;
+      for (ParsedParameterImpl *param : local->parameters) {
+        if (param->name.IdentifierId() == ktok.IdentifierId()) {
+          resolved_index = param->index;
+          break;
+        }
+      }
+      if (resolved_index == ~0u) {
+        context->error_log.Append(scope_range, ktok.SpellingRange())
+            << "Unknown key column '" << ktok << "' in the region key of "
+            << local->KindName() << " '" << local->name << "/"
+            << local->parameters.Size()
+            << "'; every region key column must name a declared parameter";
+        RemoveDecl(local);
+        return;
+      }
+      local->region_key_param_indices.push_back(resolved_index);
+    }
+
     const auto decl_for_clause = local;
     FinalizeDeclAndCheckConsistency(local);
 

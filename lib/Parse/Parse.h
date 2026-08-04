@@ -378,6 +378,13 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
 
   std::vector<Token> parsed_tokens;
 
+  // The optional declared region key `name[K...]` (DIFF-R3 R3a): parameter
+  // indices into `parameters`, in the WRITTEN bracket order (the order is a
+  // parse-layer capture only — a DIFF-R5 arrangement hint; R3a reconciles
+  // the SET). Empty means "no bracket" (an empty bracket rejects at parse).
+  // Populated only for `#local`/`#export` declarations.
+  std::vector<unsigned> region_key_param_indices;
+
   Token name;
   std::string_view name_view;
   Token rparen;

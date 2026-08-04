@@ -103,6 +103,17 @@ OutputStream &operator<<(OutputStream &os, ParsedDeclaration decl) {
 
   os << "#" << decl.KindName() << " " << ParsedDeclarationName(decl);
 
+  // The declared region key `[K...]` (DIFF-R3 R3a) — printed in the written
+  // order so the parser round-trip preserves the bracket byte-faithfully.
+  if (decl.HasRegionKey()) {
+    auto bracket_sep = "[";
+    for (unsigned param_index : decl.RegionKey()) {
+      os << bracket_sep << decl.NthParameter(param_index).Name();
+      bracket_sep = ", ";
+    }
+    os << "]";
+  }
+
   auto comma = "(";
   for (auto param : decl.Parameters()) {
     os << comma << param;
