@@ -6,6 +6,7 @@
 
 #include <drlojekyll/Parse/ErrorLog.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
+#include <drlojekyll/Regional/Regional.h>
 
 #include <algorithm>
 #include <optional>
@@ -1327,11 +1328,13 @@ WorkItem::WorkItem(Context &context, unsigned order_)
 
 WorkItem::~WorkItem(void) {}
 
-// Build a program from a query.
-std::optional<Program> Program::Build(const ::hyde::Query &query,
+// Build a program from a frozen regional program (Stage B: the freeze
+// carries the final query).
+std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
                                       const ErrorLog &log, unsigned first_id,
                                       const PassPolicy &policy,
                                       bool demand_instance) {
+  const ::hyde::Query &query = frozen.Query();
 
   // Reject data-flow view kinds that the control-flow builder does not yet
   // support. Each region-dispatch switch below asserts on these kinds; this
@@ -1518,6 +1521,10 @@ std::optional<Program> Program::Build(const ::hyde::Query &query,
   // chain-breaker excision + OD-4 provisioning, and the three feature-gap
   // fences. OFF the PassPolicy registry (a lowering selector, not a pass).
   context.demand_instance_enabled = demand_instance;
+
+  // Stage B: the frozen regional census, recounted by V-REGION-CENSUS at the
+  // ValidateDROps tail (lib/Rel/Rel.cpp) — the positive-presence referee.
+  context.frozen_census = &frozen.Census();
 
   BuildDataModel(query, program);
 

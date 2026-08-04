@@ -14,6 +14,7 @@
 #include <drlojekyll/Parse/Format.h>
 #include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parser.h>
+#include <drlojekyll/Regional/Regional.h>
 #include <drlojekyll/Version/Version.h>
 
 #include <cassert>
@@ -59,6 +60,8 @@ static OutputStream *gContractStream = nullptr;
 static OutputStream *gRelStream = nullptr;
 static OutputStream *gDRStream = nullptr;
 static OutputStream *gIRStream = nullptr;
+static OutputStream *gRegionStream = nullptr;
+static OutputStream *gRegionDOTStream = nullptr;
 
 static int CompileModule(const Parser &parser, DisplayManager display_manager,
                          ErrorLog error_log, ParsedModule module) {
@@ -73,6 +76,21 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
     return EXIT_FAILURE;
   }
 
+  // Stage B: freeze the regional program (the H2 degenerate planner) from
+  // the final Query graph; Program::Build consumes the frozen program (H4).
+  auto frozen_opt = FrozenRegionalProgram::Build(*query_opt, error_log);
+  if (!frozen_opt) {
+    return EXIT_FAILURE;
+  }
+  if (gRegionStream) {
+    (*gRegionStream) << FrozenRegionalDump{*frozen_opt};
+    gRegionStream->Flush();
+  }
+  if (gRegionDOTStream) {
+    (*gRegionDOTStream) << FrozenRegionalDOT{*frozen_opt};
+    gRegionDOTStream->Flush();
+  }
+
   // T2b — install the `-rel-out` dump sink BEFORE Program::Build (the
   // Rel flow graph is built and drained inside it — the dump cannot be a
   // top-level drain like -dot-out/-df-out). Null-safe: unset leaves the sink
@@ -80,7 +98,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   SetRelDumpStream(gRelStream);
 
   auto program_opt =
-      Program::Build(*query_opt, error_log, gFirstId, gPassPolicy,
+      Program::Build(*frozen_opt, error_log, gFirstId, gPassPolicy,
                      gDemandInstance);
   if (!program_opt) {
     return EXIT_FAILURE;
@@ -219,6 +237,8 @@ static int HelpMessage(const char *argv[]) {
       << "  -df-out <PATH>            Emit the data flow IR in BB-with-arguments text form to PATH." << std::endl
       << "  -contract-out <PATH>      Emit the Stage-A row contracts in text form to PATH." << std::endl
       << "  -rel-out <PATH>      Emit the Rel (DR-IR) flow graph in text form to PATH." << std::endl
+      << "  -region-out <PATH>        Emit the Stage-B frozen regional program in text form to PATH." << std::endl
+      << "  -region-dot-out <PATH>    Emit the frozen regional program in GraphViz DOT format to PATH." << std::endl
       << "  -first-id <N>             The first integer number used for identifiers in the control-flow IR." << std::endl
       << std::endl
       << "COMPILATION OPTIONS:" << std::endl
@@ -295,6 +315,8 @@ extern "C" int main(int argc, const char *argv[]) {
   std::unique_ptr<hyde::FileStream> df_out;
   std::unique_ptr<hyde::FileStream> contract_out;
   std::unique_ptr<hyde::FileStream> rel_out;
+  std::unique_ptr<hyde::FileStream> region_out;
+  std::unique_ptr<hyde::FileStream> region_dot_out;
   std::unique_ptr<hyde::FileStream> ir_out;
   std::unique_ptr<hyde::FileStream> dr_out;
 
@@ -407,6 +429,40 @@ extern "C" int main(int argc, const char *argv[]) {
                              << "' for Rel IR output";
         }
         hyde::gRelStream = &(rel_out->os);
+      }
+
+    // Stage-B frozen-regional-program text dump (the `-region-out` surface).
+    } else if (!strcmp(argv[i], "--region-out") ||
+               !strcmp(argv[i], "-region-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "regional-program output";
+      } else {
+        region_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!region_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for regional-program output";
+        }
+        hyde::gRegionStream = &(region_out->os);
+      }
+
+    // Stage-B regional-program GraphViz DOT twin (advisory, never goldened).
+    } else if (!strcmp(argv[i], "--region-dot-out") ||
+               !strcmp(argv[i], "-region-dot-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "regional-program DOT output";
+      } else {
+        region_dot_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!region_dot_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for regional-program DOT output";
+        }
+        hyde::gRegionDOTStream = &(region_dot_out->os);
       }
 
     // First ID for the control-flow IR. Helps when we use multiple auto-

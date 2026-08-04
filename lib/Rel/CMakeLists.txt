@@ -15,6 +15,7 @@ set(REL_DEPS
     Display
     Lex
     Parse
+    Regional
     Util
 )
 

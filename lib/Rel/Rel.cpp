@@ -13,6 +13,8 @@
 
 #include "Rel.h"
 
+#include <drlojekyll/Regional/Regional.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -4627,6 +4629,36 @@ void ValidateDROps(
         same_scc(op.seed_target, op.seed_source)) {
       ValidatorFail("V-SEED-SUP: a same-SCC seed fold exists (should be chain)");
     }
+  }
+
+  // V-REGION-CENSUS-IDENTITY (Stage B): the frozen regional program's stored
+  // census must equal a fresh public-surface re-derivation from the Query
+  // graph — a BuildPlanningRegionalProgram stubbed to an empty shell aborts
+  // here (the positive-presence referee; stage-b-diff.md AMENDMENTS H9).
+  if (context.frozen_census) {
+    const RegionalCensus expect_census = DeriveRegionalCensus(query);
+    const RegionalCensus &stored = *context.frozen_census;
+    const auto census_field = [](const char *field, unsigned stored_count,
+                                 unsigned derived_count) {
+      if (stored_count != derived_count) {
+        std::fprintf(stderr, "V-REGION-CENSUS: %s stored %u != derived %u\n",
+                     field, stored_count, derived_count);
+        std::abort();
+      }
+    };
+    census_field("regions", stored.regions, expect_census.regions);
+    census_field("child-calls", stored.child_calls,
+                 expect_census.child_calls);
+    census_field("program-roots", stored.program_roots,
+                 expect_census.program_roots);
+    census_field("request-ports", stored.request_ports,
+                 expect_census.request_ports);
+    census_field("input-ports", stored.input_ports,
+                 expect_census.input_ports);
+    census_field("result-ports", stored.result_ports,
+                 expect_census.result_ports);
+    census_field("row-contracts", stored.row_contracts,
+                 expect_census.row_contracts);
   }
 }
 

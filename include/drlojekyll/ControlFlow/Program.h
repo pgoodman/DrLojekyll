@@ -16,6 +16,7 @@
 
 namespace hyde {
 
+class FrozenRegionalProgram;  // Regional/Regional.h — the Stage-B freeze.
 class ProgramImpl;
 
 class ProgramVisitor;
@@ -1448,13 +1449,15 @@ class ProgramInstanceStoreInfo {
 // A program in its entirety.
 class Program {
  public:
-  // Build a program from a query. Data-flow views whose kinds the control-flow
+  // Build a program from a frozen regional program (Stage B: the freeze
+  // carries the final query). Data-flow views whose kinds the control-flow
   // builder does not support (aggregates, KV indices, impure functors,
   // differential cross-products) are reported to `log` and yield
   // `std::nullopt`. When `optimize` is `false`, the control-flow IR is built
   // but region-level optimization (flattening, no-op removal, procedure
   // deduplication) is skipped.
-  static std::optional<Program> Build(const Query &query, const ErrorLog &log,
+  static std::optional<Program> Build(const FrozenRegionalProgram &frozen,
+                                      const ErrorLog &log,
                                       unsigned first_id,
                                       const PassPolicy &policy,
                                       bool demand_instance = false);

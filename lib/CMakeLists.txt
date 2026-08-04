@@ -4,6 +4,7 @@
 add_subdirectory(CodeGen)
 add_subdirectory(DataFlow)
 add_subdirectory(Rel)
+add_subdirectory(Regional)
 add_subdirectory(ControlFlow)
 add_subdirectory(Display)
 add_subdirectory(Lex)

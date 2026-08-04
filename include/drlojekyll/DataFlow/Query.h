@@ -21,6 +21,7 @@ class ErrorLog;
 class QueryImpl;
 class OutputStream;
 struct QueryContracts;  // Format.h — the `-contract-out` dump tag (H-A8).
+class FrozenRegionalProgram;  // Regional/Regional.h — the Stage-B planner.
 
 enum class ComparisonOperator : int;
 class ParsedDeclaration;
@@ -1147,6 +1148,10 @@ class Query {
   // Stage A (H-A8): the `-contract-out` emitter reads `impl->row_contracts`
   // through this Query wrapper (Format.cpp includes the private QueryImpl).
   friend OutputStream &operator<<(OutputStream &os, QueryContracts qc);
+
+  // Stage B: the frozen-regional-program planner (lib/Regional/Planning.cpp)
+  // reads `impl->row_contracts` for the R-STORE row-contract lines.
+  friend class ::hyde::FrozenRegionalProgram;
 
   // The GraphViz DOT dump reads `impl->row_contracts` for the Stage-A
   // identity annotations (role/key node labels, stratum clusters).

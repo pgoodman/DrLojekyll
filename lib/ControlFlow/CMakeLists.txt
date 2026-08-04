@@ -45,6 +45,7 @@ set(ControlFlow_PRIV_DEPS
 set(ControlFlow_DEPS
     DataFlow
     Rel
+    Regional
     Display
     Lex
     Parse

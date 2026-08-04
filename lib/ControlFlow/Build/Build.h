@@ -4,6 +4,7 @@
 #pragma once
 
 #include <drlojekyll/DataFlow/Query.h>
+#include <drlojekyll/Regional/Regional.h>
 #include <drlojekyll/Util/DefUse.h>
 
 #include <algorithm>
@@ -220,6 +221,13 @@ class Context {
   // never dereferenced (the §19(K) dangling-handle hazard is sidestepped). Not
   // a debug toggle: it is a real mode bit on default-off production code.
   bool demand_instance_enabled{false};
+
+  // Stage B: the frozen regional program's stored census (set by
+  // Program::Build from `frozen.Census()`). Read by the V-REGION-CENSUS
+  // recount at the ValidateDROps tail (lib/Rel/Rel.cpp), which re-derives
+  // the census from the Query graph's public surface and aborts on any
+  // field mismatch — the positive-presence referee for the freeze.
+  const RegionalCensus *frozen_census{nullptr};
 
   // §6 V-INGEST-XCHECK Site 5 (subgraphs/demand P1): the PAYLOAD each
   // `LowerIngestFold` emission actually produced, recorded at emission time
