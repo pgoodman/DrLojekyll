@@ -511,3 +511,469 @@ grammar reviewers must learn; least human-friendly; most machine-friendly.
   plus the note that `demand_multi_adorn_witness` covers a multi-request shape
   the proposed pin subset otherwise misses.
 - **NO pick** (per charge — grammar decision is owner-gated).
+
+---
+
+## 9. STAGE-B REFRESH (2026-08-03, session 4) — ratifications applied, fresh-dump re-grounded
+
+Re-grounding of §§1–8 on FRESH dumps collected at tip `8a4520d9`
+(`phase-d/<case>.{df,contract,rel,dot}` for `demand_tc_witness`, `join_1`,
+`merge_2` [NEW — unrendered in session 1], `demand_multi_adorn_witness`),
+with the two D2.8 ratifications the session-1 renderings pre-dated APPLIED:
+
+- **ADJ-2** (`owner-adjudication-record.md:72–74`, D2.8 RATIFIED): the fabricated
+  `demand__…` input renders **region-internal**, NOT as a program-root
+  `input-abi`/input-port. Session-1 §§1.2/1.3/2.2/2.3 rendered it as a program-root
+  input-abi flagged `[fabricated, driver-suppressed]`; this addendum moves it inside
+  the region as a portless `region-internal` line (dropping the program-root
+  input-port count), following `region-model-desired-states.md:215`'s line shape.
+- **ADJ-3** (`owner-adjudication-record.md:73–74`, D2.8 RATIFIED): an all-free query
+  renders as an **output/permanent-root with NO request port** (request-port count =
+  "has demand"). Session-1 §1.1 rendered `join_1`'s all-free `q`/`never` WITH
+  `fields=()` request ports; this addendum drops those ports and renders each as a
+  portless `permanent-root` line, following `region-model-desired-states.md:257`.
+
+The grammar is D2.2-ratified **G1** (`owner-adjudication-record.md:48`). This
+supersedes §§1–2 for these four witnesses by dated addendum (house rule; earlier
+sections untouched).
+
+### 9.0 The STORED-RELATION (row-contract) rule — pure graph function, verified
+
+Session-1 §1.1 asserted `join_1`'s row-contracts are the two `#local`s `p`/`r` and
+that `q`/`never` are "table-less query projections — no stored contract, grounded by
+`kEagerInsert=2`." **The fresh dumps FALSIFY the identity.** `join_1.rel`'s
+`kEagerInsert=2` sinks are `op.14 … sink=relation args: table=%table:6` and
+`op.17 … table=%table:9`; `join_1.dot:46` labels `TABLE 6 … MATERIALIZE q` and
+`:48` `TABLE 9 … MATERIALIZE never`; `join_1.df` closes with
+`insert ^insert.18 (B:i32) into %table:6` / `insert ^insert.19 (B:i32) into
+%table:9`, both `class=monotone`. The two stored sinks are **`q` and `never`**, not
+`p`/`r` — and their schema is `(B:i32)`, which cannot be `p(A,B)`. `p`/`r` survive
+only as constant-specialized JOIN-OPERAND arrangement tables (`%table:12/16/19/23`,
+each a `tuple`/`compare` output feeding `=> ^join.N .inN`), which are NOT relation
+materializations. This is the same shape the task flags for `merge_2`: the `@inline`
+locals `inner`/`proj` (and the plain `#local outer`) all collapse — `merge_2.df` has
+`class=table-less` on EVERY tuple and only two `table=` sinks,
+`insert ^insert.12 (X,Y) into %table:4` / `insert ^insert.13 (X) into %table:8`,
+which `merge_2.dot:17,20` label `MATERIALIZE q_outer` / `MATERIALIZE q_proj`.
+
+**Rule R-STORE (Stage-B row-contracts, pure graph function) — AS AMENDED by the
+session-4 determinism critique (F1/F2/F3, §9.6).** Work over MODELS (eqsets /
+`%table:N`), NOT per-view printed attributes. A model *M* is a MATERIALIZED
+RELATION iff *M*'s eqset contains an INSERT sink (`insert … into %table:N`) OR a
+MERGE (union) view — **regardless of which member view of *M* prints the `table=`
+attribute** (a `class=table-less` merge whose model table is printed on a sibling
+member view, e.g. `demand_multi_adorn`'s `merge ^merge.16` sharing eqset 5 with
+`tuple ^tuple.4 table=%table:15`, still counts) **and regardless of whether *M*
+also feeds join operands** (the same eqset can be both a stored union and a join
+input). A model whose eqset contains NEITHER an insert-sink NOR a merge — only
+`compare`/`tuple`/join-operand/index arrangements (`=> ^join .inN`), or is
+`@inline`-flattened — is NOT a materialized relation ⇒ no contract. EXCLUDE
+fabricated demand objects on BOTH sides of the seam: neither the fabricated
+`demand__…` MESSAGE (ADJ-2, region-internal) NOR the fabricated `demand__…`
+demand-RELATION union (e.g. `demand_tc`'s `merge ^merge.18 … table=%table:12`,
+`class=monotone`) is a contract — both are region-internal machinery. Emit one
+`row-contract E<k>` per surviving materialized model, naming it by the
+SOURCE-declared relation it backs; when several source-declared relations share
+one model (e.g. `merge_2`'s `%table:4` backs both `#local outer` and `#query
+q_outer`), name it by the OBSERVED/pub relation — the name on the model's
+INSERT/pub sink and the `.dot` MATERIALIZE label (`q_outer`, not `outer`). `k` is
+dense in the declaration order of that naming relation. `member-key` = AllFields
+on a cycle (D1.2, `owner-adjudication-record.md:16–19`), else the declared
+visible-field list. `support` = `differential` iff any feeding message is
+`@differential`, else `monotone`.
+
+**R-STORE verified against every witness's `.df` `table=`/`into` lines:**
+
+| witness | materializing tables (fresh `.df`) | → stored relations (decl order) | member-keys / support | count |
+| --- | --- | --- | --- | --- |
+| `join_1` | `into %table:6`, `into %table:9` (both `insert`, `monotone`) | `q`, `never` | `(B)`/mono, `(B)`/mono | 2 |
+| `merge_2` | `into %table:4`, `into %table:8` (both `insert`, `monotone`; all `#local`s `table-less`) | `q_outer`, `q_proj` | `(X,Y)`/mono, `(X)`/mono | 2 |
+| `demand_tc_witness` | `merge ^merge.17 … table=%table:8` (path UNION), `into %table:4` (`insert`) (the fabricated demand-relation union `merge ^merge.18 table=%table:12` is EXCLUDED — region-internal, F2) | `path`, `reachable_from` | `(From,To)` AllFields (cycle, D1.2; `; cycle` markers, `.contract`: `tuple ^tuple.4 role=member key=(From,To)`), `(From,To)` — both mono | 2 |
+| `demand_multi_adorn_witness` | `merge ^merge.16` → `tuple.4 table=%table:15` (rel R-DUP UNION), `into %table:4` (`insert`) | `rel`, `q` (the ONE shared pub) | `(A,B)`/mono, `(A,B)`/mono | 2 |
+
+All four = **2 row-contracts** — but `join_1`'s IDENTITY is corrected (`q`,`never`,
+not `p`,`r`) and `merge_2` is grounded from scratch. Note that `q`/`never`/
+`q_outer`/`q_proj` are simultaneously ADJ-3 permanent-roots (their all-free
+observation handle) AND row-contracts (their own materialized table) — the two
+facets are orthogonal; session-1's "queries = no stored contract" is a
+**[fresh-dump correction]** wherever the query is a derived join/filter (own table)
+rather than a bare projection of one stored relation (`region-model` §2.b's
+`reachable`, genuinely table-less).
+
+### 9.1 The four G1 `-region-out` blocks (baseline — NO `key-invariant`, NO `request-edges`)
+
+Stage-B scope discipline (load-bearing): **NO `request-edges{…}` sub-block** (Stage
+C, §2 extension contract), **NO 8th census field** (`request-edges` is H7-open —
+`region-model` §5 H7; the census stays the SEVEN §5.5 fields), **NO `key-invariant=`
+region-header token** (H8-open; §9.3 proposes it separately), and **NO key-in-output
+vs sequestered convention** anywhere (H1-open, `region-model` §5 H1). Portless
+annotation lines (`region-internal`, `permanent-root`) carry NO `PortId`; `PortId` is
+dense across (request-ports, input-ports, result-ports) only.
+
+#### 9.1.a `join_1` (no demand — the all-free / ADJ-3 flagship)
+
+    region-program
+    program-root {
+      input-abi   t1/2(A:i32, B:i32)   -> R0 via P0
+      input-abi   t2/1(A:i32)          -> R0 via P1
+      query-abi   q(B:free i32)        -> permanent-root      ; ADJ-3: all-free, NO request port
+      query-abi   never(B:free i32)    -> permanent-root      ; ADJ-3
+      output-abi  <none>
+    }
+    region R0  owner=program-root  parents=()  children=() {
+      input-port     P0  message=t1/2  fields=(A, B)
+      input-port     P1  message=t2/1  fields=(A)
+      permanent-root q(B)                                     ; ADJ-3 (materialized ⇒ also E0)
+      permanent-root never(B)                                 ; ADJ-3 (materialized ⇒ also E1)
+      row-contract   E0  rel=q      member-key=(B)  support=monotone
+      row-contract   E1  rel=never  member-key=(B)  support=monotone
+    }
+    census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=2 result-ports=0 row-contracts=2
+
+Deltas from session-1 §2.1:
+- request-ports **2 → 0**; the two `fields=()` request ports become portless
+  `permanent-root q(B)`/`never(B)` lines; the query-abis route `-> permanent-root`.
+  **[reconciliation — ADJ-3]**
+- PortId reindex: with request-ports=0, input-ports start at **P0/P1** (were P2/P3).
+  **[reconciliation — ADJ-3]** (pure consequence of the dense request→input concat.)
+- row-contract IDENTITY **`p`/`r` → `q`/`never`**, keys `(A,B)`/`(A)` → `(B)`/`(B)`;
+  `p`/`r` are join-operand arrangements (`%table:12/16/19/23`), never materialized;
+  the `kEagerInsert=2` sinks are `%table:6=q` / `%table:9=never` (§9.0). **[fresh-dump
+  correction]**
+- `q`/`never` now ALSO appear as row-contracts (session-1: "table-less, no stored
+  contract"). **[fresh-dump correction]**
+- census `request-ports 2 → 0`. **[reconciliation — ADJ-3]**
+
+#### 9.1.b `merge_2` (no demand — NEW; the `@inline`-collapse witness)
+
+    region-program
+    program-root {
+      input-abi   m1/2(X:i32, Y:i32)   -> R0 via P0
+      input-abi   m2/2(X:i32, Y:i32)   -> R0 via P1
+      input-abi   m3/2(X:i32, Y:i32)   -> R0 via P2
+      query-abi   q_outer(X:free i32, Y:free i32)  -> permanent-root   ; ADJ-3
+      query-abi   q_proj(X:free i32)               -> permanent-root   ; ADJ-3
+      output-abi  <none>
+    }
+    region R0  owner=program-root  parents=()  children=() {
+      input-port     P0  message=m1/2  fields=(X, Y)
+      input-port     P1  message=m2/2  fields=(X, Y)
+      input-port     P2  message=m3/2  fields=(X, Y)
+      permanent-root q_outer(X, Y)                            ; ADJ-3 (materialized ⇒ E0)
+      permanent-root q_proj(X)                                ; ADJ-3 (materialized ⇒ E1)
+      row-contract   E0  rel=q_outer  member-key=(X, Y)  support=monotone
+      row-contract   E1  rel=q_proj   member-key=(X)     support=monotone
+    }
+    census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=3 result-ports=0 row-contracts=2
+
+Deltas from session-1: NONE (not rendered in session 1). Grounding:
+- 3 received `#message`s `m1/m2/m3` (decl order) → `input-ports=3`,
+  P0/P1/P2. `merge_2.df` selects `; recv #message m3/2` (`^select.0`), `m1/2`
+  (`^select.1`), `m2/2` (`^select.2`) — but ABI/port order follows `#message`
+  DECLARATION order (`m1,m2,m3`), NOT the `.df` select order (determinism §5.1).
+  **[grounded]**
+- `#local inner @inline`, `#local outer`, `#local proj @inline` ALL collapse: every
+  `merge_2.df` tuple is `class=table-less`, the only `table=` sinks are
+  `into %table:4` / `into %table:8` (§9.0). Stored relations = the two queries
+  `q_outer`/`q_proj` (`merge_2.dot:17,20` MATERIALIZE labels) → `row-contracts=2`.
+  **[fresh-dump — the `@inline` collapse; stored sinks are the query tables]**
+- both queries all-free (`free X, free Y` / `free X`) → `permanent-root`,
+  `request-ports=0` (ADJ-3). **[reconciliation — ADJ-3]**
+
+#### 9.1.c `demand_tc_witness` (`-demand`, one demand query)
+
+    region-program
+    program-root {
+      input-abi   edge_2/2(From:u64, To:u64)                  -> R0 via P1
+      query-abi   reachable_from(From:bound u64, To:free u64) -> R0 via P0
+      output-abi  <none>
+    }
+    region R0  owner=program-root  parents=()  children=() {
+      request-port    P0  query=reachable_from  fields=(From)
+      input-port      P1  message=edge_2/2      fields=(From, To)
+      region-internal demand__reachable_from_bf/1(<dcol>:u64)  [fabricated, driver-suppressed]   ; ADJ-2
+      row-contract    E0  rel=path            member-key=(From, To)  support=monotone
+      row-contract    E1  rel=reachable_from  member-key=(From, To)  support=monotone
+    }
+    census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=1 result-ports=0 row-contracts=2
+
+Deltas from session-1 §2.2:
+- input-ports **2 → 1**: the `demand__reachable_from_bf/1` message moves to a portless
+  `region-internal` line (`region-model` §2.a shape); it is no longer a program-root
+  input-port. `demand_tc_witness.df` still receives it (`select ^select.1 (c3:u64)
+  ; recv #message demand__reachable_from_bf/1`) but ADJ-2 hides it region-internal.
+  **[reconciliation — ADJ-2]**
+- PortId: request-port `P0` (kept — `reachable_from` is a BOUND-column demand query),
+  input-port `P1=edge_2/2`. **[grounded]**
+- row-contracts unchanged: `path` (materialized by `merge ^merge.17 … table=%table:8`,
+  a UNION production; on the cycle → AllFields `(From,To)`, D1.2, confirmed by
+  `.contract` `tuple ^tuple.4 role=member key=(From,To)` and the `.df` `; cycle`
+  markers) and `reachable_from` (`insert ^insert.19 … into %table:4`). Both mono
+  (no `@differential`). `merge ^merge.18 … table=%table:12` (the fabricated demand
+  relation `d_path`) is region-internal machinery, not a contract (R-STORE demand
+  carve-out, F2). **[grounded]**
+- `<dcol>` = the fabricated column name (`c3` in `.df`; the `.dot` renders the SAME
+  column `_MissingVar`) — the sole metavariable, shape-exact, may drift across
+  surfaces. **[grounded — metavariable]**
+
+#### 9.1.d `demand_multi_adorn_witness` (`-demand`, two demand adornments, one shared pub)
+
+    region-program
+    program-root {
+      input-abi   edge_2/2(A:u64, B:u64)                -> R0 via P2
+      query-abi   q(A:bound u64, B:free u64)  adorn=bf  -> R0 via P0
+      query-abi   q(A:free u64, B:bound u64)  adorn=fb  -> R0 via P1
+      output-abi  <none>
+    }
+    region R0  owner=program-root  parents=()  children=() {
+      request-port    P0  query=q  adorn=bf  fields=(A)
+      request-port    P1  query=q  adorn=fb  fields=(B)
+      input-port      P2  message=edge_2/2   fields=(A, B)
+      region-internal demand__q_bf/1(<dcol>:u64)  [fabricated, driver-suppressed]   ; ADJ-2
+      region-internal demand__q_fb/1(<dcol>:u64)  [fabricated, driver-suppressed]   ; ADJ-2
+      row-contract    E0  rel=rel  member-key=(A, B)  support=monotone
+      row-contract    E1  rel=q    member-key=(A, B)  support=monotone
+    }
+    census: regions=1 child-calls=0 program-roots=1 request-ports=2 input-ports=1 result-ports=0 row-contracts=2
+
+Deltas from session-1 §2.3:
+- input-ports **3 → 1**: BOTH `demand__q_bf/1` and `demand__q_fb/1` move to portless
+  `region-internal` lines (fabrication order bf-then-fb = `.df` `^select.1` before
+  `^select.2`); only the real `edge_2/2` is a program-root input-port (`P2`).
+  **[reconciliation — ADJ-2]**
+- request-ports stays **2** (both `bf` and `fb` carry a BOUND column ⇒ both are demand
+  queries; ADJ-3 does not fire). **[grounded]**
+- row-contracts unchanged: `rel` (materialized by the R-DUP `merge ^merge.16` →
+  `tuple.4 table=%table:15`, the reference-counted union of the two guards' outputs)
+  and `q` (the ONE shared pub, `insert ^insert.18 … into %table:4`; `.dot:5` shows a
+  SINGLE `RELATION q` node → `TABLE 4 MATERIALIZE q`). Both mono. **[grounded]**
+
+### 9.2 Determinism-contract delta on §5 (what ADJ-2/ADJ-3/R-STORE change)
+
+§5 stays normative; the additions/changes below apply. All lists remain a pure
+function of `ParsedModule` declaration order + fixed kind-priority — never a
+`QueryView *`/`UniqueId`/hash order (HP-9). Metavariable `<dcol>` unchanged (§5.4).
+
+- **Within-region block order (was §5.1: request-ports → input-ports → result-ports →
+  row-contracts) gains two portless tiers:**
+  `request-ports → input-ports → result-ports → region-internal → permanent-root →
+  row-contracts`. **Sort keys:**
+  - request-ports: `#query` redeclaration order, **DEMAND queries only** (all-free
+    excluded by ADJ-3). For an all-free-only program (`join_1`, `merge_2`) this list
+    is EMPTY and the ordering rule is **VACUOUS**. **[ADJ-3]**
+  - region-internal (fabricated `demand__…` messages): fabrication order =
+    **ascending `forcing_index`** (equivalently `.df` `demand__` select-node decl
+    order — `demand_multi_adorn`'s `bf` `^select.1` before `fb` `^select.2`); portless.
+    **[ADJ-2]**
+  - permanent-root (all-free queries): **`#query` declaration order**; portless.
+    **[ADJ-3]**
+  - row-contracts: **declaration order of the relation each materializing table backs**
+    (R-STORE, §9.0) — keyed on the MODEL (eqset), not per-view `table=`; a model
+    shared by several declared relations is named by its observed/pub relation
+    (`q_outer`, not `outer` — F3) — a materialized relation may be a `#local`
+    (`path`, `rel`) OR a `#query` (`q`, `never`, `q_outer`, `q_proj`,
+    `reachable_from`); join-operand / `@inline`-fused / input-message arrangements
+    are excluded. **[fresh-dump — R-STORE supersedes session-1's "#locals only"
+    heuristic]**
+- **Program-root ABI order (§5.1) unchanged** — inputs (`#message` decl order, REAL
+  messages only; fabricated `demand__…` OMITTED, ADJ-2) → queries (`#query` redecl
+  order; all-free ones route `-> permanent-root`, demand ones `-> R0 via P<req>`,
+  ADJ-3/ADJ-2) → outputs (published-`#message` decl order; `<none>` for all four).
+- **PortId (§5.2) unchanged in scheme, changed in yield:** dense across
+  (request-ports, input-ports, result-ports); `region-internal`/`permanent-root` are
+  PORTLESS, so removing all-free request ports (ADJ-3) and demand input ports (ADJ-2)
+  **renumbers** the surviving ports (e.g. `join_1` inputs slide P2/P3 → P0/P1). The
+  renumber is itself a pure graph function of the two ratifications — line-exact.
+- **Census (§5.5) stays SEVEN fields** — `regions, child-calls, program-roots,
+  request-ports, input-ports, result-ports, row-contracts`. **NO `request-edges`
+  field at Stage B** (H7-open). request-ports now counts DEMAND queries only (ADJ-3);
+  input-ports counts REAL messages only (ADJ-2). All four: `regions=1 child-calls=0
+  program-roots=1`, `result-ports=0`, `row-contracts=2`.
+- **permcheck (§5.4) still the IDENTITY referee** — the Stage-B skeleton is fully
+  positional; every list above has a stated deterministic sort key, so zero order-free
+  tokens exist and no permutation is permitted. The first order-free multiset arrives
+  only with Stage C's `request-edges` (deferred; H7).
+
+### 9.3 PROPOSED (H8, FLAGGED — not in the baseline blocks): `key-invariant=` header token
+
+`region-model` §5 H8 leaves the `key-invariant=` region-header token an OPEN item
+(region-model surface not frozen). The §9.1 baseline blocks OMIT it. IF the owner
+wants it at Stage B, the one-line delta is a token on the `region R0 …` header:
+
+    region R0  owner=program-root  parents=()  children=()  key-invariant=(From) {   ; demand_tc_witness
+    region R0  owner=program-root  parents=()  children=()  key-invariant=()     {   ; join_1 / merge_2 (no demand)
+
+**Deterministic derivation (proposed):** `key-invariant(region)` = the region's sole
+demand forcing's BOUND columns, ordered by the query's declared column order
+restricted to bound positions; across forcings, ascending `forcing_index`. Yields:
+`join_1`/`merge_2` → `()` (no demand ⇒ zero-replication, record §205); `demand_tc`
+→ `(From)` (the one `reachable_from_bf` forcing's bound col). **`demand_multi_adorn`
+is the flagged obstruction:** it has TWO forcings (`bf` bound=A / `fb` bound=B) sharing
+ONE region ⇒ the single-header token is **ill-defined at Stage B** — it would need a
+per-forcing spelling (`key-invariant={bf:(A), fb:(B)}`) or, more honestly, defer to
+Stage C's per-request-edge annotation. **[INVENTED token — `key-invariant=`; FLAGGED
+H8-open; multi-adornment single-header form UNDEFINED at Stage B]**
+
+### 9.4 DOT twins (advisory — NEVER goldened; `owner-adjudication-record.md:133–145`)
+
+`cluster_region_0` wraps the region; the G1 text dump remains the referee (DOT is
+advisory, node `vNNNN` ids are pointer-derived and DRIFT per run — never a determinism
+target). **Stage-B has NO request edges** (the dashed labeled inter-cluster arrow of
+`region-model` §3.a is a Stage-C addition). At Stage B **the query observation node
+connects to its materializing table via the ORDINARY SOLID dataflow edge already in
+the fresh `.dot`** — grounded per witness below. Only `demand_tc_witness` has an inner
+`subgraph cluster_stratum_5` (`.dot:4`, the 11-node recursive SCC); the other three
+have NO stratum cluster (Stage-A DOT clusters MULTI-view strata only — their strata are
+single-view), so `cluster_region_0` wraps ALL interior `vNNNN` nodes directly.
+
+#### 9.4.a `demand_tc_witness` — region cluster wraps the stratum cluster
+
+    digraph {
+    bgcolor="#f0f4f7";
+    node [shape=none margin=0 nojustify=false labeljust=l font=courier];
+    compound=true;
+    subgraph cluster_region_0 {
+      label="region R0";                            ; baseline: NO key-invariant (H8, §9.3)
+      style="rounded,bold"; color="#3a6ea5";
+      subgraph cluster_stratum_5 {                  ; the fresh inner SCC box, verbatim (.dot:4-16)
+        label="stratum 5"; style="rounded,dashed";
+        v4325188224; v4325197904; v4325199184; v31386009600; v31386010112;
+        v31386012672; v31386013184; v31386014208; v31386013696; v4325183200; v4325197072;
+      }
+      ; + the region's acyclic tissue (edge_2 RECEIVE, path TABLE 8, reachable_from TABLE 4)
+      ; + the region-internal demand__reachable_from_bf RECEIVE (ADJ-2, rendered inside)
+    }
+    t4325192864 [ ... RELATION reachable_from ... ];   ; the demand query's observation node (OUTSIDE)
+    ; Stage-B: SOLID ordinary edge, NOT a dashed request edge (that is Stage C):
+    t4325192864 -> v4325194992 [style=solid];          ; fresh .dot: RELATION reachable_from -> MATERIALIZE reachable_from (TABLE 4)
+    }
+
+The Stage-C dashed `q_reachable_from -> … [label="reachable_from[From](To) kind=LAZY",
+lhead=cluster_region_0, style=dashed]` of `region-model` §3.a is ABSENT here — Stage B
+shows only the solid `t4325192864 -> v4325194992` already in the fresh dump.
+**[shape — node ids drift; grounded — the solid observation edge is the fresh
+`.dot`; NO request edge at Stage B]**
+
+#### 9.4.b `join_1` / `merge_2` / `demand_multi_adorn_witness` — region cluster, NO inner stratum box
+
+None of these three fresh `.dot`s contains a `subgraph cluster_stratum_*` (single-view
+strata). `cluster_region_0` therefore wraps ALL interior `vNNNN` nodes directly:
+
+    subgraph cluster_region_0 {
+      label="region R0";                     ; baseline: NO key-invariant (H8)
+      style="rounded,bold"; color="#3a6ea5";
+      ; ALL interior v-nodes: the RECEIVEs, the COMPARE/JOIN/UNION chain, and the
+      ; MATERIALIZE tables — join_1: v4394551008 (TABLE 6 q) + v52026409472 (TABLE 9 never);
+      ; merge_2: v34573910016 (TABLE 4 q_outer) + v34573910528 (TABLE 8 q_proj);
+      ; demand_multi_adorn: v4348719488 (TABLE 4 q, the shared pub) + the two UNION nodes.
+      ; demand_multi_adorn ALSO renders the two demand__ RECEIVEs region-internal (ADJ-2).
+    }
+    ; program-root observation nodes OUTSIDE the cluster, connected by SOLID edges
+    ; (fresh .dot, NO request/dashed edge at Stage B):
+    ;   join_1:             t52026311808 -> v4394551008  (RELATION q -> MATERIALIZE q)
+    ;                       t52026312000 -> v52026409472 (RELATION never -> MATERIALIZE never)
+    ;   merge_2:            t4328361312  -> v34573910016 (q_outer)
+    ;                       t4328363168  -> v34573910528 (q_proj)
+    ;   demand_multi_adorn: t4348714320  -> v4348719488  (single RELATION q -> shared pub TABLE 4)
+
+For `join_1`/`merge_2` the observation nodes are ADJ-3 permanent-roots reaching in with
+an ordinary (solid, unlabeled) edge — the visual of a no-demand program (`region-model`
+§3.b). For `demand_multi_adorn` the single shared-`q` node still connects solid at
+Stage B; its two Stage-C request edges (one per adornment) are absent. **[advisory;
+shape — node ids drift; grounded — every edge cited from the fresh `.dot`]**
+
+### 9.5 Census table — all four witnesses (SEVEN fields; H7-open, NO `request-edges`)
+
+| witness | regions | child-calls | program-roots | request-ports | input-ports | result-ports | row-contracts |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `join_1` | 1 | 0 | 1 | **0** (ADJ-3) | **2** | 0 | 2 (`q`,`never`) |
+| `merge_2` | 1 | 0 | 1 | **0** (ADJ-3) | **3** | 0 | 2 (`q_outer`,`q_proj`) |
+| `demand_tc_witness` | 1 | 0 | 1 | 1 | **1** (ADJ-2) | 0 | 2 (`path`,`reachable_from`) |
+| `demand_multi_adorn_witness` | 1 | 0 | 1 | 2 | **1** (ADJ-2) | 0 | 2 (`rel`,`q`) |
+
+Bold cells are the ADJ-2/ADJ-3 deltas from the session-1 counts (`join_1`
+req 2→0; `merge_2` NEW; `demand_tc` in 2→1; `demand_multi_adorn` in 3→1). Every
+`regions==1 ∧ child-calls==0` ties the Stage-B `V-REGION-CENSUS-IDENTITY` stub
+(§5.5: `regions==1 ∧ every Rel op ∈ RegionId(0)`).
+
+### 9.6 DETERMINISM CRITIQUE (2026-08-03, session 4) — findings + dispositions
+
+Lens: is every predicted line a pure, order-stable function of the graph; do the
+stated rules mechanically reproduce the tabulated counts; ratification fidelity
+(ADJ-2/ADJ-3 applied, H1/H2/H7/H8 not prejudged); cross-surface consistency with
+the fresh `.dot`. Calibration: DELTA-6 (refute-by-default, concrete failure
+scenario required). THREE findings survived self-refutation, all with one root
+cause — R-STORE was first specified over per-view PRINTED attributes (`table=` on
+the terminal node) instead of over the MODEL (eqset); the amended rule in §9.0 is
+the fix and reproduces `2/2/2/2` unchanged.
+
+**F1 [MAJOR — APPLIED, §9.0].** Literal pre-amendment R-STORE undercounted
+`demand_multi_adorn` to `row-contracts=1`: `rel`'s union `merge ^merge.16` is
+`class=table-less` (rule (b) did not fire) and its model `%table:15` prints on
+`tuple ^tuple.4`, which feeds `=> ^join.13/.15 .in1` — exactly the shape the
+exclusion clause named. `tuple.4` was simultaneously include-able and
+exclude-able: nondeterministic classification. Fix: the rule now keys on the
+MODEL's eqset (contains INSERT sink OR MERGE view), regardless of which member
+prints `table=` and regardless of join-operand fan-out.
+
+**F2 [MINOR — APPLIED, §9.0 + §9.0 table + §9.1.c].** The carve-out excluded only
+the fabricated demand MESSAGE, not the fabricated demand-RELATION union —
+`demand_tc`'s `merge ^merge.18 … table=%table:12` (`class=monotone`, the `d_path`
+union) satisfies rule (b), so a literal reading emitted `row-contracts=3`. Fix:
+both sides of the fabricated seam are region-internal machinery, never a
+contract.
+
+**F3 [MINOR — APPLIED, §9.0 + §9.2].** "The relation each materializing table
+backs" had no tiebreak under model sharing: `merge_2`'s `%table:4` backs both
+`#local outer` (table-less merge, eqset 6) and `#query q_outer` (`insert.12`,
+same eqset) — an implementer could render `rel=outer`. Fix: a shared model is
+named by its OBSERVED/pub relation (the INSERT/pub sink name, matching the
+`.dot` `MATERIALIZE` label).
+
+**Verified clean (dropped after self-refutation):** all four census lines
+recounted field-by-field; ADJ-2/ADJ-3 fidelity; no prejudging of H1
+(key-in-output), H2 (`kRequestEdgeAdd`), H7 (census `request-edges`), H8
+(`key-invariant=` kept out of the baseline, §9.3); every §9.4 DOT edge verbatim
+in the fresh `.dot` (only `demand_tc` has a stratum cluster); member-keys match
+the `.contract` member views; the `join_1` identity correction (`q`/`never`, not
+session-1's `p`/`r`) is itself CORRECT — only the rule statement was defective.
+
+### 9.7 IMPLEMENTATION RECONCILIATION (2026-08-03, session 4 — Stage B LANDED)
+
+The `-region-out` surface landed (lib/Regional; owner ratified ESC-4 variant
+(iii)). Predict-then-verify adjudications, each resolved TOWARD DERIVABILITY
+(the Stage-A adjudication-#4 pattern — produced dumps win when the prediction
+assumed facts the graph does not carry):
+
+- **R-STORE NARROWED to insert-materialized relations (supersedes the §9.0
+  merge arm).** `rel=path` / `rel=rel` are NOT pure graph functions in ANY
+  mode: `QueryMergeImpl` carries no declaration link, `ConnectInsertsToSelects`
+  removes relation INSERTs in every mode (verified: demand_tc nodf ==
+  opt byte-identical), and the only relation-named materializations are
+  relation-INSERT sinks. Contracts therefore render ONLY for distinct
+  non-`demand__` relation-INSERT declarations (first-insert-wins key render,
+  positional by declared params). demand_tc_witness and
+  demand_multi_adorn_witness census `row-contracts` are **1** (not §9.5's 2);
+  join_1/merge_2 stay 2. The unnameable interior merge model (`path`) is the
+  concrete NECESSITY WITNESS for the reserved logical-origin-provenance
+  direction (owner-adjudication-record §table-provenance) — when that lands,
+  the interior contracts become renderable and this narrowing lifts.
+- **`<dcol>` realized as `p0`** — the fabricated message's PARSED param
+  spelling (deterministic), not the `.df` column name `c3`. Metavariable
+  contract honored (shape-exact).
+- **Alignment realized as the uniform max+2 rule** (kind token, decl text,
+  and per-group value fields each left-justified to group-max + 2); §9.1's
+  hand-eyeballed padding yields to the produced bytes.
+- **Zero-arity condition unit relations** (desugared `is_condition`
+  relations): the contract renders `member-key=()` (the insert's token
+  column has no declared param position). A pre-existing parser quirk is
+  RECORD-ONLY: an implicitly-declared zero-arity clause-head export is minted
+  without a name spelling, so its contract renders `rel=` empty (e.g.
+  `booleans`) — visible only in this new dump, no pinned witness affected.
+- **Cross-mode**: all four pins produced byte-identical `.region` across the
+  4 modes at tip — but the pins remain PER-MODE (16 goldens), per
+  F-REGION-CROSSMODE; cross-mode identity stays unclaimed.
+
+The 16 `.region` goldens were blessed ONCE from a reviewed subset run via
+`runall.sh --bless`. The V-REGION-CENSUS recount (stored vs
+`DeriveRegionalCensus(query)`) is live corpus-wide, always-on.

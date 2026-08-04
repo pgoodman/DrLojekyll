@@ -6237,3 +6237,39 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     3-commit split — b61797cd (F26 dfe hygiene/optimization split + V-SCC-SEAM
     + F23 pin), bd694541 (the D3.3 landing set + F27/F28 fixes + F29 record),
     1d28a74c (Stage A: typed identity + row contracts + -contract-out + DOT).
+
+(AY) STAGE B LANDED — THE FROZEN REGIONAL LAYER (2026-08-03, session 4).
+    The full (a)-(d) standing-method design pass and the implementation
+    landed in ONE session. Design: regional-arch-pseudocode.md Part B
+    (fleet-verified Stage-B-grain pipeline; drift ledger DB-1..DB-13; the
+    two-caller Query::Build ripple fact incl. bin/Oracle);
+    stage-b-diff.md AMENDMENTS (DELTA-1..6 folded; 4-lens refute-verified
+    panel, 12 findings -> 9 survived at re-triaged severities — the
+    F-REGION-DEAD positive-presence referee, run_irgold region wiring,
+    four-mode pinning, eqgate=6 correction, the NEC-1 library-placement
+    constraint); regional-dump-stage-b-desired-states.md §9 (ADJ-2/ADJ-3-
+    applied G1 blocks for FOUR witnesses, the R-STORE materialized-model
+    rule, session-1's join_1 contract identity FALSIFIED by fresh dumps)
+    + §9.7 (implementation reconciliation). Owner RATIFIED TO RECOMMENDED:
+    ESC-4 variant (iii) (main-level free build, Query::Build untouched,
+    lib/Regional an acyclic peer), Minimize DEFERRED, ESC-1/ESC-2, the
+    4-witness pin set, no key-invariant token at B. Implementation:
+    lib/Regional (FrozenRegionalProgram::Build at the Main.cpp third slot;
+    G1 -region-out + advisory -region-dot-out; freeze scaffolds
+    V-FROZEN-NO-OPEN-PORT / V-OWNERSHIP-ACYCLIC); H4 Program::Build
+    consumes frozen via the thin frozen.Query() seam; the ALWAYS-ON
+    V-REGION-CENSUS recount (stored == DeriveRegionalCensus(query)) at the
+    ValidateDROps tail; 16 .region goldens blessed once after review.
+    PREDICT-VERIFY ADJUDICATION (toward derivability, the Stage-A-#4
+    pattern): R-STORE NARROWED to insert-materialized relations —
+    merge-materialized interiors (demand_tc's `path`) are unnameable in
+    ANY mode (QueryMergeImpl carries no decl link; ConnectInsertsToSelects
+    removes relation inserts) — the concrete NECESSITY WITNESS for the
+    reserved logical-origin-provenance direction. Record-only wart:
+    implicitly-declared zero-arity exports mint without a name spelling
+    (empty rel= in -region-out only; no pinned witness). Exit gate: suite
+    PASS (190) with run_refinterp + the 16 region pins + V-REGION-CENSUS
+    live; ctest 7/7; zero pre-existing goldens changed. NEXT: the owner
+    ranks Stage-C re-brief (D2.6 + §6-vs-§11 STOPs; DIFF-R1's 15 normative
+    amendments to fold) vs DIFF-R3 declared regions vs the R-STORE lift;
+    entry prompt = next-session-prompt.md, seed = stage-b-landed-seed.md.

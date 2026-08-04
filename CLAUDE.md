@@ -5,7 +5,8 @@ message-driven C++ database. Pipeline:
 
     parse (lib/Lex, lib/Parse)
       → data-flow IR        lib/DataFlow    Query::Build(module, log, optimize)
-      → control-flow IR     lib/ControlFlow Program::Build(query, first_id, optimize)
+      → frozen regional     lib/Regional    FrozenRegionalProgram::Build(query, log)
+      → control-flow IR     lib/ControlFlow Program::Build(frozen, first_id, optimize)
       → C++ codegen         lib/CodeGen/CPlusPlus/Database.cpp
       → runs against        lib/Runtime + include/drlojekyll/Runtime (no deps)
 
@@ -594,7 +595,34 @@ non-recursive `rel(A,B):edge_2(A,B)`; `.drflags` bare `-demand`, `.eqgate`
 `:457` to the per-adornment left-linear `:717-722`); `demand_multi_adorn_allfree_1`
 is the new all-4-modes-diagnostic pinning the all-free-sibling fence (a query name
 carrying a bound AND an all-free adornment rejects — the all-free cursor would read
-the demand-guarded pub and under-answer).
+the demand-guarded pub and under-answer). The eqgate family is SIX as of
+`demand_diff_pub_1` — re-derive as `ls tests/OptDiff/cases/*.eqgate | wc -l`,
+never propagate a narrative constant.
+
+## The frozen regional layer (Stage B, RegionalDataFlowCore — LANDED)
+
+`lib/Regional` (acyclic peer: bin → {ControlFlow,Rel} → Regional → DataFlow):
+`FrozenRegionalProgram::Build(query, log)` runs at the Main.cpp third slot
+(after Query::Build, before Program::Build) — a degenerate no-extraction
+planner (ONE ProgramRoot + ONE observation-root region R0, zero child calls,
+NO re-optimize) deriving request-ports (one per demand forcing), input/result
+ports (real messages only; the fabricated `demand__` messages render
+region-internal, ADJ-2), permanent roots (unforced queries, ADJ-3), and
+row-contracts (R-STORE NARROWED: one per distinct non-demand relation-INSERT
+declaration, member-key positional from the Stage-A contracts; merge-
+materialized interior models are UNNAMEABLE — the logical-origin-provenance
+necessity witness). H4: `Program::Build(const FrozenRegionalProgram&, ...)`,
+first statement `query = frozen.Query()` — the byte-preserving thin seam.
+Referees: V-FROZEN-NO-OPEN-PORT / V-OWNERSHIP-ACYCLIC at freeze + the
+ALWAYS-ON V-REGION-CENSUS recount at the ValidateDROps tail (stored census ==
+`DeriveRegionalCensus(query)` re-derived fresh — a stubbed planner aborts,
+corpus-wide). Dumps: `-region-out` (G1, ratified D2.2) + `-region-dot-out`
+(advisory DOT twin, never goldened); 16 `.region.<mode>` goldens via the
+`region` `.irgold` surface (demand_tc_witness, join_1, merge_2,
+demand_multi_adorn_witness × 4 modes — byte-identical cross-mode at tip but
+pinned PER-MODE; cross-mode identity is not claimed). Authority docs:
+stage-b-diff.md AMENDMENTS, regional-arch-pseudocode.md Part B,
+regional-dump-stage-b-desired-states.md §9/§9.7, stage-b-landed-seed.md.
 
 ## Other known feature gaps (clean diagnostics)
 

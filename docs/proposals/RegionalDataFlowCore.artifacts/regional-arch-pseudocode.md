@@ -1699,3 +1699,620 @@ this file and the seed's Part 1) are NOT edited; contradictions are logged here.
   nested-loop-join at :772-780 (`assert(false && "Disabled")`) unreachable; a
   region-model translation of "how BuildEagerRegion reaches a JOIN's successors"
   must model ONLY the WorkItem-deferred ContinueJoinWorkItem::Run path.
+
+---
+
+
+## Part B (2026-08-03, session 4) — the Stage-B-grain pipeline pseudocode, fleet-verified at tip 8a4520d9
+
+This part SUPERSEDES `stage-b-seed.md` Part 1 at finer grain, and re-anchors
+the Stage-B freeze-point pseudocode against the `keyed-instances` tip
+**8a4520d9**. A four-agent verification fleet (Query::Build tail/ctor/callers;
+Main.cpp wiring; Program::Build/ExtractPrimaryProcedure/ValidateDROps; the
+downstream read surface) walked the pipeline mechanically — not against an
+older doc's claim list but from the code — so every anchor below is live at
+8a4520d9. Per the standing SINGLE-PASS RULE, the next Stage-B implementer
+re-verifies before building; line numbers drift, the structure should not.
+
+Earlier sections of this file (Parts 1–D, §1–§7, and Part R) are NOT edited.
+Where Part R §1 (verified at the older f0c913e0 tip) and `stage-b-diff.md`
+(authored at f0c913e0, pre-Stage-A) carry anchors that have since drifted,
+the contradiction is logged in the **DRIFT LEDGER (Part B)** at the end, never
+patched in place.
+
+Fleet tally at 8a4520d9: **Query::Build tail/signature/ctor/callers — all
+VERIFIED** (tail substance byte-identical to the seed paraphrase, two
+interleaved `num_errors` guards the seed collapsed now made explicit);
+**Main.cpp dump-drain block anchors — 2 DRIFTED (+1 line each), 3 VERIFIED**;
+**Program::Build entry — signature + pre-pass + BuildDataModel DRIFTED (+~23
+lines, file grew above), demand_instance fences / context wiring / census site
+VERIFIED**; **read surface — fresh mechanical extraction, clean for a future
+`FrozenRegionalProgram::Query()` accessor**. No section was structurally
+wrong; drift is line-shift and (in Program::Build) the whole body sliding down
+~23 lines because code above it grew between the two tips.
+
+---
+
+### B.1 The whole Main.cpp pipeline (bin/drlojekyll/Main.cpp, 621 lines)
+
+The two `Build` calls, `SetRelDumpStream`, all dump drains, and codegen live
+in `CompileModule` (:63–145), reached from `main()` (:278–621) only via
+`ProcessModule` (:148–200). Globals (namespace `hyde`, anon namespace, :47–61;
+`gOut` is file-scope at :34, wired to `std::cout` in `main` at :291–292):
+
+```
+# bin/drlojekyll/Main.cpp:47-61 — the driver globals
+gFirstId=0u :47   gDemand=false :48   gDemandInstance=false :49
+gDemandRetract=false :50   gPassPolicy :51 (ONE instance; threaded, by identity,
+                                            into BOTH Build calls)
+gDatabaseName="datalog" :52   gHasDatabaseName=false :53   gCxxOutDir=nullptr :54
+gDOTStream :56  gDFStream :57  gContractStream :58  gRelStream :59
+gDRStream :60   gIRStream :61     # all OutputStream*, nullptr until an argv case arms them
+```
+
+```
+CompileModule(parser, display_manager, error_log, module):        # :63-145
+  gPassPolicy.bisect_counter = 0u                                  # :68 — reset per module;
+                                                                    #   the ONE cross-Build mutable index
+  query_opt = Query::Build(module, error_log, gPassPolicy,
+                           gDemand, gDemandRetract)                 # :70-71 (call expr on :71)
+  if not query_opt: return EXIT_FAILURE                            # :72-74
+  # <<< THIRD-SLOT INSERTION POINT >>> a post-Query::Build / pre-Program::Build
+  #   dump gated purely on *query_opt (a hypothetical -region-out / -query-out)
+  #   inserts HERE — after :74's closing brace, before :76's comment. Nothing
+  #   else touches *query_opt in this gap; TableId() is NOT yet annotated (that
+  #   is a Program::Build side effect), so this slot sees the PURE DataFlow graph.
+  #   Follows the ir-out pattern: a gStream global near :56-61, an argv case in
+  #   the :315-410 band, and `if (gStream){ (*gStream)<<...; gStream->Flush(); }` here.
+  # T2b: install the -rel-out sink BEFORE Program::Build — Rel is built AND
+  #   drained INSIDE it; there is NO top-level `if (gRelStream)` drain anywhere.
+  SetRelDumpStream(gRelStream)                                     # call at :80 (comment :76-79)
+                                                                    #   null-safe: unset => guarded no-op
+  program_opt = Program::Build(*query_opt, error_log, gFirstId,
+                               gPassPolicy, gDemandInstance)        # :82-84 (call expr on :83)
+  if not program_opt: return EXIT_FAILURE                          # :85-87
+  ret = EXIT_SUCCESS                                               # :89
+  if gIRStream:    (*gIRStream) << *program_opt; Flush()           # :91-94  -ir-out (drains PROGRAM)
+  if gCxxOutDir:   create_dirs; open <name>.h/.cpp;                # :96-118 -cpp-out (drains PROGRAM,
+                   cxx::GenerateDatabaseCode(*program_opt,...)      #   SITS BETWEEN ir-out and dot-out;
+                                                                    #   NOT a "dump slot" but a real
+                                                                    #   *program_opt consumer)
+  # NOTE(pag) :120-122: the next three drain AFTER Program::Build because it
+  #   back-annotates TableId() onto the DataFlow views the DOT/DF dumps render.
+  if gDOTStream:   (*gDOTStream) << *query_opt; Flush()            # :123-126 -dot-out (drains QUERY)
+  if gDFStream:    (*gDFStream) << QueryDF{*query_opt}; Flush()    # :131-134 -df-out  (drains QUERY via tag)
+  if gContractStream: (*gContractStream)                          # :139-142 -contract-out (drains QUERY
+                       << QueryContracts{*query_opt}; Flush()       #   via tag; Stage A H-A8)
+  return ret                                                       # :144
+```
+
+```
+ProcessModule(...):                                               # :148-200
+  resolve database name from module.DatabaseName()                # :152-155
+  if gDRStream: (*gDRStream) << module                            # :158-162 -dr-out: the AMALGAMATED
+                                                                    #   datalog-SOURCE echo (raw module),
+                                                                    #   PRE-Query::Build — NOT the Rel/DR-IR
+                                                                    #   dump; do not conflate by gDR* name.
+  #ifndef NDEBUG: parse->print->reparse x3, assert ss2==ss3       # :165-197 round-trip self-test
+  return CompileModule(parser, display_manager, error_log, module) # :199
+```
+
+```
+main(argc, argv):                                                 # :278-621
+  setup: display_manager, error_log, parser, gOut=&os (:291-292),
+         unique_ptr<FileStream> RAII owners for each -*-out file  # :280-299
+  for i in 1..argc:                                               # argv loop :302-576
+    -cpp-out :305-313    -ir-out :315-327    -dr-out :331-344
+    -dot-out :347-360    -df-out :363-376    -contract-out :379-393
+    -rel-out :396-410    -first-id :414-424 (gFirstId=strtoul)
+    -disable-dataflow-opt    :429-433  # appends DisableDataFlowOpt().disabled_globs
+    -disable-controlflow-opt :436-441  # appends DisableControlFlowOpt().disabled_globs
+    -opt-disable=<glob>[,..] :445-464  # IsValidGlob+MatchesAnyKnownPass, => disabled_globs
+    -opt-only=<glob>[,..]    :465-484  # same validation, => only_globs
+    -opt-bisect-limit=<N>    :485-495  # sets gPassPolicy.bisect_limit (NOT the counter).
+                                       #   THE ONLY bisect CLI surface — there is NO "-bisect" flag.
+    -demand :499-501 (gDemand=true)
+    -demand-instance :506-510 (gDemand=true; gDemandInstance=true — implies -demand)
+    -demand-retract  :516-519 (gDemand=true; gDemandRetract=true — implies -demand)
+    -M <path> :522-531   --help/-h :534-536   --version/-v :539-541
+    unrecognized "-..." :544-548 (error, continue)
+    input file path :551-575 (escape, append `#import "path".` to linked_module)
+  dispatch :578-611:
+    error_log non-empty        -> skip                            # :581-582
+    0 input paths              -> "No input files" error          # :583-584
+    1 path AND !gHasDatabaseName-> ParsePath -> ProcessModule     # :587-597 single-module
+    else                        -> ParseStream(linked_module) ->  # :601-610 amalgamation
+                                   ProcessModule
+  render :613-618 (Render on error else RenderWarnings); return code # :620
+
+# bisect / PassPolicy thread:
+#   PassPolicy::bisect_counter is `mutable uint64_t{0}` at Util/PassPolicy.h:53,
+#   on the SAME class as disabled_globs/only_globs/bisect_limit (:47-53). The
+#   single gPassPolicy (:51) is passed by identity to Query::Build (:71, arg 3)
+#   AND Program::Build (:83, arg 4) — both IR levels tick ONE monotone index.
+#   Reset once/module at CompileModule:68; incremented at Util/PassPolicy.cpp:85
+#   (`bisect_counter++`) inside PassPolicy::Gate (decl PassPolicy.h:68) — one
+#   tick per gateable application. No CLI setter for the counter itself.
+# SetRelDumpStream: decl ControlFlow/Format.h:17; def Rel/Format.cpp:1160
+#   (also decl Rel/Rel.h:1257); called exactly once, at :80.
+```
+
+**Dump-timing split (binds any Stage-B `-region-out`):** `-rel-out`'s sink is
+armed BEFORE Program::Build (built+drained inside it); `-ir-out`/`-dot-out`/
+`-df-out`/`-contract-out` drain AFTER it returns (they need `TableId()`). A
+Stage-B regional dump picks ONE of these two shapes. Per `stage-b-seed.md`
+DELTA-3, the desired-states G1 predicted bytes assume the third-slot
+(pre-Program::Build) shape for a `*query_opt`-rooted region dump; the exact
+insertion point is the `<<< THIRD-SLOT >>>` marker above (:74→:76 gap).
+
+---
+
+### B.2 The Query::Build tail (lib/DataFlow/Build.cpp)
+
+Function spans `std::optional<Query> Query::Build(...)` :2524–2652. `impl` is
+minted at :2529 (`std::shared_ptr<QueryImpl> impl(new QueryImpl(module));`).
+The full error-check ladder has SEVEN guard points; the last two belong to
+"the tail" as the seed scoped it. Two of those seven are interleaved through
+the tail itself and were collapsed by the seed's one-line paraphrase:
+
+```
+# lib/DataFlow/Build.cpp — the Query::Build TAIL, live at 8a4520d9
+2629  impl->FinalizeDepths();
+2630  impl->FinalizeColumnIDs();
+2631  impl->TrackDifferentialUpdates(log, /*force=*/true);   # SECOND, forced call
+2632  if (num_errors != log.Size()) return std::nullopt;      # :2632-2634 guard
+2635  impl->TrackConstAfterInit();
+2637  BuildEquivalenceSets(impl.get());                       # identity-erasing model sharing
+2638  impl->Stratify(log);                                    # Tarjan; view->stratum; V-SCC-SEAM
+2639  if (num_errors != log.Size()) return std::nullopt;      # :2639-2641 guard
+      # Stage A (H-A4): identity now provable over the FINAL graph —
+      #   view->stratum set, column ids final, const facts ready.
+2646  impl->row_contracts = InferConservativeRowContracts(impl.get());   # STAGE A, pure, post-Stratify
+2647  if (!ValidateRowContracts(impl.get(), log))             # :2647-2649 — BOOLEAN guard, NOT the
+2648    return std::nullopt;                                   #   `num_errors != log.Size()` idiom used
+2649                                                           #   everywhere else in this function (a real,
+                                                              #   verified distinction — H-A7 validators)
+2651  return Query(std::move(impl));                          # sole return of a live Query
+2652  }  # end Query::Build
+
+# Earlier guards (context for where the tail begins):
+#   :2562-2564 (post RemoveUnusedViews/ClearGroupIDs/1-arg TrackDifferentialUpdates)
+#   :2571-2573 (post df.simplify Gate)   :2596-2598 (post ApplyDemandTransform)
+#   :2614-2616 (post Optimize; gated `policy.AnyBodyOptionalEnabled(PassLevel::kDataFlow)`)
+#   :2625-2627 (post IdentifyInductions)
+```
+
+Signature (header `include/drlojekyll/DataFlow/Query.h:1049-1053`; definition
+`Build.cpp:2524-2527`), verbatim:
+
+```
+static std::optional<Query> Build(const ParsedModule &module,
+                                  const ErrorLog &log,
+                                  const PassPolicy &policy,
+                                  bool demand_mode = false,
+                                  bool demand_retract = false);
+```
+
+**DIFF (DELTA-1 / stage-b-diff.md H1 — the freeze point, NOT current state):**
+`BuildPlanningRegionalProgram` + `Freeze`/`FreezeAndValidate` slot AFTER
+`ValidateRowContracts` and BEFORE `return Query(...)` — contracts are planning
+input, so the freeze MUST follow the contract pass:
+
+```
+2646  impl->row_contracts = InferConservativeRowContracts(impl.get());
+2647  if (!ValidateRowContracts(impl.get(), log)) return std::nullopt;
++     planning = BuildPlanningRegionalProgram(impl.get());   # DIFF (Stage B) — degenerate:
++         #   ONE ProgramRoot + ONE observation-root template; consumes contracts,
++         #   equivalence models, strata, guard_annotations, RecognizedSubgraphs(),
++         #   DemandForcings() — every §1.2-seed input.
++     frozen = FreezeAndValidate(planning, log);             # DIFF — distinct TYPE; H9 freeze validators;
++         #   no extraction, no request-edge mint at Stage B (that is Stage C).
++     return Query(std::move(impl), frozen);                 # H1 Variant 1 — return-type ripple
+2651  return Query(std::move(impl));                         # CURRENT STATE (Variant-1 replaces this line)
+```
+Owner-gated placement (ESC-4): H1 Variant 1 changes `Query::Build`'s return
+shape (ripples every caller — see B.3); H1-ALT hoists the two NEW calls to a
+`main`-level step between `Query::Build` and `Program::Build` in
+`CompileModule` (the `<<< THIRD-SLOT >>>` gap of B.1), leaving `Query::Build`'s
+signature untouched. Both are DIFF, not current state.
+
+---
+
+### B.3 The Query object — ctor surface, ownership, callers
+
+`class Query` at `Query.h:1036-1158` is a PIMPL, shared-ownership handle:
+
+```
+# include/drlojekyll/DataFlow/Query.h
+:1157  std::shared_ptr<QueryImpl> impl;               # SHARED (not unique_ptr); matches Build.cpp:2529
+                                                       #   `shared_ptr<QueryImpl>` + :2651 std::move
+:1155  inline explicit Query(std::shared_ptr<QueryImpl> impl_) : impl(impl_) {}
+                                                       # the ONLY constructing ctor; PRIVATE; reachable
+                                                       #   only from Build() (static member access) and
+                                                       #   the two friend operator<< overloads below
+:1149  friend operator<<(OutputStream&, QueryContracts);   # -contract-out emitter (Format.cpp)
+:1153  friend operator<<(OutputStream&, Query);            # -dot-out DOT dump  (Format.cpp)
+:1141-1144  Query(const Query&)=default; Query(Query&&) noexcept=default;
+            operator= x2 =default;                     # cheap-to-copy shared handle — callers pass by
+                                                       #   value / deref *query_opt repeatedly, no rebuild
+:1055  ~Query(void);                                   # out-of-line dtor (QueryImpl incomplete here — PIMPL)
+:1049-1053  static std::optional<Query> Build(...);    # the SOLE public factory
+```
+
+**Complete caller list of `Query::Build` (repo-wide, live tree — excludes
+docs/ and stale `.claude/worktrees/wf_*` snapshots): exactly TWO.**
+
+```
+# (1) bin/drlojekyll/Main.cpp:71 — the CLI compile path (full policy + demand flags)
+query_opt = Query::Build(module, error_log, gPassPolicy, gDemand, gDemandRetract)
+  reads of *query_opt, ALL inside CompileModule:
+    :83  Program::Build(*query_opt, ...)          # control-flow-IR input
+    :123 (*gDOTStream) << *query_opt              # DOT (gated gDOTStream)
+    :131 (*gDFStream)  << QueryDF{*query_opt}     # .df  (gated gDFStream)
+    :139 (*gContractStream) << QueryContracts{*query_opt}   # -contract-out (gated gContractStream)
+  # gDemandInstance is NOT passed here — it reaches Program::Build only.
+
+# (2) bin/Oracle/Main.cpp:745-746 — the reference oracle (dataflow-opt DISABLED, demand OFF)
+query = hyde::Query::Build(*module_opt, error_log, hyde::PassPolicy::DisableDataFlowOpt())
+  # 3-arg overload (demand_mode/demand_retract default false); member
+  #   `std::optional<hyde::Query> query;` at :600 (persists across the Oracle's life).
+  # Comment :743-744: "the oracle interprets the graph the aggressive optimization
+  #   pass never touched." Reads the whole Query PUBLIC surface read-only:
+  #   NumStrata() :766 (ONLY caller repo-wide), ForEachView :800, IOs :804, Tuples :966,
+  #   Compares :985, Maps :1021, Merges :1086, Joins :1102, Negations :1178, Inserts :1206,
+  #   Selects :1231, Aggregates :1288, KVIndices :1357, Relations :2337/:2369.
+  # Never calls Program::Build (grep-confirmed) — stays at the DataFlow layer.
+
+# NON-callers, confirmed by grep + their own header comments (design-intentional):
+#   bin/RefInterp/Main.cpp:5  "(no ... Query::Build, no Rel, no codegen)" — OG1-parsed I0 evaluator
+#   bin/RefHarness/Main.cpp:13 "hyde::Parser ONLY (no Query::Build, no DataFlow)" — OG2 harness
+#   No tests/*.cpp calls it — end-to-end tests drive the drlojekyll binary or Oracle/RefInterp/RefHarness.
+```
+
+**Stage-B ripple (H1 Variant 1):** changing `Query::Build`'s return to
+`optional<pair<Query, FrozenRegionalProgram>>` (or a two-field return) touches
+BOTH live callers — `Main.cpp:71` and `Oracle/Main.cpp:745`. The Oracle reads
+only the Query half, so a Variant-1 return must keep `.first`/`.query` a plain
+`Query`. H1-ALT touches neither caller's `Build` call (the freeze becomes a
+`main`-level step) — its only edit is in `CompileModule`.
+
+---
+
+### B.4 The downstream read surface (the FrozenRegionalProgram::Query() budget)
+
+Definitive `Query`-public-method → consumer table at 8a4520d9 (representative
+anchor each; Oracle listed parenthetically as a non-lib bonus consumer that
+reaches nearly the whole surface for its independent re-derivation):
+
+```
+Build (factory)     Main only                         Main.cpp:71
+DemandForcings      ControlFlow, Rel                  CF Build.cpp:1514 / Rel Rel.cpp:937 (def Demand.cpp:295)
+GuardAnnotations    ControlFlow, Rel                  CF Build.cpp:1452 / Rel Rel.cpp:936 (def Demand.cpp:300)
+RecognizedSubgraphs Rel only                          Rel Rel.cpp:1052, :4007 (def Demand.cpp:305; NO CF caller)
+IsDemandMessage     CodeGen only (via Program::Query())  CodeGen Database.cpp:1522, :3692 (def Demand.cpp:310)
+ParsedModule        ControlFlow (Main indirect)       CF Program.cpp:266 (impl->query.ParsedModule())
+NumStrata           Oracle only — NO lib consumer     Oracle Main.cpp:766 (def Query.cpp:1816)
+Joins               ControlFlow, Rel, Format          CF Build.cpp:83 / Rel Rel.cpp:1950 / Format
+Selects             Format only (+Oracle)             Format.cpp:266
+Tuples              ControlFlow, Format (+Oracle)     CF Procedure.cpp:971 / Format
+KVIndices           ControlFlow, Rel, Format          CF Build.cpp:178 / Rel Rel.cpp:2045
+Relations           Format only (+Oracle)             Format.cpp:183
+Inserts             ControlFlow, Format               CF Build.cpp:61
+Negations           ControlFlow, Rel, Format          CF Build.cpp:136 / Rel Rel.cpp:1877
+Maps                ControlFlow, Format               CF Build.cpp:147
+Aggregates          ControlFlow, Rel, Format          CF Build.cpp:175 / Rel Rel.cpp:2017
+Merges              ControlFlow, Format               CF Build.cpp:77
+Compares            ControlFlow, Format               CF Build.cpp:154
+IOs                 ControlFlow, Rel                  CF Procedure.cpp:233 / Rel Rel.cpp:2758
+Constants           ControlFlow only                  CF Build.cpp:1527
+Tags                ControlFlow only                  CF Build.cpp:1539
+ForEachView         ControlFlow, Format               CF Build.cpp:39 / Format
+```
+
+**How each downstream library GETS a Query:**
+- **ControlFlow** receives it exactly once, as `Program::Build`'s first param
+  (`Build.cpp:1331`), stores it verbatim into `ProgramImpl::query` (a
+  `const Query query;` at `Program.h:1998`) via `make_shared<ProgramImpl>(query,
+  first_id)` (`Build.cpp:1505`), and threads it by value/const-ref to every
+  callee (FillDataModel/BuildDataModel/BuildEntryProcedure/BuildIOProcedure/
+  BuildInitProcedure/FindMonotoneNegatedTables).
+- **Rel** gets `Query` ONLY as a by-value param forwarded from ControlFlow's
+  `Program::Build` query through `Stratum.cpp` (e.g. `DeriveDRStrata(...)` at
+  `Stratum.cpp:2156`, `LinearizeAndValidateDRFlow(...)` at `:2187`). It has no
+  other source. Signature anchors: `Rel.h:992/1023/1069`.
+- **CodeGen** reaches Query ONLY via `Program::Query()` (decl
+  `Program.h:1489`, def `Program.cpp:260-262` `return impl->query;`), and calls
+  exactly ONE method: `program.Query().IsDemandMessage(*m)` (`Database.cpp:1522,
+  :3692`). Everything else CodeGen needs comes off Program/ProgramImpl. It never
+  holds a Query independent of Program.
+
+**What a thin `FrozenRegionalProgram::Query()` accessor MUST preserve:** the
+entire read surface above is already clean for a frozen wrapper — no
+downstream library names `QueryImpl` in code (one stray comment at
+`Build.cpp:187`) or includes the PRIVATE `lib/DataFlow/Query.h`. So the
+accessor need only return the same `Query` value handle that ControlFlow/Rel
+thread today and that `Program::Query()` hands CodeGen. The single seam that
+must survive verbatim is `Program::Query()` (`Program.cpp:260-262`) — it is the
+ONE gateway by which anything outside ControlFlow (i.e. CodeGen) recovers a
+Query after Program::Build. Preserve `DemandForcings`/`GuardAnnotations`/
+`RecognizedSubgraphs`/`IsDemandMessage` as pass-throughs (the demand satellites
+downstream reads by name) and the 15 `DefinedNodeRange` view accessors +
+`ForEachView` used by FillDataModel/BuildDataModel and the Format dumps.
+
+**Direct-QueryImpl bypasses (the only genuinely private leaks, both confined to
+lib/DataFlow itself — NOT downstream):**
+- `row_contracts` is exposed through NO public Query method. `-contract-out`
+  reads it ONLY via the friend `operator<<(OutputStream&, QueryContracts)` at
+  `Format.cpp:1531-1533`, doing `qc.query.impl->row_contracts` — a direct
+  `.impl->` into the private QueryImpl (legal: Format.cpp is a declared friend
+  `Query.h:1149` AND `#include`s the private `Query.h` at `Format.cpp:19`).
+  Driven entirely from `Main.cpp:139`. A `FrozenRegionalProgram::Query()` need
+  NOT carry `row_contracts` unless the frozen dump replaces `-contract-out`.
+- The three DataFlow dump operators (`operator<<(…, Query)` DOT `Format.cpp:43`,
+  decl `Format.h:12`; `QueryDF` `Format.cpp:813`, struct `Format.h:18-20`;
+  `QueryContracts` `Format.cpp:1531`, struct `Format.h:31-33`) all take the
+  `Query` WRAPPER by value, but Format.cpp additionally reads
+  `QueryViewImpl::det_seq`/`is_dead` directly (bypassing `Query::ForEachView`,
+  which the comments at `Format.cpp:811/1536` forbid here — it walks JOINs first
+  and would break the required ascending-`det_seq`/kind-tagged order). This is a
+  DataFlow-internal bypass, not a downstream one.
+- `lib/Rel/Format.cpp` (`-rel-out`) takes NO `Query` — it dumps `DRFlowGraph`
+  (built by `BuildDRInventory` from `impl->tables`/DROps), armed by
+  `SetRelDumpStream`. It `#include`s only the PUBLIC `Query.h` for QueryView
+  types embedded in DROp payloads.
+
+Consequence for Stage B: the current read surface is ALREADY a clean substrate
+for the frozen accessor — ControlFlow/Rel take `Query`/`const Query&` (never
+`QueryImpl*`), CodeGen reaches Query only through `Program::Query()`, and the
+one private leak (QueryContracts→row_contracts) is Format-local.
+
+---
+
+### B.5 Program::Build entry (lib/ControlFlow/Build/Build.cpp)
+
+```
+1331  std::optional<Program> Program::Build(const ::hyde::Query &query,
+1332                                        const ErrorLog &log, unsigned first_id,
+1333                                        const PassPolicy &policy,
+1334                                        bool demand_instance) {
+1340    num_errors = log.Size();          # only statement before the pre-pass, plus the lambda below
+        # C-2 V-ALGEBRA + feature-gap pre-pass (demand-INDEPENDENT), header :1342-1362,
+        #   `has_induction_owned_input` lambda :1355-1362:
+1364    for agg in query.Aggregates():                                     # :1364-1392
+1368      if has_induction_owned_input(agg): diagnostic "not yet supported"; continue
+          # (NO over()-undeclared reject here — an undeclared over() defaults to @recompute)
+1394    for kv in query.KVIndices():                                       # :1394-1417
+1397      if has_induction_owned_input(kv): diagnostic; continue
+1409      if !merge.IsInvertible() && !merge.IsRecompute(): V-ALGEBRA diagnostic; continue
+1418    for map in query.Maps():                                           # :1418-1423
+1419      if !map.Functor().IsPure(): diagnostic "Impure functors..."
+1424    for join in query.Joins():                                         # :1424-1435
+1425      if 0 pivot cols && CanReceiveDeletions() && ViewSelfReachable(join):
+            diagnostic "Cross-products ... recursive cycles ..."
+
+        # Keyed-instance feature-gap fences — GATED (comment :1436-1450):
+1451    if (demand_instance) {                                             # :1451-1499
+1452      annots = query.GuardAnnotations()
+1455      query.ForEachView(...) -> bucket guard-annotated views by forcing_index into fguards
+1462      for each forcing-index bucket fe:
+            recursive_content=false, cyclic_demand=false
+            for (v, ai) in fe.second:
+              if !v.IsJoin(): continue
+              collect JoinedViews jl; if jl.size()<2: continue
+              if annots[ai].role == kBody:
+                in = jl[1]
+                if in.InductionGroupId() || ViewSelfReachable(in): recursive_content=true
+                for p in in.Predecessors(): if p.InductionGroupId(): recursive_content=true
+              if ViewSelfReachable(jl[0]): cyclic_demand=true
+            if cyclic_demand:    diagnostic "Recursive demand ... not yet supported under -demand-instance"
+            elif recursive_content: diagnostic "recursive (induction-owned) content ... feature gap"
+1499    }  # cyclic_demand wins the if/elif; BOTH are local to this block. FENCE(iii)
+          #   differential-summarized-input is named in the comment but is NO LONGER a
+          #   live reject (lifted by R-a2 band-(a2)).
+
+1501    if (num_errors != log.Size()) return std::nullopt;                 # :1501-1503
+
+1505    impl    = make_shared<ProgramImpl>(query, first_id);   program = impl.get();
+1508    Context context;
+1509    context.init_proc = impl->procedure_regions.Create(next_id++, kInitializer);   # :1509-1510
+1514    context.demand_forcings = &query.DemandForcings();                 # (comment :1512-1513)
+1520    context.demand_instance_enabled = demand_instance;
+1522    BuildDataModel(query, program);                                    # <- DRIFTED anchor (was :1499)
+1527    for const_val in query.Constants(): mint const_to_var              # special-case no-literal/non-tag
+                                                                            #   -> impl->true_
+1539    for const_val in query.Tags():      mint const_to_var (kConstantTag)
+        # (DiscoverInductions is commented-out dead code :1546-1552)
+1556    FillDataModel(query, program, context);
+1561    FindMonotoneNegatedTables(program, context, query);
+1564    entry_proc = BuildEntryProcedure(program, context, query);
+1566    for io in query.IOs(): BuildIOProcedure(impl.get(), query, io, context, entry_proc);
+1572    BuildInitProcedure(program, context, query);
+1574    for insert in query.Inserts():
+          if insert.IsRelation() && insert.Relation().Declaration().IsQuery():
+            BuildQueryEntryPoint(program, context, decl, insert)
+1587    queries_with_entry_points = { spec.query.Id() for spec in impl->queries }
+1591    for sub_module in ParsedModuleIterator(query.ParsedModule()):
+          for parsed_query in sub_module.Queries():
+            if not in queries_with_entry_points: BuildEmptyQueryEntryPoint(...)
+1601    for proc in impl->procedure_regions:
+          if !EndsWithReturn(proc): append BuildStateCheckCaseReturnFalse
+1608    FixupContainingProcedure(impl.get());
+1611    if policy.AnyBodyOptionalEnabled(kControlFlow): impl->Optimize(policy);   # 1st CF Optimize :1611-1613
+1615    ExtractPrimaryProcedure(impl.get(), entry_proc, context);                 # SANDWICHED
+1617    FixupContainingProcedure(impl.get());
+1620    if policy.AnyBodyOptionalEnabled(kControlFlow): impl->Optimize(policy);   # 2nd CF Optimize :1620-1622
+1629/1638  for proc in impl->procedure_regions: MapVariables(proc);   # DUPLICATED loop (:1629-1631, :1638-1640)
+1657    return Program(std::move(impl));
+1660  }  # namespace hyde
+```
+
+**Direct `query.<method>()` sites in Program::Build's own body (12):**
+Aggregates :1364, KVIndices :1394, Maps :1418, Joins :1424, GuardAnnotations
+:1452, ForEachView :1455, DemandForcings :1514, Constants :1527, Tags :1539,
+IOs :1566, Inserts :1574, ParsedModule :1592. Separately the whole `query` is
+forwarded to 7 callees: ProgramImpl ctor :1505, BuildDataModel :1522,
+FillDataModel :1556, FindMonotoneNegatedTables :1561, BuildEntryProcedure
+:1564, BuildIOProcedure :1567 (per IO), BuildInitProcedure :1572.
+
+**ExtractPrimaryProcedure call chain** (decl `Build.h:653`; doc `Procedure.cpp:
+767-776`; body `:777-928`; sole call site `Build.cpp:1615`, SANDWICHED between
+the two `impl->Optimize(policy)` rounds — after one CF-optimize, immediately
+before another, NOT unconditionally "after Optimize"):
+
+```
+ExtractPrimaryProcedure(impl, entry_proc, context):     # Procedure.cpp:777-928
+  # splits entry_proc into (1) a simplified entry proc that reads only message
+  #   vectors, does joins, appends to induction/output vectors, and (2) a new
+  #   primary_proc (ProcedureKind::kPrimaryDataFlowFunc) that takes induction
+  #   vectors and does the rest of the flow.
+  mint primary_proc (kPrimaryDataFlowFunc)                              # :778-779
+  walk entry_proc->input_vecs uses (ForEachUse) -> regions_to_extract   # :787-793
+  build entry_seq/entry_par SERIES/PARALLEL shell                       # :797-799
+  re-parent each extracted region under entry_par via LET replacement   # :806-811
+  swap entry_proc->body into primary_proc; entry_proc->body = entry_seq  # :815-817
+  ClassifyVector each entry vec as read/written by entry vs primary      # :823-843
+  primary_params = written_by_entry ∩ read_by_primary                    # :845-850
+  create replacement vecs on primary_proc for params/read/written        # :854-876
+  rewrite primary-scoped uses to the new vecs                            # :878-882
+  GC unused entry vecs                                                    # :885
+  emit VECTORCLEAR for unneeded entry vecs                               # :892-911
+  emit CALL entry_seq -> primary_proc(primary_params)                    # :914-921
+  terminate entry_proc with kReturnFalseFromProcedure                    # :924-925
+  FixupContainingProcedure(impl)                                         # :927
+```
+
+**ValidateDROps tail — the keyed-instance census recount (ESC-3 candidate for
+V-REGION-CENSUS-IDENTITY).** `ValidateDROps` (`Rel.cpp:3358`, decl `Rel.h:1022`,
+sole call `Stratum.cpp:2186`); op-inventory `count_kind`/`expect` lambdas
+`:3959-3976`, the `expect(...)` run `:3977-3990`, then:
+
+```
+# lib/Rel/Rel.cpp:3999-4021 — instance-op census recount
+3999  unsigned exp_instance = 0u, exp_death = 0u;
+4000  if (context.demand_instance_enabled) {
+4006    LiveRecognition lr = ResolveLiveRecognition(impl, query);       # SAME helper the mint uses,
+                                                                         #   but driven off DataFlow's
+                                                                         #   RecognizedSubgraphs(), NEVER
+                                                                         #   the mint's own output (A.1.5
+                                                                         #   independence)
+4007    for (const RecognizedSubgraph &rs : query.RecognizedSubgraphs()):
+4008      git = lr.by_forcing.find(rs.forcing_index)
+4008      if (git == end || !git->second.ok) continue
+4012      ++exp_instance
+4013      if (git->second.demand_table && TableIsDifferential(git->second.demand_table))
+4015        ++exp_death
+4018  }
+4019  expect(kSubgraphInstantiate, exp_instance, "subgraph instantiates");
+4020  expect(kInstanceDeath,       exp_death,    "instance deaths");
+4021  expect(kInstanceSeal,        exp_instance, "instance seals");   # 1:1 with instantiate
+```
+Flag-off it never dereferences `RecognizedSubgraphs()` and expects 0 of each
+instance-kind op. Flag-on it independently re-derives the counts — exactly the
+V-REGION-CENSUS-IDENTITY-style cross-check the Stage-C region census wants (this
+is ESC-3's ValidateDROps-tail home; the alternate home is a post-Program `main`
+check). Note the `kInstanceDeath` gate keys on the DEMAND table's
+differentiality (`demand_retract`), NOT the input's — see Part R ledger B1; this
+recount mirrors that gate exactly.
+
+---
+
+### B.6 DRIFT LEDGER (Part B) — `claim -> reality -> fresh anchor`
+
+Recorded per the standing rule: Parts 1–D, §1–§7, and Part R above are NOT
+edited; the following corrects `stage-b-diff.md` (authored at f0c913e0),
+`stage-b-seed.md` Part 1, and this file's Part R §1 (verified at the older
+f0c913e0 tip) against tip 8a4520d9.
+
+#### Against stage-b-diff.md (f0c913e0-era anchors)
+
+- **DB-1 — Query::Build return line.** CLAIM (H1, `stage-b-diff.md:63`):
+  `return Query(std::move(impl))` at `:2637`. REALITY: at `:2651`
+  (`Build.cpp:2652` closes the function). The `BuildPlanningRegionalProgram`/
+  `FreezeAndValidate` DIFF-hunk therefore inserts at :2647→:2651, not
+  :2637. ANCHOR: `lib/DataFlow/Build.cpp:2646-2651`.
+- **DB-2 — Program::Build signature range.** CLAIM (`stage-b-diff.md:204`,
+  ":1308-1311"): VERIFIED text, DRIFTED range — the file grew ~23 lines above.
+  REALITY: `:1331-1334`. ANCHOR: `lib/ControlFlow/Build/Build.cpp:1331-1334`.
+- **DB-3 — V-ALGEBRA pre-pass range.** CLAIM (`stage-b-diff.md:225`,
+  ":1332-1411"): REALITY: `:1342-1435` — header+lambda :1342-1362, Aggregates
+  :1364-1392, KV :1394-1417, Maps :1418-1423, Joins :1424-1435 (runs THROUGH
+  the Joins loop at 1435, not ending at 1411). ANCHOR: `Build.cpp:1342-1435`.
+- **DB-4 — demand_instance guard fences range.** CLAIM (`stage-b-diff.md:226`,
+  ":1428-1473"): DRIFTED/stale. REALITY: the `if (demand_instance){...}` block
+  is `:1451-1499` (opens :1451, closes :1499 right before the num_errors gate
+  at :1501). This RESOLVES the H4-vs-Part-R disagreement: Part R's
+  :1451-1499 is current; H4's :1428-1473 no longer matches. ANCHOR:
+  `Build.cpp:1451-1499`.
+- **DB-5 — BuildDataModel call.** CLAIM (`stage-b-diff.md:226`, ":1499"):
+  REALITY: `BuildDataModel(query, program);` is at `:1522` (after the
+  num_errors gate :1501-1503 and Context/impl setup :1505-1520). ANCHOR:
+  `Build.cpp:1522`.
+- **DB-6 — Main.cpp Query::Build call.** CLAIM (`stage-b-diff.md:83`,
+  ":69-70"): REALITY: the call expression is on `:71` (the `auto query_opt =`
+  LHS is :70); null-check :72-74. ANCHOR: `bin/drlojekyll/Main.cpp:70-74`.
+- **DB-7 — Main.cpp SetRelDumpStream / Program::Build calls.** CLAIM
+  (`stage-b-diff.md:290`, `:79` for SetRelDumpStream; `:81-83` for
+  Program::Build). REALITY: `SetRelDumpStream(gRelStream)` call is on `:80`
+  (comment block :76-79); Program::Build call expression is on `:83` (statement
+  :82-84). ANCHOR: `Main.cpp:76-84`.
+
+#### Against stage-b-seed.md Part 1
+
+- **DB-8 — Query::Build tail range.** CLAIM (`stage-b-seed.md:26`,
+  ":2629-2650"): REALITY: `:2629-2651`, with TWO `num_errors != log.Size()`
+  early-return guards interleaved (`:2632-2634`, `:2639-2641`) that the seed's
+  one-line paraphrase collapsed, and a distinct BOOLEAN `!ValidateRowContracts`
+  guard at `:2647-2649`. ANCHOR: `Build.cpp:2629-2651`.
+- **DB-9 — dump-drain block ranges.** CLAIM (`stage-b-seed.md:36`,
+  "Main.cpp:120-141" as one span for -dot/-df/-contract): REALITY: the drains
+  are separate `if` blocks at `-dot-out :123-126`, `-df-out :131-134`,
+  `-contract-out :139-142` (with the -cpp-out codegen at :96-118 sitting BEFORE
+  the DOT drain, between it and -ir-out :91-94). ANCHOR: `Main.cpp:91-142`.
+- **DB-10 — SetRelDumpStream slot.** CLAIM (`stage-b-seed.md:37`,
+  "Main.cpp:76"): the comment starts :76 but the CALL is :80. VERIFIED as
+  BEFORE Program::Build. ANCHOR: `Main.cpp:80`.
+
+#### Against Part R §1 (this file, verified at the older f0c913e0 tip)
+
+- **DB-11 — Query::Build head + return.** Part R §1 (`:55`, `:103`) placed the
+  function head at `Build.cpp:2518` and `return Query(impl)` at `:2637`.
+  REALITY at 8a4520d9: definition `:2524-2527`, return `:2651`. The named body
+  passes (TrackDifferentialUpdates :2555→`:2631` forced call, BuildEquivalenceSets
+  :2631→`:2637`, Stratify :2632→`:2638`) all shifted; substance unchanged.
+  ANCHOR: `Build.cpp:2524-2652`.
+- **DB-12 — Main.cpp drain + bisect-reset lines.** Part R §1 (`:35`, `:38-53`)
+  used bisect-reset `:67`, Query::Build `:69-70`, SetRelDumpStream `:79`,
+  Program::Build `:81-83`, -ir-out `:90-93`, -dot-out `:122-125`, -df-out
+  `:130-133`. REALITY at 8a4520d9: reset `:68`, Query::Build call `:71`,
+  SetRelDumpStream `:80`, Program::Build call `:83`, -ir-out `:91-94`, -dot-out
+  `:123-126`, -df-out `:131-134` (all +1 from the -ir-out/-df-out drains
+  because `auto ret = EXIT_SUCCESS;` at :89 shifts the post-Program blocks down
+  by one; -dot-out and -contract-out net to their listed lines). VERIFIED that
+  the timing SPLIT (rel-out sink pre-Build, ir/df/dot/contract drains
+  post-Build) holds unchanged. ANCHOR: `Main.cpp:68, 71, 80, 83, 91-142`.
+- **DB-13 — Program::Build pre-pass + context anchors.** Part R §1 (`:105-125`)
+  used head `:1308-1311`, pre-pass `:1332-1411`, demand_instance gate `:1428`
+  + fences `:1467-1473`, num_errors `:1478-1480`, demand_forcings `:1491`,
+  demand_instance_enabled `:1497`, BuildDataModel `:1499`. REALITY at 8a4520d9:
+  head `:1331-1334`, pre-pass `:1342-1435`, demand_instance block `:1451-1499`,
+  num_errors gate `:1501-1503`, demand_forcings `:1514`, demand_instance_enabled
+  `:1520`, BuildDataModel `:1522` — the whole body slid ~+23 lines
+  (code above grew). VERIFIED unchanged: `ValidateDROps` census recount
+  `Rel.cpp:3999-4021`, `ExtractPrimaryProcedure` body `Procedure.cpp:777-928`,
+  `BuildSubgraphInstanceOps` `Rel.cpp:1036` (E-142-pinned). ANCHOR:
+  `Build.cpp:1331-1522`.
+
+#### Inter-bundle agreements + the one framing note
+
+- No bundle DISAGREED on substance; the only cross-bundle tension is the head
+  anchor of `Query::Build` — Part R §1's `:2518` vs Bundle 1's measured
+  `:2524-2527` — resolved in DB-11 as pure line-drift at the newer tip.
+- **Framing (not a code drift):** `stage-b-seed.md:63-68` asserts "there is NO
+  planning object; Rel/ControlFlow read QueryImpl directly." The read-surface
+  fleet REFINES this: downstream libraries read the `Query` WRAPPER (by
+  value/const-ref), never `QueryImpl*` — the only `.impl->` reach is
+  Format-local (`QueryContracts`→`row_contracts`, `Format.cpp:1531`). The
+  Stage-B thesis (one frozen `PlanningRegionalProgram`) therefore starts from
+  an ALREADY-CLEAN wrapper boundary; the frozen accessor's budget is B.4's
+  table, and `Program::Query()` (`Program.cpp:260-262`) is the one seam that
+  must survive verbatim for CodeGen.
