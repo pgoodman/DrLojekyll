@@ -217,6 +217,22 @@ referee pass hardened one assert (asserts get refereed too).
   (vi) LANDED s9 with F32: bless_copy identity-skips byte-identical
   non-symlink re-blesses ("skipped ... (byte-identical)"); `BLESS: N`
   counts only real content deltas.
+- **DIFF-NEXT-S5 (Mint mint-site source locations — owner-directed s9,
+  probe-validated, DEFERRED to s10).** The CTAD `Mint(list, args...)`
+  wrapper (the ONLY legal host for a defaulted trailing source_location
+  after a deduced pack; the naive Create default is unreachable, the
+  ctor-hosted default captures DefUse.h itself), mint_loc on Def<T>,
+  the 413-site mechanical sweep, advisory-only rendering (DOT twins +
+  an opt-in dump modifier; goldened dumps NEVER move — line numbers
+  churn with every compiler edit). Formulation:
+  s9-mint-sloc-diag-formulation.md §1.
+- **DIFF-NEXT-S6 (broad-AND-narrow diagnostics, domain-sliced — owner
+  STANDING RULE s9).** Every diagnostic anchors BOTH the broad context
+  range AND the narrowest sub-range; Append(range, sub_range) exists,
+  5/304 sites use it; retrofit domain-by-domain starting with the
+  @key/demand family (slice 1, s10); golden-safe (diagnostic CLASS
+  pinned, never text). Binds all NEW diagnostics immediately.
+  Formulation: s9-mint-sloc-diag-formulation.md §2.
 - **RETIRED:** S1/K5 (landed, `81385a92`); ADJ-R3-C (MOOT post-RP-6:
   every accepted @key'd relation is demanded — `key_undemanded_1` + the
   unseeded reject close the routes; re-opens only with a non-reject
