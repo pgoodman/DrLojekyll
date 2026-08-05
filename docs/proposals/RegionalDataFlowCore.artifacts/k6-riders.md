@@ -1373,7 +1373,11 @@ every run, and their `REFINTERP-DISAGREE` verdicts were silently dropped by the
 suite aggregator's failure-token blacklist (F32 leg (b)) — invisible when A-K6-5
 was written. The 2026-08-03 plain-compile adjudication is now IMPLEMENTED
 (`mode_flags_of`), the four goldens re-blessed to the definitional CBF, and the
-aggregator is a whitelist. See tests/OptDiff/FINDINGS.md F32.
+aggregator is a whitelist. See tests/OptDiff/FINDINGS.md F32. The parenthetical
+"no oracle-vs-behavioral cross-family byte check exists" is also no longer true:
+run_crossfamily (XFAM, landed the same session) byte-compares the oracle's
+`--project-published` differential projection against the behavioral golden's
+FINAL block for every `.batches` case.
 
 ## A-K6-7b — DIFF-K6-7b field spellings (supersedes Part B `:833-834`, `:839-842`)
 

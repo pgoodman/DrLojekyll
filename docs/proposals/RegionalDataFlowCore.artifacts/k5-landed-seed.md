@@ -188,15 +188,30 @@ referee pass hardened one assert (asserts get refereed too).
   whitelist + per-case verdict coverage, four goldens re-blessed to the
   definitional CBF (pure additions), A-K6-5 superseded (pointer added).
   See FINDINGS.md F32.
-  (iii) the missing oracle-vs-behavioral cross-family byte check —
-  formulation ratified for s9 (post-F32 the demand-case confound is gone);
+  (iii) LANDED s9 (owner-ratified): XFAM — the formulation found
+  name-projection IMPOSSIBLE (oracle dumps internal relations, CBF FINAL
+  lists published messages; namespaces disjoint corpus-wide, @product
+  cases' oracle dump literally empty), so the oracle gained
+  `--project-published` (differential-path published membership in CBF
+  FINAL byte shape, string-sorted) and runall.sh gained run_crossfamily
+  (XFAM-* tokens, whitelist-consistent; behavioral-golden FINAL block, or
+  live interp.cbf for diagnostics; vacuous-by-data for non-publishing
+  cases; ZERO goldens of its own). 66 crossfamily verdicts, all OK;
+  predict-then-verify on transitive_closure_diff/product_conds/
+  product_self/demand_neighborhood_witness/average_weight;
   (iv) K2 best-effort re-opens only on explicit owner call;
   (v) the K5-D8 riders: RIDER-1 RESOLVED s9 (owner-ratified): the dead
   has_one_insert branch DELETED (not activated — Demand.cpp's AsMerge()
   descent load-bearingly depends on always-MERGE, now documented at the
-  Connect.cpp mint site; zero golden movement), RIDER-2 the
-  Merge.cpp-vs-Join.cpp CDaGI guard-tuple inconsistency (census gap #15;
-  formulation + directed-witness attempt ratified for s9), RIDER-3
+  Connect.cpp mint site; zero golden movement), RIDER-2 CLOSED s9
+  (owner-ratified): the NARROWED three-field copy at the Merge guard
+  (group_ids + OR'd diff-flags + origins; annotation deliberately excluded
+  — CDaGI's clear-on-move is unsound on a live loser), all three fields
+  proven redundant-by-reconstruction, 7-case reachability census,
+  byte-neutral corpus-wide; PLUS the NEW RIDER-2b always-on tripwire at
+  Join.cpp ProxyUnusedInputColumns (the twin live-loser latent, zero
+  corpus reachers — loud the day a demand shape arrives); full record in
+  k5-provenance.md RIDER-2 CLOSED. RIDER-3
   D2.9(β) proxy-role-at-mint (deferred; re-opens on a named dump
   consumer);
   (vi) LANDED s9 with F32: bless_copy identity-skips byte-identical

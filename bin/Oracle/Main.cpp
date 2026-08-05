@@ -2432,6 +2432,53 @@ class Oracle {
     }
     return os.str();
   }
+
+  // XFAM (residual (iii), 2026-08-05): published (transmit) message
+  // membership in the RefInterp CBF FINAL byte shape — one "name v1 v2 ..."
+  // line per live published row, GLOBAL lexicographic STRING sort (matching
+  // RefInterp's std::sort over rendered lines, deliberately NOT
+  // DumpRelations' typed numeric sort), no header. The transmit views are
+  // the kPublished INSERTs the differential evaluation already maintains;
+  // their in_i-filtered rows are the net published set. This is the oracle's
+  // half of the run_crossfamily derived-equivalence check against the
+  // behavioral golden's FINAL block — well-defined only post-F32 (the
+  // behavioral binary is the PLAIN program, and this oracle is demand-blind
+  // by construction, so both sides publish the full closure).
+  std::string DumpPublished(void) {
+    std::vector<std::string> lines;
+    for (auto io : query->IOs()) {
+      const auto &decl = io.Declaration();
+      if (!decl.IsMessage()) {
+        continue;
+      }
+      const std::string name(decl.NameAsString());
+      std::unordered_map<Row, bool, RowHash> seen;
+      for (auto tv : io.Transmits()) {
+        auto *vm = VM(tv);
+        for (uint32_t id = 0; id < vm->rows.size(); ++id) {
+          if (!vm->st[id].in_i || seen.count(vm->rows[id])) {
+            continue;
+          }
+          seen.emplace(vm->rows[id], true);
+          std::string s = name;
+          for (size_t i = 0; i < vm->rows[id].size(); ++i) {
+            s += ' ';
+            s += PrintValue(i < vm->types.size() ? vm->types[i]
+                                                 : hyde::TypeKind::kUnsigned64,
+                            vm->rows[id][i]);
+          }
+          lines.push_back(std::move(s));
+        }
+      }
+    }
+    std::sort(lines.begin(), lines.end());
+    std::string out;
+    for (const auto &l : lines) {
+      out += l;
+      out += '\n';
+    }
+    return out;
+  }
 };
 
 // ---------------------------------------------------------------------
@@ -2679,12 +2726,16 @@ int main(int argc, const char *argv[]) {
   const auto batches = ParseBatches(argv[2], oracle);
 
   bool monotone = false;
+  bool published = false;
   if (argc >= 4) {
     if (!std::strcmp(argv[3], "--project-monotone")) {
       monotone = true;
+    } else if (!std::strcmp(argv[3], "--project-published")) {
+      published = true;
     } else {
       std::cerr << "USAGE: " << argv[0]
-                << " <case.dr> <case.batches> [--project-monotone]"
+                << " <case.dr> <case.batches>"
+                << " [--project-monotone | --project-published]"
                 << std::endl;
       return EXIT_FAILURE;
     }
@@ -2692,6 +2743,17 @@ int main(int argc, const char *argv[]) {
 
   if (monotone) {
     return RunMonotoneProjection(oracle, batches);
+  }
+
+  // XFAM: run the DIFFERENTIAL path (the independent counter/claim/netting
+  // implementation — the whole point of the cross-check), then dump only the
+  // published-message final membership in CBF FINAL byte shape.
+  if (published) {
+    for (const auto &b : batches) {
+      oracle.RunBatch(b);
+    }
+    std::cout << oracle.DumpPublished();
+    return EXIT_SUCCESS;
   }
 
   for (const auto &b : batches) {

@@ -153,7 +153,14 @@ delta-relational-IR golden policy.
   this way). The suite verdict aggregation is a WHITELIST since F32: any
   verdict line not ending in an OK shape fails the suite, plus a per-case
   verdict-coverage census (the old failure-token blacklist silently dropped
-  REFINTERP-DISAGREE and BEHAVIORAL-MODE-SPLIT — F32 leg (b)).
+  REFINTERP-DISAGREE and BEHAVIORAL-MODE-SPLIT — F32 leg (b)). XFAM (the
+  cross-family check, since the same session): every `.batches` case also
+  runs `run_crossfamily` — the oracle's `--project-published` DIFFERENTIAL
+  projection (published-message final membership in CBF FINAL byte shape,
+  string-sorted) must byte-equal the FINAL block of the behavioral golden
+  (live interp.cbf for diagnostic cases) — a fourth code-disjoint evaluator
+  refereeing the published surface; vacuous-by-data for cases publishing
+  nothing, zero goldens of its own.
 - REJECT corpus (`tests/OptDiff/rejects/*.dr`, adopted 2026-08-04 from the
   ToB `parse_errors` branch's `data/invalid_syntax_examples` + expanded for
   the modern surface): driverless, goldenless should-FAIL cases run by

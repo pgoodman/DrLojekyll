@@ -477,6 +477,46 @@ if [ "${1:-}" = "--one" ]; then
     return $ri
   }
 
+  run_crossfamily() {  # XFAM (residual iii, 2026-08-05): the oracle's
+                       # published-message projection (--project-published,
+                       # the DIFFERENTIAL evaluator — a fourth code-disjoint
+                       # implementation) must byte-equal the FINAL block of
+                       # the behavioral golden (or, for interp-only
+                       # diagnostic cases, this run's live interp.cbf). A
+                       # derived cross-family check; blesses NOTHING.
+                       # Vacuous (empty==empty) for cases with no published
+                       # #message — no exclusion list needed. Well-defined
+                       # only post-F32 (plain behavioral == demand-blind
+                       # oracle: both publish the full closure).
+    batches="$HERE/cases/$NAME.batches"
+    if [ ! -f "$batches" ]; then
+      return 0
+    fi
+    out="$WORKROOT/$NAME/$NAME.crossfamily"
+    mkdir -p "$out"
+    if ! timeout "$TIMEOUT" "$ORACLE" "$DRC" "$batches" --project-published \
+        >"$out/oracle_pub" 2>"$out/stderr"; then
+      echo "$NAME crossfamily XFAM-FAIL"
+      return 1
+    fi
+    ref="$HERE/goldens/$NAME.behavioral.stdout"
+    if [ ! -f "$ref" ]; then
+      ref="$WORKROOT/$NAME/$NAME.refinterp/interp.cbf"
+    fi
+    if [ ! -f "$ref" ]; then
+      echo "$NAME crossfamily XFAM-NOREF"
+      return 1
+    fi
+    awk '/^FINAL$/{f=1;next} /^QUERY /{f=0} f&&NF>0{print}' "$ref" \
+        >"$out/final"
+    if ! cmp -s "$out/final" "$out/oracle_pub"; then
+      echo "$NAME crossfamily XFAM-DIVERGE"
+      return 1
+    fi
+    echo "$NAME crossfamily OK"
+    return 0
+  }
+
   run_eqgate() {  # equivalence gate (D2.c): a case with a .eqgate sidecar is
                   # re-driven under the nested lowering (.drflags + the
                   # -demand-instance selector) with the SAME driver, in ALL FOUR
@@ -549,6 +589,7 @@ if [ "${1:-}" = "--one" ]; then
   esac
   run_oracle || st=1
   run_refinterp || st=1
+  run_crossfamily || st=1
   run_eqgate || st=1
   run_irgold || st=1
   exit $st
