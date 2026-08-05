@@ -318,6 +318,29 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
       }
 
       assert(num_cols > guarded_view->columns.Size());
+
+      // RIDER-2 (K5 census gap #15, closed 2026-08-05): migrate the source
+      // view's provenance/flags onto its guard tuple, aligning with
+      // Join.cpp's ProxyUnusedInputColumns. NARROWED, never the full
+      // CopyDifferentialAndGroupIdsTo: `view` STAYS LIVE here (the guard
+      // reads from it), and CDaGI's clear-on-move guard_annotation_index
+      // transfer is sound only for superseded losers — moving an annotation
+      // off a live view would strand demand recognition. All three copied
+      // fields are redundant-by-reconstruction today (group_ids:
+      // RelabelGroupIDs re-derives at every CSE; deletion flags:
+      // TrackDifferentialUpdates re-derives after every guard mint in every
+      // guard-minting mode; origins: co-carried by the still-live `view`) —
+      // this is defense-in-depth against future pass reordering, verified a
+      // byte-for-byte corpus no-op.
+      guarded_view->group_ids = view->group_ids;
+      if (view->can_receive_deletions) {
+        guarded_view->can_receive_deletions = true;
+      }
+      if (view->can_produce_deletions) {
+        guarded_view->can_produce_deletions = true;
+      }
+      guarded_view->origin_decls = view->origin_decls;  // already sorted-unique
+
       new_merged_views.AddUse(guarded_view);
     }
 

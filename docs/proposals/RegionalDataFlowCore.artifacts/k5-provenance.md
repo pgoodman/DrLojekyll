@@ -1256,6 +1256,41 @@ real consumer — and no consumer needs the merge-unused-col interior named.
 RECORD; note the group_ids/diff-flag under-migration is a pre-existing (non-K5)
 latent that a Connect/Merge audit should weigh independently.
 
+RIDER-2 CLOSED (2026-08-05, session 9, owner-ratified). The audit ran and the
+gap is closed with a NARROWED three-field copy at the Merge guard
+(group_ids + OR'd deletion flags + origin_decls), deliberately NOT the full
+CDaGI the FIX arm above sketched: CDaGI's clear-on-move guard_annotation_index
+transfer is sound only for SUPERSEDED losers, and the merged view stays LIVE
+at this site (the guard reads from it) — a verbatim Join mirror could strand
+demand recognition. The panel-grade analysis PROVED all three copied fields
+redundant-by-reconstruction today (group_ids: RelabelGroupIDs clears+re-derives
+at every CSE entry and after every merge, and ClearGroupIDs erases them before
+lowering; deletion flags: TrackDifferentialUpdates is a full clear-and-re-derive
+guaranteed to run after the last guard mint in every guard-minting mode — guards
+need df.canon, which travels with df.ident_join whose Optimize tail runs
+TrackDifferentialUpdates unconditionally; origins: the still-live source view is
+always a co-carrier, and the guard structurally never fires on a materialized
+Tier-2 carrier's merge — a merge feeding an INSERT has no unused column — so it
+fires only on origin-empty @inline paths). Reachability census: 7 corpus cases
+hit the guard (compare_3/4/6, join_6, merge_2, reconverge_1, view_5; opt-family
+modes only), and the fix is byte-for-byte corpus-neutral (7-case .df/.rel/.ir
+A/B + full-suite PASS). Negative witnesses w1b.dr (differential @inline guard:
+guard tuples already class=differential unfixed — reconstruction works) and
+w3b.dr (Tier-2 carrier beside an @inline guard: origins flow through the
+non-guarded merge) are recorded here as documented negative results, NOT corpus
+cases (a golden that cannot diverge earns nothing); the annotated-guard shape
+is unconstructible under the single-adornment demand slice (w2_demand_annot.dr
+rejects).
+
+RIDER-2b (NEW at the s9 audit): Join.cpp's OWN full CDaGI at :279 has the same
+live-loser shape — an annotated guard JOIN proxied by ProxyUnusedInputColumns
+would have its annotation clear-on-moved onto the proxy tuple, stranding
+recognition. Tripwire census: ZERO corpus reachers (incl. -demand-instance and
+@key activations). Disposition (owner-ratified): an ALWAYS-ON fprintf+abort
+tripwire before the CDaGI call — the latent becomes loud the day a demand shape
+reaches it, and the adjudication (narrow like the Merge site, or teach
+recognition to resolve through the proxy) happens then, on a live witness.
+
 RIDER-3 — D2.9(β) deferral (K5-Q2 adjudicated DEFER). Proxy-role-at-mint
 inheritance (does a proxy MINT copy its source's `ProjectionRole`, Connect.cpp:32
 et al. pass no role arg → default kMember) is MECHANISTICALLY DISJOINT from origin
