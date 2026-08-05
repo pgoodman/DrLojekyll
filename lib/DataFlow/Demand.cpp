@@ -918,7 +918,7 @@ bool QueryImpl::ApplyDemandTransform(
     };
 
     std::set<std::vector<unsigned>> declared_sets;
-    for (const std::vector<unsigned> &s : p_demanded_decl.InstanceKeys()) {
+    for (const InstanceKeySet &s : p_demanded_decl.InstanceKeys()) {
       declared_sets.insert(canon(s));
     }
     std::set<std::vector<unsigned>> inferred_sets;
@@ -933,7 +933,7 @@ bool QueryImpl::ApplyDemandTransform(
     // parallel `InstanceKeys()`/`InstanceKeyRanges()` by index).
     const auto &decl_ranges = p_demanded_decl.InstanceKeyRanges();
     for (unsigned j = 0u; j < p_demanded_decl.InstanceKeys().size(); ++j) {
-      std::vector<unsigned> d = canon(p_demanded_decl.InstanceKeys()[j]);
+      InstanceKeySet d = canon(p_demanded_decl.InstanceKeys()[j]);
       if (!inferred_sets.count(d)) {
         log.Append(j < decl_ranges.size() ? decl_ranges[j]
                                           : p_demanded_decl.SpellingRange())
@@ -1445,7 +1445,7 @@ bool QueryImpl::ApplyDemandTransform(
   {
     auto n_stamped = 0u;
     ForEachView([&n_stamped](VIEW *v) {
-      if (v->guard_annotation_index != ~0u) {
+      if (v->guard_annotation_index != QueryView::kNoGuardAnnotation) {
         ++n_stamped;
       }
     });
@@ -1481,7 +1481,7 @@ bool QueryImpl::ApplyDemandTransform(
     // its directed unit. ALWAYS-ON, NDEBUG-safe.
     std::unordered_set<unsigned> forcings_with_guard, forcings_with_body;
     ForEachView([&](VIEW *v) {
-      if (v->guard_annotation_index == ~0u) {
+      if (v->guard_annotation_index == QueryView::kNoGuardAnnotation) {
         return;
       }
       const GuardAnnotation &g = guard_annotations[v->guard_annotation_index];

@@ -401,7 +401,7 @@ void ParserImpl::ParseLocalExport(
   // RP-10: the in-progress `@key(...)` column set. Filled by state 22, and
   // pushed onto `local->instance_key_param_index_sets` + cleared at each set's
   // `)` close, so a second `@key` (re-entering state 21) opens a fresh set.
-  std::vector<unsigned> key_cur_set;
+  InstanceKeySet key_cur_set;
 
   DisplayPosition next_pos;
   Token name;
@@ -1474,9 +1474,9 @@ void ParserImpl::RemoveDecl(ParsedDeclarationImpl *decl) {
 // collect into a std::set, compare — the SAME canonicalization the landed
 // demand Step 2b uses (Demand.cpp:902-905), transcribed LOCALLY rather than
 // hoisted across the lib boundary (the necessity panel's point).
-static bool SameKeySetOfSets(const std::vector<std::vector<unsigned>> &a,
-                             const std::vector<std::vector<unsigned>> &b) {
-  auto canon = [](const std::vector<std::vector<unsigned>> &v) {
+static bool SameKeySetOfSets(const std::vector<InstanceKeySet> &a,
+                             const std::vector<InstanceKeySet> &b) {
+  auto canon = [](const std::vector<InstanceKeySet> &v) {
     std::set<std::vector<unsigned>> out;
     for (std::vector<unsigned> s : v) {
       std::sort(s.begin(), s.end());

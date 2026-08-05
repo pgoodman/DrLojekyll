@@ -51,9 +51,14 @@
 
 namespace hyde::rt {
 
+// A dense instance id: the handle FindInstance/FindOrAddInstance mint per
+// distinct key tuple (the `Key` template parameter is the tuple itself; this
+// is the id OF an instance, not its key).
+using InstanceId = uint32_t;
+
 // Sentinel dense instance id meaning "no instance" (mirror kNoGroup,
 // StateCell.h:74 / kNoRow, Table.h:18).
-inline constexpr uint32_t kNoInstance = ~0u;
+inline constexpr InstanceId kNoInstance = ~0u;
 
 // Keyed (α bound columns) -> a dense instance id (iid); a standing double-
 // buffered nested `Table<RowT>` per iid (spec §A.3.1). The two type params
@@ -85,7 +90,7 @@ class InstanceStore {
     // Each iid owns exactly two tables; frozen[] and current[] hold both
     // (swapped or not). Destroy + free every one. Under Arena, Free is a
     // no-op and the tables leak into the arena (reset frees them en masse).
-    for (uint32_t iid = 0u, n = NumInstances(); iid < n; ++iid) {
+    for (InstanceId iid = 0u, n = NumInstances(); iid < n; ++iid) {
       DestroyTable(frozen[iid]);
       DestroyTable(current[iid]);
     }
@@ -95,24 +100,24 @@ class InstanceStore {
   InstanceStore &operator=(const InstanceStore &) = delete;
 
   // Number of dense instance ids ever allocated (append-only namespace).
-  uint32_t NumInstances(void) const noexcept {
-    return static_cast<uint32_t>(keys.Size());
+  InstanceId NumInstances(void) const noexcept {
+    return static_cast<InstanceId>(keys.Size());
   }
 
   // Dense iid for `key`, or kNoInstance (no allocation). Mirror FindGroup.
-  uint32_t FindInstance(const Key &key) const noexcept {
+  InstanceId FindInstance(const Key &key) const noexcept {
     return FindInstanceWithHash(key, key.Hash());
   }
 
   // Dense iid for `key`, minting a fresh (empty) instance on first touch.
   // Mirror FindOrAddGroup (StateCell.h:330-374).
-  uint32_t FindOrAddInstance(const Key &key) {
+  InstanceId FindOrAddInstance(const Key &key) {
     const uint64_t hash = key.Hash();
-    if (const uint32_t iid = FindInstanceWithHash(key, hash);
+    if (const InstanceId iid = FindInstanceWithHash(key, hash);
         iid != kNoInstance) {
       return iid;
     }
-    const uint32_t iid = NumInstances();
+    const InstanceId iid = NumInstances();
     if (iid == kNoInstance) {
       std::fprintf(stderr, "hyde::rt: instance-id space exhausted\n");
       std::abort();
@@ -131,7 +136,7 @@ class InstanceStore {
   // current buffer for the band-(a) rebuild's TryAdd loop. THE band-(a) entry
   // point (codegen calls this once per touched iid, then emits the
   // V-INST-FRESH guard + rescan). Mirror of StateCell.h Touch (:560-567).
-  Table &TouchCurrent(uint32_t iid) {
+  Table &TouchCurrent(InstanceId iid) {
     Touch(iid);
     return *current[iid];
   }
@@ -139,22 +144,22 @@ class InstanceStore {
   // Buffers for band-(b)'s two-scan publish (A.3.5): scan current (Find in
   // frozen) for born {(F,T)}; scan frozen (Find in current) for dropped
   // {(T,F)}. Const frozen: the old snapshot is read-only until Seal.
-  Table &Current(uint32_t iid) noexcept { return *current[iid]; }
-  const Table &Frozen(uint32_t iid) const noexcept { return *frozen[iid]; }
+  Table &Current(InstanceId iid) noexcept { return *current[iid]; }
+  const Table &Frozen(InstanceId iid) const noexcept { return *frozen[iid]; }
 
   // The SORT-UNIQUE touched set for band-(b) iteration (mirror StateCell
   // Touched(), :486-489). Const result: the paired dedup structure
   // (touched / touched_flag) must never be mutated externally.
-  const Vec<uint32_t> &Touched(void) {
+  const Vec<InstanceId> &Touched(void) {
     touched.SortAndUnique();
     return touched;
   }
 
-  bool TouchedFlag(uint32_t iid) const noexcept {
+  bool TouchedFlag(InstanceId iid) const noexcept {
     return 0u != touched_flag[iid];
   }
 
-  const Key &KeyAt(uint32_t iid) const noexcept { return keys[iid]; }
+  const Key &KeyAt(InstanceId iid) const noexcept { return keys[iid]; }
 
   // Does the instance have content THIS epoch? (Occupancy = non-empty current
   // buffer.) StateCellStore tracks a signed working_count; the transpose reads
@@ -164,13 +169,13 @@ class InstanceStore {
   // Recycle-free Touch+full-rescan that rebuilds `current` from empty (no
   // incremental shrink), so the equivalence holds. Reopens only if OQ-MODEL
   // is overturned.
-  bool WorkingOccupied(uint32_t iid) const noexcept {
+  bool WorkingOccupied(InstanceId iid) const noexcept {
     return current[iid]->NumRows() > 0u;
   }
 
   // Was the instance occupied at batch start? (old() is meaningful only when
   // true.) Mirror StateCell SealedOccupied (:416-418).
-  bool SealedOccupied(uint32_t iid) const noexcept {
+  bool SealedOccupied(InstanceId iid) const noexcept {
     return 0u != sealed_occupied[iid];
   }
 
@@ -179,7 +184,7 @@ class InstanceStore {
   // double-buffer swap.
   void Seal(void) {
     HYDE_RT_BENCH_COUNT_N(commit_visits, touched.Size());
-    for (uint32_t iid : touched) {
+    for (InstanceId iid : touched) {
 #ifndef NDEBUG
       // HP-7 (d1-pinned §2): under R-MONO, monotone input => instance content
       // monotone-growing => frozen ⊆ current, so the (T,F) drop set is
@@ -219,7 +224,7 @@ class InstanceStore {
   // no-op (Truncate(0) on empty + slots already kNoRow), and Touch is
   // append-once, so RecycleCurrent twice in one epoch == once. Touches the iid
   // so Seal visits it (advances sealed_occupied to reflect the emptied state).
-  void RecycleCurrent(uint32_t iid) {
+  void RecycleCurrent(InstanceId iid) {
     Touch(iid);
     current[iid]->Reset();
   }
@@ -229,7 +234,7 @@ class InstanceStore {
 #ifndef NDEBUG
     // SEAL COHERENCE: after Seal, touched is empty and no flag survives.
     assert(touched.Empty());
-    for (uint32_t iid = 0u, n = NumInstances(); iid < n; ++iid) {
+    for (InstanceId iid = 0u, n = NumInstances(); iid < n; ++iid) {
       assert(0u == touched_flag[iid]);
       // OCCUPANCY COHERENCE: the sealed occupancy bit agrees with the (now
       // stable) frozen baseline. (Post-Seal, frozen holds the sealed content.)
@@ -241,7 +246,7 @@ class InstanceStore {
   }
 
  private:
-  uint32_t FindInstanceWithHash(const Key &key, uint64_t hash) const noexcept {
+  InstanceId FindInstanceWithHash(const Key &key, uint64_t hash) const noexcept {
     HYDE_RT_BENCH_COUNT(finds);
     if (!slot_capacity) {
       return kNoInstance;
@@ -249,7 +254,7 @@ class InstanceStore {
     for (size_t i = hash & (slot_capacity - 1u);;
          i = (i + 1u) & (slot_capacity - 1u)) {
       HYDE_RT_BENCH_COUNT(probe_steps);
-      const uint32_t iid = slots[i];
+      const InstanceId iid = slots[i];
       if (iid == kNoInstance) {
         return kNoInstance;
       }
@@ -259,7 +264,7 @@ class InstanceStore {
     }
   }
 
-  void InsertSlot(uint32_t iid, uint64_t hash) {
+  void InsertSlot(InstanceId iid, uint64_t hash) {
     const size_t num_instances = keys.Size();
     if ((num_instances + (num_instances >> 3u)) >= slot_capacity) {
       Rehash();
@@ -278,7 +283,7 @@ class InstanceStore {
     HYDE_RT_BENCH_COUNT(rehash_events);
     HYDE_RT_BENCH_COUNT_N(rehash_rows, NumInstances());
     const size_t new_capacity = slot_capacity ? slot_capacity * 2u : 64u;
-    auto new_slots = allocator.AllocateArray<uint32_t>(new_capacity);
+    auto new_slots = allocator.AllocateArray<InstanceId>(new_capacity);
     for (size_t i = 0u; i < new_capacity; ++i) {
       new_slots[i] = kNoInstance;
     }
@@ -287,7 +292,7 @@ class InstanceStore {
     }
     slots = new_slots;
     slot_capacity = new_capacity;
-    for (uint32_t iid = 0u, n = NumInstances(); iid < n; ++iid) {
+    for (InstanceId iid = 0u, n = NumInstances(); iid < n; ++iid) {
       const uint64_t hash = hashes[iid];
       for (size_t i = hash & (slot_capacity - 1u);;
            i = (i + 1u) & (slot_capacity - 1u)) {
@@ -301,7 +306,7 @@ class InstanceStore {
 
   // Record `iid` in the touched set exactly once per epoch. Mirror of
   // StateCell Touch (:560-567): a per-instance dedup byte, not a scan.
-  void Touch(uint32_t iid) {
+  void Touch(InstanceId iid) {
     HYDE_RT_BENCH_COUNT(touch_calls);
     if (!touched_flag[iid]) {
       HYDE_RT_BENCH_COUNT(touch_appends);
@@ -330,9 +335,9 @@ class InstanceStore {
   Vec<Table *> frozen;           // iid -> last epoch's sealed content (old()).
   Vec<Table *> current;          // iid -> this epoch's rebuilt content.
   Vec<uint8_t> sealed_occupied;  // iid -> batch-start occupancy bit.
-  Vec<uint32_t> touched;         // iids touched this epoch.
+  Vec<InstanceId> touched;       // iids touched this epoch.
   Vec<uint8_t> touched_flag;     // per-iid append-once bit (kTouched mirror).
-  uint32_t *slots{nullptr};      // Open-addressing key -> iid (RowStore mold).
+  InstanceId *slots{nullptr};    // Open-addressing key -> iid (RowStore mold).
   size_t slot_capacity{0u};
 };
 

@@ -864,7 +864,7 @@ bool ParsedDeclaration::HasInstanceKey(void) const noexcept {
   return false;
 }
 
-const std::vector<std::vector<unsigned>> &
+const std::vector<InstanceKeySet> &
 ParsedDeclaration::InstanceKeys(void) const noexcept {
   for (ParsedDeclarationImpl *redecl : impl->context->redeclarations) {
     if (!redecl->instance_key_param_index_sets.empty()) {

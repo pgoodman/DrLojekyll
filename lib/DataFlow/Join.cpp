@@ -286,7 +286,7 @@ bool QueryJoinImpl::ProxyUnusedInputColumns(QueryImpl *impl) {
     // future demand shape gets here, fail LOUD and adjudicate (either
     // narrow this site's migration like Merge.cpp's guard, or teach
     // recognition to resolve through the proxy).
-    if (joined_view->guard_annotation_index != ~0u) {
+    if (joined_view->guard_annotation_index != QueryView::kNoGuardAnnotation) {
       fprintf(stderr,
               "RIDER-2b: annotated guard JOIN reached ProxyUnusedInputColumns "
               "— clear-on-move would strand demand recognition\n");

@@ -384,7 +384,7 @@ class ParsedDeclarationImpl : public Def<ParsedDeclarationImpl>, public User {
   // Each set is duplicate-free (parse-enforced) and distinct from every other
   // set on the decl (ADJ-K1-A parse-time dup-set reject). Empty ⇒ no `@key`.
   // Populated only for `#local`/`#export` declarations.
-  std::vector<std::vector<unsigned>> instance_key_param_index_sets;
+  std::vector<InstanceKeySet> instance_key_param_index_sets;
 
   // Per-set spelling range (K6-3): the `@key(` token .. the closing `)`
   // NextPosition. Parallel to `instance_key_param_index_sets` (same index =

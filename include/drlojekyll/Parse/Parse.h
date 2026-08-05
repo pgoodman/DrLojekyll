@@ -22,6 +22,15 @@ namespace hyde {
 class Parser;
 class ParserImpl;
 
+// A declared instance-key column: an index into a declaration's parameter
+// list (the `@key(K...)` surface, RP-5/RP-9/RP-10). One `@key` pragma's
+// duplicate-free column set is an `InstanceKeySet`; a declaration's logical
+// multi-adornment key is the SET of those sets. No invalid-index sentinel
+// exists in this domain: every key column resolves at the pragma site
+// (immediate resolution) or the pragma rejects.
+using InstanceKey = unsigned;
+using InstanceKeySet = std::vector<InstanceKey>;
+
 enum class ParameterBinding {
   kImplicit,
   kMutable,
@@ -445,7 +454,7 @@ class ParsedDeclaration : public Node<ParsedDeclaration, ParsedDeclarationImpl> 
   // order); the SET-of-SETS is the logical multi-adornment key. Empty list ⇒
   // no `@key`.
   bool HasInstanceKey(void) const noexcept;
-  const std::vector<std::vector<unsigned>> &InstanceKeys(void) const noexcept;
+  const std::vector<InstanceKeySet> &InstanceKeys(void) const noexcept;
 
   // Per-set spelling ranges (K6-3), parallel to `InstanceKeys()` (same index =
   // same `@key` set): the `@key(` token through the closing `)`. Empty ⇒ no

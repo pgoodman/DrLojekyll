@@ -721,8 +721,8 @@ void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
   // surviving-`this` funnel (SubstituteAllUsesWith keeps `this` valid, and
   // the JOIN dup-output self-canon routes through it) would otherwise leave
   // one index live on two views and double-count downstream.
-  if (guard_annotation_index != ~0u) {
-    if (that->guard_annotation_index == ~0u) {
+  if (guard_annotation_index != QueryView::kNoGuardAnnotation) {
+    if (that->guard_annotation_index == QueryView::kNoGuardAnnotation) {
       that->guard_annotation_index = guard_annotation_index;
       that->query = query;  // propagate (INV-OWN3-Q)
     } else {
@@ -761,7 +761,7 @@ void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
           query->guard_annotations[guard_annotation_index]);       // loser
       ++query->guard_annotation_folded_count;  // the SOLE writer
     }
-    guard_annotation_index = ~0u;
+    guard_annotation_index = QueryView::kNoGuardAnnotation;
     query = nullptr;  // keep index+query paired (INV-OWN3-Q bidirectional)
   }
 }

@@ -350,7 +350,7 @@ bool QueryView::CanReceiveDeletions(void) const noexcept {
 
 // COMPILER-INTERNAL (keyed instances): the guard-annotation stamp (D1.a),
 // ABA-safe and CSE-migrating (View.cpp:579-590).
-unsigned QueryView::GuardAnnotationIndex(void) const noexcept {
+hyde::GuardAnnotationIndex QueryView::GuardAnnotationIndex(void) const noexcept {
   return impl->guard_annotation_index;
 }
 

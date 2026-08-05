@@ -491,7 +491,7 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // through `CopyDifferentialAndGroupIdsTo` with CLEAR-ON-MOVE — unlike
   // `group_ids`' monotone union, this is a UNIQUE scalar the census counts
   // once. Never sorted, never iterated into emission-visible order (HP-9).
-  unsigned guard_annotation_index{~0u};
+  GuardAnnotationIndex guard_annotation_index{QueryView::kNoGuardAnnotation};
 
   // Owning query, set ONLY on guard-annotated views (INV-OWN3-Q: non-null iff
   // guard_annotation_index != ~0u), for the OWN-3 fold diagnostic's record

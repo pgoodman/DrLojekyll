@@ -227,11 +227,11 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
     // the proxy is a transparent forward, and the JOIN stays the annotated
     // authority. Dormant outside multi-adornment (no guard is ever a MERGE
     // member in the single-adornment lowering).
-    const unsigned saved_ann = view->guard_annotation_index;
+    const GuardAnnotationIndex saved_ann = view->guard_annotation_index;
     QueryImpl *const saved_q = view->query;
     view->CopyDifferentialAndGroupIdsTo(proxy);
     if (saved_ann != ~0u) {
-      proxy->guard_annotation_index = ~0u;
+      proxy->guard_annotation_index = QueryView::kNoGuardAnnotation;
       proxy->query = nullptr;
       view->guard_annotation_index = saved_ann;
       view->query = saved_q;

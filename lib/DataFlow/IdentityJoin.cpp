@@ -157,9 +157,9 @@ static void ForwardToKeep(QueryImpl *query, QueryJoinImpl *join,
   // FOLD: increment the folded count and clear the index BEFORE the transfer,
   // keeping the OWN-3 census (n_stamped + folded == guard_annotations.size())
   // balanced (n_stamped drops by one, folded rises by one).
-  if (join->guard_annotation_index != ~0u) {
+  if (join->guard_annotation_index != QueryView::kNoGuardAnnotation) {
     ++query->guard_annotation_folded_count;
-    join->guard_annotation_index = ~0u;
+    join->guard_annotation_index = QueryView::kNoGuardAnnotation;
   }
 
   QueryTupleImpl *const tuple = query->tuples.Create();

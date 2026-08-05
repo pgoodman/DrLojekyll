@@ -1746,7 +1746,7 @@ OutputStream &operator<<(OutputStream &os, QueryContracts qc) {
         std::sort(b.begin(), b.end());
         return a == b;
       };
-      for (const std::vector<unsigned> &dset : decl.InstanceKeys()) {
+      for (const InstanceKeySet &dset : decl.InstanceKeys()) {
         const std::vector<unsigned> *inferred = nullptr;
         for (const RecognizedSubgraph &rs2 : qc.query.RecognizedSubgraphs()) {
           if (rs2.demanded_decl.Id() == decl.Id() &&

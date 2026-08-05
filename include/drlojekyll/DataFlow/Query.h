@@ -17,6 +17,13 @@
 
 namespace hyde {
 
+// An index into `Query::GuardAnnotations()` identifying one recognized
+// keyed-instance guard record; `QueryView::kNoGuardAnnotation` (~0u) means
+// "not a recognized guard". A UNIQUE counted scalar (the demand census
+// counts each annotation once), which is why CopyDifferentialAndGroupIdsTo
+// CLEARS it on move — contrast the monotone origin/group-id sets.
+using GuardAnnotationIndex = unsigned;
+
 class ErrorLog;
 class QueryImpl;
 class OutputStream;
@@ -442,8 +449,8 @@ class QueryView : public Node<QueryView, QueryViewImpl> {
   // a recognized guard. ABA-safe: the stamp is a per-view field that migrates
   // through CSE with group_ids (View.cpp:579-590), never a raw handle. Ordered
   // consumption must still walk the DefList (HP-9).
-  static constexpr unsigned kNoGuardAnnotation = ~0u;
-  unsigned GuardAnnotationIndex(void) const noexcept;
+  static constexpr ::hyde::GuardAnnotationIndex kNoGuardAnnotation = ~0u;
+  ::hyde::GuardAnnotationIndex GuardAnnotationIndex(void) const noexcept;
 
   // COMPILER-INTERNAL (K5 Tier-2 origin provenance): the monotone set of ORIGIN
   // declarations whose rows flow through this view, sorted-unique by decl Id.
