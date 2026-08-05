@@ -9,9 +9,9 @@ proven inherent, Tigerstyle assertion density (the session-8 standing
 directive).
 
 Entry seed: docs/proposals/RegionalDataFlowCore.artifacts/k5-landed-seed.md
-— Part 1 the pipeline DELTA on k6-landed-seed.md Part 1 (which remains the
-whole-program pseudocode), Part 2 the re-ranked path (S2/S3/S4 — S1/K5 is
-LANDED and RETIRED), Part 3 verify-first. The seed is single-pass
+— Part 1 the whole-program post-K5 pseudocode (supersedes k6-landed-seed.md
+at this grain), Part 2 the path as DIFF-NEXT-S2/S3/S4 diffs on it (S1/K5
+is LANDED and RETIRED), Part 3 verify-first. The seed is single-pass
 orchestrator-authored: fleet-verify its anchors before building.
 Fine-grain authorities: k5-provenance.md (Parts A-E + the 17-finding panel
 record; Part A's replacement-site census and Part E's padding-computed
