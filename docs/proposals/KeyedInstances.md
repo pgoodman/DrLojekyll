@@ -6448,3 +6448,44 @@ brief is KeyedInstances.artifacts/rel-epoch-open-brief.md.
     (DIFF-NEXT-S1..S4); next-session-prompt.md rewritten. NEXT (owner
     ranks): S1/K5 Tier-2, S2/K4 fuzz, S3/K3 the ownership flip (two
     STOPs), S4 residuals.
+  - **(BF) 2026-08-04 session 8 — K5 TIER-2 ORIGIN PROVENANCE LANDED
+    (impl 81385a92), the first sanctioned post-F1 maintained satellite.**
+    Owner ranked S1/K5 first. The full (a)-(d) chain ran in one session
+    on a NEW working authority (`k5-provenance.md`): Part A grounded the
+    one-line seed into a 23-site replacement census (the mechanism target
+    is the CDaGI choke point, NOT "CSE folds" — one union statement +
+    five documented bypass gaps); orchestrator probes settled K5-Q7
+    (tc_nonlinear_diff's tc/edge genuinely unnameable, row-contracts=1
+    at tip) and K5-Q1 (ADJ-R3-C MOOT post-RP-6 — every accepted @key'd
+    relation is demanded; DROPPED from the charter, owner-ratified);
+    D2.9(β) DEFERRED (mechanistically disjoint: identity-copy-at-mint vs
+    satellite-union-at-fold). The 17-finding adversarial panel (4 opus
+    lenses, every finding independently refute-verified): 6 CONFIRMED —
+    the D6 assert's query class EMPTY by construction (IsInline() subsumes
+    IsQuery()), the predicted witness bytes BACKWARDS (decl.Id() is
+    STRING-POOL INTERN-OFFSET order; `edge` suffix-aliases `add_edge` →
+    E1=edge/E2=tc), the fail-closed union-referee claim MODE-BLIND
+    (region output is a pure function of the df toggle; union deletion
+    reddens only opt/nocf) — 7 PARTIAL (amendments applied), 4 REFUTED
+    (incl. "outer is unstored": it model-shares q_outer's table, EQ-set
+    evidence). OWNER OVERRULE: the panel's delete-D6 recommendation
+    rejected — KEEP-RESCOPED (demanded-interior class) + the TIGERSTYLE
+    standing directive (assertion density; K5-D6b battery: seed-once,
+    post-union sorted+adjacent-find pair, collector negative space,
+    support-agreement). Part E predicted all 12 golden deltas from the
+    emitters' padding rules and caught E-K5-PAD (the region member-key
+    column is a per-dump MAX — join_1's re-bless is line-additive, NOT
+    byte-additive). Implementation: 319 insertions, 11 files; the
+    orchestrator referee pass hardened the D3 assert (is_sorted alone
+    tolerates adjacent equals under a strict comparator — added the
+    adjacent_find twin); predict-vs-actual matched Part E byte-for-byte
+    on all 12 files, first try; failure census exactly the 12 predicted
+    lines; bless confined content changes to exactly those 12 (9 of 21
+    bless lines were identical-byte no-ops — the bless-verbosity wart,
+    recorded). Suite 250, ctest 7/7, .region family now 20 = 5×4.
+    Session-8 anchor fleet also CONFIRMED the S4(ii) code fact: runall.sh
+    flags_of appends .drflags to the behavioral compile (9 demand cases
+    build behavioral demand-ON) against its own comments — unreconciled,
+    queued. Seed for session 9 = `k5-landed-seed.md`. NEXT (owner ranks):
+    S2/K4 fuzz, S3/K3 the ownership flip (two STOPs), S4 residuals
+    (+the K5-D8 riders, the bless wart).

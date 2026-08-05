@@ -649,17 +649,21 @@ region-internal, ADJ-2), permanent roots (unforced queries, ADJ-3), and
 row-contracts (R-STORE NARROWED: one per distinct non-demand relation-INSERT
 declaration, member-key positional from the Stage-A contracts; since the
 session-5 TIER-1 NAMING LIFT the demand-INTERIOR relations are nameable
-too — see the DIFF-R3 section below).
+too, and since the session-8 K5 TIER-2 LIFT so is EVERY undemanded
+non-@inline #local/#export interior — see the DIFF-R3 section below).
 H4: `Program::Build(const FrozenRegionalProgram&, ...)`,
 first statement `query = frozen.Query()` — the byte-preserving thin seam.
 Referees: V-FROZEN-NO-OPEN-PORT / V-OWNERSHIP-ACYCLIC at freeze + the
 ALWAYS-ON V-REGION-CENSUS recount at the ValidateDROps tail (stored census ==
 `DeriveRegionalCensus(query)` re-derived fresh — a stubbed planner aborts,
 corpus-wide). Dumps: `-region-out` (G1, ratified D2.2) + `-region-dot-out`
-(advisory DOT twin, never goldened); 16 `.region.<mode>` goldens via the
+(advisory DOT twin, never goldened); 20 `.region.<mode>` goldens via the
 `region` `.irgold` surface (demand_tc_witness, join_1, merge_2,
-demand_multi_adorn_witness × 4 modes — byte-identical cross-mode at tip but
-pinned PER-MODE; cross-mode identity is not claimed). Authority docs:
+demand_multi_adorn_witness, tc_nonlinear_diff × 4 modes — byte-identical
+cross-mode at tip but pinned PER-MODE; cross-mode identity is not claimed;
+the region emitter's member-key column width is a PER-DUMP MAX, so a new
+longest contract re-pads existing lines — E-K5-PAD, never assume
+byte-additivity when predicting region golden deltas). Authority docs:
 stage-b-diff.md AMENDMENTS, regional-arch-pseudocode.md Part B,
 regional-dump-stage-b-desired-states.md §9/§9.7, stage-b-landed-seed.md.
 
@@ -750,13 +754,40 @@ ROLE-BLIND (T1-IMPL-1: `PromoteSurvivorToBody` folds a projection guard to
 kBody under CSE, so a role-filtered resolve aborts on real corpus cases);
 zero live guard JOINs for a counted decl ABORTS the freeze. The 8 demand
 `.region` goldens carry `E1 rel=path` / `E1 rel=rel` + census
-`row-contracts=2`. Tier 1 is NOT a step toward Tier 2 (origin decl-sets on
-models — the general mechanism, its own future slice; also gates the
-deferred ADJ-R3-C column-survival belt). The key-SUBSET covering-array fuzz
-arm (ORDER dropped as inert) is the ranked-next follow-on. Cross-
-REDECLARATION @key consistency is CHECKED since K6 (identical-or-absent,
-enforced at the F31-revived consistency site; order-independent via
-context-resolving accessors).
+`row-contracts=2`. Cross-REDECLARATION @key consistency is CHECKED since K6
+(identical-or-absent, enforced at the F31-revived consistency site;
+order-independent via context-resolving accessors).
+
+TIER-2 ORIGIN PROVENANCE (K5, session 8 — LANDED, the first sanctioned
+post-F1 maintained satellite): every live view carries `origin_decls`
+(`QueryViewImpl`, sorted-unique by decl Id, `QueryView::OriginDecls()`), the
+monotone set of origin declarations whose rows flow through it — SEEDED at
+the Connect insert-proxy mint (`!IsInline() && !IsQuery()`-guarded,
+seed-once assert), UNIONED at the ONE `CopyDifferentialAndGroupIdsTo` choke
+point beside `group_ids` (loser→survivor, NO clear-on-loser, Tigerstyle
+sorted+no-adjacent-equal assert pair), NEVER in Hash/Equals, NEVER a
+lowering input (the anti-F1 fence: a missed union under-names, never
+miscompiles; five documented CDaGI-bypass gaps accepted). Freeze consumer:
+`CollectOriginInteriorDecls` (Planning.cpp) names the residue outside
+insert-named ∪ Tier-1 as Tier-2 row-contracts (ascending decl Id — the
+STRING-POOL INTERN-OFFSET order, NOT declaration order: `edge`
+suffix-aliases `add_edge` so tc_nonlinear_diff pins E1=edge, E2=tc),
+member-key AllFields positional, `support=` = OR over live carriers'
+`CanReceiveDeletions()` (loud-abort belt + DEBUG support-agreement assert;
+sound via the differentialness-migration invariant — CDaGI OR-propagates
+can_receive_deletions in lockstep). tc_nonlinear_diff (row-contracts 1→3,
+the fold-migration witness — its `support=differential` byte, not line
+existence, is what a dropped union loses), join_1 (+p,+r) and merge_2
+(+outer; `inner`/`proj` @inline-skipped) pin it. Belt: advisory
+`-origin-out` (per-view, `(min decl.Id(), det_seq)` order, run_irgold
+smoke-produces it, NEVER goldened) + the DEBUG demanded-interior
+conservation assert (rescoped, redundant-with-Tier-1 defense-in-depth).
+ADJ-R3-C was DROPPED as moot post-RP-6 (every accepted @key'd relation is
+demanded); D2.9(β) proxy-role-at-mint DEFERRED (mechanistically disjoint).
+Working authority: k5-provenance.md (Parts A-E + the 17-finding panel
+record; Part E's byte-diff method is the region-golden-prediction
+precedent). The key-SUBSET covering-array fuzz arm (ORDER dropped as
+inert) is the ranked-next follow-on.
 
 ## Other known feature gaps (clean diagnostics)
 
