@@ -577,9 +577,10 @@ bool QueryImpl::ApplyDemandTransform(
       VIEW *const pv = in_col->view;
 
       // The query relation's own post-Connect MERGE: descend through it into
-      // its single member (Connect's `CreateProxyOfInserts` reads the
-      // swapped-empty list for `has_one_insert`, so EVERY relation gets a
-      // MERGE, even single-clause — the empirically real Connect shape).
+      // its single member. Connect's `CreateProxyOfInserts` gives EVERY
+      // relation a MERGE, even single-clause — a documented load-bearing
+      // invariant since the 2026-08-05 dead-branch deletion (this AsMerge()
+      // is one of its named dependents).
       // Multiple members = multiple query clauses: un-witnessed, reject.
       if (MERGE *pm = pv->AsMerge(); pm && pm != p_merge) {
         if (pm->merged_views.Size() != 1u) {
@@ -1177,14 +1178,13 @@ bool QueryImpl::ApplyDemandTransform(
     }
   }
 
-  // The d_p MERGE (recipe A2 resolution (ii)). ALWAYS a MERGE, matching the
-  // empirically real Connect shape: `CreateProxyOfInserts` computes
-  // `has_one_insert` AFTER swapping the insert list empty (Connect.cpp:16),
-  // so its bare-proxy single-insert branch is dead code and EVERY relation
-  // gets a MERGE — including single-clause ones (the base dumps' one-member
-  // `reachable_from` UNION). The recipe's N4 note to "match Connect's
-  // single-insert MERGE-less behavior" reads the dead branch; the dumps are
-  // the ground truth.
+  // The d_p MERGE (recipe A2 resolution (ii)). ALWAYS a MERGE, matching
+  // Connect's shape: `CreateProxyOfInserts` gives EVERY relation a MERGE —
+  // including single-clause ones (the base dumps' one-member
+  // `reachable_from` UNION). Deliberate and documented load-bearing since
+  // the 2026-08-05 dead-branch deletion (the recipe's N4 note to "match
+  // Connect's single-insert MERGE-less behavior" read the long-dead branch;
+  // the dumps are the ground truth).
   MERGE *const d_merge = merges.Create();
 #ifndef NDEBUG
   d_merge->producer = "MERGE-INSERT";

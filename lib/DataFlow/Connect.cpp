@@ -14,10 +14,16 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
   old_inserts.Swap(inserts);
 
   MERGE *merge = nullptr;
-  const auto has_one_insert = inserts.Size() == 1u;
 
   // Create a MERGE that takes in TUPLEs that replace each INSERT, except
-  // for the INSERTs representing DELETEs.
+  // for the INSERTs representing DELETEs. EVERY relation gets a MERGE, even
+  // single-clause ones, and that shape is LOAD-BEARING: the demand pass
+  // (Demand.cpp) unconditionally resolves a relation's post-Connect proxy
+  // via AsMerge() in all 4 modes. (F32-adjacent cleanup, 2026-08-05: a dead
+  // `has_one_insert` bare-TUPLE early return — it read the swapped-empty
+  // list, so it never fired — was deleted rather than "fixed"; activating
+  // it would break the demand pass and drift the nodf/none IR goldens
+  // corpus-wide. K5-D8 RIDER-1 records the history.)
   for (VIEW *insert : old_inserts) {
     assert(insert->AsInsert());
 
@@ -46,10 +52,6 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
     }
 
     insert->PrepareToDelete();
-
-    if (has_one_insert) {
-      return proxy;
-    }
 
     if (!merge) {
       merge = impl->merges.Create();
