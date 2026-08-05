@@ -1792,4 +1792,55 @@ OutputStream &operator<<(OutputStream &os, QueryContracts qc) {
   return os;
 }
 
+// The K5 Tier-2 origin-provenance dump (the advisory `-origin-out` surface).
+// One line per LIVE view carrying a nonempty origin decl-set, showing WHERE
+// each origin decl's provenance landed (a missed union shows as a decl absent
+// from the view that should carry it — the belt's sole non-redundant signal).
+// Row order keys on `(min decl.Id() in the set, det_seq tie-break)`: a
+// payload-covarying primary key keeps same-provenance rows adjacent across
+// compiler versions/modes, so a genuine missed union is not buried under
+// det_seq renumber churn. Pure function of the frozen graph, null-safe (the
+// caller guards the sink), never triggers a fold or mutates state — reads
+// `OriginDecls()` / `DeterministicOrder()` only.
+OutputStream &operator<<(OutputStream &os, QueryOrigins qo) {
+  struct Row {
+    uint64_t min_id;
+    unsigned det_seq;
+    QueryView view;
+  };
+  std::vector<Row> rows;
+  qo.query.ForEachView([&rows](QueryView v) {
+    const std::vector<ParsedDeclaration> &decls = v.OriginDecls();
+    if (decls.empty()) {
+      return;  // Only views with a nonempty set render a line.
+    }
+    uint64_t min_id = decls[0].Id();
+    for (const ParsedDeclaration &d : decls) {
+      min_id = std::min(min_id, d.Id());
+    }
+    rows.push_back(Row{min_id, v.DeterministicOrder(), v});
+  });
+
+  std::sort(rows.begin(), rows.end(), [](const Row &a, const Row &b) {
+    if (a.min_id != b.min_id) {
+      return a.min_id < b.min_id;  // Payload-covarying primary key.
+    }
+    return a.det_seq < b.det_seq;  // det_seq tie-break.
+  });
+
+  os << "origin-sets\n";
+  for (const Row &row : rows) {
+    os << "  view=" << row.det_seq << "  kind=" << row.view.KindName()
+       << "  origin=(";
+    const char *sep = "";
+    for (const ParsedDeclaration &d : row.view.OriginDecls()) {
+      os << sep << d.NameAsString();  // Stored Id order.
+      sep = ", ";
+    }
+    os << ")\n";
+  }
+
+  return os;
+}
+
 }  // namespace hyde

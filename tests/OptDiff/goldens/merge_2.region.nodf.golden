@@ -15,5 +15,6 @@ region R0  owner=program-root  parents=()  children=() {
   permanent-root  q_proj(X)
   row-contract    E0  rel=q_outer  member-key=(X, Y)  support=monotone
   row-contract    E1  rel=q_proj   member-key=(X)     support=monotone
+  row-contract    E2  rel=outer    member-key=(X, Y)  support=monotone
 }
-census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=3 result-ports=0 row-contracts=2
+census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=3 result-ports=0 row-contracts=3

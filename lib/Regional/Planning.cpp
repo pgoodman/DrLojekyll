@@ -18,8 +18,11 @@
 #include <drlojekyll/Parse/ModuleIterator.h>
 
 #include <algorithm>
+#include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -281,6 +284,101 @@ static bool ResolveInteriorSupport(const ::hyde::Query &query,
   return support;
 }
 
+// Tier-2 naming lift (K5): the UNDEMANDED #local/#export interiors nameable
+// ONLY via origin decl-sets (an insert-CLEARED, undemanded, merge-materialized
+// relation has neither an R-STORE contract nor a Tier-1 demanded_decl). Walk
+// live views, accumulate the Id-keyed union of `v.OriginDecls()`, DEDUP against
+// (a) insert-named decls (CollectContractInserts) AND (b) Tier-1 demand-interior
+// decls (CollectDemandInteriorDecls). The residue — decls reachable ONLY through
+// origin sets — are the Tier-2 contracts, emitted ASCENDING `decl.Id()` (a pure
+// mode-stable total order; the per-view sets are already Id-sorted, so the
+// cross-view merge is a k-way dedup). Consulted IDENTICALLY by
+// `DeriveRegionalCensus` and the contract build below, so V-REGION-CENSUS stays
+// green by construction.
+static std::vector<ParsedDeclaration> CollectOriginInteriorDecls(
+    const ::hyde::Query &query) {
+  std::unordered_set<uint64_t> named;  // insert-named U Tier-1 demand-interior.
+  for (const auto &[decl, ins] : CollectContractInserts(query)) {
+    named.insert(decl.Id());
+  }
+  for (ParsedDeclaration decl : CollectDemandInteriorDecls(query)) {
+    named.insert(decl.Id());
+  }
+  std::map<uint64_t, ParsedDeclaration> out;  // Id-ordered, deduped.
+  query.ForEachView([&](QueryView v) {
+    for (ParsedDeclaration decl : v.OriginDecls()) {
+      if (named.count(decl.Id())) {
+        continue;
+      }
+      out.emplace(decl.Id(), decl);
+    }
+  });
+
+  std::vector<ParsedDeclaration> result;
+  result.reserve(out.size());
+  for (const auto &[id, decl] : out) {
+    // K5-D6b NEGATIVE space: a Tier-2 decl is, by construction, exactly the
+    // residue outside all prior naming tiers — never spliced (@inline), never a
+    // query (R-STORE's job), never insert-named, never a Tier-1 demand-interior.
+    // A dedup/seed regression (a decl double-counted across tiers) is then a
+    // loud abort, not a silent census inflation.
+    assert(!decl.IsInline());
+    assert(!decl.IsQuery());
+    assert(!named.count(decl.Id()));
+    result.push_back(decl);
+  }
+  return result;
+}
+
+// The Tier-2 analog of `ResolveInteriorSupport`: an undemanded origin-interior
+// has NO guard JOIN, so support resolves off the LIVE post-Optimize views that
+// carry `decl` in their origin set — support = OR over those carriers of
+// `v.CanReceiveDeletions()`. SOUND because CDaGI confines a decl to carriers
+// that AGREE on differentialness (the differentialness-migration invariant,
+// K5-D3: CDaGI OR-propagates can_receive_deletions loser->survivor in lockstep
+// with the origin union, and CSE co-location is HashInit-gated), so the OR is
+// exact; the DEBUG support-agreement assert (K5-D6b) turns a future
+// cross-differentialness fold into a tripwire rather than a wrong/mode-split
+// support byte. A counted Tier-2 decl with ZERO live carrier ABORTS the freeze
+// (the RES-2 loud-failure construction, mirroring ResolveInteriorSupport):
+// existence is decl-counted from live origin sets, so >=1 carrier always exists
+// in correct code.
+static bool ResolveOriginSupport(const ::hyde::Query &query,
+                                 ParsedDeclaration decl) {
+  bool resolved = false;
+  bool support = false;
+#ifndef NDEBUG
+  bool first_crd = false;
+#endif
+  query.ForEachView([&](QueryView v) {
+    for (ParsedDeclaration d : v.OriginDecls()) {
+      if (d.Id() != decl.Id()) {
+        continue;
+      }
+      const bool crd = v.CanReceiveDeletions();
+#ifndef NDEBUG
+      // K5-D6b support-agreement (positive): every live carrier of `decl`
+      // agrees on differentialness (the OR is not a mix).
+      assert(!resolved || first_crd == crd);
+      first_crd = crd;
+#endif
+      resolved = true;
+      support = support || crd;
+      break;  // A view carries `decl` at most once (sorted-unique).
+    }
+  });
+
+  if (!resolved) {
+    fprintf(stderr,
+            "ORIGIN-SUPPORT-RESOLVE: no live view carries origin-interior "
+            "relation (rel=%.*s)\n",
+            static_cast<int>(decl.NameAsString().size()),
+            decl.NameAsString().data());
+    abort();
+  }
+  return support;
+}
+
 }  // namespace
 
 RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
@@ -296,7 +394,8 @@ RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
 
   census.row_contracts =
       static_cast<unsigned>(CollectContractInserts(query).size() +
-                            CollectDemandInteriorDecls(query).size());
+                            CollectDemandInteriorDecls(query).size() +
+                            CollectOriginInteriorDecls(query).size());
 
   // regions=1, child_calls=0, program_roots=1 are the Stage-B constants
   // (the struct defaults): one ProgramRoot, one observation-root region.
@@ -533,6 +632,27 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
     contract.member_key_text = std::string(AllParamNames(decl));
     contract.support_text =
         ResolveInteriorSupport(query, decl) ? "differential" : "monotone";
+    contract.declared_key = decl.HasInstanceKey();  // K6-7a (DOT-only badge).
+    out.contracts.push_back(std::move(contract));
+  }
+
+  // ---- Tier-2 ORIGIN-INTERIOR contracts (K5): undemanded #local/#export
+  // interiors nameable ONLY via origin decl-sets, APPENDED after the Tier-1
+  // demand-interior contracts on the same dense `edge` counter, in ascending
+  // decl Id. member-key = AllFields positional (the ORC-3 passthrough contract,
+  // as Tier-1); support = OR over origin-carrying live views' CanReceiveDeletions
+  // (ResolveOriginSupport, a RES-2 loud-abort belt). Arm-A render: plain
+  // `rel=NAME`, indistinguishable from R-STORE/Tier-1 (the tier distinction is
+  // provenance-only, served by the advisory -origin-out dump). LINE-ADDITIVE but
+  // NOT always byte-additive — the per-dump member-key column MAX (Format.cpp)
+  // re-pads existing lines when a Tier-2 member-key is the longest (E-K5-PAD).
+  for (ParsedDeclaration decl : CollectOriginInteriorDecls(query)) {
+    RegionalContract contract;
+    contract.edge_index = edge++;
+    contract.rel_name = std::string(decl.NameAsString());
+    contract.member_key_text = std::string(AllParamNames(decl));
+    contract.support_text =
+        ResolveOriginSupport(query, decl) ? "differential" : "monotone";
     contract.declared_key = decl.HasInstanceKey();  // K6-7a (DOT-only badge).
     out.contracts.push_back(std::move(contract));
   }

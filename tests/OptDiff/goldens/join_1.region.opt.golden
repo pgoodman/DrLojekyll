@@ -11,7 +11,9 @@ region R0  owner=program-root  parents=()  children=() {
   input-port      P1  message=t2/1  fields=(A)
   permanent-root  q(B)
   permanent-root  never(B)
-  row-contract    E0  rel=q      member-key=(B)  support=monotone
-  row-contract    E1  rel=never  member-key=(B)  support=monotone
+  row-contract    E0  rel=q      member-key=(B)     support=monotone
+  row-contract    E1  rel=never  member-key=(B)     support=monotone
+  row-contract    E2  rel=p      member-key=(A, B)  support=monotone
+  row-contract    E3  rel=r      member-key=(A)     support=monotone
 }
-census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=2 result-ports=0 row-contracts=2
+census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=2 result-ports=0 row-contracts=4

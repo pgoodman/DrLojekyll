@@ -461,6 +461,17 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // maintain which groups a given select is derived from.
   std::vector<unsigned> group_ids;
 
+  // K5 (Tier-2 origin provenance): the monotone set of ORIGIN declarations
+  // whose rows flow through this view, sorted-unique by decl Id. Seeded at the
+  // Connect decl SOURCE (Connect.cpp, the T1 stamp site), unioned at the ONE
+  // CopyDifferentialAndGroupIdsTo choke point (View.cpp) exactly like
+  // `group_ids`. NEVER folded into Hash/Equals (never a CSE decision input —
+  // the anti-F1 fence, k5-provenance.md §B2), NEVER a lowering input; read ONLY
+  // by the freeze Tier-2 collector (Regional/Planning.cpp) + the advisory
+  // `-origin-out` dump. Empty default (a view that carries no decl costs one
+  // idle vector, same profile as `group_ids`).
+  std::vector<ParsedDeclaration> origin_decls;
+
   // Hash of this node, and its dependencies. A zero value implies that the
   // hash is invalid. We use this for JOIN merging during early dataflow
   // building. This is a good hint for CSE when the data flow is acyclic.

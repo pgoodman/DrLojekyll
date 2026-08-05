@@ -34,4 +34,19 @@ struct QueryContracts {
 
 OutputStream &operator<<(OutputStream &os, QueryContracts qc);
 
+// The K5 Tier-2 origin-provenance text dump (the advisory `-origin-out`
+// surface, belt (ii)). A tag struct keeps this operator<< disjoint from the
+// DOT / `.df` / contract ones. One line per LIVE view carrying a nonempty
+// origin decl-set; row order keys on `(min decl.Id() in the set, det_seq
+// tie-break)` — a payload-covarying primary key that keeps same-provenance
+// rows adjacent across compiler versions/modes, det_seq only the printed label
+// + tie-break. Advisory, NEVER-GOLDENED-BY-DEFAULT (det_seq/min-Id ordering is
+// per-mode divergent by design); a pure deterministic function of the frozen
+// graph, null-safe when the sink is unset.
+struct QueryOrigins {
+  Query query;
+};
+
+OutputStream &operator<<(OutputStream &os, QueryOrigins qo);
+
 }  // namespace hyde

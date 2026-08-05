@@ -666,6 +666,46 @@ void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
                          group_ids.end());
   std::sort(that->group_ids.begin(), that->group_ids.end());
 
+  // K5 (Tier-2 origin provenance): union this (loser) -> that (survivor),
+  // sorted-UNIQUE by decl Id. A SET, not a counted scalar -> unlike
+  // guard_annotation_index below it NEVER clears `this` (a live-both funnel,
+  // e.g. the JOIN dup-output self-canon, legitimately keeps the set on both;
+  // the freeze collector dedups by Id across all live views). Monotone,
+  // Equals/Hash-blind (k5-provenance.md §B2): a missed union under-names, never
+  // miscompiles. SAFETY: at every CDaGI call site the survivor DERIVES FROM the
+  // loser (RAUW-equal, or a fresh projection/proxy reading it), so a loser's
+  // origins always legitimately flow into the survivor — over-naming at worst,
+  // never mis-attribution (K5P-note-3). The `support=` byte stays sound because
+  // CDaGI OR-propagates can_receive_deletions loser->survivor in lockstep just
+  // below, and CSE co-location is differentialness-gated by HashInit (K5P-corr-1).
+  that->origin_decls.insert(that->origin_decls.end(),
+                            origin_decls.begin(), origin_decls.end());
+  std::sort(that->origin_decls.begin(), that->origin_decls.end(),
+            [](ParsedDeclaration a, ParsedDeclaration b) {
+              return a.Id() < b.Id();
+            });
+  that->origin_decls.erase(
+      std::unique(that->origin_decls.begin(), that->origin_decls.end(),
+                  [](ParsedDeclaration a, ParsedDeclaration b) {
+                    return a.Id() == b.Id();
+                  }),
+      that->origin_decls.end());
+
+  // TIGERSTYLE: the survivor set is STRICTLY sorted-unique by decl Id
+  // post-union — sortedness AND no-adjacent-equal asserted separately
+  // (`is_sorted` under a strict comparator tolerates adjacent equals, so it
+  // alone cannot catch a duplicate surviving `unique()`). The determinism
+  // precondition the -origin-out dump + the Tier-2 collector rely on.
+  assert(std::is_sorted(that->origin_decls.begin(), that->origin_decls.end(),
+                        [](ParsedDeclaration a, ParsedDeclaration b) {
+                          return a.Id() < b.Id();
+                        }));
+  assert(std::adjacent_find(that->origin_decls.begin(),
+                            that->origin_decls.end(),
+                            [](ParsedDeclaration a, ParsedDeclaration b) {
+                              return a.Id() == b.Id();
+                            }) == that->origin_decls.end());
+
   if (can_receive_deletions) {
     that->can_receive_deletions = true;
   }

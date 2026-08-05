@@ -2657,6 +2657,29 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
+#ifndef NDEBUG
+  // K5 conservation belt (DEBUG-only, RESCOPED): every demanded interior's
+  // decl MUST be origin-reachable at a live view — the K5-D2 seed + K5-D3 union
+  // propagated it through Optimize. A demanded interior is never DCE'd, so
+  // `reachable` always contains it in correct code; a fire is a genuine gross
+  // drop (seed omitted or union moved off the CDaGI choke point).
+  // Redundant-with-Tier-1 defense-in-depth on the origin path. No query arm:
+  // queries are `!IsInline`-skipped from the seed; the pure-interior class is
+  // delegated to the advisory `-origin-out` dump + the fail-closed opt/nocf
+  // `.region` goldens (K5-D7).
+  {
+    std::unordered_set<uint64_t> reachable;
+    impl->ForEachView([&reachable](QueryViewImpl *v) {
+      for (ParsedDeclaration d : v->origin_decls) {
+        reachable.insert(d.Id());
+      }
+    });
+    for (const RecognizedSubgraph &rs : impl->recognized_subgraphs) {
+      assert(reachable.count(rs.demanded_decl.Id()));  // demanded-interior belt.
+    }
+  }
+#endif
+
   return Query(std::move(impl));
 }
 

@@ -445,6 +445,16 @@ class QueryView : public Node<QueryView, QueryViewImpl> {
   static constexpr unsigned kNoGuardAnnotation = ~0u;
   unsigned GuardAnnotationIndex(void) const noexcept;
 
+  // COMPILER-INTERNAL (K5 Tier-2 origin provenance): the monotone set of ORIGIN
+  // declarations whose rows flow through this view, sorted-unique by decl Id.
+  // Seeded at the Connect decl SOURCE, unioned at the CSE-migrating
+  // `CopyDifferentialAndGroupIdsTo` choke point with `group_ids`. NEVER folded
+  // into Hash/Equals (never a CSE decision input — the anti-F1 fence) and NEVER
+  // a lowering input; read only by the freeze Tier-2 collector + the advisory
+  // `-origin-out` dump. Empty for the vast majority of views (only insert-proxy
+  // descendants ever carry a decl).
+  const std::vector<ParsedDeclaration> &OriginDecls(void) const noexcept;
+
   // Color value for formatting. This is influenced by the `@highlight`
   // pragma, for example:
   //

@@ -354,6 +354,14 @@ unsigned QueryView::GuardAnnotationIndex(void) const noexcept {
   return impl->guard_annotation_index;
 }
 
+// COMPILER-INTERNAL (K5 Tier-2 origin provenance): the per-view origin
+// decl-set, sorted-unique by decl Id, seeded at Connect and CSE-migrating
+// through `CopyDifferentialAndGroupIdsTo` (View.cpp) with `group_ids`.
+const std::vector<ParsedDeclaration> &QueryView::OriginDecls(
+    void) const noexcept {
+  return impl->origin_decls;
+}
+
 // Can this view produce outputs that should logically "delete" entries?
 bool QueryView::CanProduceDeletions(void) const noexcept {
   return impl->can_produce_deletions;

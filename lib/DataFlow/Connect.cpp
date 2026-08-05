@@ -268,6 +268,22 @@ bool QueryImpl::ConnectInsertsToSelects(
     // the single reader is `ApplyDemandTransform` (pre-`Optimize`).
     proxy_view_to_decl.emplace(insert_proxy, rel->declaration);
 
+    // K5 seed (Tier-2 origin provenance): the decl SOURCE for the per-view
+    // origin set. `insert_proxy` is the top of the relation's definition (a
+    // MERGE, or a TUPLE-over-KVINDEX for the mutable arm); every downstream
+    // CDaGI fold carries the seed forward (View.cpp), so this is the ONLY seed
+    // site. Node-kind-agnostic (K5-Q6 Arm B: no reliance on the always-MERGE
+    // `has_one_insert` quirk). Skip @inline (non-materialized -> never a
+    // row-contract) AND queries (already R-STORE-named via CollectContractInserts
+    // at freeze); `!IsQuery()` is redundant with `!IsInline()` at tip
+    // (IsInline() subsumes IsQuery(), Parse.cpp) but written explicitly as
+    // forward-looking hygiene (K5P-corr-2). Condition/unit relations
+    // (Arity()==0) already `continue` above before reaching here.
+    if (!decl.IsInline() && !decl.IsQuery()) {
+      assert(insert_proxy->origin_decls.empty());  // TIGERSTYLE: seed-once.
+      insert_proxy->origin_decls.assign(1u, rel->declaration);
+    }
+
     rel->inserts.Clear();
 
     // If there are no SELECTs on this declaration, then any INSERTs are
