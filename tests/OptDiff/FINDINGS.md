@@ -392,3 +392,62 @@ Fixed in the final session:
   (byte-identical goldens post-fix); `rejects/reject_key_redecl_1.dr` pins
   the divergence reject (`@key(A)`/`@key(A)`/`@key(B)`, the middle identical
   pair exercising `SameKeySetOfSets == TRUE`).
+
+## Round 15 (the session-9 S4 residual probe, 2026-08-05)
+
+### F32 [FIXED 2026-08-05]: the behavioral referee was compiled demand-ON against its adjudication AND the suite aggregator silently dropped its disagreement verdicts — the I0 referee fired on every green run, unseen
+
+- Found by the session-9 S4 orchestrator probe (plain-compiling the nine
+  `.batches`+`.drflags` cases' behavioral binaries and diffing against the
+  goldens), then confirmed in the live green suite's own verdicts file.
+- Root cause, leg (a): `run_refinterp`'s behavioral compile used
+  `$(flags_of "$bmode")`, and `flags_of` unconditionally appends the
+  `.drflags` sidecar — so every demand case's behavioral binary was
+  demand-lowered, against three comment sites ("the PLAIN program — never
+  `.drflags`, the 2026-08-03 adjudication") and CLAUDE.md. The four
+  differential-regime cases (`demand_diff_input_1`,
+  `demand_diff_neighborhood_witness`, `demand_diff_pub_1`,
+  `demand_neighborhood_witness`) have demand-GATED publish taps, so their
+  demand-ON behavioral output is a strict SUBSET of the definitional CBF —
+  and their `.behavioral.stdout` goldens were blessed from that demand-ON
+  output. The five monotone-regime cases agree by accident of regime.
+- Root cause, leg (b): the suite's final aggregation gate was a
+  failure-token blacklist (`FAIL|DIVERGE|EXPECT-ERROR|MISSING|CRASH`) that
+  matches NEITHER `REFINTERP-DISAGREE` (:448) nor `BEHAVIORAL-MODE-SPLIT`
+  (:432). The interpreter HAS disagreed with those four goldens on every
+  run since the D3.a.1 differential witness landed — four
+  `refinterp REFINTERP-DISAGREE` lines sat in every green run's verdicts,
+  dropped at aggregation. Leg (b) hid leg (a).
+- A-K6-5 supersession: k6-riders.md A-K6-5 (2026-08-04) examined the same
+  flags_of discrepancy and deferred it ("a standing discrepancy, recorded,
+  NOT a K6-5 obligation to reconcile"), citing `demand_tc_witness` "present
+  and passing" as precedent. That basis is now known to be incomplete
+  evidence: demand_tc_witness is one of the five accidentally-agreeing
+  monotone-regime cases, and the four disagreeing cases were invisible
+  precisely because of leg (b). This fix reverses the deferral on that
+  superseding evidence (owner-ratified, session 9).
+- Repro (pre-fix): any green suite run; `grep DISAGREE <workroot>/verdicts`
+  → four lines under `SUITE: PASS`.
+- Fix: (1) `mode_flags_of` (optimization-mode flags only) used by the
+  behavioral compile — the plain-compile adjudication implemented; (2) the
+  aggregation gate flipped to a WHITELIST (any verdict line not ending in
+  an OK shape fails the suite — unknown tokens can never pass silently)
+  plus a per-case verdict-coverage census (a worker that dies before
+  emitting any line is loud); (3) the four behavioral goldens re-blessed to
+  the definitional CBF (pure additions — the demand-ON output was a strict
+  subset; verified byte-equal to the interpreter's live `interp.cbf`).
+  Demand-GATED published behavior stays pinned by each case's `.stdout`
+  golden (driver compiled WITH `.drflags`) and the eqgates.
+- Verified: pre-bless intermediate run failed with EXACTLY the predicted 8
+  lines (4× BEHAVIORAL-DIVERGE + 4× REFINTERP-DISAGREE, nothing else);
+  post-bless full suite SUITE: PASS (250); all nine plain behavioral
+  binaries byte-agree across all 4 modes and equal `interp.cbf` exactly.
+- Accepted residual (recorded): the 4-mode ABI-invariance check
+  (`BEHAVIORAL-MODE-SPLIT`) now exercises only the PLAIN program;
+  demand-lowered 4-mode determinism is covered only via `.stdout` goldens
+  (driver hooks) + eqgates. The behavioral family is demand-blind BY
+  DESIGN; a demand-ON invariance check is future work if a real carrier
+  appears. An `@key`-pragma case's behavioral binary remains inherently
+  pragma-activated (in-source surface); a future DIFFERENTIAL `@key`
+  `.batches` case surfacing REFINTERP-DISAGREE is a real adjudication
+  event, not noise.

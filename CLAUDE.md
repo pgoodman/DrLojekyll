@@ -142,11 +142,18 @@ delta-relational-IR golden policy.
   `bin/RefHarness` emits a `behavioral_main.cpp` against the frozen public
   ABI (OG2-tool), and the behavioral binary — compiled from the PLAIN
   program, never `.drflags` (demand-gated publish taps legitimately diverge
-  demand-lowered) — must byte-agree across all 4 modes AND match the frozen
-  `goldens/<name>.behavioral.stdout` AND match the interpreter's CBF.
+  demand-lowered; TRUE IN CODE since F32, 2026-08-05 — `mode_flags_of`, and
+  the four differential-regime demand behavioral goldens were re-blessed to
+  the definitional CBF, pure additions) — must byte-agree across all 4
+  modes AND match the frozen `goldens/<name>.behavioral.stdout` AND match
+  the interpreter's CBF. An `@key`-pragma case's behavioral binary is
+  inherently pragma-activated (in-source surface).
   Diagnostic `.batches` cases run interp-only. A REFINTERP-DISAGREE is
   adjudicated per the stage doc §3 (finding, never fudge; F29 was found+fixed
-  this way).
+  this way). The suite verdict aggregation is a WHITELIST since F32: any
+  verdict line not ending in an OK shape fails the suite, plus a per-case
+  verdict-coverage census (the old failure-token blacklist silently dropped
+  REFINTERP-DISAGREE and BEHAVIORAL-MODE-SPLIT — F32 leg (b)).
 - REJECT corpus (`tests/OptDiff/rejects/*.dr`, adopted 2026-08-04 from the
   ToB `parse_errors` branch's `data/invalid_syntax_examples` + expanded for
   the modern surface): driverless, goldenless should-FAIL cases run by
@@ -163,7 +170,9 @@ delta-relational-IR golden policy.
   symlink golden is never written through — byte-identical produces a skip
   line, divergence is a loud BLESS-REFUSED + exit 1 (the twin-equivalence
   witnesses key_tc_witness / key_neighborhood_witness /
-  key_multi_adorn_witness stay safe under an unfiltered bless).
+  key_multi_adorn_witness stay safe under an unfiltered bless). Since F32
+  (2026-08-05) a byte-identical NON-symlink re-bless is also a skip line,
+  so `BLESS: N golden(s) updated` counts only real content deltas.
 
 `tests/OptDiff/FINDINGS.md` is the ledger of bugs found this way, with
 repros (F1–F19, F21, and F26–F31 fixed as of August 2026; F23 promoted to

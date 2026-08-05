@@ -127,6 +127,13 @@ if [ "${1:-}" = "--bless" ]; then
       fi
       return 1
     fi
+    # Census honesty (F32-adjacent, 2026-08-05): a byte-identical re-bless is
+    # a no-op — report it as a skip, never as "blessed", so the BLESS count
+    # reflects real content deltas.
+    if [ -f "$2" ] && cmp -s "$1" "$2"; then
+      echo "skipped $3 (byte-identical)"
+      return 1
+    fi
     cp "$1" "$2"
     echo "blessed $3"
     return 0
@@ -203,13 +210,22 @@ if [ "${1:-}" = "--one" ]; then
   DRV="$HERE/cases/$NAME.main.cpp"
   REPO_ROOT=$(cd "$HERE/../.." && pwd)
 
-  flags_of() {
+  mode_flags_of() {  # optimization-mode flags ONLY — never the .drflags
+                     # sidecar. run_refinterp's behavioral compile uses this
+                     # directly: the behavioral binary is the PLAIN program
+                     # (the 2026-08-03 adjudication, IMPLEMENTED 2026-08-05
+                     # at F32 — the compile had silently been demand-ON via
+                     # flags_of since the D3.a.1 differential witness).
     case $1 in
-      opt) mflags="" ;;
-      nodf) mflags="-disable-dataflow-opt" ;;
-      nocf) mflags="-disable-controlflow-opt" ;;
-      none) mflags="-disable-dataflow-opt -disable-controlflow-opt" ;;
+      opt) echo "" ;;
+      nodf) echo "-disable-dataflow-opt" ;;
+      nocf) echo "-disable-controlflow-opt" ;;
+      none) echo "-disable-dataflow-opt -disable-controlflow-opt" ;;
     esac
+  }
+
+  flags_of() {
+    mflags=$(mode_flags_of "$1")
     # Per-case extra compiler flags (the .drflags sidecar; see the header).
     if [ -f "$HERE/cases/$NAME.drflags" ]; then
       mflags="$mflags $(cat "$HERE/cases/$NAME.drflags")"
@@ -397,7 +413,13 @@ if [ "${1:-}" = "--one" ]; then
       return 0
     fi
 
-    # 2. The behavioral binary, 4 modes, PLAIN compile.
+    # 2. The behavioral binary, 4 modes, PLAIN compile (mode_flags_of, never
+    #    flags_of: the .drflags sidecar must not reach this compile — F32).
+    #    An @key-pragma case's behavioral binary is inherently pragma-
+    #    activated (the pragma is in-source); today all such cases agree
+    #    with the demand-blind interp, and a future DIFFERENTIAL @key
+    #    .batches case surfacing REFINTERP-DISAGREE is a real adjudication
+    #    event, not noise.
     if ! "$REFHARNESS" "$DRC" -o "$out/behavioral_main.cpp" \
         2>"$out/harness.stderr"; then
       echo "$NAME refinterp HARNESS-FAIL"
@@ -405,7 +427,7 @@ if [ "${1:-}" = "--one" ]; then
     fi
     for bmode in opt nodf nocf none; do
       # shellcheck disable=SC2046
-      if ! "$DR" "$DRC" $(flags_of "$bmode") -cpp-out "$out/gen.$bmode" \
+      if ! "$DR" "$DRC" $(mode_flags_of "$bmode") -cpp-out "$out/gen.$bmode" \
           >"$out/drc.$bmode.log" 2>&1; then
         echo "$NAME refinterp DRC-FAIL($bmode)"
         return 1
@@ -596,9 +618,24 @@ while read -r rname; do
   done
 done < "$WORKROOT/rejectlist"
 
-if grep -qE 'FAIL|DIVERGE|EXPECT-ERROR|MISSING|CRASH' "$WORKROOT/verdicts"; then
+# Verdict aggregation is a WHITELIST (F32 leg (b), 2026-08-05): any line not
+# ending in an OK shape fails the suite. The former failure-token blacklist
+# ('FAIL|DIVERGE|EXPECT-ERROR|MISSING|CRASH') silently dropped
+# REFINTERP-DISAGREE and BEHAVIORAL-MODE-SPLIT — the I0 referee fired on
+# every green run for the four differential-regime demand cases and was
+# never surfaced. An unknown future token can no longer pass silently.
+if grep -vE '^$| OK(-DIAGNOSTIC)?$' "$WORKROOT/verdicts" | grep -q .; then
   echo "SUITE: FAIL"
-  grep -E 'FAIL|DIVERGE|EXPECT-ERROR|MISSING|CRASH' "$WORKROOT/verdicts"
+  grep -vE '^$| OK(-DIAGNOSTIC)?$' "$WORKROOT/verdicts"
   exit 1
 fi
+# Coverage census: a worker killed before emitting ANY verdict line is
+# invisible to both blacklist and whitelist — every case must have spoken.
+while read -r cname; do
+  if ! grep -q "^$cname " "$WORKROOT/verdicts"; then
+    echo "SUITE: FAIL"
+    echo "$cname NO-VERDICT (worker died before emitting any line)"
+    exit 1
+  fi
+done < "$WORKROOT/caselist"
 echo "SUITE: PASS ($(( $(wc -l < "$WORKROOT/caselist") + $(wc -l < "$WORKROOT/rejectlist") )) cases)"

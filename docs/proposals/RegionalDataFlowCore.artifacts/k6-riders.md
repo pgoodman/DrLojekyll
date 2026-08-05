@@ -1365,6 +1365,16 @@ GENERATED-then-reviewed protocol and the `bless_copy` symlink discipline stand
 unchanged. (Recorded: no oracle-vs-behavioral cross-family byte check exists — the
 two goldens answer different questions.)
 
+**SUPERSEDED by F32 (2026-08-05, session 9, owner-ratified):** this deferral's
+basis was incomplete evidence. `demand_tc_witness` "present and passing" is one of
+the five accidentally-agreeing MONOTONE-regime cases; the four DIFFERENTIAL-regime
+demand cases' behavioral binaries disagreed with the demand-blind interpreter on
+every run, and their `REFINTERP-DISAGREE` verdicts were silently dropped by the
+suite aggregator's failure-token blacklist (F32 leg (b)) — invisible when A-K6-5
+was written. The 2026-08-03 plain-compile adjudication is now IMPLEMENTED
+(`mode_flags_of`), the four goldens re-blessed to the definitional CBF, and the
+aggregator is a whitelist. See tests/OptDiff/FINDINGS.md F32.
+
 ## A-K6-7b — DIFF-K6-7b field spellings (supersedes Part B `:833-834`, `:839-842`)
 
 DRVec def/use members are `defs` / `uses` (`Rel.h:403-404`), not `def` / `use`.

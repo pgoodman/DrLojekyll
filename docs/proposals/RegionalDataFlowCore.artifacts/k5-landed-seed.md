@@ -168,26 +168,40 @@ referee pass hardened one assert (asserts get refereed too).
   the D2.6 STOP (readers hand onto the REGION or the STORE?), the
   §6-vs-§11 routing rule, and folding the DIFF-R1 panel's 15 amendments
   into stage-c-diff.md. DESIGN-ONLY until answered.
-- **DIFF-NEXT-S4 (residual riders, any ranking).**
-  (i) the request-port `declared` badge (needs the RecognizedSubgraphs
-  join at freeze);
-  (ii) the behavioral PLAIN-vs-.drflags contradiction is CONFIRMED CODE
-  FACT (s8 anchor fleet: `flags_of` runall.sh:206-218 appends `.drflags`
-  to the behavioral compile at :405-407, against the comments at
-  :92-93/:367-368 and CLAUDE.md; NINE non-diagnostic demand cases build
-  behavioral demand-ON) — reconcile comment vs code, re-adjudicate what
-  those goldens pin;
-  (iii) the missing oracle-vs-behavioral cross-family byte check;
+- **DIFF-NEXT-S4 (residual riders — SWEPT session 9, 2026-08-05).**
+  (i) the request-port `declared` badge: DROPPED (owner-ratified s9). The
+  badge inherently splits the activation-equivalence twins —
+  key_tc_witness's four `.region` goldens are SYMLINKS to
+  demand_tc_witness's, and a pragma-derived badge makes the dumps differ
+  by design, forcing symlink demotion; the equivalence pin is worth more,
+  and the info is already derivable from `-contract-out`'s declared-key
+  lines. (Mechanics, should it ever re-open: no new plumbing —
+  `RecognizedSubgraph::demanded_decl.HasInstanceKey()` joined by
+  forcing_index inside the existing freeze loop; E-K5-PAD applies to the
+  shared port-line columns; "declared" would mean target-has-pragma, not
+  activation-reason — activation is module-global OR.)
+  (ii) LANDED as F32 (session 9): the contradiction was a LIVE composed
+  finding — the four differential-regime behavioral goldens pinned
+  demand-ON output, and the suite aggregator's token blacklist silently
+  dropped the `REFINTERP-DISAGREE` verdicts that had fired on every green
+  run. Fixed: `mode_flags_of` plain behavioral compile, aggregator
+  whitelist + per-case verdict coverage, four goldens re-blessed to the
+  definitional CBF (pure additions), A-K6-5 superseded (pointer added).
+  See FINDINGS.md F32.
+  (iii) the missing oracle-vs-behavioral cross-family byte check —
+  formulation ratified for s9 (post-F32 the demand-case confound is gone);
   (iv) K2 best-effort re-opens only on explicit owner call;
-  (v) the K5-D8 riders: RIDER-1 has_one_insert dead branch (fix = read
-  old_inserts.Size(); K5-immune), RIDER-2 the Merge.cpp:296-343-vs-
-  Join.cpp:266-280 CDaGI guard-tuple inconsistency (pre-existing
-  under-migration of group_ids/diff-flags/origins), RIDER-3 D2.9(β)
-  proxy-role-at-mint (deferred; re-opens on a named dump consumer);
-  (vi) bless verbosity: `--bless` prints "blessed" for byte-identical
-  non-symlink files (9 of 21 at the K5 bless were no-op copies) — a
-  skip-line would make bless output census-honest (bless_copy already
-  skips symlinks); verify content deltas with git meanwhile.
+  (v) the K5-D8 riders: RIDER-1 RESOLVED s9 (owner-ratified): the dead
+  has_one_insert branch DELETED (not activated — Demand.cpp's AsMerge()
+  descent load-bearingly depends on always-MERGE, now documented at the
+  Connect.cpp mint site; zero golden movement), RIDER-2 the
+  Merge.cpp-vs-Join.cpp CDaGI guard-tuple inconsistency (census gap #15;
+  formulation + directed-witness attempt ratified for s9), RIDER-3
+  D2.9(β) proxy-role-at-mint (deferred; re-opens on a named dump
+  consumer);
+  (vi) LANDED s9 with F32: bless_copy identity-skips byte-identical
+  non-symlink re-blesses ("skipped ... (byte-identical)"); `BLESS: N`
+  counts only real content deltas.
 - **RETIRED:** S1/K5 (landed, `81385a92`); ADJ-R3-C (MOOT post-RP-6:
   every accepted @key'd relation is demanded — `key_undemanded_1` + the
   unseeded reject close the routes; re-opens only with a non-reject
