@@ -230,7 +230,7 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
     const GuardAnnotationIndex saved_ann = view->guard_annotation_index;
     QueryImpl *const saved_q = view->query;
     view->CopyDifferentialAndGroupIdsTo(proxy);
-    if (saved_ann != ~0u) {
+    if (saved_ann != QueryView::kNoGuardAnnotation) {
       proxy->guard_annotation_index = QueryView::kNoGuardAnnotation;
       proxy->query = nullptr;
       view->guard_annotation_index = saved_ann;
