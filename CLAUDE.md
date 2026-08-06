@@ -270,6 +270,23 @@ exact signatures before writing a driver.
   io-seam structure of user-authored dead cycles and the collection is the
   janitor. Stratify's multi-view-SCC invariant is the always-on V-SCC-SEAM
   validator (fprintf+abort, survives NDEBUG).
+- MINT TAGS (S5′, keyed-instances epoch): every `Def<T>` node carries a
+  `const char *mint_tag{nullptr}` — a stable, self-identifying `"pass/what"`
+  string literal naming the CREATION SITE (e.g. `demand/guard-join`,
+  `connect/insert-proxy`, `merge-canon/forward`), set ONLY via the free
+  `Mint(list, "tag", args...)` in `include/drlojekyll/Util/DefUse.h` (a thin
+  `DefList::Create` forward + stamp; old `Create` stays legal/untagged
+  forever, so the sweep is incremental). NEVER in Hash/Equals, never a
+  lowering input, never moved by any field-copy helper (CDaGI included) — a
+  survivor keeps its OWN tag across CSE; golden-safe by human-stability of
+  the literal (unlike source locations, which churn). Rendered on the `.df`
+  ATTRIBUTES line as a trailing `tag=` token and in the `-dot-out` node cell
+  as a `MINT` line (advisory). Slice 1 = all 253 DataFlow `Create` sites
+  (authoritative table + convention:
+  `docs/proposals/RegionalDataFlowCore.artifacts/s5-mint-tags-table.md`);
+  Rel/ControlFlow/Regional families are the un-swept follow-on (Mint is
+  family-agnostic). This SUPERSEDES the s9 `std::source_location` mint-site
+  formulation (`s9-mint-sloc-diag-formulation.md` §1, on record but dropped).
 - Stage-A identity/contract layer (RegionalDataFlowCore epoch):
   `lib/DataFlow/Identity.h` (typed id domains + static_assert battery;
   ctest IdentityTypes); `QueryTupleImpl::ProjectionRole` (kMember default,

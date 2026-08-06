@@ -263,10 +263,10 @@ bool QueryImpl::EliminateDeadFlows(void) {
     }
 
     const auto first_attached_col = negate->input_columns.Size();
-    TUPLE *tuple = this->tuples.Create();
+    TUPLE *tuple = Mint(this->tuples, "dfe/negate-passthrough");
     auto col_index = 0u;
     for (auto col : negate->columns) {
-      tuple->columns.Create(col->var, col->type, tuple, col->id, col_index);
+      Mint(tuple->columns, "dfe/negate-passthrough", col->var, col->type, tuple, col->id, col_index);
 
       if (col_index < first_attached_col) {
         tuple->input_columns.AddUse(negate->input_columns[col_index]);
@@ -497,10 +497,10 @@ bool QueryImpl::CollectDeadCycles(void) {
     }
 
     const auto first_attached_col = negate->input_columns.Size();
-    TUPLE *tuple = this->tuples.Create();
+    TUPLE *tuple = Mint(this->tuples, "dfe/negate-passthrough");
     auto col_index = 0u;
     for (auto col : negate->columns) {
-      tuple->columns.Create(col->var, col->type, tuple, col->id, col_index);
+      Mint(tuple->columns, "dfe/negate-passthrough", col->var, col->type, tuple, col->id, col_index);
 
       if (col_index < first_attached_col) {
         tuple->input_columns.AddUse(negate->input_columns[col_index]);

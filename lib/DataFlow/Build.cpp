@@ -194,18 +194,18 @@ static QueryViewImpl *PromoteOnlyUniqueColumns(
 
     auto col_index = 0u;
 
-    QueryCompareImpl *cmp = query->compares.Create(ComparisonOperator::kEqual);
+    QueryCompareImpl *cmp = Mint(query->compares, "build/unique-col-guard", ComparisonOperator::kEqual);
     cmp->color = result->color;
     cmp->input_columns.AddUse(lhs_col);
     cmp->input_columns.AddUse(rhs_col);
-    cmp->columns.Create(lhs_col->var, lhs_col->type, cmp, lhs_col->id,
+    Mint(cmp->columns, "build/unique-col-guard", lhs_col->var, lhs_col->type, cmp, lhs_col->id,
                         col_index++);
 
     for (auto i = 0u; i < num_cols; ++i) {
       if (i != lhs_col->index && i != rhs_col->index) {
         QueryColumnImpl *const attached_col = result->columns[i];
         cmp->attached_columns.AddUse(attached_col);
-        cmp->columns.Create(attached_col->var, attached_col->type, cmp,
+        Mint(cmp->columns, "build/unique-col-guard", attached_col->var, attached_col->type, cmp,
                             attached_col->id, col_index++);
       }
     }
@@ -227,10 +227,10 @@ static QueryViewImpl *BuildPredicate(
   if (decl.IsMessage()) {
     QueryIOImpl *&input = query->decl_to_input[decl];
     if (!input) {
-      input = query->ios.Create(decl);
+      input = Mint(query->ios, "build/message-io", decl);
     }
 
-    view = query->selects.Create(input, pred);
+    view = Mint(query->selects, "build/predicate-select", input, pred);
     view->color = context.color;
     input->receives.AddUse(view);
 
@@ -241,10 +241,10 @@ static QueryViewImpl *BuildPredicate(
     QueryRelationImpl *input = nullptr;
     QueryRelationImpl *&rel = query->decl_to_relation[decl];
     if (!rel) {
-      rel = query->relations.Create(decl);
+      rel = Mint(query->relations, "build/relation", decl);
     }
     input = rel;
-    view = query->selects.Create(input, pred);
+    view = Mint(query->selects, "build/predicate-select", input, pred);
     view->color = context.color;
     input->selects.AddUse(view);
 
@@ -262,7 +262,7 @@ static QueryViewImpl *BuildPredicate(
   // Add the output columns to the QueryViewImpl associated with the predicate.
   auto col_index = 0u;
   for (ParsedVariable var : pred.Arguments()) {
-    view->columns.Create(var, view, VarId(context, var), col_index++);
+    Mint(view->columns, "build/predicate-select", var, view, VarId(context, var), col_index++);
   }
 
   // Deal with something like `foo(A, A)`, turning it into `foo(A, B), A=B`.
@@ -345,20 +345,20 @@ static QueryViewImpl *GuardWithInequality(
 
       context.unapplied_compares.erase(cmp);
 
-      QueryCompareImpl *filter = query->compares.Create(cmp.Operator());
+      QueryCompareImpl *filter = Mint(query->compares, "build/inequality-guard", cmp.Operator());
       filter->color = context.color;
       filter->spelling_range = cmp.SpellingRange();
       filter->input_columns.AddUse(lhs_col);
       filter->input_columns.AddUse(rhs_col);
 
       auto col_index = 0u;
-      filter->columns.Create(lhs_var, filter, lhs_id, col_index++);
-      filter->columns.Create(rhs_var, filter, rhs_id, col_index++);
+      Mint(filter->columns, "build/inequality-guard", lhs_var, filter, lhs_id, col_index++);
+      Mint(filter->columns, "build/inequality-guard", rhs_var, filter, rhs_id, col_index++);
 
       for (QueryColumnImpl *other_col : view->columns) {
         if (other_col != lhs_col && other_col != rhs_col) {
           filter->attached_columns.AddUse(other_col);
-          filter->columns.Create(other_col->var, other_col->type, filter,
+          Mint(filter->columns, "build/inequality-guard", other_col->var, other_col->type, filter,
                                  other_col->id, col_index++);
         }
       }
@@ -460,20 +460,20 @@ static QueryViewImpl *GuardViewWithFilter(
         assert(const_col->id == col->id);
         (void) const_id;
 
-        QueryCompareImpl *cmp = query->compares.Create(
+        QueryCompareImpl *cmp = Mint(query->compares, "build/constant-assign-guard",
             ComparisonOperator::kEqual);
         cmp->color = context.color;
         cmp->input_columns.AddUse(const_col);
         cmp->input_columns.AddUse(col);
 
         auto col_index = 0u;
-        cmp->columns.Create(col->var, col->type, cmp, col->id, col_index++);
+        Mint(cmp->columns, "build/constant-assign-guard", col->var, col->type, cmp, col->id, col_index++);
 
         for (QueryColumnImpl *other_col : view->columns) {
           if (other_col != col) {
             assert(other_col->id != col->id);
             cmp->attached_columns.AddUse(other_col);
-            cmp->columns.Create(other_col->var, other_col->type, cmp,
+            Mint(cmp->columns, "build/constant-assign-guard", other_col->var, other_col->type, cmp,
                                 other_col->id, col_index++);
           }
         }
@@ -495,12 +495,12 @@ static QueryViewImpl *AllConstantsView(
     return nullptr;
   }
 
-  QueryTupleImpl *tuple = query->tuples.Create();
+  QueryTupleImpl *tuple = Mint(query->tuples, "build/all-constants");
   tuple->color = context.color;
   auto col_index = 0u;
   for (const auto &[col, vc] : context.const_to_vc) {
     (void) vc;
-    (void) tuple->columns.Create(col->var, col->type, tuple, col->id,
+    (void) Mint(tuple->columns, "build/all-constants", col->var, col->type, tuple, col->id,
                                  col_index++);
     tuple->input_columns.AddUse(col);
   }
@@ -537,7 +537,7 @@ static QueryViewImpl *ConvertToClauseHead(
   // covers the over(){} synthetic body-clause head (H-A5), which is built as an
   // ordinary clause and routes through here.
   QueryTupleImpl *tuple =
-      query->tuples.Create(QueryTupleImpl::ProjectionRole::kDistinct);
+      Mint(query->tuples, "build/clause-head", QueryTupleImpl::ProjectionRole::kDistinct);
   tuple->color = context.color;
 
 #ifndef NDEBUG
@@ -552,7 +552,7 @@ static QueryViewImpl *ConvertToClauseHead(
   for (ParsedVariable var : clause.Parameters()) {
 
     const auto id = VarId(context, var);
-    (void) tuple->columns.Create(var, tuple, id, col_index++);
+    (void) Mint(tuple->columns, "build/clause-head", var, tuple, id, col_index++);
 
     if (auto in_col = FindColVarInView(context, view, var); in_col) {
       tuple->input_columns.AddUse(in_col);
@@ -635,7 +635,7 @@ static bool CreateProduct(
     return false;
   }
 
-  QueryJoinImpl *join = query->joins.Create();
+  QueryJoinImpl *join = Mint(query->joins, "build/product-join");
   join->color = context.color;
   auto col_index = 0u;
   for (QueryViewImpl *view : views) {
@@ -649,7 +649,7 @@ static bool CreateProduct(
     join->joined_views.AddUse(unique_view);
 
     for (auto in_col : unique_view->columns) {
-      auto out_col = join->columns.Create(in_col->var, in_col->type, join,
+      auto out_col = Mint(join->columns, "build/product-join", in_col->var, in_col->type, join,
                                           in_col->id, col_index++);
       auto [pivot_set_it, added] = join->out_to_in.emplace(out_col, join);
       assert(added);
@@ -706,7 +706,7 @@ static QueryViewImpl *TryApplyFunctor(
 
     // We've satisfied the binding constraints; apply `pred` to the columns in
     // `inouts`.
-    QueryMapImpl *map = query->maps.Create(
+    QueryMapImpl *map = Mint(query->maps, "build/functor-map",
         ParsedFunctor::From(redecl),
         pred.SpellingRange(), pred.IsPositive());
 
@@ -724,11 +724,11 @@ static QueryViewImpl *TryApplyFunctor(
         assert(bound_col);
         assert(VarId(context, var) == bound_col->id);
         map->input_columns.AddUse(bound_col);
-        (void) map->columns.Create(var, map, bound_col->id, col_index);
+        (void) Mint(map->columns, "build/functor-map", var, map, bound_col->id, col_index);
 
       } else {
         const auto id = VarId(context, var);
-        (void) map->columns.Create(var, map, id, col_index);
+        (void) Mint(map->columns, "build/functor-map", var, map, id, col_index);
       }
 
       ++col_index;
@@ -746,7 +746,7 @@ static QueryViewImpl *TryApplyFunctor(
           const auto id = VarId(context, var);
           assert(id == bound_col->id);
           map->attached_columns.AddUse(bound_col);
-          (void) map->columns.Create(bound_col->var, bound_col->type, map, id,
+          (void) Mint(map->columns, "build/functor-map", bound_col->var, bound_col->type, map, id,
                                      col_index);
           ++col_index;
           ++needs_compares;
@@ -760,7 +760,7 @@ static QueryViewImpl *TryApplyFunctor(
     // themselves present in `map`.
     for (QueryColumnImpl *pred_col : view->columns) {
       if (!FindColVarInView(context, map, pred_col->var)) {
-        (void) map->columns.Create(pred_col->var, pred_col->type, map,
+        (void) Mint(map->columns, "build/functor-map", pred_col->var, pred_col->type, map,
                                    pred_col->id, col_index);
         map->attached_columns.AddUse(pred_col);
         ++col_index;
@@ -794,13 +794,13 @@ static QueryViewImpl *TryApplyFunctor(
     } else {
       assert(out_view->columns.Size() == result->columns.Size());
 
-      QueryMergeImpl *const merge = query->merges.Create();
+      QueryMergeImpl *const merge = Mint(query->merges, "build/functor-union");
       merge->color = context.color;
 
       // Create output columns for the merge.
       auto merge_col_index = 0u;
       for (auto col : result->columns) {
-        (void) merge->columns.Create(col->var, col->type, merge, col->id,
+        (void) Mint(merge->columns, "build/functor-union", col->var, col->type, merge, col->id,
                                      merge_col_index++);
       }
 
@@ -867,7 +867,7 @@ static QueryViewImpl *TryApplyNegation(
 #endif
 
   if (!all_needed) {
-    const auto tuple = query->tuples.Create();
+    const auto tuple = Mint(query->tuples, "build/negation-subset");
     tuple->color = context.color;
 #ifndef NDEBUG
     tuple->producer = "PRED-NEGATION-SUBSET(" + sel->producer + ")";
@@ -880,7 +880,7 @@ static QueryViewImpl *TryApplyNegation(
         continue;
       }
       // TODO(pag): Previously used `in_col->var, in_col->type`.
-      (void) tuple->columns.Create(var, tuple, in_col->id, col_index++);
+      (void) Mint(tuple->columns, "build/negation-subset", var, tuple, in_col->id, col_index++);
       tuple->input_columns.AddUse(in_col);
     }
 
@@ -889,19 +889,19 @@ static QueryViewImpl *TryApplyNegation(
 
   sel = GuardViewWithFilter(query, clause, context, sel);
 
-  TUPLE *negated_view = query->tuples.Create();
+  TUPLE *negated_view = Mint(query->tuples, "build/negate-matched");
   negated_view->is_used_by_negation = true;
 
   auto col_index = 0u;
   for (ParsedVariable var : needed_vars) {
     QueryColumnImpl * const in_col = FindColVarInView(context, sel, var);
     assert(in_col->type == var.Type());
-    (void) negated_view->columns.Create(
+    (void) Mint(negated_view->columns, "build/negate-matched",
         var, negated_view, in_col->id, col_index++);
     negated_view->input_columns.AddUse(in_col);
   }
 
-  NEGATION *const negate = query->negations.Create();
+  NEGATION *const negate = Mint(query->negations, "build/negate-predicate");
   negate->color = context.color;
   negate->negated_view.Emplace(negate, negated_view);
   negate->is_never = pred.IsNegatedWithNever();
@@ -911,7 +911,7 @@ static QueryViewImpl *TryApplyNegation(
   for (auto in_col : needed_cols) {
     ParsedVariable var = needed_vars[col_index];
     negate->input_columns.AddUse(in_col);
-    (void) negate->columns.Create(var, negate, in_col->id, col_index++);
+    (void) Mint(negate->columns, "build/negate-predicate", var, negate, in_col->id, col_index++);
   }
 
 #ifndef NDEBUG
@@ -926,7 +926,7 @@ static QueryViewImpl *TryApplyNegation(
     if (std::find(needed_cols.begin(), needed_cols.end(), in_col) ==
         needed_cols.end()) {
       negate->attached_columns.AddUse(in_col);
-      negate->columns.Create(in_col->var, in_col->type, negate, in_col->id,
+      Mint(negate->columns, "build/negate-predicate", in_col->var, in_col->type, negate, in_col->id,
                              col_index++);
     }
   }
@@ -1051,7 +1051,7 @@ static QueryViewImpl *ApplyAggregate(QueryImpl *query, ParsedClause clause,
 
   auto functor_pred = agg.Functor();
   auto functor_decl = ParsedFunctor::From(ParsedDeclaration::Of(functor_pred));
-  AGG *view = query->aggregates.Create(functor_decl);
+  AGG *view = Mint(query->aggregates, "build/aggregate", functor_decl);
   view->color = context.color;
 
   auto col_index = 0u;
@@ -1065,7 +1065,7 @@ static QueryViewImpl *ApplyAggregate(QueryImpl *query, ParsedClause clause,
     }
 
     view->group_by_columns.AddUse(col);
-    (void) view->columns.Create(var, view, col->id, col_index++);
+    (void) Mint(view->columns, "build/aggregate", var, view, col->id, col_index++);
   }
 
   auto do_param = [&](auto cb) {
@@ -1092,7 +1092,7 @@ static QueryViewImpl *ApplyAggregate(QueryImpl *query, ParsedClause clause,
         has_errors = true;
       } else {
         view->config_columns.AddUse(col);
-        (void) view->columns.Create(var, view, col->id, col_index++);
+        (void) Mint(view->columns, "build/aggregate", var, view, col->id, col_index++);
       }
     }
   });
@@ -1130,7 +1130,7 @@ static QueryViewImpl *ApplyAggregate(QueryImpl *query, ParsedClause clause,
 
         has_errors = true;
       } else {
-        (void) view->columns.Create(var, view, VarId(context, var),
+        (void) Mint(view->columns, "build/aggregate", var, view, VarId(context, var),
                                     col_index++);
       }
     }
@@ -1244,7 +1244,7 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
       continue;
     }
 
-    JOIN *const join = query->joins.Create();
+    JOIN *const join = Mint(query->joins, "build/pivot-join");
     join->color = context.color;
 
     // Collect the set of views against which we will join.
@@ -1267,7 +1267,7 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 
       ++join->num_pivots;
       const auto pivot_col =
-          join->columns.Create(col->var, col->type, join, col->id, col_index++);
+          Mint(join->columns, "build/pivot-join", col->var, col->type, join, col->id, col_index++);
 
       auto [pivot_cols_in_it, added] = join->out_to_in.emplace(pivot_col, join);
       assert(added);
@@ -1286,7 +1286,7 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
         if (std::find(pivot_col_ids.begin(), pivot_col_ids.end(), in_col->id) ==
             pivot_col_ids.end()) {
 
-          QueryColumnImpl *const non_pivot_col = join->columns.Create(
+          QueryColumnImpl *const non_pivot_col = Mint(join->columns, "build/pivot-join",
               in_col->var, in_col->type, join, in_col->id, col_index++);
           auto [non_pivot_cols_in_it, added] =
               join->out_to_in.emplace(non_pivot_col, join);
@@ -1394,10 +1394,10 @@ static bool FindJoinCandidates(QueryImpl *query, ParsedClause clause,
 // CONST stream + SELECT serves the whole query.
 static QueryColumnImpl *TrueColumn(QueryImpl *query) {
   if (!query->true_col) {
-    QueryConstantImpl *const stream = query->constants.Create();
+    QueryConstantImpl *const stream = Mint(query->constants, "build/true-constant");
     QuerySelectImpl *const select =
-        query->selects.Create(stream, DisplayRange());
-    query->true_col = select->columns.Create(
+        Mint(query->selects, "build/true-constant", stream, DisplayRange());
+    query->true_col = Mint(select->columns, "build/true-constant",
         TypeLoc(TypeKind::kBoolean), select, 0u, 0u);
   }
   return query->true_col;
@@ -1409,7 +1409,7 @@ static QueryRelationImpl *UnitRelationFor(QueryImpl *query,
                                           ParsedDeclaration decl) {
   QueryRelationImpl *&rel = query->decl_to_relation[decl];
   if (!rel) {
-    rel = query->relations.Create(decl);
+    rel = Mint(query->relations, "build/unit-relation", decl);
   }
   assert(rel->is_condition);
   return rel;
@@ -1421,7 +1421,7 @@ static QueryRelationImpl *UnitRelationFor(QueryImpl *query,
 static QueryTupleImpl *ExtendWithTrueColumn(QueryImpl *query,
                                             ClauseContext &context,
                                             QueryViewImpl *view) {
-  QueryTupleImpl *const ext = query->tuples.Create();
+  QueryTupleImpl *const ext = Mint(query->tuples, "build/condition-extend");
   ext->color = context.color;
 
 #ifndef NDEBUG
@@ -1431,13 +1431,13 @@ static QueryTupleImpl *ExtendWithTrueColumn(QueryImpl *query,
   auto col_index = 0u;
   for (QueryColumnImpl *col : view->columns) {
     ext->input_columns.AddUse(col);
-    QueryColumnImpl *const out_col = ext->columns.Create(
+    QueryColumnImpl *const out_col = Mint(ext->columns, "build/condition-extend",
         col->var, col->type, ext, col->id, col_index++);
     out_col->CopyConstantFrom(col);
   }
 
   ext->input_columns.AddUse(TrueColumn(query));
-  (void) ext->columns.Create(TypeLoc(TypeKind::kBoolean), ext, 0u, col_index);
+  (void) Mint(ext->columns, "build/condition-extend", TypeLoc(TypeKind::kBoolean), ext, 0u, col_index);
   return ext;
 }
 
@@ -1464,17 +1464,17 @@ static QueryViewImpl *ApplyPositiveConditionTest(QueryImpl *query,
   // The unit relation's SELECT column is deliberately NOT marked as a
   // constant: the pivot must remain an ordinary column edge so that the
   // join keeps expressing the presence dependency on `⊥c`.
-  QuerySelectImpl *const sel = query->selects.Create(rel, pred);
+  QuerySelectImpl *const sel = Mint(query->selects, "build/condition-select", rel, pred);
   sel->color = context.color;
   rel->selects.AddUse(sel);
-  QueryColumnImpl *const sel_col = sel->columns.Create(
+  QueryColumnImpl *const sel_col = Mint(sel->columns, "build/condition-select",
       TypeLoc(TypeKind::kBoolean), sel, 0u, 0u);
 
   QueryTupleImpl *const ext = ExtendWithTrueColumn(query, context, view);
   const auto num_cols = view->columns.Size();
   QueryColumnImpl *const ext_token_col = ext->columns[num_cols];
 
-  JOIN *const join = query->joins.Create();
+  JOIN *const join = Mint(query->joins, "build/condition-test");
   join->color = context.color;
   join->joined_views.AddUse(ext);
   join->joined_views.AddUse(sel);
@@ -1487,7 +1487,7 @@ static QueryViewImpl *ApplyPositiveConditionTest(QueryImpl *query,
 #endif
 
   auto col_index = 0u;
-  QueryColumnImpl *const pivot_col = join->columns.Create(
+  QueryColumnImpl *const pivot_col = Mint(join->columns, "build/condition-test",
       TypeLoc(TypeKind::kBoolean), join, 0u, col_index++);
   auto [pivot_it, pivot_added] = join->out_to_in.emplace(pivot_col, join);
   assert(pivot_added);
@@ -1498,7 +1498,7 @@ static QueryViewImpl *ApplyPositiveConditionTest(QueryImpl *query,
   // Non-pivot columns: the original columns of `view`, via `ext`.
   for (auto i = 0u; i < num_cols; ++i) {
     QueryColumnImpl *const in_col = ext->columns[i];
-    QueryColumnImpl *const out_col = join->columns.Create(
+    QueryColumnImpl *const out_col = Mint(join->columns, "build/condition-test",
         in_col->var, in_col->type, join, in_col->id, col_index++);
     auto [in_cols_it, added] = join->out_to_in.emplace(out_col, join);
     assert(added);
@@ -1507,12 +1507,12 @@ static QueryViewImpl *ApplyPositiveConditionTest(QueryImpl *query,
   }
 
   // Restore the original column shape (drop the token).
-  QueryTupleImpl *const proj = query->tuples.Create();
+  QueryTupleImpl *const proj = Mint(query->tuples, "build/condition-restore");
   proj->color = context.color;
   for (auto i = 0u; i < num_cols; ++i) {
     QueryColumnImpl *const join_col = join->columns[i + 1u];
     proj->input_columns.AddUse(join_col);
-    (void) proj->columns.Create(join_col->var, join_col->type, proj,
+    (void) Mint(proj->columns, "build/condition-restore", join_col->var, join_col->type, proj,
                                 join_col->id, i);
   }
   return proj;
@@ -1537,24 +1537,24 @@ static QueryViewImpl *ApplyNegativeConditionTest(QueryImpl *query,
   const auto decl = ParsedDeclaration::Of(pred);
   QueryRelationImpl *const rel = UnitRelationFor(query, decl);
 
-  QuerySelectImpl *const sel = query->selects.Create(rel, pred);
+  QuerySelectImpl *const sel = Mint(query->selects, "build/condition-select", rel, pred);
   sel->color = context.color;
   rel->selects.AddUse(sel);
-  QueryColumnImpl *const sel_col = sel->columns.Create(
+  QueryColumnImpl *const sel_col = Mint(sel->columns, "build/condition-select",
       TypeLoc(TypeKind::kBoolean), sel, 0u, 0u);
 
-  TUPLE *const negated_view = query->tuples.Create();
+  TUPLE *const negated_view = Mint(query->tuples, "build/condition-negate-matched");
   negated_view->color = context.color;
   negated_view->is_used_by_negation = true;
   negated_view->input_columns.AddUse(sel_col);
-  (void) negated_view->columns.Create(
+  (void) Mint(negated_view->columns, "build/condition-negate-matched",
       TypeLoc(TypeKind::kBoolean), negated_view, 0u, 0u);
 
   QueryTupleImpl *const ext = ExtendWithTrueColumn(query, context, view);
   const auto num_cols = view->columns.Size();
   QueryColumnImpl *const ext_token_col = ext->columns[num_cols];
 
-  NEGATION *const negate = query->negations.Create();
+  NEGATION *const negate = Mint(query->negations, "build/condition-negate");
   negate->color = context.color;
   negate->negated_view.Emplace(negate, negated_view);
   negate->is_never = pred.IsNegatedWithNever();
@@ -1562,23 +1562,23 @@ static QueryViewImpl *ApplyNegativeConditionTest(QueryImpl *query,
 
   auto col_index = 0u;
   negate->input_columns.AddUse(ext_token_col);
-  (void) negate->columns.Create(TypeLoc(TypeKind::kBoolean), negate, 0u,
+  (void) Mint(negate->columns, "build/condition-negate", TypeLoc(TypeKind::kBoolean), negate, 0u,
                                 col_index++);
 
   for (auto i = 0u; i < num_cols; ++i) {
     QueryColumnImpl *const in_col = ext->columns[i];
     negate->attached_columns.AddUse(in_col);
-    (void) negate->columns.Create(in_col->var, in_col->type, negate,
+    (void) Mint(negate->columns, "build/condition-negate", in_col->var, in_col->type, negate,
                                   in_col->id, col_index++);
   }
 
   // Restore the original column shape (drop the token).
-  QueryTupleImpl *const proj = query->tuples.Create();
+  QueryTupleImpl *const proj = Mint(query->tuples, "build/condition-restore");
   proj->color = context.color;
   for (auto i = 0u; i < num_cols; ++i) {
     QueryColumnImpl *const neg_col = negate->columns[i + 1u];
     proj->input_columns.AddUse(neg_col);
-    (void) proj->columns.Create(neg_col->var, neg_col->type, proj,
+    (void) Mint(proj->columns, "build/condition-restore", neg_col->var, neg_col->type, proj,
                                 neg_col->id, i);
   }
   return proj;
@@ -1751,10 +1751,10 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
       auto col_id = vc->id;
 
       if (!const_col) {
-        CONST *stream = query->constants.Create(literal);
-        SELECT *select = query->selects.Create(stream, literal.SpellingRange());
+        CONST *stream = Mint(query->constants, "build/literal-constant", literal);
+        SELECT *select = Mint(query->selects, "build/literal-constant", stream, literal.SpellingRange());
         select->color = context.color;
-        const_col = select->columns.Create(var, select, col_id);
+        const_col = Mint(select->columns, "build/literal-constant", var, select, col_id);
         context.const_to_vc.emplace(const_col, vc);
 
       // Reset these, just in case they were initialized by another clause.
@@ -2229,18 +2229,18 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
   if (decl.IsMessage()) {
     IO *&stream = query->decl_to_input[decl];
     if (!stream) {
-      stream = query->ios.Create(decl);
+      stream = Mint(query->ios, "build/message-io", decl);
     }
-    insert = query->inserts.Create(stream, decl);
+    insert = Mint(query->inserts, "build/message-insert", stream, decl);
     insert->color = context.color;
     stream->transmits.AddUse(insert);
 
   } else if (decl.Arity()) {
     auto &rel = query->decl_to_relation[decl];
     if (!rel) {
-      rel = query->relations.Create(decl);
+      rel = Mint(query->relations, "build/relation", decl);
     }
-    insert = query->inserts.Create(rel, decl);
+    insert = Mint(query->inserts, "build/relation-insert", rel, decl);
     insert->color = context.color;
     rel->inserts.AddUse(insert);
 
@@ -2260,7 +2260,7 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
     assert(decl.IsExport());
     QueryRelationImpl *const rel = UnitRelationFor(query, decl);
 
-    TUPLE *const witness = query->tuples.Create();
+    TUPLE *const witness = Mint(query->tuples, "build/condition-witness");
     witness->color = context.color;
 
 #ifndef NDEBUG
@@ -2270,16 +2270,16 @@ static bool BuildClause(QueryImpl *query, ParsedClause clause,
 #endif
 
     witness->input_columns.AddUse(TrueColumn(query));
-    (void) witness->columns.Create(TypeLoc(TypeKind::kBoolean), witness, 0u,
+    (void) Mint(witness->columns, "build/condition-witness", TypeLoc(TypeKind::kBoolean), witness, 0u,
                                    0u);
 
     assert(!clause_head->columns.Empty());
     QueryColumnImpl *const witness_col = clause_head->columns[0];
     witness->input_columns.AddUse(witness_col);
-    (void) witness->columns.Create(witness_col->var, witness_col->type,
+    (void) Mint(witness->columns, "build/condition-witness", witness_col->var, witness_col->type,
                                    witness, witness_col->id, 1u);
 
-    insert = query->inserts.Create(rel, decl);
+    insert = Mint(query->inserts, "build/condition-insert", rel, decl);
     insert->color = context.color;
     rel->inserts.AddUse(insert);
     insert->input_columns.AddUse(witness->columns[0]);

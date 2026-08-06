@@ -162,7 +162,7 @@ static void ForwardToKeep(QueryImpl *query, QueryJoinImpl *join,
     join->guard_annotation_index = QueryView::kNoGuardAnnotation;
   }
 
-  QueryTupleImpl *const tuple = query->tuples.Create();
+  QueryTupleImpl *const tuple = Mint(query->tuples, "identity-join/forward");
 #ifndef NDEBUG
   tuple->producer = "IDENTITY-JOIN";
 #endif
@@ -181,7 +181,7 @@ static void ForwardToKeep(QueryImpl *query, QueryJoinImpl *join,
     // A pivot's value equals its keep-side input; a carry's sole input is on
     // keep. RecognizeIdentity guarantees keep_in exists for every output.
     tuple->input_columns.AddUse(keep_in);
-    (void) tuple->columns.Create(out_col->var, out_col->type, tuple,
+    (void) Mint(tuple->columns, "identity-join/forward", out_col->var, out_col->type, tuple,
                                  out_col->id, i++);
   }
   tuple->is_canonical = false;

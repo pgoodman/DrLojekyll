@@ -165,7 +165,7 @@ static_assert(
 static JOIN *MintGuardJoin(QueryImpl *query, TUPLE *read, VIEW *demand_side,
                            const std::vector<unsigned> &pivot_pos,
                            std::vector<COL *> &out_for_read_pos) {
-  JOIN *const join = query->joins.Create();
+  JOIN *const join = Mint(query->joins, "demand/guard-join");
   join->joined_views.AddUse(demand_side);
   join->joined_views.AddUse(read);
   join->num_pivots = static_cast<unsigned>(pivot_pos.size());
@@ -185,7 +185,7 @@ static JOIN *MintGuardJoin(QueryImpl *query, TUPLE *read, VIEW *demand_side,
   for (unsigned pos : pivot_pos) {
     COL *const rc = read->columns[pos];
     COL *const out =
-        join->columns.Create(rc->var, rc->type, join, rc->id, col_index++);
+        Mint(join->columns, "demand/guard-join", rc->var, rc->type, join, rc->id, col_index++);
     auto [it, added] = join->out_to_in.emplace(out, join);
     assert(added);
     (void) added;
@@ -202,7 +202,7 @@ static JOIN *MintGuardJoin(QueryImpl *query, TUPLE *read, VIEW *demand_side,
     }
     COL *const rc = read->columns[pos];
     COL *const out =
-        join->columns.Create(rc->var, rc->type, join, rc->id, col_index++);
+        Mint(join->columns, "demand/guard-join", rc->var, rc->type, join, rc->id, col_index++);
     join->out_to_in.emplace(out, join).first->second.AddUse(rc);
     out_for_read_pos[pos] = out;
   }
@@ -214,7 +214,7 @@ static JOIN *MintGuardJoin(QueryImpl *query, TUPLE *read, VIEW *demand_side,
 // order (recipe N3 step 3 — the TABLE-19 shape).
 static TUPLE *MintRestoringTuple(QueryImpl *query, TUPLE *read,
                                  const std::vector<COL *> &cols_for_pos) {
-  TUPLE *const proj = query->tuples.Create();
+  TUPLE *const proj = Mint(query->tuples, "demand/guard-restore");
 #ifndef NDEBUG
   proj->producer = "DEMAND-RESTORE";
 #endif
@@ -223,7 +223,7 @@ static TUPLE *MintRestoringTuple(QueryImpl *query, TUPLE *read,
     COL *const rc = read->columns[pos];
     COL *const in = cols_for_pos[pos];
     proj->input_columns.AddUse(in);
-    (void) proj->columns.Create(rc->var, rc->type, proj, rc->id, pos);
+    (void) Mint(proj->columns, "demand/guard-restore", rc->var, rc->type, proj, rc->id, pos);
   }
   return proj;
 }
@@ -1094,17 +1094,17 @@ bool QueryImpl::ApplyDemandTransform(
   const ParsedDeclaration d_msg_decl(d_msg);
   QueryIOImpl *&io_slot = decl_to_input[d_msg_decl];
   assert(!io_slot);
-  IO *const d_io = ios.Create(d_msg_decl);
+  IO *const d_io = Mint(ios, "demand/seed-io", d_msg_decl);
   io_slot = d_io;
 
-  SELECT *const recv = selects.Create(d_io, DisplayRange());
+  SELECT *const recv = Mint(selects, "demand/seed-receive", d_io, DisplayRange());
   d_io->receives.AddUse(recv);
 #ifndef NDEBUG
   recv->producer = "DEMAND-RECEIVE";
 #endif
   const auto arity = static_cast<unsigned>(bound_indices.size());
   for (auto i = 0u; i < arity; ++i) {
-    (void) recv->columns.Create(bound_types[i], recv, i, i);
+    (void) Mint(recv->columns, "demand/seed-receive", bound_types[i], recv, i, i);
   }
 
   // The demand relation object (recipe A1): registered so the graph carries
@@ -1115,28 +1115,28 @@ bool QueryImpl::ApplyDemandTransform(
   const ParsedDeclaration d_local_decl(*local_opt);
   QueryRelationImpl *&rel_slot = decl_to_relation[d_local_decl];
   assert(!rel_slot);
-  rel_slot = relations.Create(d_local_decl);
+  rel_slot = Mint(relations, "demand/relation", d_local_decl);
 
   // Root member: TUPLE chain over the receive (the BuildClause+Connect
   // two-tuple shape: the clause-head TUPLE, then the member proxy).
-  TUPLE *const root_head = tuples.Create();
+  TUPLE *const root_head = Mint(tuples, "demand/seed-head");
 #ifndef NDEBUG
   root_head->producer = "DEMAND-SEED";
 #endif
   for (auto i = 0u; i < arity; ++i) {
     COL *const rc = recv->columns[i];
     root_head->input_columns.AddUse(rc);
-    (void) root_head->columns.Create(rc->var, rc->type, root_head, rc->id, i);
+    (void) Mint(root_head->columns, "demand/seed-head", rc->var, rc->type, root_head, rc->id, i);
   }
 
-  TUPLE *const root_member = tuples.Create();
+  TUPLE *const root_member = Mint(tuples, "demand/seed-member");
 #ifndef NDEBUG
   root_member->producer = "INSERT";
 #endif
   for (auto i = 0u; i < arity; ++i) {
     COL *const rc = root_head->columns[i];
     root_member->input_columns.AddUse(rc);
-    (void) root_member->columns.Create(rc->var, rc->type, root_member, rc->id,
+    (void) Mint(root_member->columns, "demand/seed-member", rc->var, rc->type, root_member, rc->id,
                                        i);
   }
 
@@ -1155,23 +1155,23 @@ bool QueryImpl::ApplyDemandTransform(
       if (!seen_reads.insert(read).second) {
         continue;
       }
-      TUPLE *const proj = tuples.Create();
+      TUPLE *const proj = Mint(tuples, "demand/prop-projection");
 #ifndef NDEBUG
       proj->producer = "DEMAND-PROP";
 #endif
       for (auto i = 0u; i < arity; ++i) {
         COL *const rc = read->columns[p_bound[i]];
         proj->input_columns.AddUse(rc);
-        (void) proj->columns.Create(rc->var, rc->type, proj, rc->id, i);
+        (void) Mint(proj->columns, "demand/prop-projection", rc->var, rc->type, proj, rc->id, i);
       }
-      TUPLE *const prop_member = tuples.Create();
+      TUPLE *const prop_member = Mint(tuples, "demand/prop-member");
 #ifndef NDEBUG
       prop_member->producer = "INSERT";
 #endif
       for (auto i = 0u; i < arity; ++i) {
         COL *const pc = proj->columns[i];
         prop_member->input_columns.AddUse(pc);
-        (void) prop_member->columns.Create(pc->var, pc->type, prop_member,
+        (void) Mint(prop_member->columns, "demand/prop-member", pc->var, pc->type, prop_member,
                                            pc->id, i);
       }
       d_members.push_back(prop_member);
@@ -1185,13 +1185,13 @@ bool QueryImpl::ApplyDemandTransform(
   // the 2026-08-05 dead-branch deletion (the recipe's N4 note to "match
   // Connect's single-insert MERGE-less behavior" read the long-dead branch;
   // the dumps are the ground truth).
-  MERGE *const d_merge = merges.Create();
+  MERGE *const d_merge = Mint(merges, "demand/relation-union");
 #ifndef NDEBUG
   d_merge->producer = "MERGE-INSERT";
 #endif
   for (auto i = 0u; i < arity; ++i) {
     COL *const rc = root_member->columns[i];
-    (void) d_merge->columns.Create(rc->var, rc->type, d_merge, rc->id, i);
+    (void) Mint(d_merge->columns, "demand/relation-union", rc->var, rc->type, d_merge, rc->id, i);
   }
   for (VIEW *m : d_members) {
     d_merge->merged_views.AddUse(m);
@@ -1200,14 +1200,14 @@ bool QueryImpl::ApplyDemandTransform(
 
   // The shared derived-d_p reader (recipe N2: a TUPLE over the pass-minted
   // MERGE is the ONLY derived-d_p read construction — no relation SELECT).
-  TUPLE *const d_reader = tuples.Create();
+  TUPLE *const d_reader = Mint(tuples, "demand/relation-reader");
 #ifndef NDEBUG
   d_reader->producer = "SELECT";
 #endif
   for (auto i = 0u; i < arity; ++i) {
     COL *const dc = d_top->columns[i];
     d_reader->input_columns.AddUse(dc);
-    (void) d_reader->columns.Create(dc->var, dc->type, d_reader, dc->id, i);
+    (void) Mint(d_reader->columns, "demand/relation-reader", dc->var, dc->type, d_reader, dc->id, i);
   }
 
   // The forcing this pass registers at STEP 10. Exactly one in the
@@ -1260,14 +1260,14 @@ bool QueryImpl::ApplyDemandTransform(
   //    on the RAW seed.
   // ---------------------------------------------------------------------
   {
-    TUPLE *const raw_seed = tuples.Create();
+    TUPLE *const raw_seed = Mint(tuples, "demand/raw-seed");
 #ifndef NDEBUG
     raw_seed->producer = "DEMAND-RAW-SEED";
 #endif
     for (auto i = 0u; i < arity; ++i) {
       COL *const rc = recv->columns[i];
       raw_seed->input_columns.AddUse(rc);
-      (void) raw_seed->columns.Create(rc->var, rc->type, raw_seed, rc->id, i);
+      (void) Mint(raw_seed->columns, "demand/raw-seed", rc->var, rc->type, raw_seed, rc->id, i);
     }
 
     std::vector<COL *> out_for_pos;
@@ -1414,14 +1414,14 @@ bool QueryImpl::ApplyDemandTransform(
         members.push_back(member);
       }
 
-      MERGE *const um = merges.Create();
+      MERGE *const um = Mint(merges, "demand/guard-union");
 #ifndef NDEBUG
       um->producer = "DEMAND-GUARD-UNION";
 #endif
       const auto width = g0.read->columns.Size();
       for (auto pos = 0u; pos < width; ++pos) {
         COL *const rc = g0.read->columns[pos];
-        (void) um->columns.Create(rc->var, rc->type, um, rc->id, pos);
+        (void) Mint(um->columns, "demand/guard-union", rc->var, rc->type, um, rc->id, pos);
       }
       for (VIEW *m : members) {
         um->merged_views.AddUse(m);

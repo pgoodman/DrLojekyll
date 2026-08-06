@@ -1,84 +1,84 @@
 dataflow
 
 select ^select.0 (A:i32, B:i32)                    ; recv #message mp/2
-  ATTRIBUTES eqset=1 class=table-less stratum=0
+  ATTRIBUTES eqset=1 class=table-less stratum=0 tag=build/predicate-select
   => ^tuple.6 (A, B)
 
 select ^select.1 (B:i32)                           ; recv #message mq/1
-  ATTRIBUTES eqset=2 class=table-less stratum=1
+  ATTRIBUTES eqset=2 class=table-less stratum=1 tag=build/predicate-select
   => ^tuple.7 (X=B)
 
 select ^select.2 (B:i32)                           ; recv #message mr/1
-  ATTRIBUTES eqset=3 class=table-less stratum=2
+  ATTRIBUTES eqset=3 class=table-less stratum=2 tag=build/predicate-select
   => ^tuple.8 (X=B)
 
 select ^select.3 (c5:bool)
-  ATTRIBUTES eqset=4 class=table-less stratum=3
+  ATTRIBUTES eqset=4 class=table-less stratum=3 tag=build/true-constant
 
 select ^select.4 (c6:bool)                         ; relation pred_18446742974197924863/0
-  ATTRIBUTES eqset=5 class=table-less stratum=9
+  ATTRIBUTES eqset=5 class=table-less stratum=9 tag=build/condition-select
   => ^tuple.15 (c21=c6)
 
 tuple ^tuple.5 (A:i32, c8:bool)
-  ATTRIBUTES table=%table:37 eqset=6 class=monotone stratum=14
+  ATTRIBUTES table=%table:37 eqset=6 class=monotone stratum=14 tag=build/condition-extend
   => ^join.20 .in0(A)
 
 tuple ^tuple.6 (A:i32, B:i32)
-  ATTRIBUTES table=%table:26 eqset=1 class=monotone stratum=10
+  ATTRIBUTES table=%table:26 eqset=1 class=monotone stratum=10 tag=connect/select-proxy
   => ^join.16 .in1(B, A)
   => ^join.18 .in0(B, A)
 
 tuple ^tuple.7 (X:i32)
-  ATTRIBUTES table=%table:23 eqset=2 class=monotone stratum=5
+  ATTRIBUTES table=%table:23 eqset=2 class=monotone stratum=5 tag=connect/select-proxy
   => ^join.16 .in0(X)
   => ^join.18 .in1(X)
   => ^join.19 .in1(X)
 
 tuple ^tuple.8 (X:i32)
-  ATTRIBUTES table=%table:30 eqset=3 class=monotone stratum=4
+  ATTRIBUTES table=%table:30 eqset=3 class=monotone stratum=4 tag=connect/select-proxy
   => ^join.17 .in0(X)
   => ^join.18 .in2(X)
   => ^join.19 .in0(X)
 
 tuple ^tuple.9 (c13:bool, X:i32)
-  ATTRIBUTES table=%table:7 eqset=10 class=monotone stratum=7
+  ATTRIBUTES table=%table:7 eqset=10 class=monotone stratum=7 tag=link/insert-proxy
 
 tuple ^tuple.10 (A:i32)
-  ATTRIBUTES eqset=11 class=table-less stratum=15
+  ATTRIBUTES eqset=11 class=table-less stratum=15 tag=link/insert-proxy
   => ^insert.22 (A)
 
 tuple ^tuple.11 (A:i32)
-  ATTRIBUTES eqset=12 class=table-less stratum=16
+  ATTRIBUTES eqset=12 class=table-less stratum=16 tag=link/insert-proxy
   => ^insert.23 (A)
 
 tuple ^tuple.12 (A:i32)
-  ATTRIBUTES eqset=13 class=table-less stratum=18
+  ATTRIBUTES eqset=13 class=table-less stratum=18 tag=link/insert-proxy
   => ^insert.24 (A)
 
 tuple ^tuple.13 (A:i32)
-  ATTRIBUTES eqset=14 class=table-less stratum=21
+  ATTRIBUTES eqset=14 class=table-less stratum=21 tag=link/insert-proxy
   => ^insert.25 (A)
 
 tuple ^tuple.14 (B:i32, A:i32)
-  ATTRIBUTES table=%table:33 eqset=15 class=monotone stratum=12
+  ATTRIBUTES table=%table:33 eqset=15 class=monotone stratum=12 tag=link/join-input-proxy
   => ^join.17 .in1(B, A)
 
 tuple ^tuple.15 (c21:bool)
-  ATTRIBUTES table=%table:4 eqset=5 class=monotone stratum=19
+  ATTRIBUTES table=%table:4 eqset=5 class=monotone stratum=19 tag=link/join-input-proxy
   => ^join.20 .in1(c21)
 
 join ^join.16 (B:i32, A:i32) {
   pivot B:i32 <- .in0.X, .in1.B
   out A:i32 <- .in1.A
 }
-  ATTRIBUTES eqset=15 class=table-less stratum=11
+  ATTRIBUTES eqset=15 class=table-less stratum=11 tag=build/pivot-join
   => ^tuple.14 (B, A)
 
 join ^join.17 (B:i32, A:i32) {
   pivot B:i32 <- .in0.X, .in1.B
   out A:i32 <- .in1.A
 }
-  ATTRIBUTES eqset=18 class=table-less stratum=13
+  ATTRIBUTES eqset=18 class=table-less stratum=13 tag=build/pivot-join
   => ^tuple.5 (A)
   => ^tuple.10 (A)
   => ^tuple.11 (A)
@@ -87,33 +87,33 @@ join ^join.18 (B:i32, A:i32) {
   pivot B:i32 <- .in0.B, .in1.X, .in2.X
   out A:i32 <- .in0.A
 }
-  ATTRIBUTES eqset=19 class=table-less stratum=17
+  ATTRIBUTES eqset=19 class=table-less stratum=17 tag=build/pivot-join
   => ^tuple.12 (A)
 
 join ^join.19 (X:i32) {
   pivot X:i32 <- .in0.X, .in1.X
 }
-  ATTRIBUTES eqset=20 class=table-less stratum=6
+  ATTRIBUTES eqset=20 class=table-less stratum=6 tag=build/pivot-join
   => ^tuple.9 (X)
 
 join ^join.20 (c29:bool, A:i32) {
   pivot c29:bool <- .in0.c8, .in1.c21
   out A:i32 <- .in0.A
 }
-  ATTRIBUTES eqset=21 class=table-less stratum=20
+  ATTRIBUTES eqset=21 class=table-less stratum=20 tag=build/condition-test
   => ^tuple.13 (A)
 
 insert ^insert.21 (c13:bool) into %table:4
-  ATTRIBUTES eqset=5 class=monotone stratum=8
+  ATTRIBUTES eqset=5 class=monotone stratum=8 tag=build/condition-insert
 
 insert ^insert.22 (A:i32) into %table:11
-  ATTRIBUTES eqset=11 class=monotone stratum=22
+  ATTRIBUTES eqset=11 class=monotone stratum=22 tag=connect/query-insert
 
 insert ^insert.23 (A:i32) into %table:14
-  ATTRIBUTES eqset=12 class=monotone stratum=23
+  ATTRIBUTES eqset=12 class=monotone stratum=23 tag=connect/query-insert
 
 insert ^insert.24 (A:i32) into %table:17
-  ATTRIBUTES eqset=13 class=monotone stratum=24
+  ATTRIBUTES eqset=13 class=monotone stratum=24 tag=connect/query-insert
 
 insert ^insert.25 (A:i32) into %table:20
-  ATTRIBUTES eqset=14 class=monotone stratum=25
+  ATTRIBUTES eqset=14 class=monotone stratum=25 tag=connect/query-insert

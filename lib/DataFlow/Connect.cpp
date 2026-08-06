@@ -35,7 +35,7 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
 
     // Only proxy an INSERT if it actually inserts data; otherwise it's a
     // DELETE and we want to maintain that.
-    TUPLE *const proxy = impl->tuples.Create();
+    TUPLE *const proxy = Mint(impl->tuples, "connect/insert-proxy");
 
 #ifndef NDEBUG
     proxy->producer = "INSERT";
@@ -45,7 +45,7 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
 
     auto col_index = 0u;
     for (auto in_col : insert->input_columns) {
-      COL *const proxy_col = proxy->columns.Create(
+      COL *const proxy_col = Mint(proxy->columns, "connect/insert-proxy",
           in_col->var, in_col->type, proxy, in_col->id, col_index++);
       proxy->input_columns.AddUse(in_col);
       proxy_col->CopyConstantFrom(in_col);
@@ -54,13 +54,13 @@ VIEW *CreateProxyOfInserts(QueryImpl *impl, UseList<QueryViewImpl> &inserts) {
     insert->PrepareToDelete();
 
     if (!merge) {
-      merge = impl->merges.Create();
+      merge = Mint(impl->merges, "connect/insert-union");
 #ifndef NDEBUG
       merge->producer = "MERGE-INSERT";
 #endif
       col_index = 0u;
       for (auto col : proxy->columns) {
-        (void) merge->columns.Create(col->var, col->type, merge, col->id,
+        (void) Mint(merge->columns, "connect/insert-union", col->var, col->type, merge, col->id,
                                      col_index++);
       }
     }
@@ -83,7 +83,7 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
     return view;
   }
 
-  KVINDEX *const index = impl->kv_indices.Create();
+  KVINDEX *const index = Mint(impl->kv_indices, "connect/kv-index");
   std::unordered_map<COL *, COL *> col_map;
 
   // Create the key columns.
@@ -92,7 +92,7 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
   for (ParsedParameter param : decl.Parameters()) {
     const auto view_col = view->columns[i++];
     if (param.Binding() != ParameterBinding::kMutable) {
-      const auto key_col = index->columns.Create(
+      const auto key_col = Mint(index->columns, "connect/kv-index",
           view_col->var, view_col->type, index, view_col->id, col_index++);
       col_map.emplace(view_col, key_col);
 
@@ -105,7 +105,7 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
   for (ParsedParameter param : decl.Parameters()) {
     const auto view_col = view->columns[i++];
     if (param.Binding() == ParameterBinding::kMutable) {
-      const auto val_col = index->columns.Create(
+      const auto val_col = Mint(index->columns, "connect/kv-index",
           view_col->var, view_col->type, index, view_col->id, col_index++);
       col_map.emplace(view_col, val_col);
 
@@ -115,10 +115,10 @@ static VIEW *CreateProxyForMutableParams(QueryImpl *impl, VIEW *view,
   }
 
   // We need to return the columns in the expected order.
-  TUPLE *const proxy = impl->tuples.Create();
+  TUPLE *const proxy = Mint(impl->tuples, "connect/kv-reorder");
   col_index = 0u;
   for (auto col : view->columns) {
-    (void) proxy->columns.Create(col->var, col->type, proxy, col->id,
+    (void) Mint(proxy->columns, "connect/kv-reorder", col->var, col->type, proxy, col->id,
                                  col_index++);
     proxy->input_columns.AddUse(col_map[col]);
   }
@@ -136,7 +136,7 @@ static void ProxySelects(QueryImpl *impl, UseList<QueryViewImpl> &selects,
 
     // Only proxy an INSERT if it actually inserts data; otherwise it's a
     // DELETE and we want to maintain that.
-    TUPLE *const proxy = impl->tuples.Create();
+    TUPLE *const proxy = Mint(impl->tuples, "connect/select-proxy");
 
 #ifndef NDEBUG
     proxy->producer = "SELECT";
@@ -147,7 +147,7 @@ static void ProxySelects(QueryImpl *impl, UseList<QueryViewImpl> &selects,
     auto col_index = 0u;
     for (auto in_col : insert_proxy->columns) {
       COL *const sel_col = select->columns[col_index];
-      COL *const proxy_col = proxy->columns.Create(
+      COL *const proxy_col = Mint(proxy->columns, "connect/select-proxy",
           sel_col->var, sel_col->type, proxy, sel_col->id, col_index++);
       proxy->input_columns.AddUse(in_col);
       proxy_col->CopyConstantFrom(in_col);
@@ -192,7 +192,7 @@ bool QueryImpl::ConnectInsertsToSelects(
       // of those transmits via a single UNION.
       VIEW *const proxy = CreateProxyOfInserts(this, io->transmits);
 
-      INSERT *insert = inserts.Create(io, io->declaration);
+      INSERT *insert = Mint(inserts, "connect/transmit-insert", io, io->declaration);
       for (auto col : proxy->columns) {
         insert->input_columns.AddUse(col);
       }
@@ -209,14 +209,14 @@ bool QueryImpl::ConnectInsertsToSelects(
 
       SELECT *select = nullptr;
       if (prev_sel->pred) {
-        select = selects.Create(io, *(prev_sel->pred));
+        select = Mint(selects, "connect/receive-select", io, *(prev_sel->pred));
       } else {
-        select = selects.Create(io, DisplayRange(prev_sel->position, {}));
+        select = Mint(selects, "connect/receive-select", io, DisplayRange(prev_sel->position, {}));
       }
 
       auto col_index = 0u;
       for (auto col : io->receives[0]->columns) {
-        (void) select->columns.Create(col->var, col->type, select, col->id,
+        (void) Mint(select->columns, "connect/receive-select", col->var, col->type, select, col->id,
                                       col_index++);
       }
 
@@ -301,7 +301,7 @@ bool QueryImpl::ConnectInsertsToSelects(
     assert(rel->selects.Empty());
 
     if (decl.IsQuery()) {
-      INSERT *insert = inserts.Create(rel, rel->declaration);
+      INSERT *insert = Mint(inserts, "connect/query-insert", rel, rel->declaration);
       for (auto col : insert_proxy->columns) {
         insert->input_columns.AddUse(col);
       }

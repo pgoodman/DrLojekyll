@@ -257,12 +257,12 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
 
     // Create a forwarding tuple.
     const auto source_view = unique_merged_views[0];
-    const auto tuple = query->tuples.Create();
+    const auto tuple = Mint(query->tuples, "merge-canon/forward");
     tuple->color = color ? color : source_view->color;
 
     auto i = 0u;
     for (auto out_col : columns) {
-      (void) tuple->columns.Create(out_col->var, out_col->type, tuple,
+      (void) Mint(tuple->columns, "merge-canon/forward", out_col->var, out_col->type, tuple,
                                    out_col->id);
       tuple->input_columns.AddUse(source_view->columns[i++]);
     }
@@ -299,7 +299,7 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
     for (auto view : merged_views) {
       assert(view->columns.Size() == num_cols);
 
-      TUPLE *const guarded_view = query->tuples.Create();
+      TUPLE *const guarded_view = Mint(query->tuples, "merge-canon/unused-col-guard");
       guarded_view->color = color;
 #ifndef NDEBUG
       guarded_view->producer = "MERGE-GUARD";
@@ -310,7 +310,7 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
       for (auto i = 0u; i < num_cols; ++i) {
         if (columns[i]->IsUsed()) {
           const auto out_col = view->columns[i];
-          auto guard_out_col = guarded_view->columns.Create(
+          auto guard_out_col = Mint(guarded_view->columns, "merge-canon/unused-col-guard",
               out_col->var, out_col->type, guarded_view, out_col->id);
           guarded_view->input_columns.AddUse(out_col);
           guard_out_col->CopyConstantFrom(out_col);
@@ -352,7 +352,7 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
       const auto out_col = columns[i];
       if (out_col->IsUsed()) {
         auto new_out_col =
-            new_columns.Create(out_col->var, out_col->type, this, out_col->id);
+            Mint(new_columns, "merge-canon/unused-col-guard", out_col->var, out_col->type, this, out_col->id);
         new_out_col->CopyConstantFrom(out_col);
         out_col->ReplaceAllUsesWith(new_out_col);
       }
@@ -569,26 +569,26 @@ bool QueryMergeImpl::SinkThroughTuples(QueryImpl *impl,
       first_tuple->is_canonical = false;
 
       // Create the sunken merge. It might have more columns than `num_cols`.
-      sunk_merge = impl->merges.Create();
+      sunk_merge = Mint(impl->merges, "merge-sink/tuple-union");
 #ifndef NDEBUG
       sunk_merge->producer = "SINK-MERGE-THROUGH-TUPLE";
 #endif
       sunk_merge->color = color;
       for (auto j = 0u; j < num_pred_cols; ++j) {
         const auto first_tuple_pred_col = first_tuple_pred->columns[j];
-        (void) sunk_merge->columns.Create(
+        (void) Mint(sunk_merge->columns, "merge-sink/tuple-union",
             first_tuple_pred_col->var, first_tuple_pred_col->type, sunk_merge,
             first_tuple_pred_col->id, j);
       }
 
       // Now create the merged tuple that will select only the columns of
       // interest from the sunken merge.
-      merged_tuple = impl->tuples.Create();
+      merged_tuple = Mint(impl->tuples, "merge-sink/tuple-narrow");
       merged_tuple->color = color;
       for (auto j = 0u; j < num_cols; ++j) {
         const auto first_tuple_col = first_tuple->columns[j];
         const auto first_tuple_pred_col = first_tuple->input_columns[j];
-        (void) merged_tuple->columns.Create(first_tuple_col->var,
+        (void) Mint(merged_tuple->columns, "merge-sink/tuple-narrow", first_tuple_col->var,
                                             first_tuple_col->type, merged_tuple,
                                             first_tuple_col->id, j);
 
@@ -643,19 +643,19 @@ namespace {
 // with other negations.
 static TUPLE *MakeSameShapedTuple(QueryImpl *impl, MAP *map) {
 
-  TUPLE *tuple = impl->tuples.Create();
+  TUPLE *tuple = Mint(impl->tuples, "merge-sink/map-input-proxy");
 
   auto col_index = 0u;
   for (auto in_col : map->input_columns) {
     (void) in_col;
     auto out_col = map->columns[col_index];
-    (void) tuple->columns.Create(out_col->var, out_col->type, tuple,
+    (void) Mint(tuple->columns, "merge-sink/map-input-proxy", out_col->var, out_col->type, tuple,
                                  out_col->id, col_index++);
   }
   for (auto in_col : map->attached_columns) {
     (void) in_col;
     auto out_col = map->columns[col_index];
-    (void) tuple->columns.Create(out_col->var, out_col->type, tuple,
+    (void) Mint(tuple->columns, "merge-sink/map-input-proxy", out_col->var, out_col->type, tuple,
                                  out_col->id, col_index++);
   }
 
@@ -774,25 +774,25 @@ bool QueryMergeImpl::SinkThroughMaps(QueryImpl *impl,
       const auto first_map_input_tuple = MakeSameShapedTuple(impl, first_map);
 
       // Create the sunken merge.
-      sunk_merge = impl->merges.Create();
+      sunk_merge = Mint(impl->merges, "merge-sink/map-union");
 #ifndef NDEBUG
       sunk_merge->producer = "SINK-MERGE-THROUGH-MAP";
 #endif
       sunk_merge->color = color;
       for (auto j = 0u; j < (num_input_cols + num_attached_cols); ++j) {
         const auto first_tuple_pred_col = first_map_input_tuple->columns[j];
-        (void) sunk_merge->columns.Create(
+        (void) Mint(sunk_merge->columns, "merge-sink/map-union",
             first_tuple_pred_col->var, first_tuple_pred_col->type, sunk_merge,
             first_tuple_pred_col->id, j);
       }
 
       // Now create the merged MAP that will operate on the sunken MERGE.
-      merged_map = impl->maps.Create(first_map->functor, first_map->range,
+      merged_map = Mint(impl->maps, "merge-sink/shared-map", first_map->functor, first_map->range,
                                      first_map->is_positive);
       merged_map->color = color;
       for (auto j = 0u; j < num_cols; ++j) {
         const auto first_map_col = first_map->columns[j];
-        (void) merged_map->columns.Create(first_map_col->var,
+        (void) Mint(merged_map->columns, "merge-sink/shared-map", first_map_col->var,
                                           first_map_col->type, merged_map,
                                           first_map_col->id, j);
       }
@@ -847,13 +847,13 @@ bool QueryMergeImpl::SinkThroughMaps(QueryImpl *impl,
 namespace {
 
 static MERGE *MakeSameShapedMerge(QueryImpl *impl, NEGATION *negation) {
-  MERGE *merge = impl->merges.Create();
+  MERGE *merge = Mint(impl->merges, "merge-sink/negate-union");
 #ifndef NDEBUG
   merge->producer = "SINK-MERGE-THROUGH-NEGATION(" + negation->producer + ")";
 #endif
   auto col_index = 0u;
   for (auto col : negation->columns) {
-    merge->columns.Create(col->var, col->type, merge, col->id, col_index++);
+    Mint(merge->columns, "merge-sink/negate-union", col->var, col->type, merge, col->id, col_index++);
   }
   return merge;
 }
@@ -861,11 +861,11 @@ static MERGE *MakeSameShapedMerge(QueryImpl *impl, NEGATION *negation) {
 // Make a tuple that will take the place of a negation that will be merged
 // with other negations.
 static TUPLE *MakeSameShapedTuple(QueryImpl *impl, NEGATION *negation) {
-  TUPLE *tuple = impl->tuples.Create();
+  TUPLE *tuple = Mint(impl->tuples, "merge-sink/negate-input-proxy");
   VIEW *pred_view = nullptr;
   auto col_index = 0u;
   for (auto col : negation->columns) {
-    tuple->columns.Create(col->var, col->type, tuple, col->id, col_index++);
+    Mint(tuple->columns, "merge-sink/negate-input-proxy", col->var, col->type, tuple, col->id, col_index++);
   }
 
   for (auto in_col : negation->input_columns) {
@@ -893,8 +893,8 @@ static TUPLE *MakeSameShapedTuple(QueryImpl *impl, NEGATION *negation) {
 }
 
 static TUPLE *TagProxy(QueryImpl *impl, VIEW *view, COL *tag_in_col) {
-  TUPLE *const tuple = impl->tuples.Create();
-  COL *tag_out_col = tuple->columns.Create(tag_in_col->var, tag_in_col->type,
+  TUPLE *const tuple = Mint(impl->tuples, "merge-sink/negate-tag-proxy");
+  COL *tag_out_col = Mint(tuple->columns, "merge-sink/negate-tag-proxy", tag_in_col->var, tag_in_col->type,
                                            tuple, tag_in_col->id, 0u);
   tag_out_col->CopyConstantFrom(tag_in_col);
 
@@ -902,7 +902,7 @@ static TUPLE *TagProxy(QueryImpl *impl, VIEW *view, COL *tag_in_col) {
 
   auto col_index = 1u;
   for (COL *in_col : view->columns) {
-    (void) tuple->columns.Create(in_col->var, in_col->type, tuple, in_col->id,
+    (void) Mint(tuple->columns, "merge-sink/negate-tag-proxy", in_col->var, in_col->type, tuple, in_col->id,
                                  col_index++);
     tuple->input_columns.AddUse(in_col);
   }
@@ -914,9 +914,9 @@ static TUPLE *TagProxy(QueryImpl *impl, VIEW *view, COL *tag_in_col) {
 }
 
 static TUPLE *TagPredecessor(QueryImpl *impl, NEGATION *view, COL *tag_in_col) {
-  TUPLE *const tuple = impl->tuples.Create();
+  TUPLE *const tuple = Mint(impl->tuples, "merge-sink/negate-tagged-pred");
   VIEW *pred_view = nullptr;
-  COL *tag_out_col = tuple->columns.Create(tag_in_col->var, tag_in_col->type,
+  COL *tag_out_col = Mint(tuple->columns, "merge-sink/negate-tagged-pred", tag_in_col->var, tag_in_col->type,
                                            tuple, tag_in_col->id, 0u);
   tag_out_col->CopyConstantFrom(tag_in_col);
 
@@ -924,7 +924,7 @@ static TUPLE *TagPredecessor(QueryImpl *impl, NEGATION *view, COL *tag_in_col) {
 
   auto col_index = 1u;
   for (COL *in_col : view->input_columns) {
-    (void) tuple->columns.Create(in_col->var, in_col->type, tuple, in_col->id,
+    (void) Mint(tuple->columns, "merge-sink/negate-tagged-pred", in_col->var, in_col->type, tuple, in_col->id,
                                  col_index++);
     tuple->input_columns.AddUse(in_col);
 
@@ -934,7 +934,7 @@ static TUPLE *TagPredecessor(QueryImpl *impl, NEGATION *view, COL *tag_in_col) {
   }
 
   for (COL *in_col : view->attached_columns) {
-    (void) tuple->columns.Create(in_col->var, in_col->type, tuple, in_col->id,
+    (void) Mint(tuple->columns, "merge-sink/negate-tagged-pred", in_col->var, in_col->type, tuple, in_col->id,
                                  col_index++);
     tuple->input_columns.AddUse(in_col);
 
@@ -962,10 +962,10 @@ static COL *CreateTag(QueryImpl *impl, unsigned &num_used_tags) {
   const auto tag_val = impl->tags.Size();
   assert(tag_val == (tag_val & 0xffffu));  // 16-bit vals!
 
-  TAG *const tag = impl->tags.Create(static_cast<uint16_t>(tag_val));
+  TAG *const tag = Mint(impl->tags, "merge-sink/tag", static_cast<uint16_t>(tag_val));
 
-  SELECT *select = impl->selects.Create(tag, DisplayRange());
-  COL *tag_in_col = select->columns.Create(TypeLoc(TypeKind::kUnsigned16),
+  SELECT *select = Mint(impl->selects, "merge-sink/tag", tag, DisplayRange());
+  COL *tag_in_col = Mint(select->columns, "merge-sink/tag", TypeLoc(TypeKind::kUnsigned16),
                                            select, tag_val, 0u);
   assert(tag_in_col->IsConstant());
 
@@ -1116,23 +1116,23 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
         VIEW *const first_negated_view =
             TagProxy(impl, first_negate->negated_view.get(), first_tag_col);
 
-        negated_view_merge = impl->merges.Create();
+        negated_view_merge = Mint(impl->merges, "merge-sink/negate-tagged-view-union");
         negated_view_merge->merged_views.AddUse(first_negated_view);
 
         col_index = 0u;
         for (COL *col : first_negated_view->columns) {
-          (void) negated_view_merge->columns.Create(
+          (void) Mint(negated_view_merge->columns, "merge-sink/negate-tagged-view-union",
               col->var, col->type, negated_view_merge, col->id, col_index++);
         }
 
         // Create a merge of the predecessors of the negation.
-        input_merge = impl->merges.Create();
+        input_merge = Mint(impl->merges, "merge-sink/negate-tagged-pred-union");
         col_index = 0u;
-        (void) input_merge->columns.Create(first_tag_col->var,
+        (void) Mint(input_merge->columns, "merge-sink/negate-tagged-pred-union", first_tag_col->var,
                                            first_tag_col->type, input_merge,
                                            first_tag_col->id, col_index++);
         for (auto col : first_negate->columns) {
-          input_merge->columns.Create(col->var, col->type, input_merge, col->id,
+          Mint(input_merge->columns, "merge-sink/negate-tagged-pred-union", col->var, col->type, input_merge, col->id,
                                       col_index++);
         }
 
@@ -1142,7 +1142,7 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
         input_merge->color = pred_view->color;
 
         // Make a new, tag column-aware negation that operates on `input_merge`.
-        merged_negation = impl->negations.Create();
+        merged_negation = Mint(impl->negations, "merge-sink/negate-tag-aware");
         merged_negation->is_never = first_negate->is_never;
         merged_negation->negated_view.Emplace(merged_negation,
                                               negated_view_merge);
@@ -1153,7 +1153,7 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
 
         // Tag column.
         col_index = 0u;
-        (void) merged_negation->columns.Create(
+        (void) Mint(merged_negation->columns, "merge-sink/negate-tag-aware",
             first_tag_col->var, first_tag_col->type, merged_negation,
             first_tag_col->id, 0u);
         merged_negation->input_columns.AddUse(input_merge->columns[0u]);
@@ -1162,7 +1162,7 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
         for (auto i = 0u; i < first_negate->input_columns.Size(); ++i) {
           ++col_index;
           COL *const col = input_merge->columns[col_index];
-          (void) merged_negation->columns.Create(
+          (void) Mint(merged_negation->columns, "merge-sink/negate-tag-aware",
               col->var, col->type, merged_negation, col->id, col_index - 1u);
           merged_negation->input_columns.AddUse(col);
         }
@@ -1171,16 +1171,16 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
         for (auto i = 0u; i < first_negate->attached_columns.Size(); ++i) {
           ++col_index;
           COL *const col = input_merge->columns[col_index];
-          (void) merged_negation->columns.Create(
+          (void) Mint(merged_negation->columns, "merge-sink/negate-tag-aware",
               col->var, col->type, merged_negation, col->id, col_index - 1u);
           merged_negation->attached_columns.AddUse(col);
         }
 
         // Present an original-sized tuple as the result.
-        output = impl->tuples.Create();
+        output = Mint(impl->tuples, "merge-sink/negate-tag-strip");
         for (auto i = 0u; i < first_negate->columns.Size(); ++i) {
           COL *const col = merged_negation->columns[i + 1u];
-          (void) output->columns.Create(col->var, col->type, output, col->id,
+          (void) Mint(output->columns, "merge-sink/negate-tag-strip", col->var, col->type, output, col->id,
                                         i);
           output->input_columns.AddUse(col);
         }
@@ -1220,7 +1220,7 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
         input_merge->color = pred_view->color;
 
         // Make the new negation.
-        merged_negation = impl->negations.Create();
+        merged_negation = Mint(impl->negations, "merge-sink/negate-shared");
         merged_negation->is_never = first_negate->is_never;
         output = merged_negation;
 
@@ -1232,7 +1232,7 @@ bool QueryMergeImpl::SinkThroughNegations(QueryImpl *impl,
 
         col_index = 0u;
         for (auto col : first_negate->columns) {
-          (void) merged_negation->columns.Create(
+          (void) Mint(merged_negation->columns, "merge-sink/negate-shared",
               col->var, col->type, merged_negation, col->id, col_index++);
         }
         col_index = 0u;
@@ -1543,7 +1543,7 @@ bool QueryMergeImpl::SinkThroughJoins(
   }
 
   // Now we can go through and build the new JOIN.
-  JOIN * const lifted_join = impl->joins.Create();
+  JOIN * const lifted_join = Mint(impl->joins, "merge-sink/join-lifted");
   lifted_join->num_pivots = first_join->num_pivots + 1u;
 
 #ifndef NDEBUG
@@ -1556,7 +1556,7 @@ bool QueryMergeImpl::SinkThroughJoins(
   for (auto i = 0u; i < num_joined_views; ++i) {
     auto j = 0u;
 
-    MERGE * const sunk_merge = impl->merges.Create();
+    MERGE * const sunk_merge = Mint(impl->merges, "merge-sink/join-union");
     lifted_join->joined_views.AddUse(sunk_merge);
 
 #ifndef NDEBUG
@@ -1572,7 +1572,7 @@ bool QueryMergeImpl::SinkThroughJoins(
 
       COL * const jth_tag = join_to_tag[j++];
       VIEW * const ith_view = join->joined_views[i];
-      TUPLE * const tagged_ith = impl->tuples.Create();
+      TUPLE * const tagged_ith = Mint(impl->tuples, "merge-sink/join-tagged-view");
 
       if (last_ith) {
         assert(last_ith->columns.Size() == ith_view->columns.Size());
@@ -1581,7 +1581,7 @@ bool QueryMergeImpl::SinkThroughJoins(
 
       // Put the tag first.
       tagged_ith->input_columns.AddUse(jth_tag);
-      tagged_ith->columns.Create(
+      Mint(tagged_ith->columns, "merge-sink/join-tagged-view",
           jth_tag->var, jth_tag->type, tagged_ith, jth_tag->id, 0u);
 
       auto col_index = 1u;
@@ -1597,7 +1597,7 @@ bool QueryMergeImpl::SinkThroughJoins(
           assert(!ith_view_col->IsConstant());
 
           ++num_pivots;
-          tagged_ith->columns.Create(
+          Mint(tagged_ith->columns, "merge-sink/join-tagged-view",
               ith_view_col->var, ith_view_col->type, tagged_ith,
               ith_view_col->id, col_index++);
           tagged_ith->input_columns.AddUse(ith_view_col);
@@ -1612,7 +1612,7 @@ bool QueryMergeImpl::SinkThroughJoins(
           if (in_col->view == ith_view) {
             assert(jvi == i);
             assert(ci == in_col->Index());
-            tagged_ith->columns.Create(
+            Mint(tagged_ith->columns, "merge-sink/join-tagged-view",
                 in_col->var, in_col->type, tagged_ith, in_col->id, col_index++);
             tagged_ith->input_columns.AddUse(in_col);
 
@@ -1628,7 +1628,7 @@ bool QueryMergeImpl::SinkThroughJoins(
 
       if (sunk_merge->columns.Empty()) {
         for (COL *col : tagged_ith->columns) {
-          sunk_merge->columns.Create(
+          Mint(sunk_merge->columns, "merge-sink/join-union",
               col->var, col->type, sunk_merge, col->id, col->Index());
         }
       }
@@ -1641,7 +1641,7 @@ bool QueryMergeImpl::SinkThroughJoins(
   // Add in the pivots. The first pivot column will be the tag column.
   for (auto i = 0u; i < lifted_join->num_pivots; ++i) {
     COL * const first_col = lifted_join->joined_views[0]->columns[i];
-    COL * const out_col = lifted_join->columns.Create(
+    COL * const out_col = Mint(lifted_join->columns, "merge-sink/join-lifted",
         first_col->var, first_col->type, lifted_join,
         first_col->id, i);
 
@@ -1655,7 +1655,7 @@ bool QueryMergeImpl::SinkThroughJoins(
   // Add in the non-pivots. We need to pull them in in the right order.
   for (auto i = first_join->num_pivots; i < num_columns; ++i) {
     COL * const nth_col = first_join->columns[i];
-    COL * const out_col = lifted_join->columns.Create(
+    COL * const out_col = Mint(lifted_join->columns, "merge-sink/join-lifted",
         nth_col->var, nth_col->type, lifted_join,
         nth_col->id, i + 1u);
 
@@ -1670,10 +1670,10 @@ bool QueryMergeImpl::SinkThroughJoins(
 
 //  lifted_join->color = 0xff00;
 
-  TUPLE *join_without_tag = impl->tuples.Create();
+  TUPLE *join_without_tag = Mint(impl->tuples, "merge-sink/join-tag-strip");
   for (auto i = 0u; i < num_columns; ++i) {
     COL *in_col = lifted_join->columns[i + 1u];
-    (void) join_without_tag->columns.Create(
+    (void) Mint(join_without_tag->columns, "merge-sink/join-tag-strip",
         in_col->var, in_col->type, join_without_tag, in_col->id, i);
     join_without_tag->input_columns.AddUse(in_col);
   }

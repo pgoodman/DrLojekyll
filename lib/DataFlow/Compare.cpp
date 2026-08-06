@@ -154,16 +154,16 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
     // the columns. We'll defer to the tuple's canonicalizer to continue
     // constant propagation.
     if (input_columns[0] == input_columns[1]) {
-      TUPLE * const tuple = query->tuples.Create();
+      TUPLE * const tuple = Mint(query->tuples, "cmp-canon/trivial-eq");
       tuple->color = color;
 #ifndef NDEBUG
       tuple->producer = "TRIVIAL-EQ-CMP:" + producer;
 #endif
-      (void) tuple->columns.Create(columns[0]->var, columns[0]->type, tuple,
+      (void) Mint(tuple->columns, "cmp-canon/trivial-eq", columns[0]->var, columns[0]->type, tuple,
                                    columns[0]->id, 0u);
       tuple->input_columns.AddUse(input_columns[0]);
       for (auto i = 1u; i < num_cols; ++i) {
-        (void) tuple->columns.Create(columns[i]->var, columns[i]->type, tuple,
+        (void) Mint(tuple->columns, "cmp-canon/trivial-eq", columns[i]->var, columns[i]->type, tuple,
                                      columns[i]->id, i);
         tuple->input_columns.AddUse(attached_columns[i - 1u]);
       }
@@ -196,19 +196,19 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
     // This inequality is trivially satisfiable.
     } else if (ComparisonOperator::kNotEqual == op && c0 && c1 && c0 != c1 &&
                c0->IsUniqueConstant() && c1->IsUniqueConstant()) {
-      TUPLE * const tuple = query->tuples.Create();
+      TUPLE * const tuple = Mint(query->tuples, "cmp-canon/trivial-ne");
       tuple->color = color;
 #ifndef NDEBUG
       tuple->producer = "TRIVIAL-NE-CMP:" + producer;
 #endif
-      (void) tuple->columns.Create(columns[0]->var, columns[0]->type, tuple,
+      (void) Mint(tuple->columns, "cmp-canon/trivial-ne", columns[0]->var, columns[0]->type, tuple,
                                    columns[0]->id, 0u);
-      (void) tuple->columns.Create(columns[1]->var, columns[1]->type, tuple,
+      (void) Mint(tuple->columns, "cmp-canon/trivial-ne", columns[1]->var, columns[1]->type, tuple,
                                    columns[1]->id, 1u);
       tuple->input_columns.AddUse(input_columns[0]);
       tuple->input_columns.AddUse(input_columns[1]);
       for (auto i = 2u; i < num_cols; ++i) {
-        (void) tuple->columns.Create(columns[i]->var, columns[i]->type, tuple,
+        (void) Mint(tuple->columns, "cmp-canon/trivial-ne", columns[i]->var, columns[i]->type, tuple,
                                      columns[i]->id, i);
         tuple->input_columns.AddUse(attached_columns[i - 2u]);
       }
@@ -323,15 +323,15 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
 
   // Create and keep the new versions of the output columns.
   if (op == ComparisonOperator::kEqual) {
-    new_lhs_out = new_columns.Create(columns[0]->var, columns[0]->type, this,
+    new_lhs_out = Mint(new_columns, "cmp-canon/canon", columns[0]->var, columns[0]->type, this,
                                      columns[0]->id, 0u);
     new_rhs_out = new_lhs_out;
 
     columns[0]->ReplaceAllUsesWith(new_lhs_out);
   } else {
-    new_lhs_out = new_columns.Create(columns[0]->var, columns[0]->type, this,
+    new_lhs_out = Mint(new_columns, "cmp-canon/canon", columns[0]->var, columns[0]->type, this,
                                      columns[0]->id, 0u);
-    new_rhs_out = new_columns.Create(columns[1]->var, columns[1]->type, this,
+    new_rhs_out = Mint(new_columns, "cmp-canon/canon", columns[1]->var, columns[1]->type, this,
                                      columns[1]->id, 1u);
 
     columns[0]->ReplaceAllUsesWith(new_lhs_out);
@@ -350,7 +350,7 @@ bool QueryCompareImpl::Canonicalize(QueryImpl *query,
   for (auto j = first_attached_col, i = 0u; j < num_cols; ++j, ++i) {
     const auto col = columns[j];
     if (col->IsUsed() || i == keep_attached_index) {
-      const auto new_col = new_columns.Create(col->var, col->type, this,
+      const auto new_col = Mint(new_columns, "cmp-canon/canon", col->var, col->type, this,
                                               col->id, new_columns.Size());
       col->ReplaceAllUsesWith(new_col);
       new_attached_columns.AddUse(
@@ -476,7 +476,7 @@ bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
   const auto num_cols = columns.Size();
   (void) num_cols;
 
-  MERGE *lifted_merge = query->merges.Create();
+  MERGE *lifted_merge = Mint(query->merges, "cmp-sink/merge-lifted");
   lifted_merge->color = color;
 
 #ifndef NDEBUG
@@ -485,7 +485,7 @@ bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
 
   auto col_index = 0u;
   for (auto col : columns) {
-    (void) lifted_merge->columns.Create(
+    (void) Mint(lifted_merge->columns, "cmp-sink/merge-lifted",
         col->var, col->type, lifted_merge, col->id, col_index++);
   }
 
@@ -496,7 +496,7 @@ bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
   assert(lhs->type.Kind() == rhs->type.Kind());
 
   for (VIEW *merged_view : merge->merged_views) {
-    CMP *sunk_cmp = query->compares.Create(op);
+    CMP *sunk_cmp = Mint(query->compares, "cmp-sink/merge-replica", op);
     sunk_cmp->color = color;
     sunk_cmp->created_from_sinking = true;
 #ifndef NDEBUG
@@ -520,7 +520,7 @@ bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
 
     if (ComparisonOperator::kEqual == op) {
       COL * const c0 = columns[0];
-      (void) sunk_cmp->columns.Create(
+      (void) Mint(sunk_cmp->columns, "cmp-sink/merge-replica",
           c0->var, c0->type, sunk_cmp, c0->id, 0u);
     } else {
       COL * const c0 = sunk_cmp->input_columns[0];
@@ -528,9 +528,9 @@ bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
 
       assert(c0->type.Kind() == c1->type.Kind());
 
-      (void) sunk_cmp->columns.Create(
+      (void) Mint(sunk_cmp->columns, "cmp-sink/merge-replica",
           c0->var, c0->type, sunk_cmp, c0->id, 0u);
-      (void) sunk_cmp->columns.Create(
+      (void) Mint(sunk_cmp->columns, "cmp-sink/merge-replica",
           c1->var, c1->type, sunk_cmp, c1->id, 1u);
     }
 
@@ -540,13 +540,13 @@ bool QueryCompareImpl::TrySinkThroughMerge(QueryImpl *query, MERGE *merge) {
         COL *const in_col = merged_view->columns[col->Index()];
         sunk_cmp->attached_columns.AddUse(in_col);
 
-        (void) sunk_cmp->columns.Create(
+        (void) Mint(sunk_cmp->columns, "cmp-sink/merge-replica",
             in_col->var, in_col->type, sunk_cmp, in_col->id, col_index++);
       } else {
         assert(col->IsConstant());
         sunk_cmp->attached_columns.AddUse(col);
 
-        (void) sunk_cmp->columns.Create(
+        (void) Mint(sunk_cmp->columns, "cmp-sink/merge-replica",
             col->var, col->type, sunk_cmp, col->id, col_index++);
       }
     }
@@ -600,9 +600,9 @@ bool QueryCompareImpl::TrySinkThroughNegate(
     QueryImpl *query, NEGATION *negate) {
 
   // Maintains the output ordering of the columns of the CMP.
-  TUPLE * const lifted_tuple = query->tuples.Create();
-  NEGATION * const lifted_negate = query->negations.Create();
-  CMP * const lowered_cmp = query->compares.Create(op);
+  TUPLE * const lifted_tuple = Mint(query->tuples, "cmp-sink/negate-lifted-tuple");
+  NEGATION * const lifted_negate = Mint(query->negations, "cmp-sink/negate-lifted");
+  CMP * const lowered_cmp = Mint(query->compares, "cmp-sink/negate-lowered", op);
   VIEW * const negated_view = negate->negated_view.get();
   lifted_negate->negated_view.Emplace(lifted_negate, negated_view);
   negated_view->is_used_by_negation = true;
@@ -688,7 +688,7 @@ bool QueryCompareImpl::TrySinkThroughNegate(
   // this CMP.
   col_index = 0u;
   for (COL *col : columns) {
-    COL *out_col = lifted_tuple->columns.Create(
+    COL *out_col = Mint(lifted_tuple->columns, "cmp-sink/negate-lifted-tuple",
         col->var, col->type, lifted_tuple, col->id, col_index++);
 
     new_to_old[out_col] = col;
@@ -700,7 +700,7 @@ bool QueryCompareImpl::TrySinkThroughNegate(
   col_index = 0u;
   for (COL *col : negated_view->columns) {
     COL *old_neg_out = negate->columns[col_index];
-    COL *out_col = lifted_negate->columns.Create(
+    COL *out_col = Mint(lifted_negate->columns, "cmp-sink/negate-lifted",
         col->var, col->type, lifted_negate, col->id, col_index++);
 
     new_to_old[out_col] = old_neg_out;
@@ -713,7 +713,7 @@ bool QueryCompareImpl::TrySinkThroughNegate(
   COL * const cmp_i0 = input_columns[0];
   COL * const cmp_i1 = input_columns[1];
   COL * const cmp_o0 = columns[0];
-  COL * const lifted_cmp_o0 = lowered_cmp->columns.Create(
+  COL * const lifted_cmp_o0 = Mint(lowered_cmp->columns, "cmp-sink/negate-lowered",
       cmp_o0->var, cmp_o0->type, lowered_cmp, cmp_o0->id, 0u);
   cmp_in_to_lifted_cmp_out[cmp_i0] = lifted_cmp_o0;
   cmp_out_to_lifted_cmp_out[cmp_o0] = lifted_cmp_o0;
@@ -724,7 +724,7 @@ bool QueryCompareImpl::TrySinkThroughNegate(
 
   } else {
     COL * const cmp_o1 = columns[1];
-    COL * const lifted_cmp_o1 = lowered_cmp->columns.Create(
+    COL * const lifted_cmp_o1 = Mint(lowered_cmp->columns, "cmp-sink/negate-lowered",
         cmp_o1->var, cmp_o1->type, lowered_cmp, cmp_o1->id, 1u);
 
     cmp_in_to_lifted_cmp_out[cmp_i1] = lifted_cmp_o1;
@@ -798,7 +798,7 @@ bool QueryCompareImpl::TrySinkThroughNegate(
     }
 
     // We're missing the column; go and add it.
-    demanded_col = lifted_negate->columns.Create(
+    demanded_col = Mint(lifted_negate->columns, "cmp-sink/negate-lifted",
         lifted_tuple_out->var, lifted_tuple_out->type, lifted_negate,
         lifted_tuple_out->id, lifted_negate->columns.Size());
 
@@ -866,7 +866,7 @@ bool QueryCompareImpl::TrySinkThroughNegate(
 
     // We need to introduce a new column into the comparison.
     std::unordered_map<COL *, COL *> lifted_cmp_col_to_neg_in_col;
-    demanded_col = lowered_cmp->columns.Create(
+    demanded_col = Mint(lowered_cmp->columns, "cmp-sink/negate-lowered",
         lifted_neg_out->var, lifted_neg_out->type, lowered_cmp,
         lifted_neg_out->id, lowered_cmp->columns.Size());
 

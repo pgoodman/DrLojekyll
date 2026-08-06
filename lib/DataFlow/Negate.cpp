@@ -145,10 +145,10 @@ bool QueryNegateImpl::Canonicalize(QueryImpl *query,
   // If what we're negating is unsatisfiable, then our node isn't needed
   // anymore; the negation will always be true.
   } else if (negated_view->is_unsat) {
-    TUPLE *tuple = query->tuples.Create();
+    TUPLE *tuple = Mint(query->tuples, "negate/vacuous-true");
     auto col_index = 0u;
     for (auto col : columns) {
-      tuple->columns.Create(col->var, col->type, tuple, col->id, col_index);
+      Mint(tuple->columns, "negate/vacuous-true", col->var, col->type, tuple, col->id, col_index);
 
       if (col_index < first_attached_col) {
         tuple->input_columns.AddUse(input_columns[col_index]);
@@ -275,7 +275,7 @@ bool QueryNegateImpl::Canonicalize(QueryImpl *query,
   for (i = 0; i < first_attached_col; ++i) {
     const auto old_col = columns[i];
     const auto new_col =
-        new_columns.Create(old_col->var, old_col->type, this, old_col->id, i);
+        Mint(new_columns, "negate/canon", old_col->var, old_col->type, this, old_col->id, i);
     old_col->ReplaceAllUsesWith(new_col);
     new_input_columns.AddUse(i == keep_input_index
                                  ? input_columns[i]
@@ -285,7 +285,7 @@ bool QueryNegateImpl::Canonicalize(QueryImpl *query,
   for (auto j = 0u; i < num_cols; ++i, ++j) {
     const auto old_col = columns[i];
     if (old_col->IsUsed() || j == keep_attached_index) {
-      const auto new_col = new_columns.Create(old_col->var, old_col->type, this,
+      const auto new_col = Mint(new_columns, "negate/canon", old_col->var, old_col->type, this,
                                               old_col->id, new_columns.Size());
       old_col->ReplaceAllUsesWith(new_col);
       new_attached_columns.AddUse(

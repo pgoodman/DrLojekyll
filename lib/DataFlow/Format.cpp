@@ -143,6 +143,13 @@ OutputStream &operator<<(OutputStream &os, Query query) {
       sep = "<BR />";
     }
 
+    // S5' (2026-08-05): advisory mint-site tag in the node attribute cell.
+    // DOT is never goldened; untagged views emit nothing.
+    if (const char *tag = view.impl->mint_tag) {
+      os << sep << "MINT " << tag;
+      sep = "<BR />";
+    }
+
     os << sep << "EQ SET " << view.EquivalenceSetId() << "</TD>";
   };
 
@@ -1307,6 +1314,12 @@ OutputStream &operator<<(OutputStream &os, QueryDF df) {
     const auto depth = v.InductionDepth();
     if (set && depth) {
       r += " set=" + std::to_string(*set) + " depth=" + std::to_string(*depth);
+    }
+    // S5' (2026-08-05): the stable mint-site tag, rendered LAST so it is the
+    // final ATTRIBUTES token. Untagged views render nothing (no empty token).
+    if (const char *tag = v.impl->mint_tag) {
+      r += " tag=";
+      r += tag;
     }
     return r;
   };

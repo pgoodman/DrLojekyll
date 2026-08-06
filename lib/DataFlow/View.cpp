@@ -852,14 +852,14 @@ bool QueryViewImpl::AllColumnsAreUsed(void) const noexcept {
 //                                     UNION
 QueryTupleImpl *QueryViewImpl::GuardWithTuple(QueryImpl *query) {
 
-  const auto tuple = query->tuples.Create();
+  const auto tuple = Mint(query->tuples, "view/guard");
   tuple->color = color;
 
   assert(!AsInsert());  // INSERTs don't have output columns.
 
   auto col_index = 0u;
   for (auto col : columns) {
-    auto out_col = tuple->columns.Create(
+    auto out_col = Mint(tuple->columns, "view/guard",
         col->var, col->type, tuple, col->id, col_index++);
     out_col->CopyConstantFrom(col);
   }
@@ -939,7 +939,7 @@ QueryTupleImpl *
 QueryViewImpl::GuardWithOptimizedTuple(QueryImpl *query,
                                        unsigned first_attached_col) {
 
-  QueryTupleImpl *tuple = query->tuples.Create();
+  QueryTupleImpl *tuple = Mint(query->tuples, "view/opt-guard");
   tuple->color = color;
 
 #ifndef NDEBUG
@@ -956,7 +956,7 @@ QueryViewImpl::GuardWithOptimizedTuple(QueryImpl *query,
   for (auto i = 0u; i < num_cols; ++i) {
     const auto col = columns[i];
     const auto new_col =
-        tuple->columns.Create(col->var, col->type, tuple, col->id, i);
+        Mint(tuple->columns, "view/opt-guard", col->var, col->type, tuple, col->id, i);
     new_col->CopyConstantFrom(col);
   }
 
@@ -1059,11 +1059,11 @@ QueryViewImpl::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
   in_to_out.clear();
 
   auto col_index = 0u;
-  QueryCompareImpl *cmp = query->compares.Create(op);
+  QueryCompareImpl *cmp = Mint(query->compares, "view/comparison", op);
   cmp->color = color;
 
   cmp->input_columns.AddUse(lhs_col);
-  auto lhs_out_col = cmp->columns.Create(lhs_col->var, lhs_col->type, cmp,
+  auto lhs_out_col = Mint(cmp->columns, "view/comparison", lhs_col->var, lhs_col->type, cmp,
                                          lhs_col->id, col_index++);
 
   lhs_out_col->CopyConstantFrom(lhs_col);
@@ -1075,7 +1075,7 @@ QueryViewImpl::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
     in_to_out.emplace(rhs_col, lhs_out_col);
 
   } else {
-    auto rhs_out_col = cmp->columns.Create(rhs_col->var, rhs_col->type, cmp,
+    auto rhs_out_col = Mint(cmp->columns, "view/comparison", rhs_col->var, rhs_col->type, cmp,
                                            rhs_col->id, col_index++);
     rhs_out_col->CopyConstantFrom(rhs_col);
     in_to_out.emplace(rhs_col, rhs_out_col);
@@ -1088,20 +1088,20 @@ QueryViewImpl::ProxyWithComparison(QueryImpl *query, ComparisonOperator op,
     if (col != lhs_col && col != rhs_col) {
       cmp->attached_columns.AddUse(col);
       const auto attached_col =
-          cmp->columns.Create(col->var, col->type, cmp, col->id, col_index++);
+          Mint(cmp->columns, "view/comparison", col->var, col->type, cmp, col->id, col_index++);
       attached_col->CopyConstantFrom(col);
       in_to_out.emplace(col, attached_col);
     }
   }
 
   // Create a tuple that re-orders the output of the CMP to preserve it.
-  QueryTupleImpl *tuple = query->tuples.Create();
+  QueryTupleImpl *tuple = Mint(query->tuples, "view/comparison-restore");
   tuple->color = color;
 
   col_index = 0u;
   for (auto orig_col : columns) {
     QueryColumnImpl *const in_col = in_to_out[orig_col];
-    auto out_col = tuple->columns.Create(orig_col->var, orig_col->type, tuple,
+    auto out_col = Mint(tuple->columns, "view/comparison-restore", orig_col->var, orig_col->type, tuple,
                                          orig_col->id, col_index++);
     tuple->input_columns.AddUse(in_col);
     out_col->CopyConstantFrom(in_col);

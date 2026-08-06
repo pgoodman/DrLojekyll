@@ -217,14 +217,14 @@ bool QueryKVIndexImpl::Canonicalize(QueryImpl *query,
   // If none of the value columns are used then replace this K/V index with a
   // tuple.
   if (!any_values_are_used) {
-    const auto tuple = query->tuples.Create();
+    const auto tuple = Mint(query->tuples, "kvindex/unused-values");
 
 #ifndef NDEBUG
     tuple->producer = "KVINDEX-UNUSED-VALS(" + producer + ")";
 #endif
 
     for (auto col : columns) {
-      (void) tuple->columns.Create(col->var, col->type, tuple, col->id);
+      (void) Mint(tuple->columns, "kvindex/unused-values", col->var, col->type, tuple, col->id);
     }
 
     auto j = 0u;
@@ -280,7 +280,7 @@ bool QueryKVIndexImpl::Canonicalize(QueryImpl *query,
       continue;  // Remove the column.
     }
 
-    const auto new_out_col = new_output_columns.Create(
+    const auto new_out_col = Mint(new_output_columns, "kvindex/canon",
         out_col->var, out_col->type, this, out_col->id);
     new_out_col->CopyConstantFrom(out_col);
     out_col->ReplaceAllUsesWith(new_out_col);
@@ -300,7 +300,7 @@ bool QueryKVIndexImpl::Canonicalize(QueryImpl *query,
   for (auto in_col : attached_columns) {
     (void) in_col;
     const auto old_out_col = columns[i++];
-    const auto new_out_col = new_output_columns.Create(
+    const auto new_out_col = Mint(new_output_columns, "kvindex/canon",
         old_out_col->var, old_out_col->type, this, old_out_col->id);
     assert(!old_out_col->IsConstantRef());
     old_out_col->ReplaceAllUsesWith(new_out_col);

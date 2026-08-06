@@ -10,7 +10,7 @@ namespace {
 
 static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
                                   VIEW *incoming_view) {
-  TUPLE *proxy = impl->tuples.Create();
+  TUPLE *proxy = Mint(impl->tuples, "link/insert-proxy");
   proxy->color = incoming_view->color;
   proxy->can_receive_deletions = incoming_view->can_produce_deletions;
   proxy->can_produce_deletions = proxy->can_receive_deletions;
@@ -23,7 +23,7 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
   auto col_index = 0u;
   for (COL *col : view->input_columns) {
     COL *const proxy_col =
-        proxy->columns.Create(col->var, col->type, proxy, col->id, col_index++);
+        Mint(proxy->columns, "link/insert-proxy", col->var, col->type, proxy, col->id, col_index++);
     proxy->input_columns.AddUse(col);
     proxy_col->CopyConstantFrom(col);
   }
@@ -33,7 +33,7 @@ static VIEW *ProxyInsertWithTuple(QueryImpl *impl, INSERT *view,
   const auto num_input_cols = col_index;
   for (COL *col : view->attached_columns) {
     COL *const proxy_col =
-        proxy->columns.Create(col->var, col->type, proxy, col->id, col_index++);
+        Mint(proxy->columns, "link/insert-proxy", col->var, col->type, proxy, col->id, col_index++);
     proxy->input_columns.AddUse(col);
     proxy_col->CopyConstantFrom(col);
   }
@@ -59,7 +59,7 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
   // Make sure the negated view is a tuple.
   if (!view->negated_view->AsTuple()) {
     VIEW *const negated_view = view->negated_view.get();
-    TUPLE *const tuple = impl->tuples.Create();
+    TUPLE *const tuple = Mint(impl->tuples, "link/negated-view-proxy");
     tuple->color = negated_view->color;
 
 #ifndef NDEBUG
@@ -73,7 +73,7 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
 
     auto col_index = 0u;
     for (COL *col : negated_view->columns) {
-      COL *const tuple_col = tuple->columns.Create(col->var, col->type, tuple,
+      COL *const tuple_col = Mint(tuple->columns, "link/negated-view-proxy", col->var, col->type, tuple,
                                                    col->id, col_index++);
       tuple->input_columns.AddUse(col);
       tuple_col->CopyConstantFrom(col);
@@ -88,7 +88,7 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
   if (auto incoming_view = VIEW::GetIncomingView(view->input_columns);
       incoming_view && !incoming_view->AsTuple()) {
 
-    TUPLE *const proxy = impl->tuples.Create();
+    TUPLE *const proxy = Mint(impl->tuples, "link/negate-source-proxy");
 
 #ifndef NDEBUG
     proxy->producer = "PROXY-NEGATE(";
@@ -102,13 +102,13 @@ static void ProxyNegatedViews(QueryImpl *impl, NEGATION *view) {
 
     auto col_index = 0u;
     for (COL *col : view->input_columns) {
-      COL *const proxy_col = proxy->columns.Create(col->var, col->type, proxy,
+      COL *const proxy_col = Mint(proxy->columns, "link/negate-source-proxy", col->var, col->type, proxy,
                                                    col->id, col_index++);
       proxy_col->CopyConstantFrom(col);
     }
 
     for (auto col : view->attached_columns) {
-      auto tuple_col = proxy->columns.Create(col->var, col->type, proxy,
+      auto tuple_col = Mint(proxy->columns, "link/negate-source-proxy", col->var, col->type, proxy,
                                              col->id, col_index++);
       tuple_col->CopyConstantFrom(col);
     }
@@ -152,7 +152,7 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
       continue;
     }
 
-    TUPLE *const proxy = impl->tuples.Create();
+    TUPLE *const proxy = Mint(impl->tuples, "link/join-input-proxy");
     new_joined_views.AddUse(proxy);
 
 #ifndef NDEBUG
@@ -169,7 +169,7 @@ static void ProxyJoinedViews(QueryImpl *impl, JOIN *join) {
     // then we're more likely to share that table too.
     auto col_index = 0u;
     for (COL *view_col : view->columns) {
-      COL *const proxy_col = proxy->columns.Create(
+      COL *const proxy_col = Mint(proxy->columns, "link/join-input-proxy",
           view_col->var, view_col->type, proxy, view_col->id, col_index++);
       proxy_col->CopyConstantFrom(view_col);
       proxy->input_columns.AddUse(view_col);
@@ -208,7 +208,7 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
       continue;
     }
 
-    TUPLE *const proxy = impl->tuples.Create();
+    TUPLE *const proxy = Mint(impl->tuples, "link/merge-input-proxy");
     new_merged_views.AddUse(proxy);
 
 #ifndef NDEBUG
@@ -244,7 +244,7 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
     // then we're more likely to share that table too.
     auto col_index = 0u;
     for (auto out_col : view->columns) {
-      COL *proxy_col = proxy->columns.Create(out_col->var, out_col->type, proxy,
+      COL *proxy_col = Mint(proxy->columns, "link/merge-input-proxy", out_col->var, out_col->type, proxy,
                                              out_col->id, col_index++);
       proxy_col->CopyConstantFrom(out_col);
       proxy->input_columns.AddUse(out_col);

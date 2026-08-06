@@ -129,12 +129,12 @@ unsigned QueryJoinImpl::Depth(void) noexcept {
 //       |                                |
 //     users                            users
 void QueryJoinImpl::ConvertTrivialJoinToTuple(QueryImpl *impl) {
-  TUPLE * const tuple = impl->tuples.Create();
+  TUPLE * const tuple = Mint(impl->tuples, "join/trivial");
   tuple->color = color;
 
   auto col_index = 0u;
   for (auto out_col : columns) {
-    const auto new_out_col = tuple->columns.Create(
+    const auto new_out_col = Mint(tuple->columns, "join/trivial",
         out_col->var, out_col->type, tuple, out_col->id, col_index++);
     new_out_col->CopyConstantFrom(out_col);
   }
@@ -263,12 +263,12 @@ bool QueryJoinImpl::ProxyUnusedInputColumns(QueryImpl *impl) {
       continue;
     }
 
-    auto tuple = impl->tuples.Create();
+    auto tuple = Mint(impl->tuples, "join/unused-col-guard");
     tuple->color = color;
     auto col_index = 0u;
     for (auto in_col : joined_view->columns) {
       if (needed_cols[in_col]) {
-        auto new_in_col = tuple->columns.Create(in_col->var, in_col->type,
+        auto new_in_col = Mint(tuple->columns, "join/unused-col-guard", in_col->var, in_col->type,
                                                 tuple, in_col->id, col_index++);
         new_in_col->CopyConstantFrom(in_col);
         tuple->input_columns.AddUse(in_col);
@@ -308,13 +308,13 @@ bool QueryJoinImpl::ProxyUnusedInputColumns(QueryImpl *impl) {
       for (auto in_col : in_cols) {
         new_in_cols.AddUse(col_map[in_col]);
       }
-      auto new_out_col = new_columns.Create(out_col->var, out_col->type, this,
+      auto new_out_col = Mint(new_columns, "join/canon", out_col->var, out_col->type, this,
                                             out_col->id, col_index++);
       new_out_to_in.emplace(new_out_col, std::move(new_in_cols));
       out_col->ReplaceAllUsesWith(new_out_col);
 
     } else if (out_col->IsUsedIgnoreMerges()) {
-      auto new_out_col = new_columns.Create(out_col->var, out_col->type, this,
+      auto new_out_col = Mint(new_columns, "join/canon", out_col->var, out_col->type, this,
                                             out_col->id, col_index++);
       new_in_cols.AddUse(col_map[in_cols[0]]);
       new_out_to_in.emplace(new_out_col, std::move(new_in_cols));
@@ -431,9 +431,9 @@ bool QueryJoinImpl::Canonicalize(QueryImpl *query,
 
     // First, we need a tuple that will forward all columns as they previously
     // were.
-    TUPLE * const tuple = query->tuples.Create();
+    TUPLE * const tuple = Mint(query->tuples, "join/dedup-restore");
     for (COL *out_col : columns) {
-      (void) tuple->columns.Create(out_col->var, out_col->type, tuple,
+      (void) Mint(tuple->columns, "join/dedup-restore", out_col->var, out_col->type, tuple,
                                    out_col->id, out_col->Index());
     }
 
@@ -455,7 +455,7 @@ bool QueryJoinImpl::Canonicalize(QueryImpl *query,
         if (1u < in_cols.Size()) {
           ++new_num_pivots;
         }
-        new_out_col = new_columns.Create(out_col->var, out_col->type, this,
+        new_out_col = Mint(new_columns, "join/canon", out_col->var, out_col->type, this,
                                          out_col->id, out_col->Index());
         new_out_to_in.emplace(new_out_col, std::move(in_cols));
       }

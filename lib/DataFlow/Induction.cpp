@@ -426,14 +426,14 @@ void QueryImpl::IdentifyInductions(const ErrorLog &log, bool recursive) {
     }
 
     changed = true;
-    MERGE *const new_union = merges.Create();
+    MERGE *const new_union = Mint(merges, "induction/leave-union");
 #ifndef NDEBUG
     new_union->producer = "INDUCTIVE-LEAVE";
 #endif
 
     auto col_index = 0u;
     for (auto col : view->columns) {
-      const auto union_col = new_union->columns.Create(
+      const auto union_col = Mint(new_union->columns, "induction/leave-union",
           col->var, col->type, new_union, col->id, col_index++);
 
       col->ReplaceAllUsesWith(union_col);

@@ -8,8 +8,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <iterator>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace hyde {
@@ -449,6 +451,13 @@ template <typename T>
 class Def {
  public:
   explicit Def(T *self_) : self(self_) {}
+
+  // S5' (2026-08-05): stable, self-identifying mint-site tag. Set ONLY via
+  // Mint() at the creating DefList site; a per-SITE constant string literal
+  // ("pass/what" kebab). nullptr = untagged (renders nothing). Never folded
+  // into Hash/Equals, never a lowering input, never moved by any field-copy
+  // helper (CDaGI included) -- golden-safe by human-stability of the literal.
+  const char *mint_tag{nullptr};
 
   ~Def(void) {
     for (Use<T> *use : weak_uses) {
@@ -977,6 +986,21 @@ class DefList {
   User *owner{nullptr};
   std::vector<std::unique_ptr<T>> defs;
 };
+
+// S5' (2026-08-05): the tagged mint surface. Forwards to DefList::Create
+// (unchanged) and stamps the site tag. The ONLY writer of Def<T>::mint_tag.
+// No CTAD, no defaulted trailing params -- the source_location host that once
+// justified those is dropped. Old Create() stays legal (untagged) forever, so
+// the family-by-family sweep is incremental by construction.
+template <typename T, typename... Args>
+T *Mint(DefList<T> &list, const char *tag, Args &&...args) {
+  assert(tag != nullptr);
+  assert(tag[0] != '\0');
+  assert(std::strchr(tag, '/') != nullptr);  // two-level "pass/what".
+  T *const def = list.Create(std::forward<Args>(args)...);
+  def->mint_tag = tag;
+  return def;
+}
 
 template <typename PublicT, typename PrivateT>
 class Node;

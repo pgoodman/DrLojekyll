@@ -246,7 +246,7 @@ bool QueryTupleImpl::Canonicalize(QueryImpl *,
     const auto old_col = columns[i];
     if (old_col->IsUsed() || i == keep_index) {
       const auto new_col =
-          new_columns.Create(old_col->var, old_col->type, this, old_col->id, i);
+          Mint(new_columns, "tuple/canon", old_col->var, old_col->type, this, old_col->id, i);
       old_col->ReplaceAllUsesWith(new_col);
       new_input_columns.AddUse(i == keep_index
                                    ? input_columns[i]

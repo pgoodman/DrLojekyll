@@ -249,7 +249,7 @@ bool QueryAggregateImpl::Canonicalize(QueryImpl *query,
     const auto in_col = group_by_columns[j];
     if (const auto old_out_col = in_to_out[in_col]; old_out_col) {
       new_group_by_columns.AddUse(in_col);
-      const auto new_out_col = new_columns.Create(
+      const auto new_out_col = Mint(new_columns, "aggregate/canon",
           old_out_col->var, old_out_col->type, this, old_out_col->id);
       old_out_col->ReplaceAllUsesWith(new_out_col);
       new_out_col->CopyConstantFrom(old_out_col);
@@ -260,7 +260,7 @@ bool QueryAggregateImpl::Canonicalize(QueryImpl *query,
   const auto num_cols = columns.Size();
   for (auto j = i; j < num_cols; ++j) {
     const auto old_out_col = columns[j];
-    const auto new_out_col = new_columns.Create(
+    const auto new_out_col = Mint(new_columns, "aggregate/canon",
         old_out_col->var, old_out_col->type, this, old_out_col->id);
     old_out_col->ReplaceAllUsesWith(new_out_col);
     new_out_col->CopyConstantFrom(old_out_col);
