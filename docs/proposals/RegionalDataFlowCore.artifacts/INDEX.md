@@ -1,32 +1,42 @@
 # RegionalDataFlowCore.artifacts — directory map
 
-Session provenance: DESIGN-GROUNDING session 2026-08-02 at tip f0c913e0 (branch
-`keyed-instances`), phases 1–6. No production code, no goldens, no commits this
-session. The normative target is `../RegionalDataFlowCore.md` (the proposed
-replacement architecture: request edges, typed identity, deletes the `-demand`
-machinery); these artifacts ground it against landed code, diff it into a staged
-cutover, critique it adversarially, and enumerate the owner decisions it owes.
+## Current resumption authority
 
-READ ORDER for a fresh session: this INDEX → `owner-adjudication-brief.md` (the
-decision queue) → `next-session-prompt.md` (the charter) → the phase reports and
-stage diffs as the brief references them.
+Start with **`next-session-prompt.md`**. It contains the current code-grounded
+review and roadmap for relation-local `@key` semantics, ordered access paths,
+partial-binding agreement, co-recursive keyed instances, and lazy trie/COLT
+work. It supersedes older session charters and the older assumption that
+`@key` is owned by query-demand adornments. Re-verify its code anchors against
+the branch tip before implementation.
 
-## Start-here deliverables (the session's outputs)
+Historical session provenance: DESIGN-GROUNDING session 2026-08-02 at tip
+f0c913e0 (branch `keyed-instances`), phases 1–6. The target at that time was
+`../RegionalDataFlowCore.md`; the current resumption prompt supersedes it where
+the clarified relation-local `@key` semantics conflict with the older design.
+The remaining artifacts preserve grounding, staged-cutover, and critique
+evidence.
 
-- **owner-adjudication-brief.md** — THE central deliverable. The consolidated,
+READ ORDER for keyed-instance continuation: this INDEX →
+`next-session-prompt.md` → `../RegionalDataFlowCore.md` → older phase reports
+only when the current prompt references them. The historical adjudication
+artifacts remain evidence, not current semantic authority.
+
+## Historical session deliverables
+
+- **owner-adjudication-brief.md** — the historical consolidated,
   deduplicated DECISION QUEUE in three tiers (T1 blocks the stage sequence, T2
   blocks a stage's exit gate, T3 standalone pre-Stage-A), each item mapped across
   its source labels, with the panel's recommendation where one exists, a fast-path
-  summary, and six session errata. START HERE.
+  summary, and six session errata.
 - **ledger-entry-AW-draft.md** — DRAFT of KeyedInstances.md §20(AW) (the regional
   epoch open). The owner decides whether/where it lands; KeyedInstances.md is
   untouched (its ledger stops at (AV)).
-- **next-session-prompt.md** — the successor charter (SUPERSEDES the prior
-  design-grounding charter of the same name). Next session: owner adjudication
-  first, then the pre-Stage-A cleanup slice OR the Stage A implementation slice.
+- **next-session-prompt.md** — the current keyed-instance review and execution
+  roadmap. It supersedes the session-8/K5 successor charter formerly stored at
+  this path.
 - **INDEX.md** — this file.
 
-## Architecture pseudocode (the grounding authority)
+## Historical architecture pseudocode
 
 - **regional-arch-pseudocode.md** — whole-program pseudocode of the CURRENT
   demand/keyed-instance architecture (the layer the proposal replaces) with Stages
