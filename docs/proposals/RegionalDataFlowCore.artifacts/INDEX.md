@@ -4,22 +4,38 @@
 
 Start with **`next-session-prompt.md`**. It contains the current code-grounded
 review and roadmap for relation-local `@key` semantics, ordered access paths,
-partial-binding agreement, co-recursive keyed instances, and lazy trie/COLT
-work. It supersedes older session charters and the older assumption that
-`@key` is owned by query-demand adornments. Re-verify its code anchors against
-the branch tip before implementation.
+canonical relation facts, exact request ownership, rooted lifecycle for cyclic
+binding-state dependencies, partial-binding agreement, and lazy trie/COLT work.
+It supersedes older session charters and the assumption that `@key` is owned by
+query-demand adornments. Re-verify its code anchors against the branch tip
+before implementation.
 
 Historical session provenance: DESIGN-GROUNDING session 2026-08-02 at tip
 f0c913e0 (branch `keyed-instances`), phases 1–6. The target at that time was
-`../RegionalDataFlowCore.md`; the current resumption prompt supersedes it where
-the clarified relation-local `@key` semantics conflict with the older design.
-The remaining artifacts preserve grounding, staged-cutover, and critique
-evidence.
+`../RegionalDataFlowCore.md`. The current resumption prompt is the semantic and
+execution-roadmap authority for keyed-instance continuation. The older proposal
+still supplies the retained invariants named below; it is not an independent
+authority to use when the two documents disagree. The remaining artifacts
+preserve grounding, staged-cutover, and critique evidence.
 
 READ ORDER for keyed-instance continuation: this INDEX →
 `next-session-prompt.md` → `../RegionalDataFlowCore.md` → older phase reports
 only when the current prompt references them. The historical adjudication
 artifacts remain evidence, not current semantic authority.
+
+## Supersession matrix
+
+| Topic in `RegionalDataFlowCore.md` | Status for keyed-instance continuation |
+| --- | --- |
+| Semantic member identity, explicit projection, and derivation support | RETAIN. Canonical regional facts and `SemanticMemberKey` remain the logical truth authority. |
+| Exact `RequestEdgeId`, multiple owners, late attachment, caller-qualified results, and drain-before-retire | RETAIN. Counts and runtime handles remain derived implementation aids. |
+| Pure-region/effect boundary and epoch results independent of queue order | RETAIN. |
+| Region ownership/call forest is acyclic | RETAIN for lexical parent/child region ownership and external request routing. |
+| No cyclic or key-changing regional request graph | REFINE. Region ownership stays acyclic, but typed intra-region `RuleActivationEdge` dependencies between binding states may cycle and use rooted SCC liveness. They are not request-owner edges. |
+| Recursive evaluation remains inside one instance | SUPERSEDE. Prefix-preserving recursion may stay in one binding state; key-changing recursion may run a joint fixpoint over several binding states. |
+| Regional demand has no source annotation | SUPERSEDE. `@key` is a source-level ordered specialization-path contract, not a request, member key, query adornment, or physical-layout promise. |
+| Physical layout research excluded | RETAIN AS SEQUENCING. Hash/trie/COLT/Free Join planning follows semantic and lifecycle cutover; it does not define the semantic model. |
+| Original Stage A–D implementation order | SUPERSEDE. Use the phases in `next-session-prompt.md`. Historical diffs remain evidence for retained invariants and deletion obligations. |
 
 ## Historical session deliverables
 
@@ -153,3 +169,37 @@ artifacts remain evidence, not current semantic authority.
   with run_refinterp live, F29 promoted+fixed.
 - **owner-adjudication-record.md** (appended) — the adornment-fuzzing owner
   direction (placement-enumeration harness + bracket parser obligations).
+
+## Later landed-state and implementation evidence (2026-08-03–05)
+
+These files describe intermediate compiler states and the tests that landed
+with them. They are useful for locating current code and deciding which tests
+to rewrite, but `next-session-prompt.md` supersedes their key/adornment,
+fallback, and stage-sequencing semantics.
+
+- **stage-b-seed.md** and **stage-b-landed-seed.md** — pre-landing and landed
+  whole-pipeline views of the degenerate `FrozenRegionalProgram` layer.
+- **key-pragma-landed-seed.md** — landed architecture after `@demand` became
+  `@key` and pragma-selected nested lowering existed.
+- **k1-multikey.md** — grounded implementation record for repeated `@key`
+  pragmas, unordered set-of-sets validation, multi-adornment demand coupling,
+  and its golden corpus. Its parser/code census remains evidence; its semantic
+  coupling is superseded.
+- **k6-riders.md** and **k6-landed-seed.md** — redeclaration, diagnostic-range,
+  DOT, and referee riders plus the post-K6 pipeline. The immediately-previous-
+  redeclaration implementation documented here is the source of the remaining
+  keyed/unkeyed/keyed consistency gap.
+- **k5-provenance.md** and **k5-landed-seed.md** — Tier-2 origin-declaration
+  provenance design, landed evidence, and the post-K5 pipeline.
+- **s9-landed-seed.md** and **s9-mint-sloc-diag-formulation.md** — post-session-9
+  compiler/referee architecture and deferred diagnostic-source-location work.
+- **s5-mint-tags.md**, **s5-mint-tags-table.md**, and
+  **s5-mint-tags-desired-states.md** — the stable DataFlow mint-tag design,
+  complete site table, and predicted dump deltas. Mint tags remain debugging
+  metadata, never semantic identity.
+- **running-example-disassembler.md** — recursive-disassembler design terrain,
+  including pivot splits and activation-call-graph examples. Re-evaluate its
+  old bracket/request terminology through the supersession matrix.
+- **region-model-pseudocode-seed.md** — superseded seed for the region-model
+  architecture. `regional-arch-pseudocode.md` is the later executable census;
+  neither overrides the current target semantics.
