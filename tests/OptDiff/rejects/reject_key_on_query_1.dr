@@ -1,0 +1,10 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; expect: `@key` on a `#query` rejects directly. `@key` declares a
+; relation-local access path and rides ONLY on `#local`/`#export`; a query's
+; calling convention is its bound/free parameters, so a key on a query has no
+; semantic referent. The query parser draws a targeted witness in state 6
+; rather than the generic "unexpected tokens following declaration" cascade.
+#message edge_2(u64 A, u64 B).
+#query path(bound u64 A, free u64 B) @key(A).
+path(A, B) : edge_2(A, B).

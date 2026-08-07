@@ -1,0 +1,15 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; P0-item-4 (ORDER-SIGNIFICANT paths) — the MULTI-COLUMN exact-dup guard. Two
+; @key pragmas declaring the SAME ordered two-column path `[A, B]` are a
+; parse-time reject (repeating one ordered path is the error). This guards the
+; ordered-vector comparison specifically: a buggy flip that compared only the
+; first column, or that mishandled multi-column paths, would let `@key(A, B)
+; @key(A, B)` slip through. Its complement `@key(A, B) @key(B, A)` is ACCEPTED
+; at parse (distinct ordered paths) — the whole point of the flip.
+; Rejects during PARSE, before demand. The bound query exists so dropping the
+; dup-path check flips this reject->accept (a LOST CHECK, not a masked one).
+#message b_2(u64 X, u64 Y).
+#local foo(u64 A, u64 B) @key(A, B) @key(A, B).
+foo(A, B) : b_2(A, B).
+#query q(bound u64 A, free u64 B) : foo(A, B).

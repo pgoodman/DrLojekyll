@@ -1,9 +1,13 @@
-; RP-10 / ADJ-K1-A: two @key pragmas declaring the SAME column set are a
-; parse-time reject (each instance key must be a distinct set, one per
-; adornment). SET-based, order-free. Rejects during PARSE, before demand.
-; The bound query below matches {A}: it exists ONLY so that removing the
-; ADJ-K1-A parse check would flip this reject->accept (a LOST CHECK), i.e.
-; the query makes the case actually GUARD the dup-set check (finding 1).
+; P0-item-4 (ORDER-SIGNIFICANT paths): two @key pragmas declaring the SAME
+; ordered column path are a parse-time reject (each instance key must be a
+; distinct ordered path). `@key(A) @key(A)` is an exact repeat of the one-column
+; path [A], so it rejects regardless of order-significance. Rejects during
+; PARSE, before demand. The bound query below matches {A}: it exists ONLY so
+; that removing the dup-path parse check would flip this reject->accept (a LOST
+; CHECK), i.e. the query makes the case actually GUARD the dup-path check.
+; See reject_key_double_2 for the multi-column ordered-exact-dup guard, and note
+; that `@key(A, B) @key(B, A)` is NOW ACCEPTED at parse (distinct paths) — the
+; P0-item-4 order-significance flip.
 #message b_1(u64 X, u64 Y).
 #local foo(u64 A, u64 B) @key(A) @key(A).
 foo(A, B) : b_1(A, B).

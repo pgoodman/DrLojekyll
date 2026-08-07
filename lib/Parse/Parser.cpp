@@ -971,26 +971,23 @@ void ParserImpl::ParseLocalExport(
             return;
           }
 
-          // ADJ-K1-A: a set-based dup check against every already-stored set
-          // (order-free — {A} vs {A} and {A,B} vs {B,A} both match). Duplicate
-          // declared sets are the single-adornment ambiguity reborn (RP-10).
-          {
-            std::vector<unsigned> canon(key_cur_set);
-            std::sort(canon.begin(), canon.end());
-            for (const std::vector<unsigned> &prev_set :
-                 local->instance_key_param_index_sets) {
-              std::vector<unsigned> prev_canon(prev_set);
-              std::sort(prev_canon.begin(), prev_canon.end());
-              if (prev_canon == canon) {
-                context->error_log.Append(scope_range,
-                                          key_pragma_tok.SpellingRange())
-                    << "Duplicate instance key on " << local->KindName() << " '"
-                    << local->name << "'; this '@key' pragma declares the same "
-                    << "column set as an earlier '@key' pragma — each instance "
-                    << "key must be a distinct column set (one per query "
-                    << "adornment)";
-                return;
-              }
+          // P0-item-4 (ORDER-SIGNIFICANT paths): an `@key` declares an ORDERED
+          // access path. `[A,B]` and `[B,A]` are DIFFERENT paths and are both
+          // legal on one declaration; only repeating the SAME ORDERED path is an
+          // error. So compare the ordered vectors DIRECTLY — no per-set sort. (The
+          // within-`@key` duplicate-column check above, e.g. `@key(A, A)`, is a
+          // separate order-free obligation and is unaffected.)
+          for (const std::vector<unsigned> &prev_set :
+               local->instance_key_param_index_sets) {
+            if (prev_set == key_cur_set) {
+              context->error_log.Append(scope_range,
+                                        key_pragma_tok.SpellingRange())
+                  << "Duplicate instance key on " << local->KindName() << " '"
+                  << local->name << "'; this '@key' pragma declares the same "
+                  << "ordered column path as an earlier '@key' pragma — each "
+                  << "instance key must be a distinct ordered path (`@key(A, B)` "
+                  << "and `@key(B, A)` are distinct; repeating one is the error)";
+              return;
             }
           }
           // K6-3: capture this set's own spelling range (`@key(` .. `)`),
@@ -1469,20 +1466,16 @@ void ParserImpl::RemoveDecl(ParsedDeclarationImpl *decl) {
 
 // Add `decl` to the end of `decl_list`, and make sure `decl` is consistent
 // with any prior declarations of the same name.
-// K6-4 (owner-ratified 2026-08-04): order-free set-of-sets equality for the
-// IDENTICAL-OR-ABSENT cross-redeclaration `@key` check. Sort each inner set,
-// collect into a std::set, compare — the SAME canonicalization the landed
-// demand Step 2b uses (Demand.cpp:902-905), transcribed LOCALLY rather than
-// hoisted across the lib boundary (the necessity panel's point).
+// K6-4 (owner-ratified 2026-08-04; P0-item-4 order-significant, 2026-08-07):
+// equality of the declared `@key` collection for the IDENTICAL-OR-ABSENT
+// cross-redeclaration check. Each path is an ORDERED sequence — `[A,B]` and
+// `[B,A]` are DISTINCT paths (do NOT sort within a path) — but the COLLECTION
+// of paths is unordered (reordering two `@key` pragmas does not change the
+// contract), so collect the ordered inner vectors into a std::set and compare.
 static bool SameKeySetOfSets(const std::vector<InstanceKeySet> &a,
                              const std::vector<InstanceKeySet> &b) {
   auto canon = [](const std::vector<InstanceKeySet> &v) {
-    std::set<std::vector<unsigned>> out;
-    for (std::vector<unsigned> s : v) {
-      std::sort(s.begin(), s.end());
-      out.insert(std::move(s));
-    }
-    return out;
+    return std::set<std::vector<unsigned>>(v.begin(), v.end());  // ORDER kept per path
   };
   return canon(a) == canon(b);
 }
@@ -1648,31 +1641,52 @@ bool ParserImpl::FinalizeDeclAndCheckConsistency(ParsedDeclarationImpl *decl) {
     return false;
   }
 
-  // IDENTICAL-OR-ABSENT (owner-ratified 2026-08-04, K6-4): a redeclaration
-  // carrying `@key` must declare the identical set-of-sets (order-free, per-set
-  // AND across-sets) as the prior; a pragma-free redecl inherits silently
-  // (empty ⇒ no claim). Only a divergence between two NON-EMPTY declarations is
-  // an error.
+  // IDENTICAL-OR-ABSENT (owner-ratified 2026-08-04, K6-4; extended 2026-08-06
+  // for the full-context gap): a redeclaration carrying `@key` must declare the
+  // identical set-of-sets (order-free, per-set AND across-sets) as the ONE
+  // canonical key-bearing declaration in the redeclaration context; a
+  // pragma-free redecl inherits silently (empty ⇒ no claim).
+  //
+  // Comparing only against the IMMEDIATELY PREVIOUS redecl (`prev_decl`) missed
+  // the keyed/unkeyed/keyed sequence: `@key(A)`, then an unkeyed redecl, then
+  // `@key(B)` skipped the check entirely (the unkeyed middle decl's empty key
+  // short-circuited `!pk.empty()`), and `InstanceKeys()` later silently
+  // returned the first nonempty key. Resolve the canonical contract across the
+  // WHOLE context instead: the FIRST key-bearing prior redeclaration.
+  // `redecls` holds the current decl at index `num_redecls - 1` (F31), so
+  // priors are `[0, num_redecls - 2]`.
   {
-    const auto &pk = prev_decl->instance_key_param_index_sets;
     const auto &ck = decl->instance_key_param_index_sets;
-    if (!pk.empty() && !ck.empty() && !SameKeySetOfSets(pk, ck)) {
-      const DisplayRange decl_key_range =
-          !decl->instance_key_ranges.empty() ? decl->instance_key_ranges.front()
-                                             : decl_pub.SpellingRange();
-      const DisplayRange prev_key_range =
-          !prev_decl->instance_key_ranges.empty()
-              ? prev_decl->instance_key_ranges.front()
-              : prev_decl_range;
-      auto err = context->error_log.Append(scope_range, decl_key_range);
-      err << "Instance key declared here differs from a previous redeclaration "
-          << "of " << decl_pub.KindName() << " '" << decl->name
-          << "'; every `@key`-bearing redeclaration must declare the identical "
-          << "column set(s), or omit `@key` to inherit";
-      auto note = err.Note(prev_decl_range, prev_key_range);
-      note << "Previous instance key is declared here";
-      RemoveDecl(decl);
-      return false;
+    if (!ck.empty()) {
+      ParsedDeclarationImpl *canon_decl = nullptr;
+      for (auto i = 0u; i + 1u < num_redecls; ++i) {
+        if (!redecls[i]->instance_key_param_index_sets.empty()) {
+          canon_decl = redecls[i];
+          break;
+        }
+      }
+      if (canon_decl &&
+          !SameKeySetOfSets(canon_decl->instance_key_param_index_sets, ck)) {
+        const ParsedDeclaration canon_pub(canon_decl);
+        const DisplayRange canon_decl_range = canon_pub.SpellingRange();
+        const DisplayRange decl_key_range =
+            !decl->instance_key_ranges.empty()
+                ? decl->instance_key_ranges.front()
+                : decl_pub.SpellingRange();
+        const DisplayRange canon_key_range =
+            !canon_decl->instance_key_ranges.empty()
+                ? canon_decl->instance_key_ranges.front()
+                : canon_decl_range;
+        auto err = context->error_log.Append(scope_range, decl_key_range);
+        err << "Instance key declared here differs from a previous "
+            << "redeclaration of " << decl_pub.KindName() << " '" << decl->name
+            << "'; every `@key`-bearing redeclaration must declare the "
+            << "identical column set(s), or omit `@key` to inherit";
+        auto note = err.Note(canon_decl_range, canon_key_range);
+        note << "Previous instance key is declared here";
+        RemoveDecl(decl);
+        return false;
+      }
     }
   }
 

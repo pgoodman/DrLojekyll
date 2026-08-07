@@ -219,6 +219,20 @@ void ParserImpl::ParseQuery(ParsedModuleImpl *module) {
             }
           }
 
+        } else if (Lexeme::kPragmaKey == lexeme) {
+
+          // `@key` is a relation-local specialization-path declaration; it
+          // rides ONLY on `#local`/`#export`. A `#query`'s calling convention
+          // is its `bound`/`free` parameters — a key on a query has no
+          // semantic referent. Draw a direct witness here rather than letting
+          // it fall through to the generic "unexpected tokens" cascade.
+          context->error_log.Append(scope_range, tok_range)
+              << "Unexpected '" << tok << "' pragma on query " << name
+              << "; `@key` declares a relation-local access path and may only "
+              << "appear on a `#local` or `#export`, never on a `#query`";
+          RemoveDecl(query);
+          return;
+
         } else if (Lexeme::kPuncPeriod == lexeme) {
           query->last_tok = tok;
           state = 7;
