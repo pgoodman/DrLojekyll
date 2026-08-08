@@ -18,7 +18,6 @@ set(Parse_SRCS
 
     "Aggregate.cpp"
     "Clause.cpp"
-    "Demand.cpp"
     "Enum.cpp"
     "Error.cpp"
     "ErrorLog.cpp"

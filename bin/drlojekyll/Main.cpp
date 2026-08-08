@@ -46,9 +46,6 @@ struct FileStream {
 namespace {
 
 static unsigned gFirstId = 0u;
-static bool gDemand = false;
-static bool gDemandInstance = false;
-static bool gDemandRetract = false;
 static PassPolicy gPassPolicy;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
@@ -73,7 +70,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   gPassPolicy.bisect_counter = 0u;
 
   auto query_opt =
-      Query::Build(module, error_log, gPassPolicy, gDemand, gDemandRetract);
+      Query::Build(module, error_log, gPassPolicy);
   if (!query_opt) {
     return EXIT_FAILURE;
   }
@@ -110,8 +107,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   SetRelDotDumpStream(gRelDotStream);  // K6-7b: DR-IR DOT twin (same pattern).
 
   auto program_opt =
-      Program::Build(*frozen_opt, error_log, gFirstId, gPassPolicy,
-                     gDemandInstance);
+      Program::Build(*frozen_opt, error_log, gFirstId, gPassPolicy);
   if (!program_opt) {
     return EXIT_FAILURE;
   }
@@ -602,30 +598,6 @@ extern "C" int main(int argc, const char *argv[]) {
       } else {
         hyde::gPassPolicy.bisect_limit = limit;
       }
-
-    // Enable the live demand transform (magic-sets / SLDMagic). Default-off,
-    // orthogonal to the dataflow/controlflow optimization toggles.
-    } else if (!strcmp(argv[i], "-demand") ||
-               !strcmp(argv[i], "--demand")) {
-      hyde::gDemand = true;
-
-    // Enable the keyed-instance nested lowering for demanded subgraphs
-    // (implies `-demand`). A lowering SELECTOR / semantics — OFF the PassPolicy
-    // registry, never a registered pass name, never a 5th golden mode.
-    } else if (!strcmp(argv[i], "-demand-instance") ||
-               !strcmp(argv[i], "--demand-instance")) {
-      hyde::gDemand = true;          // implies -demand
-      hyde::gDemandInstance = true;
-
-    // Enable demand retraction (D3.a.1, OQ-RETRACT-POLICY SET-demand): the
-    // fabricated demand message goes @differential and bound queries gain a
-    // generated `<name>_<bindings>_retract` entry point. A semantic flag —
-    // OFF the PassPolicy registry, orthogonal to `-demand-instance` and to
-    // the 4 golden optimization modes.
-    } else if (!strcmp(argv[i], "-demand-retract") ||
-               !strcmp(argv[i], "--demand-retract")) {
-      hyde::gDemand = true;          // implies -demand
-      hyde::gDemandRetract = true;
 
     // Datalog module file search path.
     } else if (!strcmp(argv[i], "-M")) {

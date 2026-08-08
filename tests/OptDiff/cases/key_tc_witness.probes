@@ -1,6 +1,0 @@
-# probes mirrored from demand_tc_witness.main.cpp
-reachable_from_bf 1
-reachable_from_bf 3
-reachable_from_bf 7
-reachable_from_bf 5
-reachable_from_bf 2

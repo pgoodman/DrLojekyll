@@ -348,12 +348,6 @@ bool QueryView::CanReceiveDeletions(void) const noexcept {
   return impl->can_receive_deletions;
 }
 
-// COMPILER-INTERNAL (keyed instances): the guard-annotation stamp (D1.a),
-// ABA-safe and CSE-migrating (View.cpp:579-590).
-hyde::GuardAnnotationIndex QueryView::GuardAnnotationIndex(void) const noexcept {
-  return impl->guard_annotation_index;
-}
-
 // COMPILER-INTERNAL (K5 Tier-2 origin provenance): the per-view origin
 // decl-set, sorted-unique by decl Id, seeded at Connect and CSE-migrating
 // through `CopyDifferentialAndGroupIdsTo` (View.cpp) with `group_ids`.

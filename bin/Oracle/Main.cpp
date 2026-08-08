@@ -747,10 +747,7 @@ class Oracle {
     // (flagless RP-6 activation would otherwise demand-gate a graph the
     // oracle never seeds, yielding an empty non-answer).
     query = hyde::Query::Build(*module_opt, error_log,
-                               hyde::PassPolicy::DisableDataFlowOpt(),
-                               /*demand_mode=*/false,
-                               /*demand_retract=*/false,
-                               /*suppress_demand=*/true);
+                               hyde::PassPolicy::DisableDataFlowOpt());
     if (!query) {
       error_log.Render(std::cerr);
       return EXIT_FAILURE;

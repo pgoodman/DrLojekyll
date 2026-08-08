@@ -13,6 +13,20 @@ message-driven C++ database. Pipeline:
 `docs/RuntimeAndCodegen.md` describes the runtime and generated-code shape.
 CLI driver: `bin/drlojekyll/Main.cpp`.
 
+> **P1 GREENFIELD CUT (2026-08-08).** The `-demand` magic-sets transform, the
+> `-demand-instance` keyed-instance nested lowering, and the flagless `@key`
+> demand-activation were DELETED wholesale (the compiler is not in use — a
+> greenfield delete-then-rebuild; motivation in
+> `docs/proposals/RegionalDataFlowCore.artifacts/session-16-whole-program-seed.md`
+> §3-P1 + memory `greenfield-rewrite-motivation`). Post-cut, `@key` is INERT
+> parsed metadata (parse-surface rejects still fire; no semantic/activation
+> effect) and a bound `#query` reads the canonical fully-materialized relation
+> via the plain cursor. `Query::Build` is `(module, log, policy)` again; the
+> `-demand*` flags are gone. Keyed/residual evaluation is NON-FUNCTIONAL until
+> the typed regional path is rebuilt (phases P2–P9). The three sections below
+> tagged **[REMOVED at the P1 cut — historical]** describe deleted machinery;
+> read them only for the pre-cut history.
+
 ## Build
 
 ```sh
@@ -33,9 +47,10 @@ cmake -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DDRLOJEKYLL_ENABLE_TE
 ## Test
 
 ```sh
-cd build/debug && ctest --output-on-failure   # DataFlowValidators, RelValidators,
-                                              # IdentityTypes, InstanceStore,
-                                              # MiniDisassembler, PointsTo, Runtime
+cd build/debug && ctest --output-on-failure   # IdentityTypes, MiniDisassembler,
+                                              # PointsTo, Runtime
+                                              # (DataFlowValidators / RelValidators /
+                                              #  InstanceStore removed at the P1 cut)
 ```
 
 End-to-end tests compile a `.dr` file at build time via `compile_datalog()`
@@ -51,8 +66,8 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 203 corner-case programs as of the
-K1 multi-@key landing — symrec_tie_1 is the standing
+(`<name>.dr` + `<name>.main.cpp`, 176 corner-case programs after the
+P1 greenfield cut removed the demand/keyed corpus — symrec_tie_1 is the standing
 determinism witness; agg_distinct_1 pins the aggregate multiplicity
 semantics + carries a `.contract` golden; barrier_neck_1
 witnesses the `:-` separator, sugar for `@barrier` between every two
@@ -558,7 +573,7 @@ aggregates/KV over INDUCTION-OWNED
 its OWN recursive result, rejected by the dataflow Stratify pass as the
 sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).
 
-## The demand transform (`-demand`, magic-sets — LANDED, single-adornment slice)
+## The demand transform (`-demand`, magic-sets) — [REMOVED at the P1 cut — historical]
 
 `-demand` (Main.cpp `gDemand` → `Query::Build(..., demand_mode)`) is a live
 magic-sets / SLDMagic rewrite of the Query graph for bound `#query`s: a SIP
@@ -589,7 +604,7 @@ adjudication; re-measure, never propagate the constant) — an unconditional
 transform would rewrite ~a quarter of the goldens, so mode-gating is
 mandatory.
 
-## The keyed-instance nested lowering (`-demand-instance` — LANDED, birth-and-rebuild)
+## The keyed-instance nested lowering (`-demand-instance`) — [REMOVED at the P1 cut — historical]
 
 `-demand-instance` (Main.cpp `gDemandInstance`; implies `-demand`; OFF the
 PassPolicy registry — a lowering selector, not a pass) lowers a recognized
@@ -700,7 +715,7 @@ byte-additivity when predicting region golden deltas). Authority docs:
 stage-b-diff.md AMENDMENTS, regional-arch-pseudocode.md Part B,
 regional-dump-stage-b-desired-states.md §9/§9.7, stage-b-landed-seed.md.
 
-## DIFF-R3: Tier-1 interior naming + the `@key` surface (LANDED, sessions 5-7)
+## DIFF-R3: Tier-1 interior naming + the `@key` surface — [semantics REMOVED at the P1 cut; @key is now inert parsed metadata, parse-surface only — historical]
 
 RATIFIED POLICY (RP-1..10, region-model-diffs.md session-5 AMENDMENTS + the
 session-6 @DEMAND section + the SESSION-7 RATIFICATIONS): HINT-NOT-MANDATE —

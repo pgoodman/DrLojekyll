@@ -266,8 +266,9 @@ bool QueryImpl::ConnectInsertsToSelects(
 
     // Tier-1 naming-lift snapshot: `rel->declaration` is discarded right
     // below (`rel->inserts.Clear()` severs the only REL->proxy edge), so the
-    // proxy->decl correlation is recorded HERE or nowhere. Single writer;
-    // the single reader is `ApplyDemandTransform` (pre-`Optimize`).
+    // proxy->decl correlation is recorded HERE or nowhere. VESTIGIAL since the
+    // demand-transform cut: still written, but no longer read (its sole reader,
+    // the deleted demand pass, is gone).
     proxy_view_to_decl.emplace(insert_proxy, rel->declaration);
 
     // K5 seed (Tier-2 origin provenance): the decl SOURCE for the per-view

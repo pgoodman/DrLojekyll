@@ -111,9 +111,6 @@ static const char *DROpKindName(DROpKind k) {
     case DROpKind::kIngestFold: return "kIngestFold";
     case DROpKind::kGroupUpdate: return "kGroupUpdate";
     case DROpKind::kStateSeal: return "kStateSeal";
-    case DROpKind::kSubgraphInstantiate: return "kSubgraphInstantiate";
-    case DROpKind::kInstanceDeath: return "kInstanceDeath";
-    case DROpKind::kInstanceSeal: return "kInstanceSeal";
     case DROpKind::kEagerForward: return "kEagerForward";
     case DROpKind::kEagerInsert: return "kEagerInsert";
     case DROpKind::kEagerCompare: return "kEagerCompare";
@@ -681,31 +678,6 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     }
   }
 
-  // Render an instance op's `pub_row=[ik:.. | row:..]` partition + `nested=<>`
-  // (HP-6 contract). Sourced from the op's DRInstance (via instance_store_id) —
-  // NOT from context_col_sources (D2.b). Dead at D1.b (no instance op minted).
-  const auto emit_pub_row = [&](const DROp &op) {
-    if (op.instance_store_id >= flow.instances.size()) {
-      fprintf(stderr, "DELTAREL-DUMP: instance op store id out of range\n");
-      abort();
-    }
-    const DRInstance &in = flow.instances[op.instance_store_id];
-    std::unordered_set<unsigned> keyset(in.key_cols.begin(), in.key_cols.end());
-    const unsigned npub =
-        static_cast<unsigned>(in.pub_view.Columns().size());
-    os << " pub_row=[";
-    for (unsigned p = 0u; p < npub; ++p) {
-      if (p) os << ",";
-      os << (keyset.count(p) ? "ik:" : "row:") << pub_col_name(in, p);
-    }
-    os << "] nested=<";
-    for (unsigned r = 0u; r < in.row_cols.size(); ++r) {
-      if (r) os << ",";
-      os << pub_col_name(in, in.row_cols[r]);
-    }
-    os << ">";
-  };
-
   // ---- ops (pinned_order; p11 empty-section guard as above) ----
   if (!flow.pinned_order.empty()) os << "\n";
   for (unsigned pi = 0u; pi < flow.pinned_order.size(); ++pi) {
@@ -856,49 +828,6 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         emit_reads(op);
         emit_effects(op);
         os << "    args: table=" << tid(op.table_op_table) << "\n";
-        break;
-      }
-
-      // Keyed-instance op p-rules (D1.b). NEVER reached at D1.b (no instance op
-      // in pinned_order); compile-covered + `-Wswitch`-total. [ADJ:crit-grammar-2]
-      // header renders `i#` only; full `store=I#` on args.
-      case DROpKind::kSubgraphInstantiate: {
-        os << " sign=" << SignGlyph(op.table_op_sign) << " ctx=" << CtxName(op.ctx)
-           << " stratum=" << DROpStratum(flow, op) << " i#"
-           << op.instance_store_id << "\n";
-        os << "    demand=" << tid(op.demand_table)
-           << " pub=" << tid(op.table_op_table)
-           << " input=" << tid(op.input_table);
-        emit_pub_row(op);  // pub_row=[ik:..,row:..] nested=<...> (HP-6)
-        os << "\n";
-        emit_reads(op);
-        emit_effects(op);
-        emit_spine(op);
-        os << "    args: demand=" << tid(op.demand_table)
-           << " pub=" << tid(op.table_op_table)
-           << " input=" << tid(op.input_table) << " store=I#"
-           << op.instance_store_id << "\n";
-        break;
-      }
-
-      case DROpKind::kInstanceDeath: {  // live since D3.a.1 (differential demand)
-        os << " sign=" << SignGlyph(op.table_op_sign) << " ctx=" << CtxName(op.ctx)
-           << " stratum=" << DROpStratum(flow, op) << " i#"
-           << op.instance_store_id << "\n";
-        emit_reads(op);
-        emit_effects(op);
-        os << "    args: demand=" << tid(op.demand_table)
-           << " pub=" << tid(op.table_op_table) << " store=I#"
-           << op.instance_store_id << "\n";
-        break;
-      }
-
-      case DROpKind::kInstanceSeal: {
-        os << " sign=" << SignGlyph(0) << " ctx=" << CtxName(op.ctx)
-           << " band=11 i#" << op.instance_store_id << "\n";
-        emit_effects(op);
-        os << "    args: pub=" << tid(op.table_op_table) << " store=I#"
-           << op.instance_store_id << "\n";
         break;
       }
 
@@ -1128,8 +1057,6 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
       DROpKind::kNegateGate,  DROpKind::kPivotAssemble,
       DROpKind::kIngestFold,  DROpKind::kGroupUpdate,
       DROpKind::kStateSeal,
-      DROpKind::kSubgraphInstantiate, DROpKind::kInstanceDeath,
-      DROpKind::kInstanceSeal,
       DROpKind::kEagerForward, DROpKind::kEagerInsert,
       DROpKind::kEagerCompare, DROpKind::kEagerGenerate,
       DROpKind::kEagerUnion,   DROpKind::kEagerSelect,

@@ -49,7 +49,6 @@ class ProgramCheckMemberRegion;
 class ProgramCheckRecordRegion;
 class ProgramCommitSweepRegion;
 class ProgramGroupUpdateRegion;
-class ProgramSubgraphInstanceRegion;
 class ProgramClaimRegion;
 class ProgramRetireRegion;
 class ProgramNetBatchRegion;
@@ -87,7 +86,6 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   ProgramRegion(const ProgramCheckRecordRegion &);
   ProgramRegion(const ProgramCommitSweepRegion &);
   ProgramRegion(const ProgramGroupUpdateRegion &);
-  ProgramRegion(const ProgramSubgraphInstanceRegion &);
   ProgramRegion(const ProgramClaimRegion &);
   ProgramRegion(const ProgramRetireRegion &);
   ProgramRegion(const ProgramNetBatchRegion &);
@@ -116,7 +114,6 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   bool IsCheckRecord(void) const noexcept;
   bool IsCommitSweep(void) const noexcept;
   bool IsGroupUpdate(void) const noexcept;
-  bool IsSubgraphInstance(void) const noexcept;
   bool IsClaim(void) const noexcept;
   bool IsRetire(void) const noexcept;
   bool IsNetBatch(void) const noexcept;
@@ -153,7 +150,6 @@ class ProgramRegion : public Node<ProgramRegion, ProgramRegionImpl> {
   friend class ProgramCheckRecordRegion;
   friend class ProgramCommitSweepRegion;
   friend class ProgramGroupUpdateRegion;
-  friend class ProgramSubgraphInstanceRegion;
   friend class ProgramClaimRegion;
   friend class ProgramRetireRegion;
   friend class ProgramNetBatchRegion;
@@ -844,71 +840,6 @@ class ProgramGroupUpdateRegion
   using Node<ProgramGroupUpdateRegion, ProgramGroupUpdateRegionImpl>::Node;
 };
 
-// D2.b keyed-instance SUBGRAPH_INSTANTIATE region (public wrapper).
-class ProgramSubgraphInstanceRegionImpl;
-class ProgramSubgraphInstanceRegion
-    : public Node<ProgramSubgraphInstanceRegion,
-                  ProgramSubgraphInstanceRegionImpl> {
- public:
-  static ProgramSubgraphInstanceRegion From(ProgramRegion) noexcept;
-
-  // The InstanceStore descriptor index (names the `instance_<id>` member).
-  unsigned StoreId(void) const noexcept;
-
-  // BAND (a1) demand net-additions frontier (birth keys).
-  DataVector DemandFrontier(void) const noexcept;
-
-  // BAND (a2) input(edge) net-additions frontier (REBUILD keys). [R-REBUILD-a2]
-  DataVector InputFrontier(void) const noexcept;
-
-  // BAND (a2') input(edge) net-REMOVALS rebuild frontier (D3.a.2). Present ONLY
-  // when the summarized input is @differential; absent under a monotone input.
-  // Its PRESENCE is codegen's authority for emitting the a2' removal drain +
-  // the shared rescan's Present(s) conjunct (b3) — keyed on the member, never a
-  // folded input-diff bit (§7 d2).
-  std::optional<DataVector> InputRemovalFrontier(void) const noexcept;
-
-  // BAND (a0) death drain source (the netted demand net-removals frontier,
-  // D3.a.1). Present only when a kInstanceDeath op exists for this store
-  // (differential demand); absent under R-MONO.
-  std::optional<DataVector> RemovalFrontier(void) const noexcept;
-
-  // The summarized monotone input + the published answer relation.
-  DataTable InputTable(void) const;
-  DataTable PubTable(void) const;
-
-  // Valid ONLY when IsDifferential(): the demand relation's table — the
-  // band-(a2) rebuild gate probes its Present membership (a dead key still
-  // binds an iid; demand presence is the ONLY correct liveness signal).
-  DataTable DemandTable(void) const;
-
-  // D3.a.1: the store/pub differential regime — == DRInstance.differential ==
-  // TableIsDifferential(pub) (V-INST-DIFF-COHERENCE-checked at lowering).
-  // Gates the band-(b) (T,F) drop scan, the signed publish, and the
-  // V-INST-PARTITION belt.
-  bool IsDifferential(void) const noexcept;
-
-  // Pub's delete/add queues (the band-(b) signed publish appends into them —
-  // the GROUP_UPDATE DelQueue/AddQueue peer). Valid ONLY when
-  // IsDifferential(); null refs for a monotone store.
-  DataVector DelQueue(void) const noexcept;
-  DataVector AddQueue(void) const noexcept;
-
-  // The pub-row partition (HP-6): key positions (from KeyAt) vs row positions
-  // (from the rescan).
-  const std::vector<unsigned> &KeyPositions(void) const noexcept;
-  const std::vector<unsigned> &RowPositions(void) const noexcept;
-  // Input columns equal to the instance key (rescan filter) + the input columns
-  // forming the published row (row_positions order).
-  const std::vector<unsigned> &InputKeyCols(void) const noexcept;
-  const std::vector<unsigned> &InputRowCols(void) const noexcept;
-
- private:
-  friend class ProgramRegion;
-  using Node<ProgramSubgraphInstanceRegion,
-             ProgramSubgraphInstanceRegionImpl>::Node;
-};
-
 // Claims a row of a differential table into the overdeletion set
 // (`IsDelete()`) or the addition set, and into the current frontier round.
 // `Body` executes only when the claim succeeds, i.e. on the row's first
@@ -1426,26 +1357,6 @@ class ProgramStateCellInfo {
   const void *impl;
 };
 
-// D2.b keyed-instance store descriptor (one per RecognizedSubgraph). Codegen
-// names the `instance_<Id>` store member and emits its `Key_<Id>` / `Row_<Id>`
-// value structs from the key/row column types.
-class ProgramInstanceStoreInfo {
- public:
-  unsigned Id(void) const noexcept;
-
-  // Column types of the instance key (the demanded α) and the published row.
-  const std::vector<TypeLoc> &KeyTypes(void) const noexcept;
-  const std::vector<TypeLoc> &RowTypes(void) const noexcept;
-
-  // R-DIFF (D3.a): true iff the store can drop rows (belt off, monotone=false).
-  bool IsDifferential(void) const noexcept;
-
- private:
-  friend class Program;
-  explicit ProgramInstanceStoreInfo(const void *impl_) : impl(impl_) {}
-  const void *impl;
-};
-
 // A program in its entirety.
 class Program {
  public:
@@ -1459,17 +1370,13 @@ class Program {
   static std::optional<Program> Build(const FrozenRegionalProgram &frozen,
                                       const ErrorLog &log,
                                       unsigned first_id,
-                                      const PassPolicy &policy,
-                                      bool demand_instance = false);
+                                      const PassPolicy &policy);
 
   // All persistent tables needed to store data.
   DefinedNodeRange<DataTable> Tables(void) const;
 
   // R3: the StateCell store descriptors (one per aggregate / KV view).
   std::vector<ProgramStateCellInfo> StateCells(void) const;
-
-  // D2.b: the keyed-instance store descriptors (one per RecognizedSubgraph).
-  std::vector<ProgramInstanceStoreInfo> InstanceStores(void) const;
 
   // List of all global constants.
   DefinedNodeRange<DataVariable> Constants(void) const;
@@ -1536,7 +1443,6 @@ class ProgramVisitor {
   virtual void Visit(ProgramCheckRecordRegion val);
   virtual void Visit(ProgramCommitSweepRegion val);
   virtual void Visit(ProgramGroupUpdateRegion val);
-  virtual void Visit(ProgramSubgraphInstanceRegion val);
   virtual void Visit(ProgramClaimRegion val);
   virtual void Visit(ProgramRetireRegion val);
   virtual void Visit(ProgramNetBatchRegion val);

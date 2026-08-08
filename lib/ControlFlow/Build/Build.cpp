@@ -394,130 +394,10 @@ static std::optional<ProgramProcedure> BuildQueryForceProcedureImpl(
   return proc;
 }
 
-// D3.a.3 g2: the ONE demand-injector builder (forcer ⊕ retract) from the
-// demand-forcing registry (the live demand transform; recipe F2). A thin
-// sibling of `BuildQueryForceProcedureImpl`: the proc creation, the
-// per-bound-param input vars, the vectors, the VECTORAPPEND, the CALL to
-// `messsage_handler[message]`, and the RETURN are the same shape — but the
-// clause-var DisjointSet re-derivation is REPLACED by the registry's binding
-// (a demand-transformed query has NO parse-level forcing predicate; the
-// fabricated message's Nth parameter corresponds to the query's
-// `bound_params[N]`-th parameter). The forcer's payload rides the ADD vector;
-// the retract's rides the DEL vector; the non-payload vector, when present, is
-// kEmpty. The retract is only ever over a differential message (its
-// dispatcher's third conjunct), so it always has BOTH vectors; a forcer over a
-// MONOTONE message has the single ADD vector only. add_vec is ALWAYS created
-// before del_vec, matching BOTH twins' id stream — so the emitted IR is
-// byte-identical to the pre-dedup twins in all three reachable cases
-// (mono-force, diff-force, retract).
-static std::optional<ProgramProcedure> BuildQueryInjectorFromRegistry(
-    ProgramImpl *impl, Context &context, ParsedQuery query,
-    const QueryDemandForcing &entry, bool is_retract) {
-
-  ParsedDeclaration query_decl(query);
-  const ParsedMessage message = entry.message;
-  assert(message.IsReceived());
-  assert(!is_retract || message.IsDifferential());  // retract-only
-  assert(message.Arity() == entry.bound_params.size());
-
-  // [F] ALWAYS-ON handler fence (ADV-8): `messsage_handler[message]` is an
-  // unordered_map::operator[]; a MISS default-inserts a nullptr callee that
-  // codegen dereferences (release SIGSEGV, no diagnostic). Always-on so it
-  // survives NDEBUG for BOTH injector kinds (the forcer twin's old assert was
-  // compiled out; under N fabricated demand messages the risk scales).
-  if (!context.messsage_handler.count(message)) {
-    fprintf(stderr,
-            "error: demand injector (%s): the fabricated demand message has "
-            "no handler procedure\n",
-            is_retract ? "retract" : "force");
-    abort();
-  }
-
-  auto proc = impl->procedure_regions.Create(
-      impl->next_id++, ProcedureKind::kQueryMessageInjector);
-  proc->has_raw_use = true;
-
-  // One parameter per bound query parameter, in message-parameter order.
-  for (unsigned param_index : entry.bound_params) {
-    const auto var =
-        proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
-    var->parsed_param = query_decl.NthParameter(param_index);
-  }
-
-  // Vector column types from the fabricated message's own parameters.
-  std::vector<TypeLoc> col_types;
-  for (auto i = 0u; i < message.Arity(); ++i) {
-    col_types.push_back(message.NthParameter(i).Type());
-  }
-
-  // Vector roles: add_vec ALWAYS created before del_vec (matches both twins'
-  // id stream — forcer add→del, retract add→del).
-  VECTOR *add_vec = nullptr, *del_vec = nullptr;
-  if (is_retract) {
-    add_vec = proc->vectors.Create(impl->next_id++, VectorKind::kEmpty,
-                                   col_types, 0);
-    del_vec = proc->vectors.Create(impl->next_id++, VectorKind::kParameter,
-                                   col_types, 0 /* disambiguation */);
-  } else {
-    add_vec = proc->vectors.Create(impl->next_id++, VectorKind::kParameter,
-                                   col_types, 0 /* disambiguation */);
-    if (message.IsDifferential()) {
-      del_vec = proc->vectors.Create(impl->next_id++, VectorKind::kEmpty,
-                                     col_types, 0);
-    }
-  }
-  VECTOR *const payload_vec = is_retract ? del_vec : add_vec;
-
-  SERIES *seq = impl->series_regions.Create(proc);
-  proc->body.Emplace(proc, seq);
-
-  VECTORAPPEND *append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
-      seq, ProgramOperation::kAppendQueryParamsToMessageInjectVector);
-  seq->regions.AddUse(append);
-  append->vector.Emplace(append, payload_vec);
-  for (VAR *param_var : proc->input_vars) {
-    append->tuple_vars.AddUse(param_var);
-  }
-
-  CALL *call = impl->operation_regions.CreateDerived<CALL>(
-      impl->next_id++, seq, context.messsage_handler[message]);
-  seq->regions.AddUse(call);
-  call->arg_vecs.AddUse(add_vec);  // add always first
-  if (del_vec) {
-    call->arg_vecs.AddUse(del_vec);  // empty (force) / payload (retract)
-  }
-
-  RETURN *ret = impl->operation_regions.CreateDerived<RETURN>(
-      seq, ProgramOperation::kReturnTrueFromProcedure);
-  seq->regions.AddUse(ret);
-
-  return proc;
-}
-
-// D3.a.3 g2: the ONE injector dispatcher (forcer ⊕ retract). Registry match is
-// (query, BindingPattern)-keyed (the second belt — `ParsedQuery::operator==`
-// compares DeclarationContext = (name, arity) ONLY, so two adornments of one
-// name would cross-wire without the BindingPattern conjunct; a silent
-// miscompile the D3.a.3 multi-adornment lift makes reachable); the retract arm
-// additionally gates on the fabricated message's differentialness. The user
-// `@first` forcing surface is FORCE-ONLY (user forcing messages get no retract
-// arm). Id-neutral (pure match + delegate); for force the `(!is_retract || …)`
-// short-circuits true, so the emitted IR is byte-identical to the pre-dedup
-// twins.
+// The injector dispatcher. The user `@first` forcing surface is FORCE-ONLY
+// (user forcing messages get no retract arm).
 static std::optional<ProgramProcedure> BuildQueryInjectorProcedure(
     ProgramImpl *impl, Context &context, ParsedQuery query, bool is_retract) {
-
-  if (context.demand_forcings) {
-    for (const QueryDemandForcing &entry : *context.demand_forcings) {
-      if (entry.query == query &&
-          ParsedDeclaration(entry.query).BindingPattern() ==
-              ParsedDeclaration(query).BindingPattern() &&
-          (!is_retract || entry.message.IsDifferential())) {
-        return BuildQueryInjectorFromRegistry(impl, context, query, entry,
-                                              is_retract);
-      }
-    }
-  }
 
   if (!is_retract) {
     if (auto pred = query.ForcingMessage()) {
@@ -1016,13 +896,6 @@ void BuildEagerInsertionRegionsImpl(ProgramImpl *impl, QueryView view,
     // net-additions frontier (else the fold drains an empty vec → empty agg,
     // the stage-B symptom). Value churn from the aggregate is a downstream
     // deletion source, but the INPUT relation itself can be a monotone message.
-    // Keyed instances (GT-5): under -demand-instance, a recognized-subgraph
-    // guard JOIN successor is fed by its SUBGRAPH_INSTANTIATE op
-    // (LowerSubgraphInstance), never the eager walk. Stop the descent (the flat
-    // guard-join web / flow:58 is NOT emitted) AND provision this monotone
-    // input's net-additions frontier (OD-4 mechanism-natural — BOTH the demand
-    // and edge boundary inputs). Symmetric with AnyCutSuccessorDR so the §7d
-    // role/walk cross-check never diverges.
     // R-final SD-1: the single-view cut test is the DR-side shared authority
     // (de-duplicated from the verbatim copy in AnyCutSuccessorDR).
     if (IsCutSuccessorDR(context, succ_view)) {
@@ -1332,8 +1205,7 @@ WorkItem::~WorkItem(void) {}
 // carries the final query).
 std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
                                       const ErrorLog &log, unsigned first_id,
-                                      const PassPolicy &policy,
-                                      bool demand_instance) {
+                                      const PassPolicy &policy) {
   const ::hyde::Query &query = frozen.Query();
 
   // Reject data-flow view kinds that the control-flow builder does not yet
@@ -1436,116 +1308,8 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
              "recursive cycles are not yet supported";
     }
   }
-  // ---- Keyed-instance feature-gap fences (D2.b §2.3), per forcing. Gated on
-  // `-demand-instance` (under plain `-demand` the flat lowering handles all
-  // shapes, so NONE fire). Resolved from LIVE guard JOINs (the CSE-migrating
-  // GuardAnnotationIndex stamp) — never a stored RecognizedSubgraph handle.
-  //   FENCE (i) cyclic-demand — a recursive demand relation through the
-  //     instance boundary.
-  //   FENCE (i, ADJ-C2) recursive-CONTENT — a demanded body whose summarized
-  //     input is induction-owned / self-reachable (a labeled feature gap):
-  //     two independent defects (input ambiguity + single-scan cannot close a
-  //     TC) make it unlowerable in the R-MONO slice.
-  //   FENCE (iii) differential-summarized-input — a deletable input (R-DIFF is
-  //     D3.a).
-  // (FENCE (ii) mid-stream monotone edge-add is no longer a gap: R-a2's
-  // band-(a2) rebuilds the standing instance via a full edge-frontier rescan,
-  // so an edge-after-demand is HANDLED, not fenced — no reject here.)
-  // The per-forcing admissibility flags are computed ONCE and consumed by
-  // TWO arms with DIFFERENT outcomes (RP-9, session 6): under the explicit
-  // `-demand-instance` FLAG an inadmissible forcing is a STRICT reject (the
-  // developer override asked for the nested lowering; demand_cyclic_1 /
-  // demand_recursive_content_1 stay diagnostics); under `@key` PRAGMA
-  // activation an inadmissible forcing means a SILENT FLAT FALLBACK — the
-  // pragma fixes the keyed SEMANTICS, the compiler picks the arrangement
-  // (hint-not-mandate), and both lowerings realize the same answers (the
-  // eqgate contract).
-  bool any_forcing = false;
-  bool all_forcings_admissible = true;
-  {
-    const auto &annots = query.GuardAnnotations();
-    std::unordered_map<unsigned, std::vector<std::pair<QueryView, unsigned>>>
-        fguards;
-    query.ForEachView([&](QueryView v) {
-      const unsigned ai = v.GuardAnnotationIndex();
-      if (ai == QueryView::kNoGuardAnnotation) {
-        return;
-      }
-      fguards[annots[ai].forcing_index].emplace_back(v, ai);
-    });
-    for (auto &fe : fguards) {
-      any_forcing = true;
-      bool recursive_content = false, cyclic_demand = false;
-      for (auto &[v, ai] : fe.second) {
-        if (!v.IsJoin()) {
-          continue;
-        }
-        std::vector<QueryView> jl;
-        for (QueryView jv : QueryJoin::From(v).JoinedViews()) {
-          jl.push_back(jv);
-        }
-        if (jl.size() < 2u) {
-          continue;
-        }
-        if (annots[ai].role == GuardAnnotation::kBody) {
-          const QueryView in = jl[1];
-          if (in.InductionGroupId().has_value() || ViewSelfReachable(in)) {
-            recursive_content = true;
-          }
-          for (QueryView p : in.Predecessors()) {
-            if (p.InductionGroupId().has_value()) {
-              recursive_content = true;
-            }
-          }
-        }
-        if (ViewSelfReachable(jl[0])) {
-          cyclic_demand = true;
-        }
-      }
-      if (cyclic_demand || recursive_content) {
-        all_forcings_admissible = false;
-      }
-      if (demand_instance) {
-        if (cyclic_demand) {
-          log.Append() << "Recursive demand relations are not yet supported "
-                          "under -demand-instance";
-        } else if (recursive_content) {
-          log.Append() << "Demanded subgraphs with recursive (induction-owned) "
-                          "content are not yet supported under -demand-instance "
-                          "(a keyed-instance feature gap)";
-        }
-      }
-    }
-  }
-
   if (num_errors != log.Size()) {
     return std::nullopt;
-  }
-
-  // RP-9 (the fallback arm): an explicit `@key` pragma SELECTS the nested
-  // keyed-instance lowering when EVERY forcing admits it (with R-1BOUND all
-  // forcings share the one demanded relation, so admissibility is
-  // all-or-nothing by construction — recorded rule: any inadmissible
-  // forcing sends the WHOLE program to the flat arm). The pragma bit rides
-  // `RecognizedSubgraph::demanded_decl` (parse identity, Optimize-stable) —
-  // no new plumbing.
-  bool effective_demand_instance = demand_instance;
-  if (!demand_instance && any_forcing && all_forcings_admissible) {
-    const auto &subgraphs = query.RecognizedSubgraphs();
-    if (!subgraphs.empty() && subgraphs[0].demanded_decl.HasInstanceKey()) {
-
-      // INVARIANT (R-1BOUND + one demanded relation p): EVERY RecognizedSubgraph
-      // shares the ONE demanded_decl, so subgraphs[0]'s pragma bit correctly
-      // drives every forcing. State it positively rather than trust it silently
-      // — if a future slice keys distinct decls per forcing, [0] would ignore a
-      // differently-pragma'd decl at index >= 1 and this fires first.
-      for (const RecognizedSubgraph &rs : subgraphs) {
-        assert(rs.demanded_decl.Id() == subgraphs[0].demanded_decl.Id() &&
-               "K1: all forcings must share one demanded_decl (R-1BOUND)");
-        (void) rs;
-      }
-      effective_demand_instance = true;
-    }
   }
 
   auto impl = std::make_shared<ProgramImpl>(query, first_id);
@@ -1554,18 +1318,6 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
   Context context;
   context.init_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kInitializer);
-
-  // The demand-forcing registry (empty unless built under `-demand`): the
-  // injector builder consults it for demand-transformed queries (recipe F2).
-  context.demand_forcings = &query.DemandForcings();
-
-  // Keyed-instance nested lowering selector: the `-demand-instance` flag OR
-  // the RP-9 `@key`-pragma selection (nested where every forcing admits it,
-  // silent flat fallback otherwise). Gates the DR-IR mint
-  // (BuildSubgraphInstanceOps), the census recount, the eager-walk
-  // chain-breaker excision + OD-4 provisioning, and the feature-gap fences.
-  // OFF the PassPolicy registry (a lowering selector, not a pass).
-  context.demand_instance_enabled = effective_demand_instance;
 
   // Stage B: the frozen regional census, recounted by V-REGION-CENSUS at the
   // ValidateDROps tail (lib/Rel/Rel.cpp) — the positive-presence referee.

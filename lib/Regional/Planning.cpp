@@ -3,13 +3,12 @@
 // Stage B (RegionalDataFlowCore.artifacts/stage-b-diff.md H2/H9): the
 // degenerate planner + freeze. `FrozenRegionalProgram::Build` derives the
 // one-root/one-region skeleton — program-root ABIs, the R0 ports, the
-// region-internal fabricated-message lines, the permanent roots, and the
-// R-STORE row contracts — from the FINAL Query graph, then freezes it.
+// permanent roots, and the R-STORE row contracts — from the FINAL Query
+// graph, then freezes it.
 //
 // Every derivation is DETERMINISTIC: declaration order via
-// `ParsedModuleIterator` sub-module walks, forcing order via the
-// `DemandForcings()` vector (== ascending forcing index), and contract order
-// via the `query.Inserts()` range walk — never a pointer order, never a
+// `ParsedModuleIterator` sub-module walks and contract order via the
+// `query.Inserts()` range walk — never a pointer order, never a
 // `UniqueId` (the HP-9 rule).
 
 #include <drlojekyll/Regional/Regional.h>
@@ -106,23 +105,6 @@ static std::string AllParamNames(ParsedDeclaration decl) {
   return out;
 }
 
-// `(<name>, ...)` over the BOUND parameters, in declaration order.
-static std::string BoundParamNames(ParsedDeclaration decl) {
-  std::string out = "(";
-  const char *sep = "";
-  for (auto i = 0u; i < decl.Arity(); ++i) {
-    const ParsedParameter p = decl.NthParameter(i);
-    if (p.Binding() != ParameterBinding::kBound) {
-      continue;
-    }
-    out += sep;
-    out += p.NameAsString();
-    sep = ", ";
-  }
-  out += ")";
-  return out;
-}
-
 // `(<name>, ...)` over all message parameters (names only).
 static std::string MessageFieldNames(ParsedMessage m) {
   std::string out = "(";
@@ -136,22 +118,8 @@ static std::string MessageFieldNames(ParsedMessage m) {
   return out;
 }
 
-// Number of demand forcings carried by `q`'s NAME (`ParsedQuery::operator==`
-// compares the declaration context, i.e. (name, arity) across adornments).
-static unsigned NumForcingsOfName(
-    const std::vector<QueryDemandForcing> &forcings, ParsedQuery q) {
-  unsigned n = 0u;
-  for (const QueryDemandForcing &entry : forcings) {
-    if (entry.query == q) {
-      ++n;
-    }
-  }
-  return n;
-}
-
-// The RECEIVED REAL messages (received, not demand-fabricated) and the
-// PUBLISHED messages, each in declaration order across the sub-module walk,
-// deduplicated by declaration id.
+// The RECEIVED messages and the PUBLISHED messages, each in declaration order
+// across the sub-module walk, deduplicated by declaration id.
 static void CollectMessages(const ::hyde::Query &query,
                             std::vector<ParsedMessage> &received,
                             std::vector<ParsedMessage> &published) {
@@ -161,7 +129,7 @@ static void CollectMessages(const ::hyde::Query &query,
       if (!seen.insert(m.Id()).second) {
         continue;
       }
-      if (m.IsReceived() && !query.IsDemandMessage(m)) {
+      if (m.IsReceived()) {
         received.push_back(m);
       }
       if (m.IsPublished()) {
@@ -187,9 +155,6 @@ CollectContractInserts(const ::hyde::Query &query) {
       continue;  // Stream inserts materialize no stored relation.
     }
     const ParsedDeclaration decl = ins.Relation().Declaration();
-    if (std::string_view(decl.NameAsString()).starts_with("demand__")) {
-      continue;  // The fabricated demand machinery is not a user relation.
-    }
     if (!seen_decls.insert(decl.Id()).second) {
       continue;  // Keep the FIRST insert view per distinct declaration.
     }
@@ -198,110 +163,20 @@ CollectContractInserts(const ::hyde::Query &query) {
   return out;
 }
 
-// Tier-1 naming lift: the demand-INTERIOR contracts. The demanded relation's
-// model is merge-materialized (no relation-INSERT), so R-STORE cannot name
-// it; the mint-time `RecognizedSubgraph::demanded_decl` snapshot can.
-// EXISTENCE and COUNT are DECL-DRIVEN and resolve-free (RES-2): the distinct
-// `demanded_decl` Ids over `RecognizedSubgraphs()` (append order == forcing
-// order — the pass's own deterministic stamp order, HP-9-clean), skipping
-// decls already surfaced by an insert-derived R-STORE contract. A pure
-// function of the frozen Query, mode-stable by construction, consulted
-// IDENTICALLY by `DeriveRegionalCensus` and the contract build below.
-static std::vector<ParsedDeclaration> CollectDemandInteriorDecls(
-    const ::hyde::Query &query) {
-  std::unordered_set<uint64_t> insert_decl_ids;
-  for (const auto &[decl, ins] : CollectContractInserts(query)) {
-    insert_decl_ids.insert(decl.Id());
-  }
-  std::vector<ParsedDeclaration> out;
-  std::unordered_set<uint64_t> seen;
-  for (const RecognizedSubgraph &rs : query.RecognizedSubgraphs()) {
-    const ParsedDeclaration decl = rs.demanded_decl;
-    if (insert_decl_ids.count(decl.Id())) {
-      continue;  // Demanded AND insert-materialized: R-STORE already names it.
-    }
-    if (!seen.insert(decl.Id()).second) {
-      continue;  // First forcing wins (multi-adornment: one shared interior).
-    }
-    out.push_back(decl);
-  }
-  return out;
-}
-
-// The ONE field the decl cannot supply — `support=` — resolves off the LIVE
-// post-Optimize graph (provenance symmetry with the R-STORE render, NEC-1):
-// support = the OR over ALL live annotated guard JOINs of the decl's
-// forcings of `v.CanReceiveDeletions()` — the deletability of p's demanded
-// content (each guard JOIN's output IS a demanded slice of p; the OR covers
-// multi-body content and includes demand-side retraction, which is correct
-// under `-demand-retract`: retracting demand retracts the guarded rows).
-// ROLE-BLIND by design: a kQueryProjection-only resolve is CSE-FRAGILE —
-// `PromoteSurvivorToBody` (View.cpp, the g1 survivor policy) promotes a
-// projection guard folded into a body guard to kBody, so under `df` opt no
-// live view may carry the projection role at all (found live on
-// demand_neighborhood_mono_witness at implementation). The OR is order-free
-// (no DefList-position dependence); the stored `RecognizedSubgraph` view
-// handles dangle post-Optimize and are NEVER read — the walk buckets live
-// views by the CSE-migrating `GuardAnnotationIndex` stamp only. A counted
-// decl with ZERO live annotated guard JOINs ABORTS the freeze — existence
-// is decl-counted above, so a resolve failure can never silently drop a
-// contract line (the RES-2 loud-failure construction).
-static bool ResolveInteriorSupport(const ::hyde::Query &query,
-                                   ParsedDeclaration decl) {
-  const std::vector<GuardAnnotation> &annots = query.GuardAnnotations();
-  const std::vector<RecognizedSubgraph> &subgraphs =
-      query.RecognizedSubgraphs();
-
-  std::unordered_set<unsigned> decl_forcings;
-  for (const RecognizedSubgraph &rs : subgraphs) {
-    if (rs.demanded_decl.Id() == decl.Id()) {
-      decl_forcings.insert(rs.forcing_index);
-    }
-  }
-
-  bool resolved = false;
-  bool support = false;
-  query.ForEachView([&](QueryView v) {
-    const unsigned ai = v.GuardAnnotationIndex();
-    if (ai == QueryView::kNoGuardAnnotation || ai >= annots.size()) {
-      return;
-    }
-    if (!decl_forcings.count(annots[ai].forcing_index) || !v.IsJoin()) {
-      return;  // Proxy-TUPLE annotation carriers gate nothing; JOINs do.
-    }
-    resolved = true;
-    support = support || v.CanReceiveDeletions();
-  });
-
-  if (!resolved) {
-    fprintf(stderr,
-            "TIER1-SUPPORT-RESOLVE: no live annotated guard JOIN for "
-            "demanded interior relation (rel=%.*s)\n",
-            static_cast<int>(decl.NameAsString().size()),
-            decl.NameAsString().data());
-    abort();
-  }
-  return support;
-}
-
 // Tier-2 naming lift (K5): the UNDEMANDED #local/#export interiors nameable
 // ONLY via origin decl-sets (an insert-CLEARED, undemanded, merge-materialized
-// relation has neither an R-STORE contract nor a Tier-1 demanded_decl). Walk
-// live views, accumulate the Id-keyed union of `v.OriginDecls()`, DEDUP against
-// (a) insert-named decls (CollectContractInserts) AND (b) Tier-1 demand-interior
-// decls (CollectDemandInteriorDecls). The residue — decls reachable ONLY through
-// origin sets — are the Tier-2 contracts, emitted ASCENDING `decl.Id()` (a pure
+// relation has no R-STORE contract). Walk live views, accumulate the Id-keyed
+// union of `v.OriginDecls()`, DEDUP against the insert-named decls
+// (CollectContractInserts). The residue — decls reachable ONLY through origin
+// sets — are the Tier-2 contracts, emitted ASCENDING `decl.Id()` (a pure
 // mode-stable total order; the per-view sets are already Id-sorted, so the
 // cross-view merge is a k-way dedup). Consulted IDENTICALLY by
 // `DeriveRegionalCensus` and the contract build below, so V-REGION-CENSUS stays
 // green by construction.
 static std::vector<ParsedDeclaration> CollectOriginInteriorDecls(
     const ::hyde::Query &query) {
-  std::unordered_set<uint64_t> named;  // insert-named U Tier-1 demand-interior.
+  std::unordered_set<uint64_t> named;  // insert-named.
   for (const auto &[decl, ins] : CollectContractInserts(query)) {
-    named.insert(decl.Id());
-  }
-  for (ParsedDeclaration decl : CollectDemandInteriorDecls(query)) {
     named.insert(decl.Id());
   }
   std::map<uint64_t, ParsedDeclaration> out;  // Id-ordered, deduped.
@@ -330,8 +205,8 @@ static std::vector<ParsedDeclaration> CollectOriginInteriorDecls(
   return result;
 }
 
-// The Tier-2 analog of `ResolveInteriorSupport`: an undemanded origin-interior
-// has NO guard JOIN, so support resolves off the LIVE post-Optimize views that
+// Tier-2 origin-interior support: an undemanded origin-interior has NO guard
+// JOIN, so support resolves off the LIVE post-Optimize views that
 // carry `decl` in their origin set — support = OR over those carriers of
 // `v.CanReceiveDeletions()`. SOUND because CDaGI confines a decl to carriers
 // that AGREE on differentialness (the differentialness-migration invariant,
@@ -340,7 +215,7 @@ static std::vector<ParsedDeclaration> CollectOriginInteriorDecls(
 // exact; the DEBUG support-agreement assert (K5-D6b) turns a future
 // cross-differentialness fold into a tripwire rather than a wrong/mode-split
 // support byte. A counted Tier-2 decl with ZERO live carrier ABORTS the freeze
-// (the RES-2 loud-failure construction, mirroring ResolveInteriorSupport):
+// (the RES-2 loud-failure construction):
 // existence is decl-counted from live origin sets, so >=1 carrier always exists
 // in correct code.
 static bool ResolveOriginSupport(const ::hyde::Query &query,
@@ -384,8 +259,7 @@ static bool ResolveOriginSupport(const ::hyde::Query &query,
 RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
   RegionalCensus census;
 
-  census.request_ports =
-      static_cast<unsigned>(query.DemandForcings().size());
+  census.request_ports = 0u;  // Post-cut: demand is deleted, no request ports.
 
   std::vector<ParsedMessage> received, published;
   CollectMessages(query, received, published);
@@ -394,7 +268,6 @@ RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
 
   census.row_contracts =
       static_cast<unsigned>(CollectContractInserts(query).size() +
-                            CollectDemandInteriorDecls(query).size() +
                             CollectOriginInteriorDecls(query).size());
 
   // regions=1, child_calls=0, program_roots=1 are the Stage-B constants
@@ -442,36 +315,13 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
 
   FrozenRegionalProgram out(query);
   const ParsedModule module = query.ParsedModule();
-  const std::vector<QueryDemandForcing> &forcings = query.DemandForcings();
 
-  // ---- REQUEST-PORTS + region-internal lines: one of each per demand
-  // forcing, in DemandForcings() vector order (== ascending forcing index).
-  // Port ids are dense across request-ports FIRST, so a request port's index
-  // equals its forcing index.
-  for (auto fi = 0u; fi < forcings.size(); ++fi) {
-    const QueryDemandForcing &entry = forcings[fi];
-    const ParsedDeclaration fdecl(entry.query);
-
-    RegionalPort port;
-    port.kind = RegionalPort::kRequest;
-    port.port_index = fi;
-    port.head_text = "query=" + std::string(fdecl.NameAsString());
-    if (2u <= NumForcingsOfName(forcings, entry.query)) {
-      port.head_text += "  adorn=" + std::string(fdecl.BindingPattern());
-    }
-    port.fields_text = BoundParamNames(fdecl);
-    out.ports.push_back(std::move(port));
-
-    out.internals.push_back(RegionalInternal{
-        MessageDeclText(module, entry.message) +
-        "  [fabricated, driver-suppressed]"});
-  }
-
-  // ---- INPUT / RESULT ports + input/output ABIs (declaration order).
+  // ---- INPUT / RESULT ports + input/output ABIs (declaration order). Post-
+  // cut there are no request-ports (demand is deleted), so port ids start at 0.
   std::vector<ParsedMessage> received, published;
   CollectMessages(query, received, published);
 
-  unsigned next_port = static_cast<unsigned>(forcings.size());
+  unsigned next_port = 0u;
 
   std::vector<RegionalAbi> input_abis, query_abis, output_abis;
 
@@ -511,11 +361,9 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
 
   // ---- QUERY ABIs + permanent roots: declaration order; per name, the
   // UniqueRedeclarations walk with the BindingPattern dedup (the
-  // BuildQueryEntryPoint idiom, lib/ControlFlow/Build/Build.cpp). A
-  // redeclaration matching a demand forcing (same declaration context + same
-  // BindingPattern — the injector's matching idiom) is a REQUEST query
-  // routed to its forcing's request port; every other one is a
-  // permanent-root observation.
+  // BuildQueryEntryPoint idiom, lib/ControlFlow/Build/Build.cpp). Post-cut
+  // every redeclaration is a permanent-root observation — a bound `#query`
+  // reads the canonical fully-materialized relation via the plain cursor.
   std::unordered_set<uint64_t> seen_queries;
   for (ParsedModule sub_module : ParsedModuleIterator(module)) {
     for (ParsedQuery parsed_query : sub_module.Queries()) {
@@ -529,33 +377,13 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
         if (!seen_variants.insert(binding).second) {
           continue;
         }
-        const ParsedQuery redecl_query = ParsedQuery::From(redecl);
-
-        int matched_forcing = -1;
-        for (auto fi = 0u; fi < forcings.size(); ++fi) {
-          if (forcings[fi].query == redecl_query &&
-              ParsedDeclaration(forcings[fi].query).BindingPattern() ==
-                  redecl.BindingPattern()) {
-            matched_forcing = static_cast<int>(fi);
-            break;
-          }
-        }
-
-        std::string decl_text = QueryDeclText(module, redecl);
-        if (2u <= NumForcingsOfName(forcings, redecl_query)) {
-          decl_text += "  adorn=" + binding;
-        }
 
         RegionalAbi abi;
         abi.kind = RegionalAbi::kQuery;
-        abi.decl_text = std::move(decl_text);
-        if (0 <= matched_forcing) {
-          abi.route_text = "-> R0 via P" + std::to_string(matched_forcing);
-        } else {
-          abi.route_text = "-> permanent-root";
-          out.permanent_roots.push_back(RegionalPermanentRoot{
-              std::string(redecl.NameAsString()) + AllParamNames(redecl)});
-        }
+        abi.decl_text = QueryDeclText(module, redecl);
+        abi.route_text = "-> permanent-root";
+        out.permanent_roots.push_back(RegionalPermanentRoot{
+            std::string(redecl.NameAsString()) + AllParamNames(redecl)});
         query_abis.push_back(std::move(abi));
       }
     }
@@ -618,29 +446,11 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
     out.contracts.push_back(std::move(contract));
   }
 
-  // ---- Tier-1 demand-INTERIOR contracts, APPENDED after the insert-derived
-  // R-STORE contracts (their E-indices stay stable), in ascending
-  // first-forcing order, on the same dense `edge` counter. member-key is the
-  // SNAPSHOTTED decl's AllFields rendered positionally (a demanded relation
-  // keeps the AllFields/passthrough contract — verified empirically across
-  // all 4 modes at the desired-states phase, ORC-3); `support=` resolves off
-  // the live projection-guard read (abort on failure — never a silent drop).
-  for (ParsedDeclaration decl : CollectDemandInteriorDecls(query)) {
-    RegionalContract contract;
-    contract.edge_index = edge++;
-    contract.rel_name = std::string(decl.NameAsString());
-    contract.member_key_text = std::string(AllParamNames(decl));
-    contract.support_text =
-        ResolveInteriorSupport(query, decl) ? "differential" : "monotone";
-    contract.declared_key = decl.HasInstanceKey();  // K6-7a (DOT-only badge).
-    out.contracts.push_back(std::move(contract));
-  }
-
   // ---- Tier-2 ORIGIN-INTERIOR contracts (K5): undemanded #local/#export
-  // interiors nameable ONLY via origin decl-sets, APPENDED after the Tier-1
-  // demand-interior contracts on the same dense `edge` counter, in ascending
-  // decl Id. member-key = AllFields positional (the ORC-3 passthrough contract,
-  // as Tier-1); support = OR over origin-carrying live views' CanReceiveDeletions
+  // interiors nameable ONLY via origin decl-sets, APPENDED after the insert-
+  // derived R-STORE contracts on the same dense `edge` counter, in ascending
+  // decl Id. member-key = AllFields positional (the ORC-3 passthrough
+  // contract); support = OR over origin-carrying live views' CanReceiveDeletions
   // (ResolveOriginSupport, a RES-2 loud-abort belt). Arm-A render: plain
   // `rel=NAME`, indistinguishable from R-STORE/Tier-1 (the tier distinction is
   // provenance-only, served by the advisory -origin-out dump). LINE-ADDITIVE but

@@ -2,7 +2,13 @@
 
 ## Current resumption authority
 
-Start with **`next-session-prompt.md`**. It contains the current code-grounded
+Start with **`session-16-prompt.md`** (the current next-session charter) and its
+START-HERE backbone **`session-16-whole-program-seed.md`** (tip `6d6248a2`, P0 ✅
+complete/committed, P1 the next actionable step; carries the ANCHOR-VALIDITY fact
+that HEAD differs from the doc baseline `46a404d4` only in `lib/Parse/*`). The
+session-15 prompt/seed are the prior backbone (P0-item-4 was still landable-ahead
+there). Then
+**`next-session-prompt.md`**: it contains the current code-grounded
 review and roadmap for relation-local `@key` semantics, ordered access paths,
 canonical relation facts, exact request ownership, rooted lifecycle for cyclic
 binding-state dependencies, partial-binding agreement, and lazy trie/COLT work.
@@ -19,9 +25,140 @@ authority to use when the two documents disagree. The remaining artifacts
 preserve grounding, staged-cutover, and critique evidence.
 
 READ ORDER for keyed-instance continuation: this INDEX →
-`next-session-prompt.md` → `../RegionalDataFlowCore.md` → older phase reports
-only when the current prompt references them. The historical adjudication
-artifacts remain evidence, not current semantic authority.
+`session-15-prompt.md` (the CURRENT next-session charter) →
+`next-session-prompt.md` (semantic + roadmap authority) →
+**`session-15-whole-program-seed.md`** (START HERE: the post-s14 CONSOLIDATED
+whole-program pseudocode — its §1 is the first to include the PHYSICAL layer
+(ControlFlow lowering → CodeGen EmitScan → DataIndex → runtime Table/Index),
+target model §2, path forward as P0–P9 diffs with the s14 corrections folded into
+the diffs §3, and "what session 15 must do" §4) → `keyed-rewrite-p7p9-diffs.md`
+(P7–P9 operational diffs + §7 s14 amendments) → `keyed-rewrite-p7p9-critique.md`
+(the s14 physical-layer critique: 3 blocking + 5 high + 18 certifications) →
+`session-14-whole-program-seed.md` (the prior backbone; §1 lacks the physical layer) →
+`keyed-rewrite-reconstruction-diffs.md` (the actionable P1 compile-clean inventory +
+D1–D4 resolutions + deepened P2–P6 operational diffs + §5 re-critique amendments) →
+`keyed-rewrite-reconstruction-critique.md` (the s13 re-critique: 23 survivors +
+20 certifications) → `keyed-rewrite-ir-desired-states.md` (predict-then-verify IR +
+the 2 no-baseline carriers) → `keyed-rewrite-pseudocode-seed.md` (§2/§3 target
+algebra) → `keyed-rewrite-whole-program.md` (the s12 backbone; §4 = s13 status) →
+the rest of the grounding set (below) → `../RegionalDataFlowCore.md` → older phase
+reports only when a current prompt references them. `keyed-rewrite-whole-program.md`
+§1 and `keyed-rewrite-phase-diffs.md` are s12-vintage — the session-14 seed +
+reconstruction-diffs SUPERSEDE them for the current state. The historical
+adjudication artifacts remain evidence, not current semantic authority.
+
+### Session 12 (2026-08-06) grounding set — precedes the owner-gated Phase-1 cut
+
+- **`keyed-rewrite-whole-program.md`** — the single consolidated backbone. §1
+  whole-program current pseudocode, §2 four-authority target + EvaluateEpoch, §3 the
+  AMENDED path forward (the s12 critique folded in: the CORRECTED P1 deletion
+  inventory, the P2–P5 amendments, the open decisions D1–D4), §4 the immediate next
+  step. Supersedes the phase-diffs P1 inventory where they disagree.
+
+The rigorous, critiqued design grounding the owner needs to green-light Phase 1+.
+All read-only (no production code touched; suite stays at the 251 PASS baseline;
+nothing blessed). Post-cut IR states are PREDICTIONS to verify when each phase lands.
+
+- **`keyed-rewrite-current-pseudocode.md`** — the implementer-grain deepening of the
+  seed §1: 8 per-subsystem pseudocode blocks, a fully RE-VERIFIED anchor table (§1.0,
+  supersedes seed §5) and a 10-item drift-correction ledger (§1.1). Anchors verified
+  @ tip 46a404d4 + the uncommitted Phase-0 worktree.
+- **`keyed-rewrite-phase-diffs.md`** — P1–P9 as hunk-grained diffs (P1 decomposed into
+  7 atomic sub-cuts P1.1–P1.7, P6 into P6.1–P6.6), each with invariant / exit gate /
+  design-goals-resolved / deletion + reintroduction obligations / anchors. Resolves the
+  seven design goals (four-authority separation, order-significant paths w/ order-free
+  binding identity, RequestEdge vs RuleActivationEdge, rooted liveness, honest
+  FullScanFilter, partial-binding DAG, co-recursive key flow).
+- **`keyed-rewrite-critique.md`** — adversarial refute panel (5 per-cluster refuters +
+  a cross-phase critic) over the diffs, verified against real code + retained
+  invariants. 33 surviving findings (6 blocking, 12 high) + 7 REFUTED (diffs that held).
+  HEADLINE: the P1 deletion inventory as authored is INCOMPLETE (would not compile —
+  GuardAnnotation CSE-migration in View/Join/IdentityJoin/Link.cpp; kSectionWalk's live
+  join consumer at Rel.cpp:2433; ControlFlow DR-vocab consumers), plus two blocking
+  soundness/reintro gaps (P4 re-provides FullScanFilter emission only in prose; P6.5
+  lacks OVERDELETE→REDERIVE). Every finding carries a concrete `Fix:` amendment; none
+  invalidate the direction.
+- **`keyed-rewrite-ir-desired-states.md`** — desired post-cut IR output states for the
+  `key_neighborhood_witness` / `key_tc_witness` / `key_multi_adorn_witness` carriers,
+  phase-staged across .df/.contract/-region-out/.rel/header/C++, with a self-critique
+  closing the deepen→diff→critique loop. Baselines empirically verified; deltas predicted.
+
+### Session 13 (2026-08-06) — corrected diff set + deepened P2–P6 + re-critique + 2 new carriers
+
+Grounding round (docs only; suite 251 PASS, nothing blessed, ZERO production code touched).
+Read AFTER `keyed-rewrite-whole-program.md` §3/§4:
+
+- **`keyed-rewrite-reconstruction-diffs.md`** — the CURRENT actionable authority for P1 +
+  P2–P6: the compile-clean P1 deletion inventory (folds every s12 + s13 missed-deletion),
+  the D1–D4 resolutions, the deepened P2–P6 operational diffs at implementer grain, the
+  design-goal diffs, and §5 (the s13 re-critique amendments folded). SUPERSEDES the s12
+  `keyed-rewrite-phase-diffs.md` P1 inventory + P2–P6 exit gates where they disagree.
+- **`keyed-rewrite-reconstruction-critique.md`** — the s13 independent opus re-critique of
+  the corrected diffs: 23 survivors (5 blocking, 6 high, 8 medium, 4 low) + 1
+  refuter-claim-refuted + 20 certifications. The 5 blocking (B1–B5) gate the P1 green-light.
+- **`keyed-rewrite-ir-desired-states.md` §6/§7/§8** (extended s13) — the two no-baseline
+  carriers (co-recursive `p@key(K)/q@key(X)` for P6; `@key(A)@key(A,B)` +
+  `@key(A,B)@key(B,A)` for P5), each grounded by its VERIFIED CURRENT REJECT (reject→compile
+  is the s13 predict-then-verify contract), plus the P4-emission revision (ProgramTableScanRegion
+  reuse, certified) and the Phase-0-item-4 parser-flip prerequisite (empirically confirmed).
+
+### Session 14 (2026-08-06) — P1 gate re-verified NOT-clean + P7–P9 physical layer deepened
+
+Grounding round (docs only; suite 251 PASS by construction — production untouched, nothing blessed).
+Read AFTER the session-13 set:
+
+- **`keyed-rewrite-reconstruction-diffs.md` §6/§6.1`** (extended s14) — the P1 cut is STILL NOT
+  compile-clean: a whole-tree re-grep found **7 MORE un-enumerated consumers** (verified at tip;
+  the Rel-IR dump emitter, Rel.cpp DROpStratum/key_of arms, the ControlFlow class-definition sibling
+  TUs, the retained→deleted live call at Planning.cpp:304, and 6 unit-test TUs). §6.1 CERTIFIES B2–B5
+  internally consistent with the seed §2/§3 algebra. The durable fix is a symbol-driven `git grep -l`
+  P1 pre-commit acceptance gate, not range-anchored review.
+- **`keyed-rewrite-p7p9-diffs.md`** — the PHYSICAL-layer sibling of reconstruction-diffs: P7 (access
+  planning), P8 (lazy tries/COLT/Free Join), P9 (inference) deepened into operational diffs at hunk
+  grain + design-goal diffs + DISCRIMINATING (structural, never answer) exit gates. §7 folds the s14
+  critique amendments. Headline: at P7 the AccessPlan→region-kind map STOPS being injective (D4
+  Option-1→Option-2 transition), so V-PLAN-HONEST moves to the EmitScan emission site.
+- **`keyed-rewrite-p7p9-critique.md`** — the s14 opus refuter panel over the P7–P9 diffs: 15 survivors
+  (3 blocking, 5 high, 5 medium, 2 low) + 18 certifications. The 3 blocking each force one real
+  correction (thread `plan_kind` at every scan mint; intern trie nodes on `BindingStateId` not the
+  value-free schema; re-source the inferred-path order from a DataFlow signal, NEVER the file-static
+  ControlFlow `SortedPredecessors`). All folded into p7p9-diffs §7.
+- **`keyed-rewrite-ir-desired-states.md` §9/§10/§11/§12** (extended s14) — the P7–P9 desired IR states
+  with the critique corrections: the `.rel` AccessPlan render + cursor-shape (`s<id>` vs `pos`) belt
+  (P7, verified in the real generated header); the trie `-region-out` block reusing the P5
+  binding-schema spine (P8); the SPLIT `declared-key`/`inferred-key` render RE-TARGETED DataFlow→Regional
+  (P9). Structural pins throughout.
+
+### Session 16 (2026-08-07) — P1 DRY re-grep found 2 MORE consumers + P2 §5.3 folded
+
+Grounding round (docs only; owner chose "stay in grounding" — P1 cut NOT green-lit; suite 252 PASS by
+construction, production untouched, nothing blessed). Read AFTER the session-14 set:
+
+- **`keyed-rewrite-reconstruction-diffs.md` §6.0/§6.0.1`** (extended s16) — the symbol-driven acceptance-gate
+  DRY at tip `6d6248a2`, comment-stripped, found the `lib`/`include`/`tests` inventory NOW EXHAUSTIVE but
+  **TWO MORE un-enumerated compile-breaking consumers in `bin/`** (the 8th & 9th): **§6-7** `bin/drlojekyll/Main.cpp`
+  (the `gDemand*` flag globals + arg-parse arms + the demand args at both `Build` calls — the "delete the flags"
+  prose named no file) and **§6-8** `bin/Oracle/Main.cpp:749-753` (a DISJOINT binary calling `Query::Build` with
+  3 demand args incl. `suppress_demand=true`, whose sole purpose was to defeat flagless `@key` so the oracle
+  referees the full closure — behavior-preserving to drop post-cut). `Query::Build` reverts 6-arg→3-arg
+  (Query.h:1081-1086); its complete non-comment caller set is exactly {def, drlojekyll Main, Oracle Main}.
+  §6.0.1: 7 comment-only stale refs (Prov/Regional.h/Optimize/IdentityJoin/Link/Table.h/Connect) → the gate
+  needs a code-vs-comment strip + a retained-symbol/test-data allowlist. New 3rd structural blind spot:
+  libraried-vs-disjoint-binary.
+- **`keyed-rewrite-reconstruction-diffs.md` §3 P2`** (amended s16) — §5.3 (H1/H2/M1) FOLDED into the P2 primary
+  text so it reads consistently: keep the friend-class `query.impl->row_contracts` access (M1 — a public accessor
+  WIDENS the leak); the anti-hollow-`R` belt is the region goldens + the in-`Build` recount RE-POINTED at typed
+  `R` (H2 — V-REGION-CENSUS is tautological); `frozen_census` KEPT `const RegionalCensus *` (H1). All P2
+  Planning.cpp anchors re-verified at tip (:439/:574/:591-608/:663-687). **False-start CERTIFICATION:** P2's
+  typed-owner move does NOT re-introduce "DataFlow mutation + post-Optimize recognition" — freeze is a pure
+  post-Optimize read; the recognition authority was deleted in P1.
+- **`session-16-whole-program-seed.md` §3 P1`** — updated: the §6 inventory is now NINE consumers (§6-1..§6-8),
+  the acceptance gate is comment-stripped + allowlisted. P1 remains the next actionable step, owner-gated.
+
+Session 11 (2026-08-06) status: Phase 0 partially landed (reject `@key` on
+`#query`; full-context redeclaration consistency; suite 251 PASS). Owner chose
+"safe Phase 0 only" — the destructive Phase 1 demand-deletion cut is
+owner-gated and NOT started.
 
 ## Supersession matrix
 

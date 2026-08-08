@@ -298,9 +298,9 @@ class Table : public RowStore<Row> {
     sealed = this->NumRows();
   }
 
-  // Reset to empty for reuse (the InstanceStore double-buffer, A.3.2). Chains
-  // the RowStore log/slot reset, then dissolves the batch-start watermark. NO
-  // allocation (RowStore::Reset is allocation-free) — Arena-safe.
+  // Reset to empty for reuse. Chains the RowStore log/slot reset, then
+  // dissolves the batch-start watermark. NO allocation (RowStore::Reset is
+  // allocation-free) — Arena-safe.
   void Reset(void) noexcept {
     this->RowStore<Row>::Reset();
     sealed = 0u;

@@ -323,9 +323,7 @@ bool QueryMergeImpl::Canonicalize(QueryImpl *query,
       // view's provenance/flags onto its guard tuple, aligning with
       // Join.cpp's ProxyUnusedInputColumns. NARROWED, never the full
       // CopyDifferentialAndGroupIdsTo: `view` STAYS LIVE here (the guard
-      // reads from it), and CDaGI's clear-on-move guard_annotation_index
-      // transfer is sound only for superseded losers — moving an annotation
-      // off a live view would strand demand recognition. All three copied
+      // reads from it). All three copied
       // fields are redundant-by-reconstruction today (group_ids:
       // RelabelGroupIDs re-derives at every CSE; deletion flags:
       // TrackDifferentialUpdates re-derives after every guard mint in every

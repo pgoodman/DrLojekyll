@@ -254,7 +254,6 @@ class Generator {
     std::unordered_set<unsigned> indexes;  // DataIndex ids (member-backed)
     std::unordered_set<unsigned> globals;  // global DataVariable ids
     std::unordered_set<unsigned> statecells;  // R3: StateCell store ids
-    std::unordered_set<unsigned> instances;   // D2.b: InstanceStore ids
     bool uses_log{false};       // publishes (publish region / commit sweep)
     bool uses_functors{false};  // calls a non-inline functor
   };
@@ -306,8 +305,6 @@ class Generator {
                           &typed_fields);
   void EmitRowStructs(void);
   void EmitStateCellStructs(void);  // R3
-  void EmitInstanceStructs(void);   // D2.b
-  void EmitSubgraphInstance(ProgramSubgraphInstanceRegion region);  // D2.b
   void EmitFunctorsDecl(void);
   void EmitLogDecl(void);
   void EmitDatabaseDecl(void);
@@ -763,25 +760,6 @@ void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
     auto gu = ProgramGroupUpdateRegion::From(region);
     out.tables.insert(gu.AggTable().Id());
     out.statecells.insert(gu.StateCellId());
-  } else if (region.IsSubgraphInstance()) {
-    auto si = ProgramSubgraphInstanceRegion::From(region);
-    out.tables.insert(si.InputTable().Id());
-    out.tables.insert(si.PubTable().Id());
-    // Fable review [D]: the band-(a2) demand-liveness gate reads the demand
-    // table under the differential regime — register it so the detail
-    // function's parameter set never depends on a sibling region happening
-    // to reference the same table.
-    if (si.IsDifferential()) {
-      out.tables.insert(si.DemandTable().Id());
-    }
-    // band-(b) maintains the pub table's indices (EmitIndexAdds), so they ride
-    // as ref-params too.
-    for (DataIndex index : si.PubTable().Indices()) {
-      if (index_member.contains(index.Id())) {
-        out.indexes.insert(index.Id());
-      }
-    }
-    out.instances.insert(si.StoreId());
   } else if (region.IsClaim()) {
     auto claim = ProgramClaimRegion::From(region);
     out.tables.insert(claim.Table().Id());
@@ -842,7 +820,6 @@ void Generator::CollectEffects(ProgramRegion region, ProcEffects &out) {
     out.indexes.insert(callee.indexes.begin(), callee.indexes.end());
     out.globals.insert(callee.globals.begin(), callee.globals.end());
     out.statecells.insert(callee.statecells.begin(), callee.statecells.end());
-    out.instances.insert(callee.instances.begin(), callee.instances.end());
     out.uses_log |= callee.uses_log;
     out.uses_functors |= callee.uses_functors;
     recurse(call.BodyIfTrue());
@@ -910,14 +887,6 @@ std::string Generator::DetailStateParams(ProgramProcedure proc) {
                       std::to_string(cell.Id()));
     }
   }
-  // D2.b: InstanceStores used by this procedure ride as reference params.
-  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
-    if (fx.instances.contains(store.Id())) {
-      const auto id = std::to_string(store.Id());
-      parts.push_back("::hyde::rt::InstanceStore<Key_" + id + ", Row_" + id +
-                      "> &instance_" + id);
-    }
-  }
   return JoinExprs(parts, ", ");
 }
 
@@ -961,13 +930,6 @@ std::string Generator::DetailStateArgs(ProgramProcedure proc,
     if (fx.statecells.contains(cell.Id())) {
       parts.push_back(std::string(prefix) + "statecell_" +
                       std::to_string(cell.Id()));
-    }
-  }
-  // D2.b: forward the used InstanceStores by name.
-  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
-    if (fx.instances.contains(store.Id())) {
-      parts.push_back(std::string(prefix) + "instance_" +
-                      std::to_string(store.Id()));
     }
   }
   return JoinExprs(parts, ", ");
@@ -1248,35 +1210,6 @@ void Generator::EmitStateCellStructs(void) {
   }
 }
 
-// D2.b: per keyed-instance store, emit a `Key_<id>` value struct (the demanded
-// α columns) and a `Row_<id>` value struct (the published row columns). Both
-// are plain hash structs (Hash() + operator==) — the InstanceStore key uses
-// Key::Hash()/==, and the index-free nested Table<Row> uses Row equality for
-// Find/TryAdd (A.4: leading plain values, no functor ABI change).
-void Generator::EmitInstanceStructs(void) {
-  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
-    const auto id = std::to_string(store.Id());
-    std::vector<std::pair<std::string, std::string>> key_fields;
-    {
-      auto i = 0u;
-      for (TypeLoc t : store.KeyTypes()) {
-        key_fields.emplace_back(TypeName(module, t), "c" + std::to_string(i++));
-      }
-    }
-    hh << "// InstanceStore #" << id << " key (the demanded alpha).\n";
-    EmitHashStruct("Key_" + id, key_fields);
-    std::vector<std::pair<std::string, std::string>> row_fields;
-    {
-      auto i = 0u;
-      for (TypeLoc t : store.RowTypes()) {
-        row_fields.emplace_back(TypeName(module, t), "c" + std::to_string(i++));
-      }
-    }
-    hh << "// InstanceStore #" << id << " published row.\n";
-    EmitHashStruct("Row_" + id, row_fields);
-  }
-}
-
 void Generator::EmitFunctorsDecl(void) {
   EmitInlines(hh, "c++:database:functors:prologue");
 
@@ -1473,15 +1406,6 @@ void Generator::EmitDatabaseDecl(void) {
   for (const ProgramStateCellInfo &cell : program.StateCells()) {
     hh << ",\n" << hh.Indent() << "  statecell_" << cell.Id() << "(allocator_)";
   }
-  // D2.b: InstanceStores. R-MONO constructs monotone=true (default) — the HP-7
-  // frozen-subset-current Seal belt is ON (RAT-4). R-DIFF (D3.a) passes false.
-  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
-    hh << ",\n" << hh.Indent() << "  instance_" << store.Id() << "(allocator_";
-    if (store.IsDifferential()) {
-      hh << ", false";  // monotone=false: HP-7 belt OFF for a droppable store
-    }
-    hh << ")";
-  }
   hh << " {}\n\n";
   hh.PopIndent();
 
@@ -1510,16 +1434,9 @@ void Generator::EmitDatabaseDecl(void) {
   }
 
   // Message entry points: thin hidden-friend wrappers over the handler
-  // detail twins. A FABRICATED demand-seed message (the live demand
-  // transform, `-demand`) gets NO public entry point — a raw call would
-  // inject unguarded demand rows, corrupting the demand frontier (the
-  // F2-B(ii) registry suppression; d1 §A2). Its `_detail` twin stays: the
-  // query's injector procedure calls it.
+  // detail twins.
   for (ProgramProcedure proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
-      continue;
-    }
-    if (auto m = proc.Message(); m && program.Query().IsDemandMessage(*m)) {
       continue;
     }
     const auto &fx = EffectsOf(proc);
@@ -1590,17 +1507,6 @@ void Generator::EmitDatabaseDecl(void) {
        << algebra << "> statecell_" << id << ";\n";
   }
   if (!program.StateCells().empty()) {
-    hh << "\n";
-  }
-
-  // D2.b: one InstanceStore per RecognizedSubgraph (the StateCellStore
-  // transpose). monotone=true (R-MONO belt on) via the default ctor arg.
-  for (const ProgramInstanceStoreInfo &store : program.InstanceStores()) {
-    const auto id = std::to_string(store.Id());
-    hh << hh.Indent() << "::hyde::rt::InstanceStore<Key_" << id << ", Row_"
-       << id << "> instance_" << id << ";\n";
-  }
-  if (!program.InstanceStores().empty()) {
     hh << "\n";
   }
 
@@ -1927,8 +1833,6 @@ void Generator::EmitRegion(ProgramRegion region) {
     EmitCommitSweep(ProgramCommitSweepRegion::From(region));
   } else if (region.IsGroupUpdate()) {
     EmitGroupUpdate(ProgramGroupUpdateRegion::From(region));
-  } else if (region.IsSubgraphInstance()) {
-    EmitSubgraphInstance(ProgramSubgraphInstanceRegion::From(region));
   } else if (region.IsClaim()) {
     EmitClaim(ProgramClaimRegion::From(region));
   } else if (region.IsRetire()) {
@@ -2327,466 +2231,6 @@ void Generator::EmitGroupUpdate(ProgramGroupUpdateRegion region) {
   cc << cc.Indent() << "}\n";  // occupancy cases
   cc.PopIndent();
   cc << cc.Indent() << "}\n";  // for touched
-}
-
-// D2.b/D3.a.1 keyed-instance codegen (SUBGRAPH_INSTANTIATE). Band-(a0) DEATH
-// (differential demand only, keyed on the removal_frontier's PRESENCE — D-2):
-// drain the netted demand net-removals frontier, FindInstance +
-// RecycleCurrent (Touch + current.Reset) — the dead key reaches band-(b) with
-// dropped = frozen \ current = ALL frozen rows, so the full (T,F) retract
-// rides the generic drop scan. Band-(a1) BIRTH: drain the demand
-// net-additions frontier, FindOrAddInstance, the V-INST-FRESH inline guard,
-// TouchCurrent, then rescan the input keyed on the instance key (a full scan
-// with a key filter — the keyed index is a deferred perf refinement; the DR
-// spine already tags section-walk) and TryAdd each matching row into
-// `current`. Band-(b) PUBLISH, two regimes: MONOTONE — for each touched
-// instance, the (F,T) born set (current \ frozen) is TryAdd-published into
-// the pub table. DIFFERENTIAL (D3.a.1) — the (T,F) drop scan runs FIRST per
-// touched iid (OVERDELETE-first, OQ-PUBLISH-ORDER): dropped = frozen \
-// current, SubDerivation + del-queue append (a dead key's empty current
-// makes this the full (T,F) retract); then the born scan publishes via
-// AddDerivation (DiffTable has no TryAdd) + add-queue append; the always-on
-// generated V-INST-PARTITION belt (RAT-7) checks born+carried==cur &&
-// dropped+carried==frz per iid. Then the self-lowered Seal (HP-1/OD-5)
-// swaps current->frozen.
-void Generator::EmitSubgraphInstance(ProgramSubgraphInstanceRegion region) {
-  EmitComment(region);
-  // ==========================================================================
-  // THE D3.a.2 FIVE-WAY INPUT-QUIESCENCE COUPLING (the OD-15 pinned-coupling
-  // idiom — one block every design touching the input rebuild band, the
-  // demand-liveness gate, or the entry-point structure must quote). For a
-  // keyed-instance store over a DIFFERENTIAL input, five landed mechanisms
-  // interlock to make each touched key rebuild EXACTLY the epoch-net live
-  // content, once, with no resurrection and no over-retraction:
-  //  1. NETTING (handler NetBatch, per channel, at the message boundary):
-  //     same-batch +/- of one row annihilates before any fold, so every
-  //     frontier row (demand-add/removal, edge-add/removal) is a GENUINE net
-  //     change — no arm ever drains a self-cancelling pair (O-3/OB7).
-  //  2. TouchedFlag (append-once, Seal-reset): the SAME-EPOCH belt. Whichever
-  //     arm (a0 death, a1 birth, a2 edge-add, a2' edge-removal) FIRST touches
-  //     key K does the ONE full Present-filtered rescan of K's net content
-  //     (or, for a0, the RecycleCurrent recycle-to-empty that lets band-(b)
-  //     retract K's whole frozen set — a0 Touches and EMPTIES, it never
-  //     rescans); every later arm skips. Drain order among the arms is
-  //     therefore behavior-neutral — the property the R-A2-TRIGGER
-  //     two-drains-no-recycle ruling rests on.
-  //  3. V-INST-FRESH (band-entry belt, always-on generated fprintf+abort):
-  //     `current` is EMPTY at first touch (Seal/RecycleCurrent the sole
-  //     emptiers). This is why (a) the input arms need NO Recycle, (b) the
-  //     rescan rebuilds from empty so occupancy stays exact (the N-1 close),
-  //     and (c) a stray non-empty current (a real bug) still aborts.
-  //  4. THE Present CONJUNCT (`input.Present(s)` in the shared rescan mold,
-  //     ADV-3, ALL THREE sources incl. a1-birth): the mold materializes
-  //     exactly the epoch-net LIVE input rows (T-5/T-7: at band time
-  //     Present(s) == post-commit kInI for this epoch, because input counters
-  //     are final at the fold and the flow's claim drains touch flags only).
-  //     No dead input row is resurrected on any rescan — the OB8 lemma's
-  //     operational content.
-  //  5. THE DEMAND-LIVENESS GATE (`demand.Present(dq)` on a2/a2', the R-3
-  //     gate): the CROSS-EPOCH belt. A dead key still binds an iid
-  //     (append-only, no tombstone); the gate skips a rebuild whose demand is
-  //     committed-absent (differential demand) or trivially-present (monotone
-  //     demand — sound by IRREVOCABILITY). iid existence is NOT a liveness
-  //     signal.
-  // Per epoch shape: L-EDGE (add/retract) — 4+5 carry; L-MONO (e5) — 4
-  // carries, 5 degenerates to irrevocability; L-DEMAND — 2+3 carry, 4/5 idle.
-  // L-COMBINED (no such entry today) — 5's committed-vs-post-fold
-  // justification FAILS; pinned as a DOCUMENTARY fence (E3a): any future
-  // multi-message batch API MUST re-derive it before landing.
-  // C-REC (precondition, cross-lane): mechanism 4 + the OB8 lemma require the
-  // input's counters be FINAL at band time — a fixpoint-refired
-  // (recursive-content) input would violate it. The recursive-content fence
-  // surviving F-A's lift (lib/ControlFlow/Build/Build.cpp:1530-1537) is
-  // therefore LOAD-BEARING FOR CORRECTNESS, not just scope.
-  // ==========================================================================
-  const auto id = std::to_string(region.StoreId());
-  const auto sname = "instance_" + id;
-  // D3.a.1: the drop-scan/belt/liveness-gate selector (== the store's
-  // descriptor bit == TableIsDifferential(pub), V-INST-DIFF-COHERENCE).
-  const bool diff = region.IsDifferential();
-  const DataVector demand = region.DemandFrontier();
-  const DataVector input_front = region.InputFrontier();  // [R-REBUILD-a2]
-  const DataTable input = region.InputTable();
-  // D3.a.2 [R-A2-TRIGGER]: the input(edge) net-REMOVALS frontier — present IFF
-  // the summarized input is DIFFERENTIAL (b1 emplaces input_removal_frontier
-  // ONLY under the input-diff regime, mirroring removal_frontier for demand
-  // death). Its presence IS the codegen input-diff selector (single source of
-  // truth: the E2b mold conjunct and the E2c band-(a2') arm both key on it —
-  // definitionally co-gated, F2c). == TableIsDifferential(input_table), the
-  // ADV-6 THIRD axis, NEVER folded into `diff`/P-STORE/P-DEATH (d2 §7).
-  const auto input_removal = region.InputRemovalFrontier();
-  const bool input_diff = input_removal.has_value();
-  const DataTable pub = region.PubTable();
-  const auto input_member = table_member[input.Id()];
-  const auto &input_fields = col_field[input.Id()];
-  const auto pub_member = table_member[pub.Id()];
-  const auto &key_pos = region.KeyPositions();
-  const auto &row_pos = region.RowPositions();
-  const auto &in_key = region.InputKeyCols();
-  const auto &in_row = region.InputRowCols();
-
-  // The one rescan mold, three drain sources ([D-COLLAPSE]): the V-INST-FRESH
-  // belt + TouchCurrent + the full-scan/key-filter/TryAdd rescan, shared by
-  // band-(a1), band-(a2) and band-(a2') and parameterized ONLY by the key
-  // expressions the filter compares against (a1: the demand binds k<j>;
-  // a2/a2': the edge row's own key cols e<in_key[j]>). Emitted bytes are
-  // identical to the pre-fold clones by construction.
-  const auto emit_instance_rescan =
-      [&](const std::vector<std::string> &keyexprs) {
-    cc << cc.Indent() << "if (" << sname << ".WorkingOccupied(iid)) {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "std::fprintf(stderr, \"V-INST-FRESH: instance %u "
-       << "current non-empty at band-(a) entry (store " << id
-       << ")\\n\", iid); std::abort();\n";
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";
-    cc << cc.Indent() << "auto &cur = " << sname << ".TouchCurrent(iid);\n";
-    cc << cc.Indent() << "for (uint32_t s = 0; s < " << input_member
-       << ".NumRows(); ++s) {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "const auto ir = " << input_member << ".RowAt(s);\n";
-    std::string cond;
-    {
-      auto sep = "";
-      for (unsigned j = 0u; j < in_key.size(); ++j) {
-        cond += sep + std::string("ir.") + input_fields[in_key[j]] +
-                " == " + keyexprs[j];
-        sep = " && ";
-      }
-      // ADV-3 (RULED spelling = Present): under a DIFFERENTIAL input the
-      // physical row log at `input_member` still holds THIS-EPOCH-retracted
-      // rows — CompactDead runs only at the epoch-boundary commit-sweep tail
-      // past the 4096 floor, NEVER in-band (XC-7), so `RowAt(s)` enumerates
-      // dead rows too. `Present(s)` (DiffTable: counts[s] > 0) is the LIVE
-      // filter, and mid-band it EQUALS post-commit `kInI` because every input
-      // counter write precedes the bands (explicit folds in the ingest proc;
-      // a derived acyclic input's seed folds run in the ready_after-lifted
-      // stratum ahead of the band — the OB8 lemma, b3; currently unreachable:
-      // the plain-`-demand` body-walk rejects non-plain demanded bodies and a
-      // MERGE-fed input mints no instance, so every admitted input model is
-      // ingest-written — a widening re-derives OB8(i) with a directed witness
-      // FIRST). `s` is the RowAt iteration id, so `Present(s)` reads the row
-      // just bound as `ir`. Gated on input_diff at CODEGEN time => monotone-
-      // input emission is byte-identical (d5-selector discipline). ONE shared
-      // mold => this conjunct rides ALL THREE rescan sources: band-(a1) birth
-      // (the E-F2 rebirth-from-shrunken-input cell), band-(a2) edge-adds,
-      // band-(a2') edge-removals.
-      if (input_diff) {
-        cond += sep + input_member + ".Present(s)";
-        sep = " && ";
-      }
-    }
-    if (cond.empty()) {
-      cond = "true";
-    }
-    cc << cc.Indent() << "if (" << cond << ") {\n";
-    cc.PushIndent();
-    std::vector<std::string> rowvals;
-    for (unsigned j = 0u; j < in_row.size(); ++j) {
-      rowvals.push_back("ir." + input_fields[in_row[j]]);
-    }
-    cc << cc.Indent() << "cur.TryAdd(Row_" << id << "{"
-       << JoinExprs(rowvals, ", ") << "});\n";
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // key filter
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // input rescan
-  };
-
-  // band-(a0) DEATH [D3.a.1]: drain the NETTED demand net-removals frontier
-  // (rows == the instance key columns, the a1 mold). RecycleCurrent = Touch +
-  // current.Reset (its FIRST codegen caller):
-  //  - Touch sets TouchedFlag => the dead key's a1/a2 rescans SKIP this epoch
-  //    (the OD-15 suppression) and Seal visits the iid;
-  //  - current stays EMPTY => band-(b)'s drop scan retracts the key's WHOLE
-  //    frozen set (dropped = frozen \ current = frozen) — the full (T,F)
-  //    retract into pub's delete side rides the generic drop scan (b3);
-  //  - V-INST-FRESH unchanged: nothing here fills current (OD-15 coupling).
-  // FindInstance is NON-adding; kNoInstance SKIPS silently (R-6: unreachable
-  // today via netting + append-only iids; idempotence-preserving under
-  // D3.a.2 interleavings; divergence is loud via belt + eqgate).
-  // Netting kills same-batch demand flap upstream (handler NETBATCH + the
-  // commit-band was!=now filter), so a removal row is a genuine standing-
-  // demand death.
-  if (auto removal = region.RemovalFrontier(); removal) {
-    const auto death_arity =
-        static_cast<unsigned>(removal->ColumnTypes().size());
-    std::vector<std::string> dbinds;
-    for (unsigned i = 0u; i < death_arity; ++i) {
-      dbinds.push_back("d" + std::to_string(i));
-    }
-    cc << cc.Indent() << "for (const auto &[" << JoinExprs(dbinds, ", ")
-       << "] : " << VecName(*removal) << ") {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "const auto iid = " << sname << ".FindInstance(Key_"
-       << id << "{" << JoinExprs(dbinds, ", ") << "});\n";
-    cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance) {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << sname << ".RecycleCurrent(iid);\n";
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // found
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // band-(a0) death drain
-  }
-
-  // band-(a1) drain the demand frontier (rows == the instance key columns).
-  const auto key_arity =
-      static_cast<unsigned>(demand.ColumnTypes().size());
-  std::vector<std::string> kbinds;
-  for (unsigned i = 0u; i < key_arity; ++i) {
-    kbinds.push_back("k" + std::to_string(i));
-  }
-  cc << cc.Indent() << "for (const auto &[" << JoinExprs(kbinds, ", ")
-     << "] : " << VecName(demand) << ") {\n";
-  cc.PushIndent();
-  cc << cc.Indent() << "const auto iid = " << sname << ".FindOrAddInstance(Key_"
-     << id << "{" << JoinExprs(kbinds, ", ") << "});\n";
-  // First touch this epoch only: the V-INST-FRESH guard + the rescan run once.
-  cc << cc.Indent() << "if (!" << sname << ".TouchedFlag(iid)) {\n";
-  cc.PushIndent();
-  emit_instance_rescan(kbinds);  // key filter RHS: the demand binds k<j>
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";  // !TouchedFlag
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";  // demand drain
-
-  // band-(a2) [R-REBUILD-a2] drain the edge net-additions frontier (REBUILD): a
-  // live-demanded key whose summarized input changed full-rescans exactly as
-  // band-(a1) does (the ADJ-C1 collapse — one rescan mold, two drain SOURCES).
-  // FindInstance (non-adding) SKIPS a stray/undemanded edge (kNoInstance);
-  // !TouchedFlag dedups a co-demanded-and-edge-touched key to one rescan.
-  // D3.a.3 E2c: the ONE edge-drain gate-set emitter (band-(a2) net-additions +
-  // band-(a2') net-removals), parameterized ONLY by the drain frontier. Folding
-  // the two arms STRUCTURALLY ENFORCES the binding R-A2-TRIGGER §7(2) gate-set
-  // identity (a divergence between the arms was a design ERROR; one emitter
-  // makes divergence unrepresentable). The demand-liveness gate rationale (R-3 +
-  // the D3.a.2 e4 discharge):
-  //   L-EDGE  an edge ADD or RETRACT epoch leaves demand FROZEN (channel
-  //           disjointness: the edge handler never writes demand) =>
-  //           Present(dq) == committed demand presence;
-  //   L-MONO  a MONOTONE demand (the e5 carrier: diff input, P-STORE true,
-  //           P-DEATH false) => Present degenerates to Table::Present
-  //           (always-true); sound by IRREVOCABILITY (never retracts);
-  //   L-DEMAND a demand epoch leaves the input frontiers EMPTY => both arms
-  //           iterate zero rows: vacuously sound.
-  // (The L-EDGE derived-input branch is FORWARD-LOOKING; a widening re-derives
-  // OB8(i) first. The hypothetical COMBINED demand+input entry cannot arise —
-  // BuildIOProcedure emits one ingest proc per message, one channel each. NO
-  // RecycleCurrent in either arm — §7(3): current is provably empty at first
-  // touch; an ungated Recycle would be the E-E silent full-retract, FORBIDDEN.)
-  const auto emit_edge_drain = [&](const DataVector &frontier) {
-    // ADJ-R1: the outer bind is the FULL EDGE ROW (edge arity), NOT the demand
-    // key arity — the key is projected from the edge's own key cols below.
-    const auto edge_arity =
-        static_cast<unsigned>(frontier.ColumnTypes().size());
-    std::vector<std::string> ebinds;
-    for (unsigned i = 0u; i < edge_arity; ++i) {
-      ebinds.push_back("e" + std::to_string(i));
-    }
-    std::vector<std::string> ekeyexprs;
-    for (unsigned j = 0u; j < in_key.size(); ++j) {
-      ekeyexprs.push_back("e" + std::to_string(in_key[j]));
-    }
-    cc << cc.Indent() << "for (const auto &[" << JoinExprs(ebinds, ", ")
-       << "] : " << VecName(frontier) << ") {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "const auto iid = " << sname << ".FindInstance(Key_"
-       << id << "{" << JoinExprs(ekeyexprs, ", ") << "});\n";
-    if (diff) {
-      const auto demand_member = table_member[region.DemandTable().Id()];
-      // Fable review [I]: the demand probe nests INSIDE the iid check so the
-      // common stray/undemanded-edge rows (iid == kNoInstance) pay no hash
-      // probe on this hot per-edge path.
-      cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance) {\n";
-      cc.PushIndent();
-      cc << cc.Indent() << "const auto dq = " << demand_member << ".Find({"
-         << JoinExprs(ekeyexprs, ", ") << "});\n";
-      cc << cc.Indent() << "if (dq != ::hyde::rt::kNoRow && " << demand_member
-         << ".Present(dq) && !" << sname << ".TouchedFlag(iid)) {\n";
-    } else {
-      // Live-demanded gate + first-touch dedup ([D-COLLAPSE]).
-      cc << cc.Indent() << "if (iid != ::hyde::rt::kNoInstance && !" << sname
-         << ".TouchedFlag(iid)) {\n";
-    }
-    cc.PushIndent();
-    // The SAME rescan as band-(a1); the key filter compares the edge row's
-    // own key cols (e<in_key[j]>), not a demand bind.
-    emit_instance_rescan(ekeyexprs);
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // live && !TouchedFlag
-    if (diff) {
-      cc.PopIndent();
-      cc << cc.Indent() << "}\n";  // iid != kNoInstance (review [I] nest)
-    }
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // edge drain
-  };
-
-  // band-(a2) [R-REBUILD-a2]: the input net-additions rebuild drain.
-  emit_edge_drain(input_front);
-
-  // band-(a2') [R-A2-TRIGGER §7] drain the input(edge) net-REMOVALS frontier
-  // (REBUILD-on-shrink): a live-demanded key whose summarized input LOST a row
-  // full-rescans exactly as band-(a2) does — the ONE shared rescan mold, now
-  // its THIRD drain SOURCE (a1 births, a2 edge-adds, a2' edge-removals).
-  // WITHOUT this arm a pure edge-retract epoch mints no input net-ADDITIONS
-  // row, band-(a2) never fires, the E2b-filtered rescan never runs, and the
-  // doubled pub counter parks present (substrate §3 silent-miscompile (i),
-  // OB1). WITH it + the E2b Present conjunct the rescan reads the epoch-net
-  // (shrunken) input, so band-(b)'s drop scan publishes the net retraction
-  // (E-D). Removals never mint a death (ADV-2, OQ-DEATH-VS-REBUILD): an input
-  // shrink is a REBUILD, not a demand death.
-  //
-  // R-A2-TRIGGER §7(3) DESIGN FENCE — **NO RecycleCurrent HERE**. `current` is
-  // provably EMPTY at first touch (V-INST-FRESH + Seal/Recycle sole emptiers),
-  // so Recycle is DEATH-ONLY (band-(a0)). An UNCONDITIONAL / ungated Recycle
-  // in this arm would silently full-retract a same-epoch co-added key
-  // (interleaving E-E): the add arm rescans K (cur = net content), an ungated
-  // Recycle then wipes cur, dedup skips the re-rescan, band-(b) drops K's
-  // entire frozen set — and NO landed belt catches it (V-INST-PARTITION
-  // balances 0/0/frz; V-INST-FRESH never fires because Recycle did not
-  // rescan). FORBIDDEN. The gate set below is IDENTICAL to band-(a2) (binding
-  // R-A2-TRIGGER §7(2)); a divergence between the two a2 arms is a design
-  // ERROR (the d7 gate-identity perturbation).
-  if (input_removal) {
-    // band-(a2') [R-A2-TRIGGER §7]: the THIRD drain SOURCE into the ONE rescan
-    // mold (a1 births, a2 edge-adds, a2' edge-removals). The gate set is
-    // BINDING-identical to band-(a2) by construction (one emitter). E-F3: an
-    // edge-removal for a DEAD key no-ops via the demand-liveness gate; the e4
-    // quiescence lemma discharges the D3.a.2 RIDER. Removals never mint a death
-    // (an input shrink is a REBUILD).
-    emit_edge_drain(*input_removal);
-  }
-
-  // band-(b) PUBLISH the (F,T) born set of every touched instance.
-  bool pub_has_indexes = false;
-  for (DataIndex index : pub.Indices()) {
-    if (index_member.contains(index.Id())) {
-      pub_has_indexes = true;
-      break;
-    }
-  }
-  const unsigned npub =
-      static_cast<unsigned>(key_pos.size() + row_pos.size());
-  // Map each pub position to its source expr (KeyAt slot or a store-row var).
-  // Row-var-parameterized (D3.a.1): the born scan binds `row` (from cur), the
-  // (T,F) drop scan binds `drow` (from frz).
-  const auto pub_exprs_for = [&](const char *rv) {
-    std::vector<std::string> es(npub);
-    for (unsigned r = 0u; r < key_pos.size(); ++r) {
-      es[key_pos[r]] = "key.c" + std::to_string(r);
-    }
-    for (unsigned r = 0u; r < row_pos.size(); ++r) {
-      es[row_pos[r]] = std::string(rv) + ".c" + std::to_string(r);
-    }
-    return es;
-  };
-  const std::vector<std::string> pub_exprs = pub_exprs_for("row");
-
-  cc << cc.Indent() << "for (const auto iid : " << sname << ".Touched()) {\n";
-  cc.PushIndent();
-  cc << cc.Indent() << "auto &cur = " << sname << ".Current(iid);\n";
-  cc << cc.Indent() << "const auto &frz = " << sname << ".Frozen(iid);\n";
-  cc << cc.Indent() << "const auto &key = " << sname << ".KeyAt(iid);\n";
-  cc << cc.Indent() << "(void) key;\n";
-  if (diff) {
-    // RAT-7 / OQ-BELT: the V-INST-PARTITION counters. Always-on in generated
-    // code (fprintf+abort, survives NDEBUG) — the differential-mode invariant
-    // born+carried==cur && dropped+carried==frz. HP-7 stays the monotone
-    // stores' [DBG] Seal belt.
-    cc << cc.Indent() << "uint32_t born = 0u;\n";
-    cc << cc.Indent() << "uint32_t carried = 0u;\n";
-    cc << cc.Indent() << "uint32_t dropped = 0u;\n";
-    // The (T,F) DROP SCAN (G-TF-PUBLISH), BEFORE the born scan per touched
-    // iid (OQ-PUBLISH-ORDER OVERDELETE-first). dropped = frozen \ current;
-    // delete side = the GROUP_UPDATE fold shape (SubDerivation +
-    // del-queue append; enqueue unconditional — TryClaimDel re-tests at
-    // dequeue). A DEAD key (RecycleCurrent left cur empty) retracts its
-    // whole frozen buffer here — death needs no bespoke publish arm.
-    const auto dpub = pub_exprs_for("drow");
-    cc << cc.Indent() << "for (uint32_t r = 0; r < frz.NumRows(); ++r) {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "const auto &drow = frz.RowAt(r);\n";
-    cc << cc.Indent() << "if (cur.Find(drow) == ::hyde::rt::kNoRow) {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "++dropped;\n";
-    cc << cc.Indent() << pub_member << ".SubDerivation(" << RowExpr(dpub)
-       << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
-    cc << cc.Indent() << VecName(region.DelQueue()) << ".Add(" << RowExpr(dpub)
-       << ");\n";
-    cc.PopIndent();
-    cc << cc.Indent() << "} else {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "++carried;\n";
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // (T,F) gate
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";  // rows of frozen
-  }
-  cc << cc.Indent() << "for (uint32_t r = 0; r < cur.NumRows(); ++r) {\n";
-  cc.PushIndent();
-  cc << cc.Indent() << "const auto &row = cur.RowAt(r);\n";
-  // HP-6 (F,T) partition (RAT-7: no runtime assert; the SITE-3 review line is
-  // the D2.b guardian): publish only rows absent from the sealed frozen buffer.
-  cc << cc.Indent() << "if (frz.Find(row) == ::hyde::rt::kNoRow) {\n";
-  cc.PushIndent();
-  if (!diff) {
-    if (!pub_has_indexes) {
-      cc << cc.Indent() << pub_member << ".TryAdd(" << RowExpr(pub_exprs)
-         << ");\n";
-    } else {
-      const auto ins = "ins" + std::to_string(next_ins_id++);
-      cc << cc.Indent() << "if (const auto " << ins << " = " << pub_member
-         << ".TryAdd(" << RowExpr(pub_exprs) << "); " << ins << ".added) {\n";
-      cc.PushIndent();
-      EmitIndexAdds(pub, ins, pub_exprs);
-      cc.PopIndent();
-      cc << cc.Indent() << "}\n";
-    }
-  } else {
-    cc << cc.Indent() << "++born;\n";
-    // DiffTable has no TryAdd: the born side is the emit_add_deriv mold
-    // (AddDerivation + added_row-gated index adds + add-queue append).
-    if (!pub_has_indexes) {
-      cc << cc.Indent() << pub_member << ".AddDerivation(" << RowExpr(pub_exprs)
-         << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
-    } else {
-      const auto d = "gd" + std::to_string(next_ins_id++);
-      cc << cc.Indent() << "const auto " << d << " = " << pub_member
-         << ".AddDerivation(" << RowExpr(pub_exprs)
-         << ", ::hyde::rt::DerivClass::kNonRecursive);\n";
-      cc << cc.Indent() << "if (" << d << ".added_row) {\n";
-      cc.PushIndent();
-      EmitIndexAdds(pub, d, pub_exprs);
-      cc.PopIndent();
-      cc << cc.Indent() << "}\n";
-    }
-    cc << cc.Indent() << VecName(region.AddQueue()) << ".Add("
-       << RowExpr(pub_exprs) << ");\n";
-  }
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";  // (F,T) gate
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";  // rows of current
-  if (diff) {
-    cc << cc.Indent() << "if (born + carried != cur.NumRows() || "
-       << "dropped + carried != frz.NumRows()) {\n";
-    cc.PushIndent();
-    cc << cc.Indent() << "std::fprintf(stderr, \"V-INST-PARTITION: instance "
-       << "%u born=%u carried=%u dropped=%u cur=%u frz=%u (store " << id
-       << ")\\n\", iid, born, carried, dropped, cur.NumRows(), "
-       << "frz.NumRows()); std::abort();\n";
-    cc.PopIndent();
-    cc << cc.Indent() << "}\n";
-  }
-  cc.PopIndent();
-  cc << cc.Indent() << "}\n";  // touched
-
-  // The self-lowered Seal (HP-1/OD-5): swap current->frozen for touched groups.
-  cc << cc.Indent() << sname << ".Seal();\n";
-  cc << "#ifndef NDEBUG\n";
-  cc << cc.Indent() << sname << ".DebugValidate();\n";
-  cc << "#endif\n";
 }
 
 // The runtime method reading one named membership predicate.
@@ -3656,11 +3100,6 @@ void Generator::Run(void) {
   if (!program.StateCells().empty()) {
     hh << "#include <drlojekyll/Runtime/StateCell.h>\n";
   }
-  // D2.b: the InstanceStore header, emitted only when a program instantiates a
-  // keyed-instance store (byte-identity guard for instance-free programs).
-  if (!program.InstanceStores().empty()) {
-    hh << "#include <drlojekyll/Runtime/InstanceStore.h>\n";
-  }
   hh << "#include <drlojekyll/Runtime/Vec.h>\n\n"
      << "#include <cassert>\n"
      << "#include <cstdint>\n"
@@ -3682,14 +3121,9 @@ void Generator::Run(void) {
 
   EmitShapeStructs();
 
-  // Friendly aliases for each message's input-tuple shape. Suppressed for a
-  // fabricated demand-seed message (the F2-B(ii) registry; see the message
-  // entry-point loop) — no public surface names it.
+  // Friendly aliases for each message's input-tuple shape.
   for (ProgramProcedure proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
-      continue;
-    }
-    if (auto m = proc.Message(); m && program.Query().IsDemandMessage(*m)) {
       continue;
     }
     auto vec_params = proc.VectorParameters();
@@ -3702,7 +3136,6 @@ void Generator::Run(void) {
 
   EmitRowStructs();
   EmitStateCellStructs();  // R3: Key_<id> + Reduce_<id> per state cell.
-  EmitInstanceStructs();   // D2.b: Key_<id> + Row_<id> per instance store.
   EmitFunctorsDecl();
   EmitLogDecl();
 

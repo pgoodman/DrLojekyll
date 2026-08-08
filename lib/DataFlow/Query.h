@@ -486,21 +486,6 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // (two same-shape recursive arms tie on both). `~0u` means unstamped.
   unsigned det_seq{~0u};
 
-  // Index into `QueryImpl::guard_annotations`, or `~0u` for "not a guard
-  // view". Set only by `ApplyDemandTransform` (on the guard JOIN), migrated
-  // through `CopyDifferentialAndGroupIdsTo` with CLEAR-ON-MOVE — unlike
-  // `group_ids`' monotone union, this is a UNIQUE scalar the census counts
-  // once. Never sorted, never iterated into emission-visible order (HP-9).
-  GuardAnnotationIndex guard_annotation_index{QueryView::kNoGuardAnnotation};
-
-  // Owning query, set ONLY on guard-annotated views (INV-OWN3-Q: non-null iff
-  // guard_annotation_index != ~0u), for the OWN-3 fold diagnostic's record
-  // lookup. nullptr for every other view. Never entered into any order.
-  // NOTE: QueryImpl is only forward-declared at this point (it becomes
-  // complete later in this header); a pointer-to-incomplete member is legal
-  // and the type is complete at deref time in View.cpp.
-  QueryImpl *query{nullptr};
-
   // The group ID of this node that it will push forward to its dependencies.
   unsigned group_id{0u};
 
@@ -1082,25 +1067,12 @@ class QueryImpl {
   // `proxy_view_to_decl` is the Tier-1 naming-lift correlation vehicle
   // (RES-3(a), a `Query::Build`-SCOPED local — never a QueryImpl member): the
   // per-relation loop stamps `insert_proxy -> rel->declaration` at the one
-  // site where the decl is still live. SINGLE-READER discipline: consumed
-  // ONLY by `ApplyDemandTransform` (pre-`Optimize`, while the proxy handles
-  // are valid); it must never be read after `Optimize` runs (the VIEW* keys
-  // dangle — the RecognizedSubgraph "NEVER read at freeze" idiom).
+  // site where the decl is still live. VESTIGIAL post-demand-cut: still
+  // populated by the per-relation loop but no longer read (the sole reader,
+  // the deleted demand transform, is gone).
   bool ConnectInsertsToSelects(
       const ErrorLog &log,
       std::unordered_map<QueryViewImpl *, ParsedDeclaration> &proxy_view_to_decl);
-
-  // The LIVE DEMAND TRANSFORM (magic-sets / SLDMagic). See
-  // lib/DataFlow/Demand.cpp for the algorithm, pseudocode, and before/after
-  // diagram. Mode-gated: returns `true` immediately (a total no-op — no node
-  // minted, no module mutation) when `demand_mode` is `false`. Returns
-  // `false` on a clean-diagnostic reject (multi-adornment, or demand through
-  // a negation/aggregate sink). `module` is threaded so the pass can
-  // fabricate demand messages and reach the display manager for interning.
-  bool ApplyDemandTransform(
-      const ParsedModule &module, const ErrorLog &log, bool demand_mode,
-      bool demand_retract, bool suppress_demand,
-      const std::unordered_map<QueryViewImpl *, ParsedDeclaration> &proxy_view_to_decl);
 
   // Canonicalize the dataflow. This tries to put each node into its current
   // "most optimal" form. Previously it was more about re-arranging columns
@@ -1216,30 +1188,6 @@ class QueryImpl {
   DefList<QueryCompareImpl> compares;
   DefList<QueryInsertImpl> inserts;
 
-  // COMPILER-INTERNAL (the live demand transform): the demand-forcing
-  // registry, populated by `ApplyDemandTransform` — one entry per
-  // demand-transformed bound `#query`. Empty unless built under `-demand`.
-  std::vector<QueryDemandForcing> demand_forcings;
-
-  // Per-guard-site annotations, stamped by `ApplyDemandTransform` at
-  // guard-mint time. Append order = the deterministic stamp-loop order (the
-  // STEP-3 merged_views walk, then the single query-projection stamp) and is
-  // NEVER re-sorted (HP-9); views point in via
-  // `QueryViewImpl::guard_annotation_index`. Empty flag-off.
-  std::vector<GuardAnnotation> guard_annotations;
-
-  // One recognized subgraph per DemandForcing (the recognition unit is the
-  // FORCING); append order = forcing order. The keyed-instance census
-  // recount source.
-  std::vector<RecognizedSubgraph> recognized_subgraphs;
-
-  // Count of both-annotated guard folds (survivor's entry kept). Sole
-  // writer = the compatible-fold arm of CopyDifferentialAndGroupIdsTo
-  // (View.cpp), guarded by the OWN-3 always-on record-comparing diagnostic
-  // (D3.a.0). Read by the pre-Optimize annotation census (Demand.cpp),
-  // whose equation keeps this term even while folds are corpus-dormant.
-  unsigned guard_annotation_folded_count{0u};
-
   // Number of strata (SCCs of the condensation) assigned by `Stratify`;
   // view/model stratum ids range over `[0, num_strata)`.
   unsigned num_strata{0u};
@@ -1260,34 +1208,12 @@ class QueryImpl {
   RowContractMap row_contracts;
 };
 
-// OWN-3 (ruled, always-on): the guard-annotation fold compatibility predicate
-// and the record-comparing incompatible-fold check. PURE free functions over
-// two GuardAnnotation records -- no views, no QueryImpl -- mirroring the RAT-3
-// CheckInstanceOrder idiom so a death test can hand-build inputs. Defined in
-// View.cpp; called from the CopyDifferentialAndGroupIdsTo both-set fold arm.
-bool GuardAnnotationsCompatible(const GuardAnnotation &a,
-                                const GuardAnnotation &b);
-void CheckGuardAnnotationFold(const GuardAnnotation &loser,
-                              const GuardAnnotation &survivor);
-
 // V-PROJ-ROLE-STABLE (H-A2, always-on): the no-convert belt for the TUPLE
 // projection-role discriminant. PURE over the two views CSE is about to unify;
 // no-ops unless both are TUPLEs of DIFFERENT roles, in which case it fprintf +
 // aborts (surviving NDEBUG). Defined in Tuple.cpp; called from the single CSE
 // merge choke point (Optimize.cpp), the only place a role could be flipped.
 void CheckProjectionRoleStable(QueryViewImpl *loser, QueryViewImpl *survivor);
-
-// OWN-3 (g1, D3.a.3): the SURVIVOR-RECORD POLICY. When two COMPATIBLE guard
-// annotations fold, ResolveLiveRecognition (Rel.cpp:977) AND the nested pre-pass
-// recursive-content fence (Build.cpp:1452) derive/gate ONLY off a role==kBody
-// stamp -- but CSE picks the fold survivor by depth/det_seq (Optimize.cpp:365),
-// NOT by role, so a kQueryProjection survivor can shadow a kBody loser and
-// silently drop the input (Rel.cpp:1053 skip) + blind the recursive-content
-// fence. This forces the SURVIVING record to carry kBody whenever the loser did.
-// PURE (mutates only `surv` from `loser`); GuardAnnotationsCompatible is the
-// precondition (already proved forcing_index + instance_key equal). Defined in
-// View.cpp; called from the CopyDifferentialAndGroupIdsTo both-set fold arm.
-void PromoteSurvivorToBody(GuardAnnotation &surv, const GuardAnnotation &loser);
 
 using COL = QueryColumnImpl;
 using REL = QueryRelationImpl;

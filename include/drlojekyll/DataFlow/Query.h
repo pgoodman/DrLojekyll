@@ -17,13 +17,6 @@
 
 namespace hyde {
 
-// An index into `Query::GuardAnnotations()` identifying one recognized
-// keyed-instance guard record; `QueryView::kNoGuardAnnotation` (~0u) means
-// "not a recognized guard". A UNIQUE counted scalar (the demand census
-// counts each annotation once), which is why CopyDifferentialAndGroupIdsTo
-// CLEARS it on move — contrast the monotone origin/group-id sets.
-using GuardAnnotationIndex = unsigned;
-
 class ErrorLog;
 class QueryImpl;
 class OutputStream;
@@ -442,15 +435,6 @@ class QueryView : public Node<QueryView, QueryViewImpl> {
   // for ordering any view-keyed container whose iteration order reaches
   // emitted output — never iterate such a container in pointer order.
   unsigned DeterministicOrder(void) const noexcept;
-
-  // COMPILER-INTERNAL (keyed instances): the index into
-  // `Query::GuardAnnotations()` this view's guard JOIN was stamped with by
-  // `ApplyDemandTransform` (D1.a), or `kNoGuardAnnotation` (~0u) if this is not
-  // a recognized guard. ABA-safe: the stamp is a per-view field that migrates
-  // through CSE with group_ids (View.cpp:579-590), never a raw handle. Ordered
-  // consumption must still walk the DefList (HP-9).
-  static constexpr ::hyde::GuardAnnotationIndex kNoGuardAnnotation = ~0u;
-  ::hyde::GuardAnnotationIndex GuardAnnotationIndex(void) const noexcept;
 
   // COMPILER-INTERNAL (K5 Tier-2 origin provenance): the monotone set of ORIGIN
   // declarations whose rows flow through this view, sorted-unique by decl Id.
@@ -976,136 +960,17 @@ class QueryKVIndex : public Node<QueryKVIndex, QueryKVIndexImpl> {
   friend class QueryView;
 };
 
-// COMPILER-INTERNAL (the live demand transform, `-demand`): one entry per
-// demand-transformed bound `#query`, recorded by the demand pass and consumed
-// by the ControlFlow injector builder (recipe F2: the registry REPLACES the
-// clause-var DisjointSet re-derivation — no parse-level forcing predicate
-// exists for a demand-transformed query, `ForcingMessage()` stays nullopt)
-// and by codegen (the fabricated message's public entry-point suppression).
-struct QueryDemandForcing {
-  // The demanded bound query.
-  ParsedQuery query;
-
-  // The fabricated demand-seed message. Its Nth parameter corresponds to the
-  // query's `bound_params[N]`-th parameter (types sourced from the message's
-  // own parameters, per the round-2 judge's col_types nit).
-  ParsedMessage message;
-
-  // Indices of the query's bound parameters, in fabricated-message parameter
-  // order.
-  std::vector<unsigned> bound_params;
-};
-
-// COMPILER-INTERNAL (the live demand transform, `-demand`): one per-guard-site
-// record, stamped by `ApplyDemandTransform` at guard-mint time — PRE-CSE, so
-// `demand_side` is a recorded fact (on non-recursive witnesses CSE folds the
-// raw-seed TUPLE into the d-reader and the graph alone can no longer tell the
-// two sides apart) — and release-surviving (the debug-only `producer` string
-// is NOT the carrier). Keyed on the guard JOIN via
-// `QueryViewImpl::guard_annotation_index`. Consumed by the keyed-instance
-// recognizer (D1/D2) and the D3 multi-adornment lift.
-struct GuardAnnotation {
-  // Mirrors the pass-internal `GuardSite::Kind` by VALUE (a static_assert
-  // beside the stamp in Demand.cpp couples them). The query-projection guard
-  // has no GuardSite record; it is stamped `kReadAtTuple` — the direct-read
-  // shape — and distinguished from body sites by `role`/`demand_side`.
-  enum Kind : uint8_t { kReadAtTuple, kPushDown, kBaseAtom };
-
-  // Which demand-side child the guard JOIN was minted against.
-  enum DemandSide : uint8_t { kDReader, kRawSeed };
-
-  enum Role : uint8_t { kBody, kQueryProjection };
-
-  Kind kind;
-  DemandSide demand_side;
-  Role role;
-
-  // Marks RECURSIVE-subgoal sites (a D3 boundary), NOT the top-level
-  // instance; always `false` in the single-adornment slice.
-  bool is_instance_key;
-
-  // Pivot positions within the guarded read, one per bound column of the
-  // adornment, in adornment order.
-  std::vector<unsigned> instance_key;
-
-  // Opaque handles: equality/lookup ONLY — never enter any order (their
-  // UniqueId is pointer-derived).
-  QueryView guarded_read;
-  QueryView demanded_view;
-
-  // Index into `Query::DemandForcings()`.
-  unsigned forcing_index;
-};
-
-// COMPILER-INTERNAL: one recognized demand subgraph per DemandForcing entry
-// (the recognition unit is the FORCING, regardless of whether the demanded
-// body is recursive). Populated by `ApplyDemandTransform`, append order =
-// forcing order. This is the keyed-instance census recount source: populated
-// by the DataFlow demand pass, only READ by the DR mint loop.
-struct RecognizedSubgraph {
-  unsigned forcing_index;               // -> Query::DemandForcings()[i]
-  QueryView demanded_view;              // p's post-Connect MERGE
-  std::vector<unsigned> key_cols;       // the forcing's bound α positions
-  QueryView pub_view;                   // the answer INSERT target
-  std::vector<unsigned> guard_annotation_indices;  // its guards
-
-  // The demanded interior relation p's declaration — the Tier-1 naming-lift
-  // mint-time SNAPSHOT (parse identity, Optimize-stable, never migrated).
-  // Carried from the Connect-time proxy mint (where the decl is last live)
-  // so the Regional freeze can NAME the merge-materialized interior model
-  // (`QueryMergeImpl` carries no decl link — the R-STORE unnameability).
-  ParsedDeclaration demanded_decl;
-};
-
 // A query.
 class Query {
  public:
   // Build and return a new query. When `optimize` is `false`, the data flow
   // graph is built and canonicalized, but the aggressive whole-graph
   // optimization pass (CSE, union sinking, dead flow elimination) is skipped.
-  //
-  // The live demand transform (magic-sets / SLDMagic;
-  // DemandSeeds.artifacts/d1-demand-seed-mechanism.md) runs as a dedicated
-  // pass immediately before `Optimize` when ACTIVATED: either globally via
-  // `demand_mode == true` (the `-demand` CLI flag — the auto layer) or
-  // per-relation via an explicit `@key(K...)` pragma (RP-6/RP-9 force-opt-in,
-  // flagless). With neither, NOTHING is minted and the graph is bit-for-bit
-  // identical. Orthogonal to the four golden optimization modes (never a
-  // fifth mode).
-  //
-  // `suppress_demand == true` forces the transform OFF regardless of flags
-  // AND pragmas — for DEMAND-BLIND definitional consumers (bin/Oracle: the
-  // oracle referees ANSWER-identity by evaluating the full closure, so a
-  // pragma-activated build inside the oracle would referee nothing). The
-  // compiler proper never sets it.
   static std::optional<Query> Build(const ParsedModule &module,
                                     const ErrorLog &log,
-                                    const PassPolicy &policy,
-                                    bool demand_mode = false,
-                                    bool demand_retract = false,
-                                    bool suppress_demand = false);
+                                    const PassPolicy &policy);
 
   ~Query(void);
-
-  // COMPILER-INTERNAL (the live demand transform): the demand-forcing
-  // registry — empty unless the module was built under `-demand` and a bound
-  // query was transformed.
-  const std::vector<QueryDemandForcing> &DemandForcings(void) const noexcept;
-
-  // COMPILER-INTERNAL (the live demand transform): the per-guard-site
-  // annotations and the per-forcing recognized-subgraph registry — both
-  // empty unless the module was built under `-demand` and a bound query was
-  // transformed. Append order is the pass's own deterministic stamp order;
-  // any ordered consumption must come from a deterministic view walk, never
-  // from these vectors' opaque view handles (HP-9).
-  const std::vector<GuardAnnotation> &GuardAnnotations(void) const noexcept;
-  const std::vector<RecognizedSubgraph> &RecognizedSubgraphs(
-      void) const noexcept;
-
-  // COMPILER-INTERNAL: is `m` a fabricated demand-seed message? Consulted by
-  // codegen to SUPPRESS the public message entry point (the F2-B(ii)
-  // registry; the `_detail` twin stays — the injector calls it).
-  bool IsDemandMessage(ParsedMessage m) const noexcept;
 
   ::hyde::ParsedModule ParsedModule(void) const noexcept;
 

@@ -91,9 +91,8 @@ struct RegionalPort {
   std::string fields_text;
 };
 
-// One region-internal line, e.g.
-// "demand__reachable_from_bf/1(c3:u64)  [fabricated, driver-suppressed]"
-// (the "  [ ... ]" tag IS emitted bytes).
+// One region-internal line, e.g. "reachable_from_bf/1(c3:u64)" — an interior
+// relation with no direct message binding.
 struct RegionalInternal {
   std::string text;
 };

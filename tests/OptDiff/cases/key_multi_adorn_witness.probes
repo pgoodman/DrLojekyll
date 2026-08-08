@@ -1,8 +1,0 @@
-# probes mirrored from demand_multi_adorn_witness.main.cpp (driver emit order)
-q_bf 1
-q_bf 2
-q_bf 10
-q_fb 4
-q_fb 2
-q_fb 11
-q_fb 3

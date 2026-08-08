@@ -276,22 +276,6 @@ bool QueryJoinImpl::ProxyUnusedInputColumns(QueryImpl *impl) {
       }
     }
 
-    // RIDER-2b tripwire (2026-08-05, always-on): the CDaGI below transfers
-    // guard_annotation_index with CLEAR-ON-MOVE semantics, sound only when
-    // the loser is being superseded — but `joined_view` STAYS LIVE here as
-    // the proxy's data source. An annotated (demand guard) JOIN reaching
-    // this site would have its annotation silently relocated onto the proxy
-    // tuple and recognition would strand (missing answers). Census
-    // 2026-08-05: zero corpus reachers incl. nested/@key activations; if a
-    // future demand shape gets here, fail LOUD and adjudicate (either
-    // narrow this site's migration like Merge.cpp's guard, or teach
-    // recognition to resolve through the proxy).
-    if (joined_view->guard_annotation_index != QueryView::kNoGuardAnnotation) {
-      fprintf(stderr,
-              "RIDER-2b: annotated guard JOIN reached ProxyUnusedInputColumns "
-              "— clear-on-move would strand demand recognition\n");
-      abort();
-    }
     joined_view->CopyDifferentialAndGroupIdsTo(tuple);
     new_joined_views.AddUse(tuple);
   }

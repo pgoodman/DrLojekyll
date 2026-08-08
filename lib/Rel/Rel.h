@@ -145,20 +145,6 @@ enum class DROpKind : uint8_t {
   kStateSeal,      // R3 STATE_SEAL: per statecell, commit-sweep tail — sealed :=
                    //   Emit(working) for touched groups (spec §2.3). Mirror of
                    //   kCommitSweep's trailing-band placement.
-  kSubgraphInstantiate,  // (15) keyed-instance BIRTH/REBUILD + band-(b)
-                         //   publish_touched (OD-6, A.2.1). Sole deriver of the
-                         //   published pub_table; `table_op_table = pub_table`,
-                         //   `table_op_sign = +1` (HP-3 — reuses the existing
-                         //   op_table_id arm, no new pub_table field).
-  kInstanceDeath,        // (16) whole-instance DEATH, its OWN op (§18(B)
-                         //   mandate). NO fold/counter — the zero-counter death
-                         //   signature is the teeth. `table_op_table = pub_table`,
-                         //   `table_op_sign = -1`. MINTED ONLY when the demand
-                         //   table is differential (R-DIFF); ships INERT at
-                         //   D1.b/D2.b (HP-17).
-  kInstanceSeal,         // (17) trailing pointer swap (kStateSeal peer, band 11
-                         //   via key_of). Self-lowered from its own dispatch
-                         //   (HP-1/OD-5); carries the sign-0 kStateFold seal.
   kEagerForward,         // (18) R1: the monotone eager web's TUPLE-forward
                          //   dispatch (Build.cpp BuildEagerTupleRegion). An
                          //   EFFECT-FREE position marker (A.2) — no counter, no
@@ -710,7 +696,7 @@ class DROp {
   TABLE *demand_table{nullptr};            // the demand relation's model table
   TABLE *input_table{nullptr};             // the summarized monotone input
   unsigned instance_store_id{~0u};         // dense per-forcing store id
-  unsigned forcing_index{~0u};             // -> query.RecognizedSubgraphs()[i]
+  unsigned forcing_index{~0u};             // vestigial (demand cut); unused
 
   // D2.b α FOLD-side representation (HP-4 / F4-annot): the published-row
   // positions + their parallel BindingSource tags (kInstanceKeySlot iff the
@@ -872,7 +858,7 @@ class DRInstance {
   QueryView demanded_view;         // the forcing's demanded MERGE
   QueryView pub_view;              // the answer INSERT target VIEW (name source
                                    //   for the ik:/row: column tags)
-  unsigned forcing_index{~0u};     // -> query.RecognizedSubgraphs()[i]
+  unsigned forcing_index{~0u};     // vestigial (demand cut); unused
   std::string forcing_name;        // precomputed forcing name/adornment (the
                                    //   crit-grammar-1 no-query-handle render:
                                    //   Format has no `query`, so the name is
@@ -946,7 +932,6 @@ class DRFlowGraph {
   std::vector<const DROp *> ProductArms(void) const;
   std::vector<const DROp *> GroupUpdates(void) const;  // R3
   std::vector<const DROp *> StateSeals(void) const;    // R3
-  std::vector<const DROp *> SubgraphInstances(void) const;  // D2.b (kSubgraphInstantiate)
   // R1c: every op of one kind, in construction order.
   std::vector<const DROp *> OpsOfKind(DROpKind kind) const;
 
@@ -965,12 +950,11 @@ class DRFlowGraph {
 // matches bit-for-bit. Strata are DERIVED by `DeriveDRStrata` (R2 family #3;
 // B-13's old-lift seeding is retired).
 // R-final SD-1: the SINGLE authority for the single-view eager cut test — a
-// deletion-capable / aggregate / KV-index / (demand-instance) recognized-guard
-// successor is fed by the stratum phases / GROUP_UPDATE / SUBGRAPH_INSTANTIATE,
-// never by the eager walk. De-duplicated from the two verbatim copies at
-// Build.cpp:969 (the walk) and the old AnyCutSuccessorDR body — both now call
-// this. The flip's SET derivation (BuildDRInventory) uses it as the sole cut
-// authority.
+// deletion-capable / aggregate / KV-index successor is fed by the stratum
+// phases / GROUP_UPDATE, never by the eager walk. De-duplicated from the two
+// verbatim copies at Build.cpp:969 (the walk) and the old AnyCutSuccessorDR
+// body — both now call this. The flip's SET derivation (BuildDRInventory) uses
+// it as the sole cut authority.
 bool IsCutSuccessorDR(Context &context, QueryView succ);
 
 // R-final flip (Fable-review flip-[1], the SD-1 one-authority pattern): the
@@ -1206,53 +1190,6 @@ void LowerProductEmit(Context &context, const DROp &op);
 // the band values the emitter renders are key_of's kind CONSTANTS and need no
 // helper).
 unsigned DROpStratum(const DRFlowGraph &flow, const DROp &op);
-
-// V-INST-ORDER core (D1.b, OD-2 / HP-3), factored as a PURE helper so it is
-// callable in isolation (the permanent negative-space death test hand-builds a
-// 2-op flow and asserts this aborts on a plus-before-minus). Grouped by
-// `instance_store_id`: for each store id present in `flow.ops`, if a
-// kInstanceDeath and a kSubgraphInstantiate share it, the death MUST precede
-// the instantiate in `flow.pinned_order` — else fprintf+abort (survives NDEBUG,
-// always-on). Vacuous when no death op is present (R-MONO). Reads only
-// `op.kind` / `op.instance_store_id` / `flow.pinned_order`, so a hand-built
-// flow needs no real TABLE/Context.
-void CheckInstanceOrder(const DRFlowGraph &flow);
-
-// V-INST-DRAIN death clause (D3.a.1): every kInstanceDeath in `flow` must name
-// a provisioned demand net-removals frontier (DR vec + `-` kFrontierFilter
-// producer). PURE over the flow (pointer identity only, no TABLE deref) so the
-// negative space is death-testable in tests/RelValidators. fprintf+abort,
-// survives NDEBUG, always-on. Vacuous when no death op is present.
-void CheckInstanceDeathFrontier(const DRFlowGraph &flow);
-
-// V-INST-DRAIN input-arm + V-INST-EFFECT input-drain-role belt (D3.a.2, A1.8):
-// for every kSubgraphInstantiate over a DIFFERENTIAL summarized input (detected
-// via a kNetRemoval role in `table_vecs` — co-true with TableIsDifferential,
-// no view deref), the input drains must be net-additions/net-removals only and
-// BOTH signs' ± frontiers (DR vec + signed kFrontierFilter producer) must be
-// provisioned. PURE over the flow so the negative space is death-testable in
-// tests/RelValidators. fprintf+abort, survives NDEBUG, always-on.
-void CheckInstanceInputArm(const DRFlowGraph &flow);
-
-// V-INST-EFFECT effect-multiset totality for ONE kSubgraphInstantiate (D3.a.3
-// design-1): the O-1 closure belt (input_diff => diff) + the full regime-split
-// effect count (drains/demand-drains/input-drains/demands/leaves/rebuilds/
-// rebuild-sign/emits/olds and the diff-split counters/counter-signs/crossings/
-// appends). Factored PURE — `diff`/`input_diff` are passed as booleans (the
-// caller derives them via TableIsDifferential) so no TABLE is dereferenced and
-// the negative space is death-testable in tests/RelValidators with FAKE table
-// pointers (the CheckInstanceInputArm mold). The two V-INST-SOLE clauses (the
-// pub-alias and the induction-owned belt, the latter needing Context) stay at
-// the inline call site. fprintf+abort, survives NDEBUG, always-on.
-void CheckInstantiateEffects(const DROp &op, bool diff, bool input_diff);
-
-// V-INST-SOLE per-pub uniqueness (D3.a.3 O1): each (pub_table, forcing_index)
-// pair must have exactly one kSubgraphInstantiate deriver. Re-keyed from the
-// pre-D3.a.3 per-pub-POINTER tally so N adornments of one query name (which
-// SHARE the pub model table) are admitted, while a same-forcing double-mint
-// STILL aborts. PURE over the flow (death-testable in tests/RelValidators);
-// fprintf+abort, survives NDEBUG, always-on.
-void CheckInstanceSolePub(const DRFlowGraph &flow);
 
 void SetRelDumpStream(OutputStream *stream);
 void DumpRelIfEnabled(const DRFlowGraph &flow);

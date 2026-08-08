@@ -216,26 +216,7 @@ static void ProxyMergedViews(QueryImpl *impl, MERGE *merge) {
     proxy->producer += view->producer + ")";
 #endif
 
-    // D3.a.3 (multi-adornment): a guard JOIN can become a direct MERGE member
-    // when a D3.a.3 R-DUP union's read-schema restore tuple canonicalizes away
-    // (an identity restore over a pivot-at-position-0 guard). The keyed-instance
-    // recognition (ResolveLiveRecognition, Rel.cpp:947) AND the cut-successor
-    // detection (IsCutSuccessorDR) both key on the guard ANNOTATION being on the
-    // JOIN itself; migrating it onto this forwarding proxy would orphan the
-    // forcing (its input/demand resolve null, its demand frontier is never
-    // provisioned). So PRESERVE the guard annotation on the underlying JOIN --
-    // the proxy is a transparent forward, and the JOIN stays the annotated
-    // authority. Dormant outside multi-adornment (no guard is ever a MERGE
-    // member in the single-adornment lowering).
-    const GuardAnnotationIndex saved_ann = view->guard_annotation_index;
-    QueryImpl *const saved_q = view->query;
     view->CopyDifferentialAndGroupIdsTo(proxy);
-    if (saved_ann != QueryView::kNoGuardAnnotation) {
-      proxy->guard_annotation_index = QueryView::kNoGuardAnnotation;
-      proxy->query = nullptr;
-      view->guard_annotation_index = saved_ann;
-      view->query = saved_q;
-    }
     proxy->can_receive_deletions = view->can_produce_deletions;
     proxy->can_produce_deletions = proxy->can_receive_deletions;
     proxy->color = view->color;
