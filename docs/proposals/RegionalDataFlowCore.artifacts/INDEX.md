@@ -2,15 +2,20 @@
 
 ## Current resumption authority
 
-Start with **`session-17-prompt.md`** (the current next-session charter) and its
-START-HERE backbone **`session-17-whole-program-seed.md`** (tip `dc965d3c`, **P1
-DESTRUCTIVE CUT LANDED** — the -demand/keyed-instance authority deleted wholesale,
-compile-clean + OptDiff SUITE: PASS 222 + ctest 4/4; `@key` now inert parsed
-metadata; the next actionable step is **P2**, making `FrozenRegionalProgram` the
-typed semantic owner). The session-17 seed §1 is the FIRST post-P1 whole-program
-pseudocode grounded in real post-cut code; every "current pipeline" doc before it
-(session-16 seed §1 and earlier) describes the DELETED pre-cut demand pipeline and
-is now HISTORICAL. The session-16 prompt/seed were the P1 grounding backbone. Then
+Start with **`session-18-prompt.md`** (the current next-session charter) and its
+START-HERE backbone **`session-18-whole-program-seed.md`** (tip `ae207c36`, **P1 +
+P2 LANDED** — P1 deleted the -demand/keyed-instance authority wholesale; **P2 made
+`FrozenRegionalProgram` the TYPED semantic owner** (ONE typed `RegionTemplate`
+replaces the 5 render-string shells; `member_key_positions` positional masks,
+`DataFlowGraph()` accessor); compile-clean + OptDiff SUITE: PASS 222 + ctest 4/4;
+`@key` still inert; the next actionable step is **P3**, the RequestEdge /
+FactDerivation acyclic slice). The session-18 seed §1 is the POST-P2 whole-program
+pseudocode grounded in real code; the session-17 seed §1.3 (pre-P2 render-string
+shell) and every "current pipeline" doc before it are now HISTORICAL for the
+Regional layer. **`p2-typed-owner-grounding.md`** is the P2 record (compile-clean
+inventory + typed-record design + the 4-lens refuter panel; note
+`RelationSchema.member_key_positions` is the H3 positional member key P3 reuses).
+The session-16/17 prompt/seeds were the P1/P2 grounding backbones. Then
 **`next-session-prompt.md`**: it contains the current code-grounded
 review and roadmap for relation-local `@key` semantics, ordered access paths,
 canonical relation facts, exact request ownership, rooted lifecycle for cyclic
