@@ -3,21 +3,28 @@
 #pragma once
 
 #include <drlojekyll/DataFlow/Query.h>
+#include <drlojekyll/Parse/Parse.h>
 
 #include <cstdint>
 #include <optional>
-#include <string>
+#include <variant>
 #include <vector>
 
 // Stage B of the Regional Dataflow proposal (RegionalDataFlowCore.artifacts/
-// stage-b-diff.md): the FROZEN REGIONAL PROGRAM — the H2 degenerate planner's
-// output, an immutable skeleton computed from the FINAL Query graph (after
-// Query::Build, before Program::Build) that `Program::Build` now consumes.
+// stage-b-diff.md + p2-typed-owner-grounding.md): the FROZEN REGIONAL PROGRAM.
+//
+// P2 (the typed-owner cut): `FrozenRegionalProgram` is now the TYPED SEMANTIC
+// OWNER, not a render-ready-strings + Query-passthrough shell. It stores ONE
+// `RegionTemplate` of TYPED records (relation schemas, ABIs, ports, permanent
+// roots) computed from the FINAL Query graph (after Query::Build, before
+// Program::Build). The `-region-out` / `-region-dot-out` dumps DERIVE their
+// text from these typed records at dump time (lib/Regional/Format.cpp) — the
+// five owned render-STRING vectors (the pre-P2 RegionalAbi/Port/Internal/
+// PermanentRoot/Contract shells) are GONE. The DataFlow graph is retained,
+// exposed only via `DataFlowGraph()` for `Program::Build`.
 //
 // At Stage B every program is ONE ProgramRoot + ONE observation-root region
-// `RegionId(0)`, with ZERO child calls. Logical origins are the identity map
-// at Stage B — no storage exists for them yet; this comment records the
-// reservation (Stage C mints real origin sets).
+// `RegionId(0)`, with ZERO child calls.
 //
 // Determinism (the HP-9 rule): every id here (`R0`, `P0`, `E0`) is DENSE and
 // minted by deterministic declaration/range walks — never from a pointer
@@ -55,6 +62,25 @@ struct EdgeId {
   constexpr auto operator<=>(const EdgeId &) const noexcept = default;
 };
 
+// A relation's stable logical identity (== `decl.Id()`), the key of a
+// `RelationSchema` in the typed logical-fact authority.
+struct RelationId {
+  uint64_t v;
+
+  constexpr bool operator==(const RelationId &) const noexcept = default;
+  constexpr auto operator<=>(const RelationId &) const noexcept = default;
+};
+
+// A decl-ordinal field identity (one per parameter position). RESERVED at
+// Stage B: `RegionTemplate::inherited_symbolic_fields` is empty; P6.2 is the
+// sole consumer.
+struct SymbolicFieldId {
+  uint32_t v;
+
+  constexpr bool operator==(const SymbolicFieldId &) const noexcept = default;
+  constexpr auto operator<=>(const SymbolicFieldId &) const noexcept = default;
+};
+
 // The Stage-B region-skeleton census: the seven counts the `-region-out`
 // dump's trailing `census:` line renders, re-derivable from the Query graph's
 // PUBLIC surface alone (see `DeriveRegionalCensus`).
@@ -68,53 +94,89 @@ struct RegionalCensus {
   unsigned row_contracts{0};
 };
 
-// ---- Render-ready row structs. All text fields are computed ONCE at Build
-// (the freeze) and never re-derived at dump time.
+// ---- The TYPED records (P2). No pre-rendered strings; render derives from
+// these at dump time.
 
-// One program-root ABI line.
-struct RegionalAbi {
-  enum Kind { kInput, kQuery, kOutput } kind;
-  std::string decl_text;
-  std::string route_text;
+// The logical-fact authority for one stored/interior relation (Rule R-STORE +
+// the Tier-2 origin-interior lift). Built by two arms (Planning.cpp): the
+// INSERT arm copies the positional member key out of the Stage-A RowContract;
+// the ORIGIN arm (undemanded interiors with no RowContract) uses the all-field
+// key + the OR-over-carriers support.
+struct RelationSchema {
+  RelationId id;              // == decl.Id()
+  ParsedDeclaration decl;     // the relation's logical identity; render reads its
+                              // NthParameter names (a parse handle, not a string
+                              // shell). The declared-`@key` DOT badge derives from
+                              // `decl.HasInstanceKey()` — no separate field.
+
+  // The POSITIONAL semantic member-key mask, size == `decl.Arity()`: position
+  // `i` is set iff the relation's i-th declared parameter names a member-key
+  // value. This IS the member key (P3's `AddDerivation` projects a row through
+  // this positional mask). INSERT arm: `i < rc.visible_fields.size() &&
+  // rc.visible_fields[i] in rc.member_key`. ORIGIN arm: all true (AllFields).
+  // The raw value-id `SemanticMemberKey` is a lib/DataFlow PRIVATE type and
+  // stays a Planning.cpp-local input to this precompute — it cannot live on
+  // this PUBLIC record.
+  std::vector<bool> member_key_positions;
+
+  bool support{false};        // true => "differential"; false => "monotone".
 };
 
-// One region port line.
-struct RegionalPort {
-  enum Kind { kRequest, kInput, kResult } kind;
+// One program-root ABI record (retypes the pre-P2 RegionalAbi string shell).
+enum class AbiKind : uint8_t { kInput, kQuery, kOutput };
+
+// How a program-root ABI routes into the region. `kNone` is the synthetic
+// `output-abi <none>` line (no published messages).
+enum class RouteKind : uint8_t { kToPortP, kPermanentRoot, kNone };
+
+struct AbiRecord {
+  AbiKind kind;
+
+  // A message for input/output ABIs, a query declaration for query ABIs, and
+  // `std::monostate` for the synthetic `<none>` output ABI. `std::monostate`
+  // is FIRST so the variant is default-constructible and the decl-less `<none>`
+  // case is representable (parse handles have no default constructor).
+  std::variant<std::monostate, ParsedMessage, ParsedDeclaration> decl;
+
+  RouteKind route;
+  unsigned route_port{0};  // Valid iff `route == kToPortP`.
+};
+
+// One region port record (retypes the pre-P2 RegionalPort string shell).
+enum class PortKind : uint8_t { kRequest, kInput, kResult };
+
+struct PortRecord {
+  PortKind kind;
   unsigned port_index;
-
-  // e.g. "query=reachable_from" or "message=edge_2/2" (+ an optional
-  // "  adorn=bf" appended when the query name carries >= 2 adornments).
-  std::string head_text;
-
-  // e.g. "(From, To)".
-  std::string fields_text;
+  ParsedMessage message;  // Render derives "message=<name>/<arity>" + fields.
 };
 
-// One region-internal line, e.g. "reachable_from_bf/1(c3:u64)" — an interior
-// relation with no direct message binding.
-struct RegionalInternal {
-  std::string text;
+// One permanent-root record (retypes the pre-P2 RegionalPermanentRoot shell).
+struct PermanentRootRecord {
+  ParsedDeclaration decl;  // Render derives "<name>(<param names>)".
 };
 
-// One permanent-root line, e.g. "q(B)".
-struct RegionalPermanentRoot {
-  std::string text;
-};
+// RESERVED-EMPTY typed types at P2 (structural reservation only; P6 adds their
+// fields when the P3/P6 authority types they will reference exist). Populated
+// by nobody at P2 — the false-start certification (freeze is a pure read, no
+// recognition pass) holds by construction.
+struct RuleRoutingProjection {};   // P6.2 is the sole populator.
+struct RecursiveComponent {};      // P6.1 is the sole populator.
 
-// One row-contract line (Rule R-STORE, Stage-B narrowed form:
-// insert-materialized relations only).
-struct RegionalContract {
-  unsigned edge_index;
-  std::string rel_name;
-  std::string member_key_text;  // "(From, To)"
-  std::string support_text;     // "monotone" | "differential"
+// The ONE typed owner: the Stage-B region skeleton as typed records.
+struct RegionTemplate {
+  RegionId id{0};
 
-  // K6-7a: does the relation carry an `@key` instance-key pragma? Rendered as
-  // a " declared-key" badge in the -region-dot-out DOT twin ONLY (never in the
-  // -region-out TEXT emitter — the 16 `.region.<mode>` goldens stay
-  // byte-identical). Default false.
-  bool declared_key = false;
+  // Empty at Stage B (P6.2 populates the inherited symbolic-field frame).
+  std::vector<SymbolicFieldId> inherited_symbolic_fields;
+
+  std::vector<AbiRecord> abis;              // input, then query, then output.
+  std::vector<PortRecord> ports;            // input ports, then result ports.
+  std::vector<PermanentRootRecord> permanent_roots;
+  std::vector<RelationSchema> relation_schemas;  // R-STORE, then Tier-2 origin.
+
+  std::vector<RuleRoutingProjection> rules;                // RESERVED EMPTY (P6.2).
+  std::vector<RecursiveComponent> recursive_components;    // RESERVED EMPTY (P6.1).
 };
 
 // Derive the Stage-B census from the Query graph's PUBLIC surface only — a
@@ -135,26 +197,21 @@ class FrozenRegionalProgram {
   static std::optional<FrozenRegionalProgram> Build(const ::hyde::Query &query,
                                                     const ErrorLog &log);
 
-  const ::hyde::Query &Query(void) const;
+  // The retained DataFlow graph (`Program::Build` consumes it). RENAMED from
+  // `Query()` at P2 — the frozen program is no longer a Query passthrough.
+  const ::hyde::Query &DataFlowGraph(void) const;
+
   const RegionalCensus &Census(void) const;
 
-  // Const-ref row accessors (the `-region-out` dump reads these).
-  const std::vector<RegionalAbi> &Abis(void) const;
-  const std::vector<RegionalPort> &Ports(void) const;
-  const std::vector<RegionalInternal> &Internals(void) const;
-  const std::vector<RegionalPermanentRoot> &PermanentRoots(void) const;
-  const std::vector<RegionalContract> &Contracts(void) const;
+  // The typed region skeleton (the `-region-out` dump reads this).
+  const RegionTemplate &Region(void) const;
 
  private:
   explicit FrozenRegionalProgram(const ::hyde::Query &query_);
 
-  ::hyde::Query query;
+  ::hyde::Query dataflow_graph;
   RegionalCensus census;
-  std::vector<RegionalAbi> abis;
-  std::vector<RegionalPort> ports;
-  std::vector<RegionalInternal> internals;
-  std::vector<RegionalPermanentRoot> permanent_roots;
-  std::vector<RegionalContract> contracts;
+  RegionTemplate region;
 };
 
 // The `-region-out` G1 text dump (byte-golden-able; tests/OptDiff `region`

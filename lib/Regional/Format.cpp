@@ -1,17 +1,19 @@
 // Copyright 2026, Peter Goodman. All rights reserved.
 //
-// Stage B (RegionalDataFlowCore.artifacts/stage-b-diff.md H6/H7): the G1
-// `-region-out` dump — the byte-golden-able skeleton text (program-root ABIs,
-// the R0 ports/internals/permanent-roots/row-contracts, the trailing census
-// line) — and its `-region-dot-out` GraphViz DOT twin (advisory, never
-// goldened). Both are pure renders of the frozen row structs; nothing is
-// re-derived from the Query graph here.
+// Stage B (RegionalDataFlowCore.artifacts/stage-b-diff.md H6/H7 +
+// p2-typed-owner-grounding.md): the G1 `-region-out` dump — the byte-golden-
+// able skeleton text (program-root ABIs, the R0 ports/permanent-roots/row-
+// contracts, the trailing census line) — and its `-region-dot-out` GraphViz
+// DOT twin (advisory, never goldened). Both DERIVE their text from the typed
+// `RegionTemplate` records at dump time (the P2 typed-owner cut); the module
+// is obtained from the retained DataFlow graph.
 
 #include <drlojekyll/Display/Format.h>
 #include <drlojekyll/Regional/Regional.h>
 
 #include <algorithm>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace hyde {
@@ -25,28 +27,173 @@ static std::string Pad(std::string s, size_t w) {
   return s;
 }
 
-static const char *AbiKindTok(RegionalAbi::Kind kind) {
+// ---- Text derivations from the typed records (mirroring the pre-P2 planner's
+// string builders — the render authority now lives here).
+
+// Type spelling, mirroring the `.df` emitter's TypeLoc rendering
+// (lib/DataFlow/Format.cpp `typed_tok` -> Parse/Format.cpp TypeLoc
+// operator<<): the source spelling for built-ins ("u64"/"i32"), the foreign
+// type's declared name otherwise — via the module-resolving
+// `TypeLoc::Spelling(module)`, which needs no DisplayManager at dump time.
+static std::string TypeText(const ParsedModule &module, TypeLoc type) {
+  return std::string(type.Spelling(module));
+}
+
+// `<name>/<arity>(<pname>:<type>, ...)` for a message declaration.
+static std::string MessageDeclText(const ParsedModule &module,
+                                   ParsedMessage m) {
+  std::string out(m.NameAsString());
+  out += "/";
+  out += std::to_string(m.Arity());
+  out += "(";
+  const char *sep = "";
+  for (auto i = 0u; i < m.Arity(); ++i) {
+    const ParsedParameter p = m.NthParameter(i);
+    out += sep;
+    out += p.NameAsString();
+    out += ":";
+    out += TypeText(module, p.Type());
+    sep = ", ";
+  }
+  out += ")";
+  return out;
+}
+
+// `bound` / `free` for a query parameter.
+static const char *BindingText(ParsedParameter p) {
+  switch (p.Binding()) {
+    case ParameterBinding::kBound: return "bound";
+    default: return "free";
+  }
+}
+
+// `<name>(<pname>:<binding> <type>, ...)` for a query redeclaration (NO
+// /arity for queries).
+static std::string QueryDeclText(const ParsedModule &module,
+                                 ParsedDeclaration decl) {
+  std::string out(decl.NameAsString());
+  out += "(";
+  const char *sep = "";
+  for (auto i = 0u; i < decl.Arity(); ++i) {
+    const ParsedParameter p = decl.NthParameter(i);
+    out += sep;
+    out += p.NameAsString();
+    out += ":";
+    out += BindingText(p);
+    out += " ";
+    out += TypeText(module, p.Type());
+    sep = ", ";
+  }
+  out += ")";
+  return out;
+}
+
+// `(<name>, ...)` over ALL parameters (names only).
+static std::string AllParamNames(ParsedDeclaration decl) {
+  std::string out = "(";
+  const char *sep = "";
+  for (auto i = 0u; i < decl.Arity(); ++i) {
+    out += sep;
+    out += decl.NthParameter(i).NameAsString();
+    sep = ", ";
+  }
+  out += ")";
+  return out;
+}
+
+// `(<name>, ...)` over all message parameters (names only).
+static std::string MessageFieldNames(ParsedMessage m) {
+  std::string out = "(";
+  const char *sep = "";
+  for (auto i = 0u; i < m.Arity(); ++i) {
+    out += sep;
+    out += m.NthParameter(i).NameAsString();
+    sep = ", ";
+  }
+  out += ")";
+  return out;
+}
+
+static const char *AbiKindTok(AbiKind kind) {
   switch (kind) {
-    case RegionalAbi::kInput: return "input-abi";
-    case RegionalAbi::kQuery: return "query-abi";
-    case RegionalAbi::kOutput: return "output-abi";
+    case AbiKind::kInput: return "input-abi";
+    case AbiKind::kQuery: return "query-abi";
+    case AbiKind::kOutput: return "output-abi";
   }
   return "output-abi";
 }
 
-static const char *PortKindTok(RegionalPort::Kind kind) {
+static const char *PortKindTok(PortKind kind) {
   switch (kind) {
-    case RegionalPort::kRequest: return "request-port";
-    case RegionalPort::kInput: return "input-port";
-    case RegionalPort::kResult: return "result-port";
+    case PortKind::kRequest: return "request-port";
+    case PortKind::kInput: return "input-port";
+    case PortKind::kResult: return "result-port";
   }
   return "input-port";
+}
+
+// The program-root ABI's declaration text: a message decl for input/output, a
+// query decl for query ABIs, and the literal `<none>` for the synthetic
+// decl-less output ABI (monostate).
+static std::string AbiDeclText(const ParsedModule &module,
+                               const AbiRecord &abi) {
+  if (std::holds_alternative<ParsedMessage>(abi.decl)) {
+    return MessageDeclText(module, std::get<ParsedMessage>(abi.decl));
+  }
+  if (std::holds_alternative<ParsedDeclaration>(abi.decl)) {
+    return QueryDeclText(module, std::get<ParsedDeclaration>(abi.decl));
+  }
+  return "<none>";  // std::monostate — the `output-abi <none>` line.
+}
+
+// The routing text: `-> R0 via P<k>` / `-> permanent-root` / "" (no route).
+static std::string AbiRouteText(const AbiRecord &abi) {
+  switch (abi.route) {
+    case RouteKind::kToPortP:
+      return "-> R0 via P" + std::to_string(abi.route_port);
+    case RouteKind::kPermanentRoot: return "-> permanent-root";
+    case RouteKind::kNone: return "";
+  }
+  return "";
+}
+
+// `message=<name>/<arity>` for a port.
+static std::string PortHeadText(const PortRecord &port) {
+  return "message=" + std::string(port.message.NameAsString()) + "/" +
+         std::to_string(port.message.Arity());
+}
+
+// `<name>(<param names>)` for a permanent root.
+static std::string PermanentRootText(const PermanentRootRecord &root) {
+  return std::string(root.decl.NameAsString()) + AllParamNames(root.decl);
+}
+
+// The positional member-key render: the relation's i-th declared parameter
+// name for each set position (no RowContract re-lookup, no value-id bridge —
+// reads the precomputed positional mask). A unit relation (all-false mask)
+// renders `()`.
+static std::string RenderMemberKeyText(const RelationSchema &schema) {
+  std::string out = "(";
+  const char *sep = "";
+  for (auto i = 0u; i < schema.decl.Arity(); ++i) {
+    if (i >= schema.member_key_positions.size() ||
+        !schema.member_key_positions[i]) {
+      continue;
+    }
+    out += sep;
+    out += schema.decl.NthParameter(i).NameAsString();
+    sep = ", ";
+  }
+  out += ")";
+  return out;
 }
 
 }  // namespace
 
 OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
   const FrozenRegionalProgram &p = d.program;
+  const RegionTemplate &R = p.Region();
+  const ParsedModule module = p.DataFlowGraph().ParsedModule();
 
   os << "region-program\n";
 
@@ -56,18 +203,20 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
   os << "program-root {\n";
   {
     size_t kind_w = 0u, decl_w = 0u;
-    for (const RegionalAbi &abi : p.Abis()) {
+    for (const AbiRecord &abi : R.abis) {
       kind_w = std::max(kind_w, std::string(AbiKindTok(abi.kind)).size());
-      decl_w = std::max(decl_w, abi.decl_text.size());
+      decl_w = std::max(decl_w, AbiDeclText(module, abi).size());
     }
     kind_w += 2u;
     decl_w += 2u;
-    for (const RegionalAbi &abi : p.Abis()) {
+    for (const AbiRecord &abi : R.abis) {
+      const std::string decl_str = AbiDeclText(module, abi);
+      const std::string route_str = AbiRouteText(abi);
       os << "  " << Pad(AbiKindTok(abi.kind), kind_w);
-      if (abi.route_text.empty()) {
-        os << abi.decl_text << "\n";
+      if (route_str.empty()) {
+        os << decl_str << "\n";
       } else {
-        os << Pad(abi.decl_text, decl_w) << abi.route_text << "\n";
+        os << Pad(decl_str, decl_w) << route_str << "\n";
       }
     }
   }
@@ -78,16 +227,13 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
   {
     // Kind-token width over the EMITTED lines only.
     size_t kind_w = 0u;
-    for (const RegionalPort &port : p.Ports()) {
+    for (const PortRecord &port : R.ports) {
       kind_w = std::max(kind_w, std::string(PortKindTok(port.kind)).size());
     }
-    if (!p.Internals().empty()) {
-      kind_w = std::max(kind_w, std::string("region-internal").size());
-    }
-    if (!p.PermanentRoots().empty()) {
+    if (!R.permanent_roots.empty()) {
       kind_w = std::max(kind_w, std::string("permanent-root").size());
     }
-    if (!p.Contracts().empty()) {
+    if (!R.relation_schemas.empty()) {
       kind_w = std::max(kind_w, std::string("row-contract").size());
     }
     kind_w += 2u;
@@ -95,47 +241,46 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
     // Port lines: `P<k>` then head then `fields=...`, each field padded to
     // its per-dump max + 2.
     size_t ptok_w = 0u, head_w = 0u;
-    for (const RegionalPort &port : p.Ports()) {
-      ptok_w = std::max(
-          ptok_w, 1u + std::to_string(port.port_index).size());
-      head_w = std::max(head_w, port.head_text.size());
+    for (const PortRecord &port : R.ports) {
+      ptok_w =
+          std::max(ptok_w, 1u + std::to_string(port.port_index).size());
+      head_w = std::max(head_w, PortHeadText(port).size());
     }
     ptok_w += 2u;
     head_w += 2u;
-    for (const RegionalPort &port : p.Ports()) {
+    for (const PortRecord &port : R.ports) {
       os << "  " << Pad(PortKindTok(port.kind), kind_w)
          << Pad("P" + std::to_string(port.port_index), ptok_w)
-         << Pad(port.head_text, head_w) << "fields=" << port.fields_text
+         << Pad(PortHeadText(port), head_w) << "fields="
+         << MessageFieldNames(port.message) << "\n";
+    }
+
+    for (const PermanentRootRecord &root : R.permanent_roots) {
+      os << "  " << Pad("permanent-root", kind_w) << PermanentRootText(root)
          << "\n";
-    }
-
-    for (const RegionalInternal &internal : p.Internals()) {
-      os << "  " << Pad("region-internal", kind_w) << internal.text << "\n";
-    }
-
-    for (const RegionalPermanentRoot &root : p.PermanentRoots()) {
-      os << "  " << Pad("permanent-root", kind_w) << root.text << "\n";
     }
 
     // Row-contract lines: `E<k>` padded like ports, then the whole
     // `rel=<name>` field, then the whole `member-key=<key>` field, then
-    // `support=<s>`.
+    // `support=<s>`. The edge index is the position in `relation_schemas`.
     size_t etok_w = 0u, rel_w = 0u, key_w = 0u;
-    for (const RegionalContract &contract : p.Contracts()) {
-      etok_w = std::max(
-          etok_w, 1u + std::to_string(contract.edge_index).size());
-      rel_w = std::max(rel_w, 4u + contract.rel_name.size());
-      key_w = std::max(key_w, 11u + contract.member_key_text.size());
+    for (auto e = 0u; e < R.relation_schemas.size(); ++e) {
+      const RelationSchema &schema = R.relation_schemas[e];
+      etok_w = std::max(etok_w, 1u + std::to_string(e).size());
+      rel_w = std::max(rel_w, 4u + schema.decl.NameAsString().size());
+      key_w = std::max(key_w, 11u + RenderMemberKeyText(schema).size());
     }
     etok_w += 2u;
     rel_w += 2u;
     key_w += 2u;
-    for (const RegionalContract &contract : p.Contracts()) {
+    for (auto e = 0u; e < R.relation_schemas.size(); ++e) {
+      const RelationSchema &schema = R.relation_schemas[e];
       os << "  " << Pad("row-contract", kind_w)
-         << Pad("E" + std::to_string(contract.edge_index), etok_w)
-         << Pad("rel=" + contract.rel_name, rel_w)
-         << Pad("member-key=" + contract.member_key_text, key_w)
-         << "support=" << contract.support_text << "\n";
+         << Pad("E" + std::to_string(e), etok_w)
+         << Pad("rel=" + std::string(schema.decl.NameAsString()), rel_w)
+         << Pad("member-key=" + RenderMemberKeyText(schema), key_w)
+         << "support=" << (schema.support ? "differential" : "monotone")
+         << "\n";
     }
   }
   os << "}\n";
@@ -155,6 +300,8 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
 
 OutputStream &operator<<(OutputStream &os, FrozenRegionalDOT d) {
   const FrozenRegionalProgram &p = d.program;
+  const RegionTemplate &R = p.Region();
+  const ParsedModule module = p.DataFlowGraph().ParsedModule();
 
   os << "digraph {\n"
      << "node [shape=box];\n";
@@ -163,44 +310,39 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDOT d) {
   // directive; region clusters generalize at Stage D).
   os << "subgraph cluster_region_0 {\n"
      << "label=\"region R0\";\n";
-  for (const RegionalPort &port : p.Ports()) {
+  for (const PortRecord &port : R.ports) {
     os << "port_p" << port.port_index << " [label=\"P" << port.port_index
-       << " " << port.head_text << " fields=" << port.fields_text << "\"];\n";
+       << " " << PortHeadText(port) << " fields="
+       << MessageFieldNames(port.message) << "\"];\n";
   }
-  for (auto i = 0u; i < p.Internals().size(); ++i) {
-    os << "internal_" << i << " [label=\"" << p.Internals()[i].text
-       << "\"];\n";
+  for (auto i = 0u; i < R.permanent_roots.size(); ++i) {
+    os << "proot_" << i << " [label=\""
+       << PermanentRootText(R.permanent_roots[i]) << "\"];\n";
   }
-  for (auto i = 0u; i < p.PermanentRoots().size(); ++i) {
-    os << "proot_" << i << " [label=\"" << p.PermanentRoots()[i].text
-       << "\"];\n";
-  }
-  for (const RegionalContract &contract : p.Contracts()) {
-    os << "contract_e" << contract.edge_index << " [label=\"E"
-       << contract.edge_index << " rel=" << contract.rel_name
-       << " member-key=" << contract.member_key_text
-       << " support=" << contract.support_text
-       << (contract.declared_key ? " declared-key" : "")  // K6-7a badge.
+  for (auto e = 0u; e < R.relation_schemas.size(); ++e) {
+    const RelationSchema &schema = R.relation_schemas[e];
+    os << "contract_e" << e << " [label=\"E" << e
+       << " rel=" << std::string(schema.decl.NameAsString())
+       << " member-key=" << RenderMemberKeyText(schema)
+       << " support=" << (schema.support ? "differential" : "monotone")
+       << (schema.decl.HasInstanceKey() ? " declared-key" : "")  // K6-7a badge.
        << "\"];\n";
   }
   os << "}\n";
 
   // Program-root ABI nodes OUTSIDE the cluster, with routing edges: a
-  // `-> R0 via P<k>` route points at its port node, a `-> permanent-root`
-  // route at its permanent-root node (permanent roots are minted in the same
-  // walk order as their routed ABIs, so the j-th permanent-root route pairs
-  // with proot_j).
+  // `kToPortP` route points at its port node, a `kPermanentRoot` route at its
+  // permanent-root node (permanent roots are minted in the same walk order as
+  // their routed ABIs, so the j-th permanent-root route pairs with proot_j).
   unsigned next_proot = 0u;
-  for (auto i = 0u; i < p.Abis().size(); ++i) {
-    const RegionalAbi &abi = p.Abis()[i];
+  for (auto i = 0u; i < R.abis.size(); ++i) {
+    const AbiRecord &abi = R.abis[i];
     os << "abi_" << i << " [label=\"" << AbiKindTok(abi.kind) << " "
-       << abi.decl_text << "\"];\n";
-    if (abi.route_text == "-> permanent-root") {
+       << AbiDeclText(module, abi) << "\"];\n";
+    if (abi.route == RouteKind::kPermanentRoot) {
       os << "abi_" << i << " -> proot_" << next_proot++ << ";\n";
-    } else if (auto pos = abi.route_text.rfind(" P");
-               pos != std::string::npos) {
-      os << "abi_" << i << " -> port_p"
-         << abi.route_text.substr(pos + 2u) << ";\n";
+    } else if (abi.route == RouteKind::kToPortP) {
+      os << "abi_" << i << " -> port_p" << abi.route_port << ";\n";
     }
   }
 

@@ -1206,7 +1206,7 @@ WorkItem::~WorkItem(void) {}
 std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
                                       const ErrorLog &log, unsigned first_id,
                                       const PassPolicy &policy) {
-  const ::hyde::Query &query = frozen.Query();
+  const ::hyde::Query &query = frozen.DataFlowGraph();
 
   // Reject data-flow view kinds that the control-flow builder does not yet
   // support. Each region-dispatch switch below asserts on these kinds; this
