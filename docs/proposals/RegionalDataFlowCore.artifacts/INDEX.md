@@ -2,12 +2,15 @@
 
 ## Current resumption authority
 
-Start with **`session-16-prompt.md`** (the current next-session charter) and its
-START-HERE backbone **`session-16-whole-program-seed.md`** (tip `6d6248a2`, P0 ✅
-complete/committed, P1 the next actionable step; carries the ANCHOR-VALIDITY fact
-that HEAD differs from the doc baseline `46a404d4` only in `lib/Parse/*`). The
-session-15 prompt/seed are the prior backbone (P0-item-4 was still landable-ahead
-there). Then
+Start with **`session-17-prompt.md`** (the current next-session charter) and its
+START-HERE backbone **`session-17-whole-program-seed.md`** (tip `dc965d3c`, **P1
+DESTRUCTIVE CUT LANDED** — the -demand/keyed-instance authority deleted wholesale,
+compile-clean + OptDiff SUITE: PASS 222 + ctest 4/4; `@key` now inert parsed
+metadata; the next actionable step is **P2**, making `FrozenRegionalProgram` the
+typed semantic owner). The session-17 seed §1 is the FIRST post-P1 whole-program
+pseudocode grounded in real post-cut code; every "current pipeline" doc before it
+(session-16 seed §1 and earlier) describes the DELETED pre-cut demand pipeline and
+is now HISTORICAL. The session-16 prompt/seed were the P1 grounding backbone. Then
 **`next-session-prompt.md`**: it contains the current code-grounded
 review and roadmap for relation-local `@key` semantics, ordered access paths,
 canonical relation facts, exact request ownership, rooted lifecycle for cyclic
