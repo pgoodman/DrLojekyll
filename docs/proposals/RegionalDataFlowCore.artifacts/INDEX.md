@@ -2,9 +2,16 @@
 
 ## Current resumption authority
 
-Start with **`session-18-prompt.md`** (the current next-session charter) and its
-START-HERE backbone **`session-18-whole-program-seed.md`** (tip `ae207c36`, **P1 +
-P2 LANDED** — P1 deleted the -demand/keyed-instance authority wholesale; **P2 made
+Start with **`session-19-prompt.md`** (the current next-session charter) and its
+START-HERE backbone **`session-19-whole-program-seed.md`** (tip `63573a67`, **P1 +
+P2 + P3 LANDED**; next actionable = **P4**, honest complete-path specialization /
+FullScanFilter). The session-19 seed §1 is the POST-P3 whole-program pseudocode
+(the freeze now builds the P3 request/derivation model via `BuildRequestPorts`; a
+bound `#query` renders a `-> request-port`). **`p3-grounding.md`** is the P3 record
+(the model P4 extends — `RegionInstanceRelations`, `AddDerivation` via
+`member_key_positions`, the §8 critique survivors, the §9 IR states). The prior
+charter was **`session-18-prompt.md`** + **`session-18-whole-program-seed.md`** (tip
+`ae207c36`, **P1 + P2 LANDED** — P1 deleted the -demand/keyed-instance authority wholesale; **P2 made
 `FrozenRegionalProgram` the TYPED semantic owner** (ONE typed `RegionTemplate`
 replaces the 5 render-string shells; `member_key_positions` positional masks,
 `DataFlowGraph()` accessor); compile-clean + OptDiff SUITE: PASS 222 + ctest 4/4;
