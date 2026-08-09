@@ -211,6 +211,13 @@ class Context {
   // field mismatch — the positive-presence referee for the freeze.
   const RegionalCensus *frozen_census{nullptr};
 
+  // P4: the frozen regional program itself (set by Program::Build), so
+  // BuildQueryEntryPointImpl can READ the AccessPlan the freeze selected for a
+  // bound `#query` (frozen->PlanFor(redecl)) and withhold the index for
+  // kFullScanFilter — the real compile-time data dependency that makes the
+  // AccessPlan authority non-nominal (p4-grounding.md §3.2/§8-S1).
+  const FrozenRegionalProgram *frozen{nullptr};
+
   // §6 V-INGEST-XCHECK Site 5 (subgraphs/demand P1): the PAYLOAD each
   // `LowerIngestFold` emission actually produced, recorded at emission time
   // (the eager walk runs BEFORE the flow is built at BuildStratumPhases, so

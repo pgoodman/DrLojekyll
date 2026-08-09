@@ -8,7 +8,7 @@ program-root {
 region R0  owner=program-root  parents=()  children=() {
   input-port    P0  message=log_in/1    fields=(UserId)
   input-port    P1  message=add_user/1  fields=(UserID)
-  request-port  P2  query=user_is_logged_in/1  bound=(UserId)
+  request-port  P2  query=user_is_logged_in/1  bound=(UserId)  plan=full-key-hash-lookup
   row-contract  E0  rel=                   member-key=()        support=monotone
   row-contract  E1  rel=user_is_logged_in  member-key=(UserId)  support=monotone
   row-contract  E2  rel=user               member-key=(UserID)  support=monotone

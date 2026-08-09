@@ -136,6 +136,13 @@ struct RequestPortRecord {
   ParsedDeclaration query_decl;  // the bound query redeclaration.
   RootLeaseId lease;
   CallSiteId call_site;
+
+  // P4: the physical AccessPlan selected AT FREEZE for this bound query and READ
+  // back at codegen (BuildQueryEntryPointImpl) — the real compile-time data
+  // dependency that makes the AccessPlan authority non-nominal (p4-grounding.md
+  // §3.1/§3.2/§8-S1). kFullScanFilter withholds the index (nonrecursive bound+free);
+  // kFullKeyHashLookup is the all-bound `.Find`; kRetainedIndexScan keeps the seek.
+  AccessPlan plan{AccessPlan::kRetainedIndexScan};
 };
 
 // RESERVED-EMPTY typed types at P2 (structural reservation only; P6 adds their
@@ -193,6 +200,12 @@ class FrozenRegionalProgram {
   // the derivation/routing half stays empty for real compiles — no rule sweep
   // at P3). A freeze-side peer of `RegionTemplate`.
   const RegionInstanceRelations &Instances(void) const;
+
+  // P4: the physical AccessPlan selected at freeze for a bound `#query`
+  // redeclaration (matched by decl Id + binding pattern). `std::nullopt` for an
+  // all-free query (a PermanentRoot, no request port) — the caller keeps its
+  // retained behavior. Read by `BuildQueryEntryPointImpl` (§8-S1).
+  std::optional<AccessPlan> PlanFor(ParsedDeclaration redecl) const;
 
  private:
   explicit FrozenRegionalProgram(const ::hyde::Query &query_);

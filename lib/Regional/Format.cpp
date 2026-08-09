@@ -132,6 +132,16 @@ static const char *PortKindTok(PortKind kind) {
   return "input-port";
 }
 
+// P4: the physical AccessPlan render token (p4-grounding.md §3.1/§9).
+static const char *AccessPlanText(AccessPlan plan) {
+  switch (plan) {
+    case AccessPlan::kFullScanFilter: return "full-scan-filter";
+    case AccessPlan::kFullKeyHashLookup: return "full-key-hash-lookup";
+    case AccessPlan::kRetainedIndexScan: return "retained-index-scan";
+  }
+  return "retained-index-scan";
+}
+
 // The program-root ABI's declaration text: a message decl for input/output, a
 // query decl for query ABIs, and the literal `<none>` for the synthetic
 // decl-less output ABI (monostate).
@@ -282,14 +292,16 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
          << MessageFieldNames(port.message) << "\n";
     }
 
-    // Request-port lines (P3): `P<k>  query=<name>/<arity>  bound=(<keys>)`.
-    // A RootLease-owned bound-query observation entry.
+    // Request-port lines: `P<k>  query=<name>/<arity>  bound=(<keys>)
+    // plan=<access-plan>` — the P4 AccessPlan the freeze selected + codegen reads
+    // (p4-grounding.md §3.1/§9). A RootLease-owned bound-query observation entry.
     for (const RequestPortRecord &rp : R.request_ports) {
       os << "  " << Pad("request-port", kind_w)
          << Pad("P" + std::to_string(rp.port_index), ptok_w)
          << "query=" << std::string(rp.query_decl.NameAsString()) << "/"
          << rp.query_decl.Arity() << "  bound="
-         << BoundFieldNames(rp.query_decl) << "\n";
+         << BoundFieldNames(rp.query_decl) << "  plan=" << AccessPlanText(rp.plan)
+         << "\n";
     }
 
     for (const PermanentRootRecord &root : R.permanent_roots) {
@@ -356,7 +368,8 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDOT d) {
     os << "port_p" << rp.port_index << " [label=\"P" << rp.port_index
        << " request-port query=" << std::string(rp.query_decl.NameAsString())
        << "/" << rp.query_decl.Arity() << " bound="
-       << BoundFieldNames(rp.query_decl) << "\"];\n";
+       << BoundFieldNames(rp.query_decl) << " plan=" << AccessPlanText(rp.plan)
+       << "\"];\n";  // P4 plan badge (advisory, never goldened — §8-S12).
   }
   for (auto i = 0u; i < R.permanent_roots.size(); ++i) {
     os << "proot_" << i << " [label=\""

@@ -12,7 +12,27 @@ P1 removed the demand authority; P2 typed the regional owner; P3 added the reque
 is STRUCTURAL, never answer-equality (the full-materialization baseline already answers correctly
 with `@key` inert). Motivation: memory `greenfield-rewrite-motivation`.
 
-## §0. Status — what P3 changed, what is grounded for P4
+## §0′. P4 LANDED (session 19) — read `p4-grounding.md`
+
+**P4 is LANDED** (honest complete-path specialization / FullScanFilter). The `AccessPlan` fourth
+authority (`RegionInstance.h`: `kFullScanFilter`/`kFullKeyHashLookup`/`kRetainedIndexScan` +
+`AccessRequirement` + `SelectAccessPlan`) is SELECTED at freeze (`BuildRequestPorts` stores it on
+`RequestPortRecord.plan`) and READ at codegen (`BuildQueryEntryPointImpl` / the empty-query arm read
+`frozen->PlanFor(redecl)` and WITHHOLD the index for `kFullScanFilter`, guarded by the always-on
+V-PLAN-HONEST belt). A bound+free `#query` now lowers to `EmitQueryFriends`' honest full-scan-filter
+cursor (`while pos<NumRows` + `if row.<f>!=<param>`, `pos=0`, index elided) instead of the retained
+`idx.First/Next` seek; an all-bound query keeps `.Find` (`kFullKeyHashLookup`). `-region-out` renders
+`plan=…`. The compile-time request/derivation model half stays P3-style (ctest-only); P4 drives a
+codegen CHANGE via the compile-time authority read (NOT a runtime evaluation — the "drives evaluation"
+framing was retracted, `p4-grounding.md §8-S3`). Gate GREEN: OptDiff **SUITE: PASS (222)**, ctest 5/5
+(extended `RegionInstance` P4 gates), NEGATIVE WITNESS verified (plan flip → header reverts to the
+seek), only `booleans.region.*` goldens moved (the `plan=` token, re-blessed). The recursion gate the
+critique proposed was DROPPED (premise corrected — every corpus query relation is a non-recursive
+projection; full-scan is answer-correct over recursive relations too; `§8-S2`). NEXT actionable = **P5**
+(the partial-binding DAG: order-free `BindingStateSchema`, order-significant `BindingEdge`, where a
+DECLARED `@key` first specializes). Full record: **`p4-grounding.md`**.
+
+## §0. Status — what P3 changed, what is grounded for P4 [PRE-P4 — historical below]
 
 **Landed at P3 (tip `63573a67`):** `include/drlojekyll/Regional/RegionInstance.h` (new public leaf) —
 all regional typed-id domains (Stage-B skeleton ids MOVED here from `Regional.h` + the P3 residual/

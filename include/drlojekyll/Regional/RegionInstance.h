@@ -203,6 +203,48 @@ struct RegionalFactId {
   auto operator<=>(const RegionalFactId &) const noexcept = default;
 };
 
+// ==================== physical-access authority (P4) ====================
+// The FOURTH authority (physical structure) — distinct from the logical fact id
+// (RegionalFactId), the residual binding state (BindingStateId), and the logical
+// access path (DeclaredAccessPath, P5). It NEVER aliases any of them. Three arms
+// are LIVE at P4; each names an emission code generation actually produces. P7
+// adds the trie/prefix arms and dual-homes a Rel plan_kind for interior/join
+// scans (p4-grounding.md §3.1/§8-S4/S5).
+enum class AccessPlan : uint8_t {
+  kFullScanFilter = 0,     // withhold the index; full scan + bound-col filter
+                           //   (a bound+free query read — an acyclic scan of the
+                           //    fully-materialized relation, §8-S2)
+  kFullKeyHashLookup = 1,  // the all-bound `.Find` — an honest full-key hash probe
+  kRetainedIndexScan = 2,  // RESERVED (P7): keep the retained index seek as a
+                           //   cost-based decision. Also the default/sentinel for a
+                           //   record that carries no selected plan.
+};
+
+// P4 always reads a COMPLETE relation (an ordinary unbound-style read); kActiveSubset
+// is a P5 residual-specialization concern.
+enum class AccessCompleteness : uint8_t { kCompleteRelation, kActiveSubset /*P5*/ };
+
+// What a request edge needs to read. `available_bindings` is decl-ordinal (P5 upgrades
+// to typed BoundFieldValue + required_fields — §8-S11).
+struct AccessRequirement {
+  RelationId relation;
+  bool has_free{false};
+  std::vector<uint32_t> available_bindings;
+  AccessCompleteness completeness{AccessCompleteness::kCompleteRelation};
+};
+
+// The branching selector (§8-S2/S4): a bound+free query read specializes to a full
+// scan + bound-col filter (answer-correct even over a recursive relation — the read is
+// an acyclic scan of the settled table, and the recursion's own indexes are untouched);
+// an all-bound query keeps `.Find` (a full-key hash probe codegen already emits). P7
+// adds the cost-based kRetainedIndexScan / trie arms.
+inline AccessPlan SelectAccessPlan(const AccessRequirement &req) {
+  if (!req.has_free) {
+    return AccessPlan::kFullKeyHashLookup;
+  }
+  return AccessPlan::kFullScanFilter;
+}
+
 // ==================== ownership edges ====================
 // RequestEdge (exact ownership, ACYCLIC forest) is NEVER unified with
 // RuleActivationEdge (derivation dep, MAY cycle — RESERVED at P3).

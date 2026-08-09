@@ -434,12 +434,33 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
   // forcer so the flag-off id stream is byte-identical to tip.
   std::optional<ProgramProcedure> retract_proc =
       BuildQueryInjectorProcedure(impl, context, query, /*is_retract=*/true);
-  std::optional<DataIndex> scanned_index;
+  // P4 (p4-grounding.md §3.2/§8-S1): READ the AccessPlan the freeze selected for
+  // this bound-query redecl and withhold the index for kFullScanFilter, so a
+  // bound+free query read lowers to EmitQueryFriends' honest full-scan-filter
+  // cursor (via_index=false) instead of the retained index seek.
+  // The plan is the model's — not re-derived here — the compile-time data
+  // dependency that makes the AccessPlan authority non-nominal. An all-free query
+  // has no request port (PlanFor == nullopt) and keeps its retained behavior.
+  const std::optional<AccessPlan> plan =
+      context.frozen ? context.frozen->PlanFor(decl) : std::nullopt;
+  const bool withhold_index = plan == AccessPlan::kFullScanFilter;
 
-  if (!col_indices.empty()) {
+  std::optional<DataIndex> scanned_index;
+  if (!withhold_index && !col_indices.empty()) {
     if (const auto index = model->table->GetOrCreateIndex(impl, col_indices)) {
       scanned_index.emplace(DataIndex(index));
     }
+  }
+
+  // V-PLAN-HONEST (§8-S1): a kFullScanFilter plan MUST leave the index withheld —
+  // else codegen silently ignored the model and the emission diverges from the
+  // authority. fprintf+abort (survives NDEBUG).
+  if (plan == AccessPlan::kFullScanFilter && scanned_index.has_value()) {
+    fprintf(stderr,
+            "V-PLAN-HONEST: query '%s' has plan=full-scan-filter but codegen "
+            "kept a scanned index\n",
+            decl.NameAsString().data());
+    abort();
   }
 
   impl->queries.emplace_back(query, table, scanned_index, forcer_proc,
@@ -452,7 +473,7 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
 // so there is no INSERT view and no data model for it. The query is still
 // part of the program's external interface, so it scans a fresh table that
 // nothing ever writes to.
-static void BuildEmptyQueryEntryPointImpl(ProgramImpl *impl,
+static void BuildEmptyQueryEntryPointImpl(ProgramImpl *impl, Context &context,
                                           ParsedDeclaration decl,
                                           TABLE *table) {
   const auto query = ParsedQuery::From(decl);
@@ -464,8 +485,16 @@ static void BuildEmptyQueryEntryPointImpl(ProgramImpl *impl,
     }
   }
 
+  // P4 (§8-S7): mirror BuildQueryEntryPointImpl's plan-driven index withholding
+  // so the empty-query arm is consistent with the model (the table is always
+  // empty, so the answer is identical either way — this keeps V-PLAN-HONEST and
+  // the -region-out plan= token honest for a degenerate bound query too).
+  const std::optional<AccessPlan> plan =
+      context.frozen ? context.frozen->PlanFor(decl) : std::nullopt;
+  const bool withhold_index = plan == AccessPlan::kFullScanFilter;
+
   std::optional<DataIndex> scanned_index;
-  if (!col_indices.empty()) {
+  if (!withhold_index && !col_indices.empty()) {
     if (const auto index =
             table->GetOrCreateIndex(impl, std::move(col_indices))) {
       scanned_index.emplace(DataIndex(index));
@@ -478,7 +507,7 @@ static void BuildEmptyQueryEntryPointImpl(ProgramImpl *impl,
 
 // Add entry point records, over a shared always-empty table, for each unique
 // binding pattern of a query declaration with no backing INSERT view.
-static void BuildEmptyQueryEntryPoint(ProgramImpl *impl,
+static void BuildEmptyQueryEntryPoint(ProgramImpl *impl, Context &context,
                                       ParsedDeclaration decl) {
   TABLE *const table = impl->tables.Create(impl->next_id++);
   std::vector<unsigned> offsets;
@@ -496,7 +525,7 @@ static void BuildEmptyQueryEntryPoint(ProgramImpl *impl,
       continue;
     }
     seen_variants.insert(std::move(binding));
-    BuildEmptyQueryEntryPointImpl(impl, redecl, table);
+    BuildEmptyQueryEntryPointImpl(impl, context, redecl, table);
   }
 }
 
@@ -1322,6 +1351,7 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
   // Stage B: the frozen regional census, recounted by V-REGION-CENSUS at the
   // ValidateDROps tail (lib/Rel/Rel.cpp) — the positive-presence referee.
   context.frozen_census = &frozen.Census();
+  context.frozen = &frozen;  // P4: BuildQueryEntryPointImpl reads PlanFor(redecl).
 
   BuildDataModel(query, program);
 
@@ -1397,7 +1427,8 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
     for (ParsedQuery parsed_query : sub_module.Queries()) {
       if (!queries_with_entry_points.count(parsed_query.Id())) {
         queries_with_entry_points.insert(parsed_query.Id());
-        BuildEmptyQueryEntryPoint(program, ParsedDeclaration(parsed_query));
+        BuildEmptyQueryEntryPoint(program, context,
+                                  ParsedDeclaration(parsed_query));
       }
     }
   }

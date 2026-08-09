@@ -216,3 +216,106 @@ TEST(RegionInstanceP3, AcyclicRequestForest) {
   ASSERT_EQ(rr.derivations.size(), 1u);       // ownership removal ⟂ support.
   ASSERT_EQ(rr.derivations[f].support, int64_t{1});
 }
+
+// ---- (3) P4 gates: the AccessPlan authority + the model driving the acyclic
+// complete-path slice over a NON-EMPTY binding state (p4-grounding.md §4 B3-3).
+// These fail for a P3-era model that never leaves the empty state, and for a P4
+// that wires the plan selector but not the FullScanFilter -> AddDerivation ->
+// RouteResults path.
+
+using hyde::AccessCompleteness;
+using hyde::AccessPlan;
+using hyde::AccessRequirement;
+using hyde::BindingStateSchemaId;
+using hyde::SelectAccessPlan;
+
+// A non-empty binding state: schema `sch`, bound value tuple `vals`.
+static BindingStateId KeyedState(uint32_t sch,
+                                 std::vector<hyde::RegionalCellValue> vals) {
+  return BindingStateId{kRi, BindingStateSchemaId{sch}, std::move(vals)};
+}
+
+// The abstract FullScanFilter iterator (p4-grounding.md §6): scan synthetic rows,
+// keep those whose bound columns equal the state's bound values, feed each to
+// AddDerivation. Returns the number of rows that passed the filter.
+static unsigned DriveFullScanFilter(
+    RegionInstanceRelations &rr, const BindingStateId &st, RelationId rel,
+    const std::vector<bool> &member_mask, uint32_t bound_col, uint64_t bound_val,
+    const std::vector<std::vector<hyde::RegionalCellValue>> &rows) {
+  unsigned kept = 0u;
+  for (const auto &row : rows) {
+    if (bound_col < row.size() && row[bound_col] == bound_val) {
+      rr.AddDerivation(st, rel, member_mask, row, +1);
+      ++kept;
+    }
+  }
+  return kept;
+}
+
+// P4 Gate A (selector): the AccessPlan authority classifies by binding arity.
+// bound+free -> full scan; all-bound -> full-key hash probe (p4-grounding.md §3.1).
+TEST(RegionInstanceP4, GateA_SelectAccessPlan) {
+  const AccessRequirement bound_free{kRelP, /*has_free=*/true, {0u},
+                                     AccessCompleteness::kCompleteRelation};
+  const AccessRequirement all_bound{kRelP, /*has_free=*/false, {0u, 1u},
+                                    AccessCompleteness::kCompleteRelation};
+  ASSERT_TRUE(SelectAccessPlan(bound_free) == AccessPlan::kFullScanFilter);
+  ASSERT_TRUE(SelectAccessPlan(all_bound) == AccessPlan::kFullKeyHashLookup);
+}
+
+// P4 Gate B (the model DRIVES the acyclic slice): a FullScanFilter over a
+// NON-EMPTY keyed state feeds AddDerivation, and RouteResults routes the derived
+// facts to that state's requester. A model stuck at the empty state, or one that
+// wires SelectAccessPlan but not the scan->derive->route path, produces zero
+// routed results here.
+TEST(RegionInstanceP4, GateB_FullScanFilterDrivesRouting) {
+  RegionInstanceRelations rr;
+  const BindingStateId st = KeyedState(1u, {7u});  // schema {col0}, value 7.
+
+  // Rows of p: (7,100),(7,999) pass the col-0==7 filter; (8,100) does not.
+  const unsigned kept = DriveFullScanFilter(
+      rr, st, kRelP, kKeyCol0, /*bound_col=*/0u, /*bound_val=*/7u,
+      {{7u, 100u}, {7u, 999u}, {8u, 100u}});
+  ASSERT_EQ(kept, 2u);
+  // (7,100) and (7,999) agree on the member key col0 -> ONE fact.
+  ASSERT_EQ(rr.derivations.size(), 1u);
+
+  rr.AddRequestEdge(RequestOwnerId{RootLeaseId{0u}}, CallSiteId{0u}, st, kRelP);
+  rr.RouteResults(st);
+  ASSERT_EQ(rr.routed_results.size(), 1u);  // the derived fact reaches the requester.
+}
+
+// P4 Gate C (S6/S9 - the NON-EMPTY state is load-bearing): two DISTINCT keyed
+// states route DISJOINTLY; a fact derived in one is not routed to the other's
+// requester. An empty-state-only model cannot exhibit this (there is only one
+// state to route to), so this gate discriminates a real P4 from a P3 stub.
+TEST(RegionInstanceP4, GateC_DistinctStatesRouteDisjointly) {
+  RegionInstanceRelations rr;
+  const BindingStateId s7 = KeyedState(1u, {7u});
+  const BindingStateId s8 = KeyedState(1u, {8u});
+  ASSERT_FALSE(s7 == s8);  // distinct binding identities within one schema.
+
+  rr.AddDerivation(s7, kRelP, kKeyCol0, {7u, 100u}, +1);
+  rr.AddDerivation(s8, kRelP, kKeyCol0, {8u, 200u}, +1);
+
+  const RequestEdgeId e7 = rr.AddRequestEdge(
+      RequestOwnerId{RootLeaseId{0u}}, CallSiteId{0u}, s7, kRelP);
+  const RequestEdgeId e8 = rr.AddRequestEdge(
+      RequestOwnerId{RootLeaseId{1u}}, CallSiteId{1u}, s8, kRelP);
+  rr.RouteResults(s7);
+  rr.RouteResults(s8);
+
+  // Each requester receives exactly its own state's fact — no cross-routing.
+  unsigned for_e7 = 0u, for_e8 = 0u;
+  for (const auto &rrid : rr.routed_results) {
+    if (rrid.request_edge == e7) {
+      ++for_e7;
+    }
+    if (rrid.request_edge == e8) {
+      ++for_e8;
+    }
+  }
+  ASSERT_EQ(for_e7, 1u);
+  ASSERT_EQ(for_e8, 1u);
+  ASSERT_EQ(rr.routed_results.size(), 2u);
+}

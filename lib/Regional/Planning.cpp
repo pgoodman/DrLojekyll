@@ -233,6 +233,30 @@ static bool HasBoundParam(ParsedDeclaration redecl) {
   return false;
 }
 
+// P4 (§3.1/§3.2): the AccessPlan the freeze selects for a bound `#query` redecl.
+// `decl` is the query declaration (its Id is the RelationId); `redecl` carries the
+// binding pattern. A bound+free query specializes to a full scan + bound-col filter
+// (answer-correct even over a recursive relation — the read is an acyclic scan of the
+// settled table, and the recursion's own indexes are untouched — §8-S2); an all-bound
+// query keeps `.Find`.
+static AccessPlan ComputeQueryAccessPlan(ParsedDeclaration decl,
+                                         ParsedDeclaration redecl) {
+  bool has_free = false;
+  std::vector<uint32_t> available_bindings;
+  for (ParsedParameter p : redecl.Parameters()) {
+    if (p.Binding() == ParameterBinding::kBound) {
+      available_bindings.push_back(p.Index());
+    } else {
+      has_free = true;
+    }
+  }
+
+  AccessRequirement req{RelationId{decl.Id()}, has_free,
+                        std::move(available_bindings),
+                        AccessCompleteness::kCompleteRelation};
+  return SelectAccessPlan(req);
+}
+
 // P3: the number of request ports == the number of dedup'd bound-query
 // redeclarations, over the SAME Id-then-BindingPattern dedup the freeze uses.
 // The single census authority (DeriveRegionalCensus) and the built
@@ -301,6 +325,20 @@ const RegionTemplate &FrozenRegionalProgram::Region(void) const {
 
 const RegionInstanceRelations &FrozenRegionalProgram::Instances(void) const {
   return instances;
+}
+
+std::optional<AccessPlan> FrozenRegionalProgram::PlanFor(
+    ParsedDeclaration redecl) const {
+  // Match by decl Id (shared across a query name's redecls) + binding pattern
+  // (distinguishes the adornments) — the same key BuildRequestPorts dedups on.
+  const std::string binding(redecl.BindingPattern());
+  for (const RequestPortRecord &rp : region.request_ports) {
+    if (rp.query_decl.Id() == redecl.Id() &&
+        std::string(rp.query_decl.BindingPattern()) == binding) {
+      return rp.plan;
+    }
+  }
+  return std::nullopt;
 }
 
 std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
@@ -372,8 +410,9 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
         if (HasBoundParam(redecl)) {
           const RootLeaseId lease{next_lease++};
           const unsigned port_index = next_port++;
+          const AccessPlan plan = ComputeQueryAccessPlan(decl, redecl);
           R.request_ports.push_back(
-              RequestPortRecord{port_index, redecl, lease, call_site});
+              RequestPortRecord{port_index, redecl, lease, call_site, plan});
           query_abis.push_back(AbiRecord{AbiKind::kQuery, redecl,
                                          RouteKind::kRequestPort, port_index});
           out.instances.AddRequestEdge(RequestOwnerId{lease}, call_site,
