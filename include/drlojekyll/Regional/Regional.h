@@ -4,6 +4,9 @@
 
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Parse/Parse.h>
+#include <drlojekyll/Regional/RegionInstance.h>  // the regional typed-id domains
+                                                 // + the P3 request/derivation
+                                                 // model (stored by value below)
 
 #include <cstdint>
 #include <optional>
@@ -36,50 +39,11 @@ namespace hyde {
 class ErrorLog;
 class OutputStream;
 
-// ---- Typed id domains (the lib/DataFlow/Identity.h idiom): each type
-// reserves a DOMAIN with intra-domain comparison only — no cross-domain
-// operator and no implicit conversion, so a port index can never silently
-// stand in for a region or edge id. At Stage B only `RegionId(0)` exists.
-
-struct RegionId {
-  uint32_t v;
-
-  constexpr bool operator==(const RegionId &) const noexcept = default;
-  constexpr auto operator<=>(const RegionId &) const noexcept = default;
-};
-
-struct PortId {
-  uint32_t v;
-
-  constexpr bool operator==(const PortId &) const noexcept = default;
-  constexpr auto operator<=>(const PortId &) const noexcept = default;
-};
-
-struct EdgeId {
-  uint32_t v;
-
-  constexpr bool operator==(const EdgeId &) const noexcept = default;
-  constexpr auto operator<=>(const EdgeId &) const noexcept = default;
-};
-
-// A relation's stable logical identity (== `decl.Id()`), the key of a
-// `RelationSchema` in the typed logical-fact authority.
-struct RelationId {
-  uint64_t v;
-
-  constexpr bool operator==(const RelationId &) const noexcept = default;
-  constexpr auto operator<=>(const RelationId &) const noexcept = default;
-};
-
-// A decl-ordinal field identity (one per parameter position). RESERVED at
-// Stage B: `RegionTemplate::inherited_symbolic_fields` is empty; P6.2 is the
-// sole consumer.
-struct SymbolicFieldId {
-  uint32_t v;
-
-  constexpr bool operator==(const SymbolicFieldId &) const noexcept = default;
-  constexpr auto operator<=>(const SymbolicFieldId &) const noexcept = default;
-};
+// The typed id domains (`RegionId`/`PortId`/`EdgeId`/`RelationId`/
+// `SymbolicFieldId`) + the P3 request/derivation model live in
+// `RegionInstance.h` (included above) — the lib/DataFlow/Identity.h idiom, one
+// disjoint DOMAIN per id. They moved there at P3 so this header can store a
+// `RegionInstanceRelations` by value.
 
 // The Stage-B region-skeleton census: the seven counts the `-region-out`
 // dump's trailing `census:` line renders, re-derivable from the Query graph's
@@ -126,8 +90,15 @@ struct RelationSchema {
 enum class AbiKind : uint8_t { kInput, kQuery, kOutput };
 
 // How a program-root ABI routes into the region. `kNone` is the synthetic
-// `output-abi <none>` line (no published messages).
-enum class RouteKind : uint8_t { kToPortP, kPermanentRoot, kNone };
+// `output-abi <none>` line (no published messages). `kRequestPort` (P3) is a
+// bound `#query` routing to a RootLease-owned request port (`route_port` is the
+// request port index).
+enum class RouteKind : uint8_t {
+  kToPortP,
+  kPermanentRoot,
+  kRequestPort,
+  kNone
+};
 
 struct AbiRecord {
   AbiKind kind;
@@ -156,6 +127,17 @@ struct PermanentRootRecord {
   ParsedDeclaration decl;  // Render derives "<name>(<param names>)".
 };
 
+// One request-port record (P3): a bound `#query` observation entry, owned by a
+// RootLease. Numbered AFTER the input/result ports, so an all-free program
+// (zero request ports) is byte-identical to the pre-P3 render. Render derives
+// "request-port P<k> query=<name>/<arity> bound=(<bound param names>)".
+struct RequestPortRecord {
+  unsigned port_index;
+  ParsedDeclaration query_decl;  // the bound query redeclaration.
+  RootLeaseId lease;
+  CallSiteId call_site;
+};
+
 // RESERVED-EMPTY typed types at P2 (structural reservation only; P6 adds their
 // fields when the P3/P6 authority types they will reference exist). Populated
 // by nobody at P2 — the false-start certification (freeze is a pure read, no
@@ -172,6 +154,7 @@ struct RegionTemplate {
 
   std::vector<AbiRecord> abis;              // input, then query, then output.
   std::vector<PortRecord> ports;            // input ports, then result ports.
+  std::vector<RequestPortRecord> request_ports;  // P3: bound-query request ports.
   std::vector<PermanentRootRecord> permanent_roots;
   std::vector<RelationSchema> relation_schemas;  // R-STORE, then Tier-2 origin.
 
@@ -206,12 +189,18 @@ class FrozenRegionalProgram {
   // The typed region skeleton (the `-region-out` dump reads this).
   const RegionTemplate &Region(void) const;
 
+  // The P3 request/derivation model (populated at freeze by BuildRequestPorts;
+  // the derivation/routing half stays empty for real compiles — no rule sweep
+  // at P3). A freeze-side peer of `RegionTemplate`.
+  const RegionInstanceRelations &Instances(void) const;
+
  private:
   explicit FrozenRegionalProgram(const ::hyde::Query &query_);
 
   ::hyde::Query dataflow_graph;
   RegionalCensus census;
   RegionTemplate region;
+  RegionInstanceRelations instances;
 };
 
 // The `-region-out` G1 text dump (byte-golden-able; tests/OptDiff `region`

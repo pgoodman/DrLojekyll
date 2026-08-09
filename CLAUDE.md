@@ -48,8 +48,10 @@ cmake -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DDRLOJEKYLL_ENABLE_TE
 
 ```sh
 cd build/debug && ctest --output-on-failure   # IdentityTypes, MiniDisassembler,
-                                              # PointsTo, Runtime
-                                              # (DataFlowValidators / RelValidators /
+                                              # PointsTo, RegionInstance, Runtime
+                                              # (RegionInstance = the P3 request/
+                                              #  derivation-model discriminating gate;
+                                              #  DataFlowValidators / RelValidators /
                                               #  InstanceStore removed at the P1 cut)
 ```
 
@@ -686,6 +688,22 @@ the demand-guarded pub and under-answer). The eqgate family is SIX as of
 never propagate a narrative constant.
 
 ## The frozen regional layer (Stage B, RegionalDataFlowCore — LANDED)
+
+> **P3 LANDED (session 18): the RequestEdge/FactDerivation acyclic slice.** The frozen program now
+> owns a TYPED P3 model beside the `RegionTemplate` — `include/drlojekyll/Regional/RegionInstance.h`
+> (the new public leaf hosting ALL regional typed-id domains + `RegionInstanceRelations` with the
+> edge/derivation ops), stored by value on `FrozenRegionalProgram` (`Instances()`). It is a
+> COMPILE-TIME model layered over the retained full-materialization backend — **codegen is UNCHANGED**
+> (M3). `BuildRequestPorts` (Planning.cpp) now SPLITS the query loop: a **bound** `#query` → a
+> `RootLease` **request port** (`RouteKind::kRequestPort`, numbered after input/result so all-free
+> programs stay byte-identical; `census.request_ports` re-derived); an **all-free** `#query` → a
+> `PermanentRoot`; BOTH mint a `RequestEdge` (B2). The region is rooted by the ProgramRoot,
+> independent of any `#query` (F1). `-region-out` renders the new `-> request-port P<k>` +
+> `request-port … query=…/… bound=(…)` lines. Discriminating gate: ctest **`RegionInstance`**
+> (`tests/RegionInstance/`) + the committed `booleans.region.*` bound-query goldens. The paragraph
+> below describes the PRE-P3 Stage-B shape (some anchors stale: `frozen.Query()`→`DataFlowGraph()` at
+> P2; "request-ports = one per demand forcing" → now one per bound `#query`). Full record:
+> `docs/proposals/RegionalDataFlowCore.artifacts/p3-grounding.md`.
 
 `lib/Regional` (acyclic peer: bin → {ControlFlow,Rel} → Regional → DataFlow):
 `FrozenRegionalProgram::Build(query, log)` runs at the Main.cpp third slot

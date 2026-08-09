@@ -9,7 +9,12 @@ P2 LANDED** — P1 deleted the -demand/keyed-instance authority wholesale; **P2 
 replaces the 5 render-string shells; `member_key_positions` positional masks,
 `DataFlowGraph()` accessor); compile-clean + OptDiff SUITE: PASS 222 + ctest 4/4;
 `@key` still inert; the next actionable step is **P3**, the RequestEdge /
-FactDerivation acyclic slice). The session-18 seed §1 is the POST-P2 whole-program
+FactDerivation acyclic slice). **`p3-grounding.md`** is the session-18 grounding
+output — the code-verified P3 execution-readiness record (layer-site inventory, typed
+`RegionInstance.h` ids, edge-op pseudocode, the M3 compile-time-model resolution, the
+drift-correction table vs `reconstruction-diffs.md` §3-P3, the adversarial critique
+survivors §8, and the `-region-out` desired-state §9); it supersedes the stale P3
+anchors in `reconstruction-diffs.md` §3-P3. The session-18 seed §1 is the POST-P2 whole-program
 pseudocode grounded in real code; the session-17 seed §1.3 (pre-P2 render-string
 shell) and every "current pipeline" doc before it are now HISTORICAL for the
 Regional layer. **`p2-typed-owner-grounding.md`** is the P2 record (compile-clean

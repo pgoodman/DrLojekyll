@@ -1,5 +1,16 @@
 # Keyed-instance rewrite — POST-P2 whole-program pseudocode + path forward as diffs (session-18 seed)
 
+> **P3 LANDED (session 18, owner green-lit).** `FrozenRegionalProgram` now owns the typed P3
+> request/derivation model (`include/drlojekyll/Regional/RegionInstance.h`, stored by value); a bound
+> `#query` is a `RootLease` **request port** (`request-ports` no longer 0), an all-free `#query` a
+> `PermanentRoot`, both minting a `RequestEdge`; the region is rooted by the ProgramRoot independent of
+> queries (F1). It is a COMPILE-TIME model over the retained backend (codegen UNCHANGED, M3). Gate
+> green: OptDiff SUITE PASS, ctest 5/5 (new `RegionInstance` discriminating gate), byte-invariant
+> `.rel`/`.h`/`.stdout` + the 3 all-free `.region` goldens, committed `booleans.region.*` bound-query
+> golden. Full record: **`p3-grounding.md`**. NEXT actionable = P4 (honest complete-path
+> specialization, `FullScanFilter` / `ProgramTableScanRegion` reuse — see §3 P4). The §1 pseudocode
+> below is the POST-P2 baseline; the §3-P3 diff is now IMPLEMENTED.
+
 Session 17 close (2026-08-08). Branch `keyed-instances`, **tip `ae207c36`** ("P2:
 FrozenRegionalProgram becomes the typed semantic owner"). **P1 + P2 ARE LANDED** (compile-clean,
 OptDiff SUITE: PASS 222, ctest 4/4). This seed SUPERSEDES `session-17-whole-program-seed.md`
@@ -157,7 +168,22 @@ results, drain-before-retire, single-fact-authority, counts-are-caches.
 
 ### P3 — RequestEdge / RuleActivationEdge / FactDerivation / RoutedResult (acyclic slice)  [THE NEXT STEP]
 
-Authority: `reconstruction-diffs.md` §3-P3 (lines 347-416) + §5.4 (728-744). New file
+> **CODE-VERIFIED GROUNDING (session 18): `p3-grounding.md`.** It is now the P3
+> execution-readiness authority — the layer-site inventory (every anchor verified at
+> `ae207c36`), the typed-id + edge-op pseudocode, the drift-correction table against
+> `reconstruction-diffs.md` §3-P3, and the folded exit gate. Two things it settles that
+> the diff below leaves ambiguous: **(a) the M3 resolution** — at P3
+> `EvaluateEpoch`/`AddDerivation` are a COMPILE-TIME typed model + self-validator, NOT a
+> runtime engine; codegen is UNCHANGED, P3 moves no golden byte, and `AddDerivation` is a
+> P4+ spec exercised at P3 only by the F29 member-key intern gate (there is NO rule sweep —
+> `RegionTemplate.rules` is RESERVED-EMPTY). **(b) the drift** — `reconstruction-diffs.md`
+> §3-P3's anchors predate P1/P2 (Planning.cpp:512-562 → :301-320; Demand.cpp:459-471 →
+> deleted, bound test now Build.cpp:422-426; `member_key` → `member_key_positions`,
+> Regional.h:120). New finding recorded there: the query-injector seam (Build.cpp:399-410)
+> survived P1 as inert dead code.
+
+Authority: `p3-grounding.md` (code-verified) supersedes the stale anchors in
+`reconstruction-diffs.md` §3-P3 (lines 347-416) + §5.4 (728-744). New file
 `lib/Regional/RegionInstance.h` (sibling of Regional.h's typed-id idiom). Touches the OWNERSHIP
 authority (RequestEdge) + the SUPPORT authority (FactDerivation), kept distinct from logical-fact
 identity (RegionalFactId) and each other.

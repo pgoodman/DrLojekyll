@@ -220,12 +220,55 @@ static RelationSchema BuildRelationSchemaFromOrigin(const ::hyde::Query &query,
                         ResolveOriginSupport(query, decl)};
 }
 
+// P3: does a `#query` redeclaration carry any bound parameter? (The bound test
+// idiom is BuildQueryEntryPointImpl's `param.Binding()==kBound` loop,
+// lib/ControlFlow/Build/Build.cpp:422-426.) A bound query becomes a RootLease
+// request-port owner; an all-free query a PermanentRoot.
+static bool HasBoundParam(ParsedDeclaration redecl) {
+  for (ParsedParameter p : redecl.Parameters()) {
+    if (p.Binding() == ParameterBinding::kBound) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// P3: the number of request ports == the number of dedup'd bound-query
+// redeclarations, over the SAME Id-then-BindingPattern dedup the freeze uses.
+// The single census authority (DeriveRegionalCensus) and the built
+// `R.request_ports` must agree — the check_count belt aborts otherwise.
+static unsigned CountBoundQueryRedecls(const ::hyde::Query &query) {
+  unsigned count = 0u;
+  std::unordered_set<uint64_t> seen_queries;
+  for (ParsedModule sub_module : ParsedModuleIterator(query.ParsedModule())) {
+    for (ParsedQuery parsed_query : sub_module.Queries()) {
+      if (!seen_queries.insert(parsed_query.Id()).second) {
+        continue;
+      }
+      const ParsedDeclaration decl(parsed_query);
+      std::unordered_set<std::string> seen_variants;
+      for (ParsedDeclaration redecl : decl.UniqueRedeclarations()) {
+        std::string binding(redecl.BindingPattern());
+        if (!seen_variants.insert(binding).second) {
+          continue;
+        }
+        if (HasBoundParam(redecl)) {
+          ++count;
+        }
+      }
+    }
+  }
+  return count;
+}
+
 }  // namespace
 
 RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
   RegionalCensus census;
 
-  census.request_ports = 0u;  // Post-cut: demand is deleted, no request ports.
+  // P3: one request port per dedup'd bound-query redeclaration. (This must
+  // stay in lockstep with BuildRequestPorts's built `R.request_ports`.)
+  census.request_ports = CountBoundQueryRedecls(query);
 
   std::vector<ParsedMessage> received, published;
   CollectMessages(query, received, published);
@@ -254,6 +297,10 @@ const RegionalCensus &FrozenRegionalProgram::Census(void) const {
 
 const RegionTemplate &FrozenRegionalProgram::Region(void) const {
   return region;
+}
+
+const RegionInstanceRelations &FrozenRegionalProgram::Instances(void) const {
+  return instances;
 }
 
 std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
@@ -293,11 +340,19 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
                                     RouteKind::kNone, 0u});
   }
 
-  // ---- QUERY ABIs + permanent roots: declaration order; per name, the
-  // UniqueRedeclarations walk with the BindingPattern dedup (the
-  // BuildQueryEntryPoint idiom, lib/ControlFlow/Build/Build.cpp). Post-cut
-  // every redeclaration is a permanent-root observation — a bound `#query`
-  // reads the canonical fully-materialized relation via the plain cursor.
+  // ---- QUERY ABIs + request ports + permanent roots (BuildRequestPorts, P3):
+  // declaration order; per name, the UniqueRedeclarations walk with the
+  // BindingPattern dedup (the BuildQueryEntryPoint idiom, lib/ControlFlow/Build/
+  // Build.cpp:504-517). A bound `#query` redecl becomes a RootLease-owned
+  // request port (`kRequestPort`, numbered AFTER input/result ports); an
+  // all-free redecl a PermanentRoot (`kPermanentRoot`). BOTH also mint a
+  // RequestEdge into the P3 model, so a request owner is exact (B2). The region
+  // itself is rooted by the always-present ProgramRoot (RootedReachability's
+  // implicit empty-state seed, §8-F1) — query request edges only ADD
+  // observation roots, they are not the sole liveness source. The
+  // derivation/routing half of the model stays empty (no rule sweep at P3, M3).
+  const RegionInstanceId ri{0u};
+  unsigned next_lease = 0u, next_perm = 0u, next_call_site = 0u;
   std::unordered_set<uint64_t> seen_queries;
   for (ParsedModule sub_module :
        ParsedModuleIterator(query.ParsedModule())) {
@@ -306,15 +361,31 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
         continue;
       }
       const ParsedDeclaration decl(parsed_query);
+      const RelationId requested{decl.Id()};  // L5: the query decl IS its relation.
       std::unordered_set<std::string> seen_variants;
       for (ParsedDeclaration redecl : decl.UniqueRedeclarations()) {
         std::string binding(redecl.BindingPattern());
         if (!seen_variants.insert(binding).second) {
           continue;
         }
-        query_abis.push_back(AbiRecord{AbiKind::kQuery, redecl,
-                                       RouteKind::kPermanentRoot, 0u});
-        R.permanent_roots.push_back(PermanentRootRecord{redecl});
+        const CallSiteId call_site{next_call_site++};
+        if (HasBoundParam(redecl)) {
+          const RootLeaseId lease{next_lease++};
+          const unsigned port_index = next_port++;
+          R.request_ports.push_back(
+              RequestPortRecord{port_index, redecl, lease, call_site});
+          query_abis.push_back(AbiRecord{AbiKind::kQuery, redecl,
+                                         RouteKind::kRequestPort, port_index});
+          out.instances.AddRequestEdge(RequestOwnerId{lease}, call_site,
+                                       EmptyBindingState(ri), requested);
+        } else {
+          const PermanentRootId perm{next_perm++};
+          R.permanent_roots.push_back(PermanentRootRecord{redecl});
+          query_abis.push_back(AbiRecord{AbiKind::kQuery, redecl,
+                                         RouteKind::kPermanentRoot, 0u});
+          out.instances.AddRequestEdge(RequestOwnerId{perm}, call_site,
+                                       EmptyBindingState(ri), requested);
+        }
       }
     }
   }
@@ -350,10 +421,12 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
   // ... AND the built TYPED records are independently recounted against it (H2:
   // the real anti-stub belt — a hollow/stub `R` diverges from the query re-walk
   // and aborts). Census is a function of `query`, never of `RegionTemplate`.
-  unsigned built_request = 0u, built_input = 0u, built_result = 0u;
+  unsigned built_request =
+      static_cast<unsigned>(R.request_ports.size());  // P3: own vector.
+  unsigned built_input = 0u, built_result = 0u;
   for (const PortRecord &port : R.ports) {
     switch (port.kind) {
-      case PortKind::kRequest: ++built_request; break;
+      case PortKind::kRequest: ++built_request; break;  // (none in R.ports at P3)
       case PortKind::kInput: ++built_input; break;
       case PortKind::kResult: ++built_result; break;
     }

@@ -346,6 +346,24 @@ reserved (P6.2 is its sole populator), so the certification holds by constructio
 
 ### P3 — RequestEdge / RuleActivationEdge / FactDerivation / RoutedResult (acyclic slice)
 
+> **AMENDED (session 18 grounding, code-verified at `ae207c36`) — see
+> `p3-grounding.md` for the corrected, code-verified P3 record.** The pseudocode
+> below predates the P1 cut + P2 and carries stale anchors: (1) "Planning.cpp:512-562's
+> forcing loop" → the real query→permanent-root loop is **Planning.cpp:301-320**;
+> (2) "Demand.cpp:459-471's [kBound] test" → Demand.cpp was DELETED at P1, the bound
+> test idiom is now inline at **Build.cpp:422-426** (`param.Binding()==kBound`,
+> `param.Index()`); (3) `member_key` / `SemanticMemberIdentity{member_key, …}` →
+> the landed positional mask is `RelationSchema.member_key_positions` (**Regional.h:120**),
+> and `SemanticMemberKey` is lib/DataFlow-PRIVATE, so `RegionalFactId.member` stores the
+> **projected value tuple**, not FieldId value-ids; (4) the all-free arm's bare
+> `permanent_roots.push(...)` is **overridden by B2** (§5.4) — it MUST also
+> `AddRequestEdge(PermanentRoot,…)`; (5) `topo_order(rules_of(region))` has **no backing
+> structure** (`RegionTemplate.rules` is RESERVED-EMPTY, P6.2 sole populator) — P3 runs
+> **no rule sweep**: at P3 `EvaluateEpoch`/`AddDerivation` are a COMPILE-TIME typed model
+> + self-validator (codegen UNCHANGED, M3), and `AddDerivation` is a P4+ spec exercised at
+> P3 only by the F29 member-key intern gate. The typed-id + edge-op pseudocode, the
+> layer-site inventory, and the folded exit gate all live in `p3-grounding.md`.
+
 **Touches:** ownership authority (RequestEdge) + support authority (FactDerivation), kept
 distinct from logical-fact identity (RegionalFactId) and each other. New file
 `lib/Regional/RegionInstance.h` (sibling of Regional.h's typed-id idiom).

@@ -146,15 +146,36 @@ static std::string AbiDeclText(const ParsedModule &module,
   return "<none>";  // std::monostate — the `output-abi <none>` line.
 }
 
-// The routing text: `-> R0 via P<k>` / `-> permanent-root` / "" (no route).
+// The routing text: `-> R0 via P<k>` / `-> permanent-root` /
+// `-> request-port P<k>` / "" (no route).
 static std::string AbiRouteText(const AbiRecord &abi) {
   switch (abi.route) {
     case RouteKind::kToPortP:
       return "-> R0 via P" + std::to_string(abi.route_port);
     case RouteKind::kPermanentRoot: return "-> permanent-root";
+    case RouteKind::kRequestPort:
+      return "-> request-port P" + std::to_string(abi.route_port);
     case RouteKind::kNone: return "";
   }
   return "";
+}
+
+// `(<bound param names>)` over a query decl's BOUND parameters (the request
+// key). All-free decls never reach here (they render as permanent roots).
+static std::string BoundFieldNames(ParsedDeclaration decl) {
+  std::string out = "(";
+  const char *sep = "";
+  for (auto i = 0u; i < decl.Arity(); ++i) {
+    const ParsedParameter p = decl.NthParameter(i);
+    if (p.Binding() != ParameterBinding::kBound) {
+      continue;
+    }
+    out += sep;
+    out += p.NameAsString();
+    sep = ", ";
+  }
+  out += ")";
+  return out;
 }
 
 // `message=<name>/<arity>` for a port.
@@ -230,6 +251,9 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
     for (const PortRecord &port : R.ports) {
       kind_w = std::max(kind_w, std::string(PortKindTok(port.kind)).size());
     }
+    if (!R.request_ports.empty()) {
+      kind_w = std::max(kind_w, std::string("request-port").size());
+    }
     if (!R.permanent_roots.empty()) {
       kind_w = std::max(kind_w, std::string("permanent-root").size());
     }
@@ -239,12 +263,15 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
     kind_w += 2u;
 
     // Port lines: `P<k>` then head then `fields=...`, each field padded to
-    // its per-dump max + 2.
+    // its per-dump max + 2. Request-port indices share the `P<k>` column width.
     size_t ptok_w = 0u, head_w = 0u;
     for (const PortRecord &port : R.ports) {
       ptok_w =
           std::max(ptok_w, 1u + std::to_string(port.port_index).size());
       head_w = std::max(head_w, PortHeadText(port).size());
+    }
+    for (const RequestPortRecord &rp : R.request_ports) {
+      ptok_w = std::max(ptok_w, 1u + std::to_string(rp.port_index).size());
     }
     ptok_w += 2u;
     head_w += 2u;
@@ -253,6 +280,16 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
          << Pad("P" + std::to_string(port.port_index), ptok_w)
          << Pad(PortHeadText(port), head_w) << "fields="
          << MessageFieldNames(port.message) << "\n";
+    }
+
+    // Request-port lines (P3): `P<k>  query=<name>/<arity>  bound=(<keys>)`.
+    // A RootLease-owned bound-query observation entry.
+    for (const RequestPortRecord &rp : R.request_ports) {
+      os << "  " << Pad("request-port", kind_w)
+         << Pad("P" + std::to_string(rp.port_index), ptok_w)
+         << "query=" << std::string(rp.query_decl.NameAsString()) << "/"
+         << rp.query_decl.Arity() << "  bound="
+         << BoundFieldNames(rp.query_decl) << "\n";
     }
 
     for (const PermanentRootRecord &root : R.permanent_roots) {
@@ -315,6 +352,12 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDOT d) {
        << " " << PortHeadText(port) << " fields="
        << MessageFieldNames(port.message) << "\"];\n";
   }
+  for (const RequestPortRecord &rp : R.request_ports) {
+    os << "port_p" << rp.port_index << " [label=\"P" << rp.port_index
+       << " request-port query=" << std::string(rp.query_decl.NameAsString())
+       << "/" << rp.query_decl.Arity() << " bound="
+       << BoundFieldNames(rp.query_decl) << "\"];\n";
+  }
   for (auto i = 0u; i < R.permanent_roots.size(); ++i) {
     os << "proot_" << i << " [label=\""
        << PermanentRootText(R.permanent_roots[i]) << "\"];\n";
@@ -341,7 +384,8 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDOT d) {
        << AbiDeclText(module, abi) << "\"];\n";
     if (abi.route == RouteKind::kPermanentRoot) {
       os << "abi_" << i << " -> proot_" << next_proot++ << ";\n";
-    } else if (abi.route == RouteKind::kToPortP) {
+    } else if (abi.route == RouteKind::kToPortP ||
+               abi.route == RouteKind::kRequestPort) {
       os << "abi_" << i << " -> port_p" << abi.route_port << ";\n";
     }
   }
