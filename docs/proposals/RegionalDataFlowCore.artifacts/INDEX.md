@@ -2,10 +2,18 @@
 
 ## Current resumption authority
 
-Start with **`session-19-prompt.md`** (the current next-session charter) and its
-START-HERE backbone **`session-19-whole-program-seed.md`** (tip `63573a67`, **P1 +
-P2 + P3 LANDED**; next actionable = **P4**, honest complete-path specialization /
-FullScanFilter). The session-19 seed §1 is the POST-P3 whole-program pseudocode
+Start with **`session-20-prompt.md`** (the current next-session charter) and its
+START-HERE backbone **`session-20-whole-program-seed.md`** (tip `c546a6a4`, **P1 +
+P2 + P3 + P4 LANDED**; next actionable = **P5**, the partial-binding DAG — where a
+DECLARED `@key` first specializes). **`p4-grounding.md`** is the P4 record (the
+`AccessPlan` fourth authority selected-at-freeze / read-at-codegen; the §8 critique
+survivors + certifications; the §9 IR states; the freeze-store→codegen-read + negative-
+witness method template). NOTE for P5: `@key` survived P1 as INERT parsed metadata
+(`InstanceKeys()`/`HasInstanceKey()`); there is NO positive `@key` corpus carrier
+post-P1 (the semantic `key_*_witness` cases were deleted with demand) — P5 must author
+a new one. The prior charter was **`session-19-prompt.md`** + **`session-19-whole-program-seed.md`**
+(tip `63573a67`, **P1 + P2 + P3 LANDED**; next actionable was **P4**, honest complete-path
+specialization / FullScanFilter — now LANDED at `c546a6a4`). The session-19 seed §1 is the POST-P3 whole-program pseudocode
 (the freeze now builds the P3 request/derivation model via `BuildRequestPorts`; a
 bound `#query` renders a `-> request-port`). **`p3-grounding.md`** is the P3 record
 (the model P4 extends — `RegionInstanceRelations`, `AddDerivation` via
