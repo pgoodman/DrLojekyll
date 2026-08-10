@@ -2,11 +2,15 @@
 
 ## Current resumption authority
 
-Start with **`session-23-prompt.md`** (the current next-session charter) and its
-START-HERE backbone **`session-23-whole-program-seed.md`** (**P1 + P2 + P3 + P4 +
-P5 + P6.1 + P6.2 LANDED**; the P6 COMPILE-TIME first cut is COMPLETE; next is a
-FORK — the RUNTIME cut P6.3–P6.6 vs the PHYSICAL cut P7–P9, an owner ranking at the
-[OWNER STOP]). The prior charter was **`session-22-prompt.md`** +
+Start with **`session-23-prompt.md`** (the current next-session charter — now a **P7
+charter**) and its grounded START-HERE **`p7-grounding-seed.md`** (POST-P6.2,
+current-code-grounded: the as-is pseudocode, the P4-substrate-vs-s15 reconciliation
+table, the six P7 hunk diffs, IR desired-states on `key_partial_1`, seven open Qs).
+The **`session-23-whole-program-seed.md`** backbone (**P1 + P2 + P3 + P4 + P5 + P6.1
++ P6.2 LANDED**; P6 compile-time first cut COMPLETE) RANKS the fork **P7 #1** over the
+runtime cut P6.3–P6.6 (§3, dependency-ordering clincher); confirm the ranking at the
+[OWNER STOP]. The s14-15 `keyed-rewrite-p7p9-diffs.md`/`-critique.md` are PARTLY STALE
+(predate P4/P5/P6) — trust the p7-grounding-seed reconciliation over their raw anchors. The prior charter was **`session-22-prompt.md`** +
 **`session-22-whole-program-seed.md`** (tip `734712c0`, next actionable was P6.2 —
 now LANDED).
 **P6.2 LANDED (session 22, 2026-08-10)**: typed edge-local routing +

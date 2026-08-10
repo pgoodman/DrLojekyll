@@ -130,7 +130,9 @@ Exit-gate character: answer-equality vs the M3 backend BECOMES legitimate (cross
 owner: this is where the greenfield structural-only posture ENDS.
 
 ### (B) The PHYSICAL cut — P7 (then P8/P9) (keeps the compile-time-observer posture one more layer) [RANKED #1]
-Authority: `keyed-rewrite-p7p9-diffs.md` + `keyed-rewrite-p7p9-critique.md` (deeply critiqued s14-15).
+Authority: **`p7-grounding-seed.md`** (the POST-P6.2 current-code-grounded P7 whole-program view + the
+P4-substrate-vs-s15 reconciliation + the six P7 diffs — the START-HERE for P7) over
+`keyed-rewrite-p7p9-diffs.md` + `keyed-rewrite-p7p9-critique.md` (s14-15, PARTLY STALE — predate P4/P5/P6).
 ```
 # P7  AccessPlan its own domain with REAL hash/trie paths — where a narrow @key first PAYS.
 #     kRetainedIndexScan/kFullKeyHashLookup/trie become COST decisions; the intra-relation prefix seek
