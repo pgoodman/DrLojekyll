@@ -2,14 +2,27 @@
 
 ## Current resumption authority
 
-Start with **`session-22-prompt.md`** (the current next-session charter) and its
-START-HERE backbone **`session-22-whole-program-seed.md`** (tip `734712c0`, **P1 +
-P2 + P3 + P4 + P5 + P6.1 LANDED**; next actionable = **P6.2**, typed edge-local
-routing + `SymbolicFieldId` promotion — the LAST compile-time slice of P6; the
-headline open decision is the clause-vs-DataFlow rule source, the P6.1 identity
-lesson). The prior charter was **`session-21-prompt.md`** +
-**`session-21-whole-program-seed.md`** (tip `375e8713`, next actionable was P6 —
-P6.1 now LANDED at `734712c0`).
+Start with **`session-23-prompt.md`** (the current next-session charter) and its
+START-HERE backbone **`session-23-whole-program-seed.md`** (**P1 + P2 + P3 + P4 +
+P5 + P6.1 + P6.2 LANDED**; the P6 COMPILE-TIME first cut is COMPLETE; next is a
+FORK — the RUNTIME cut P6.3–P6.6 vs the PHYSICAL cut P7–P9, an owner ranking at the
+[OWNER STOP]). The prior charter was **`session-22-prompt.md`** +
+**`session-22-whole-program-seed.md`** (tip `734712c0`, next actionable was P6.2 —
+now LANDED).
+**P6.2 LANDED (session 22, 2026-08-10)**: typed edge-local routing +
+`SymbolicFieldId` promotion (compile-time, codegen BYTE-UNCHANGED) —
+`RegionTemplate.rules`/`inherited_symbolic_fields` populated CLAUSE-SOURCE (the
+post-Optimize DataFlow graph loses per-relation field identity via CSE — the same
+lesson that flipped P6.1's insert-arm); `AssignSymbolicFields` /
+`BuildRuleRoutingProjections` / `PromoteSharedSymbolicField` (a `while(changed)`
+union-find FIXPOINT, directional per-head-field, F16 co-occurrence trap closed) in
+Planning.cpp + the new `symbolic_field_table` interner; gated own-width
+`rule`/`shared-field` `-region-out` blocks (NO census count). NEW carriers
+`key_corecursion_1` (F16 arm) + `fixpoint_force` (F28 referee); 30 region goldens
+gained a pure suffix. A 4-refuter EMPIRICAL opus panel (0 blocking; C1 fixed the
+carrier's vacuous copy-cycle to a JOIN-in-cycle, C2 added the F28 referee). Record:
+**`p6.2-grounding.md`** (+ `p6.2-design.md` full hunks, `p6.2-synthesis.md` panel
+verdict + IR states). SUITE PASS 226, ctest 5/5, codegen byte-stable.
 **P6.1 LANDED (session 21, 2026-08-09)**: query-independent recursive components
 (compile-time, codegen BYTE-UNCHANGED) — `RegionTemplate.recursive_components`
 populated by `ComputeRecursiveComponents` (Planning.cpp) projecting the DataFlow

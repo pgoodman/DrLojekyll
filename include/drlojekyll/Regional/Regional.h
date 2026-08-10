@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -152,11 +153,27 @@ struct RequestPortRecord {
   AccessPlan plan{AccessPlan::kRetainedIndexScan};
 };
 
-// RESERVED-EMPTY typed type at P2 (structural reservation only; P6.2 adds its
-// field map when the SymbolicFieldId routing authority exists). Populated by
-// nobody before P6.2 — the false-start certification (freeze is a pure read, no
-// recognition pass) holds by construction.
-struct RuleRoutingProjection {};   // P6.2 is the sole populator.
+// P6.2: one per PRODUCER CLAUSE of a frozen relation — the clause-source routing
+// projection. `head` is the frozen relation the clause defines (its
+// `RelationSchema.id`); `body_to_head` is the raw set of field routes this clause
+// carries: a pair `(body_field, head_field)` says "the value at `body_field` (a
+// frozen body predicate's SymbolicFieldId) flows into `head_field` (this head's
+// SymbolicFieldId) via a SHARED clause variable (`ParsedVariable::Id()` equality
+// within the clause)". A clause with NO frozen body route has an EMPTY
+// `body_to_head` and is STILL stored (a base-case producer: its presence BLOCKS
+// promotion of that head field in `PromoteSharedSymbolicField` — dropping it
+// would wrongly promote a message/constant-fed field). Two pairs sharing one
+// `head_field` mark a JOIN (two frozen body positions bound to the same head
+// variable) — promotion treats that head field as ambiguous (never unions
+// join-mates; the F16 trap). `id` is deterministic (dense per-decl clause
+// ordinal, HP-9). Built clause-source (identity-preserving) because the
+// post-Optimize DataFlow graph CSE-merges co-recursive relations onto one model
+// table and loses per-relation field identity (p6.2-grounding.md §1.1).
+struct RuleRoutingProjection {   // P6.2 is the sole populator.
+  RuleId id;
+  RelationId head;
+  std::vector<std::pair<SymbolicFieldId, SymbolicFieldId>> body_to_head;
+};
 
 // P6.1: a query-independent recursive component — the set of frozen relations
 // whose rows are materialized within ONE multi-view DataFlow stratum (an SCC
@@ -174,7 +191,12 @@ struct RecursiveComponent {
 struct RegionTemplate {
   RegionId id{0};
 
-  // Empty at Stage B (P6.2 populates the inherited symbolic-field frame).
+  // P6.2: the PROMOTED symbolic-field frame — a dense vector indexed by
+  // `SymbolicFieldId.v` giving each field's union-find class REPRESENTATIVE (the
+  // min-valued SymbolicFieldId in its class). Equal representatives <=> the two
+  // fields provably carry the same value in every derivation
+  // (`PromoteSharedSymbolicField`). Empty for a program with no frozen-relation
+  // routing. NEVER read by codegen (compile-time model + `-region-out` render).
   std::vector<SymbolicFieldId> inherited_symbolic_fields;
 
   std::vector<AbiRecord> abis;              // input, then query, then output.
@@ -183,8 +205,8 @@ struct RegionTemplate {
   std::vector<PermanentRootRecord> permanent_roots;
   std::vector<RelationSchema> relation_schemas;  // R-STORE, then Tier-2 origin.
 
-  std::vector<RuleRoutingProjection> rules;                // RESERVED EMPTY (P6.2).
-  std::vector<RecursiveComponent> recursive_components;    // RESERVED EMPTY (P6.1).
+  std::vector<RuleRoutingProjection> rules;                // P6.2 (populated).
+  std::vector<RecursiveComponent> recursive_components;    // P6.1 (populated).
 };
 
 // Derive the Stage-B census from the Query graph's PUBLIC surface only — a

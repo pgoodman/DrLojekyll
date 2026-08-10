@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -579,6 +580,39 @@ struct RegionInstanceRelations {
     return schema_table.count(
                std::pair<RelationId, std::vector<uint32_t>>{
                    relation, std::move(field_set)}) != 0u;
+  }
+
+  // ==================== P6.2 region-global field interner ====================
+  // A FIELD interner (peer of the P5 `schema_table`, DISTINCT domain): one
+  // `SymbolicFieldId` per `(RelationId, ordinal)`, in ONE flat region-global id
+  // space across all frozen relations. This is the routing authority's ATOM; P8
+  // rebuilds the composite `SymbolicFieldSet` trie over these atoms (never a
+  // migration of the P5 `RelSchemaLocalId` table, which interns per-relation
+  // order-free SETS). Seeded deterministically at freeze by `AssignSymbolicFields`
+  // in (relation_schemas E-order x ordinal) order (HP-9), so `SymbolicFieldId{0}`
+  // is `relation_schemas[0]`'s field 0.
+  std::map<std::pair<uint64_t, uint32_t>, SymbolicFieldId> symbolic_field_table;
+  uint32_t next_symbolic_field{0u};
+
+  // Intern (or look up) the field id for (relation, ordinal). PURE.
+  SymbolicFieldId InternSymbolicField(RelationId relation, uint32_t ordinal) {
+    std::pair<uint64_t, uint32_t> key{relation.v, ordinal};
+    auto it = symbolic_field_table.find(key);
+    if (it != symbolic_field_table.end()) {
+      return it->second;
+    }
+    SymbolicFieldId id{next_symbolic_field++};
+    symbolic_field_table.emplace(std::move(key), id);
+    return id;
+  }
+
+  // Look up an already-interned field id (no mint). Every (relation, ordinal)
+  // touched by routing is seeded by `AssignSymbolicFields` BEFORE rules are
+  // built, so a miss is a build corruption.
+  SymbolicFieldId SymbolicFieldOf(RelationId relation, uint32_t ordinal) const {
+    auto it = symbolic_field_table.find({relation.v, ordinal});
+    assert(it != symbolic_field_table.end());
+    return it->second;
   }
 };
 

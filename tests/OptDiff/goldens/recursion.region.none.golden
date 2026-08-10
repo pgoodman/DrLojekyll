@@ -19,5 +19,17 @@ region R0  owner=program-root  parents=()  children=() {
   recursive-component  C2  members=(direct_only)
   recursive-component  C3  members=(direct_only_join)
   recursive-component  C4  members=(direct_and_join)
+  rule  R0  produces=output  routes=(direct_const.A->output.A)
+  rule  R1  produces=output  routes=(direct_input.A->output.A)
+  rule  R2  produces=output  routes=(direct_only.A->output.A)
+  rule  R3  produces=output  routes=(direct_only_join.A->output.A)
+  rule  R4  produces=output  routes=(direct_and_join.A->output.A)
+  rule  R6  produces=direct_const  routes=(direct_const.A->direct_const.A)
+  rule  R7  produces=direct_const  routes=(one.A->direct_const.A)
+  rule  R8  produces=direct_input  routes=(direct_input.A->direct_input.A)
+  rule  R10  produces=direct_only  routes=(direct_only.A->direct_only.A)
+  rule  R11  produces=direct_only_join  routes=(direct_only_join.A->direct_only_join.A)
+  rule  R12  produces=direct_and_join  routes=(direct_and_join.A->direct_and_join.A)
+  rule  R13  produces=direct_and_join  routes=(direct_and_join.A->direct_and_join.A)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=0 row-contracts=7

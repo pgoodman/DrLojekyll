@@ -371,6 +371,198 @@ static std::vector<RecursiveComponent> ComputeRecursiveComponents(
   return out;
 }
 
+// ============================ P6.2: routing rules =============================
+// The SECOND (and last) compile-time slice of P6. Populate `RegionTemplate::rules`
+// (per-clause field-routing projections, CLAUSE-SOURCE) + mint the region-global
+// `SymbolicFieldId` frame, then promote fields that provably carry the same value
+// in every derivation into shared classes (`inherited_symbolic_fields`). All
+// compile-time model + `-region-out` render — codegen byte-unchanged (nobody in
+// codegen reads these; `Program::Build` consumes `DataFlowGraph()`, never
+// `Region()`). Clause-source, NOT DataFlow-source: the post-Optimize graph
+// CSE-merges co-recursive relations onto one model table and loses per-relation
+// field identity, whereas the parsed clauses retain it (p6.2-grounding.md §1.1 —
+// the same identity lesson that flipped P6.1's insert-arm to the origin
+// projection). P6.2 mints NO RuleActivationEdge and touches none of the dormant
+// runtime half (activation_edges / AddDerivation / RouteResults).
+
+// P6.2: seed ONE SymbolicFieldId per (schema.id, ordinal) for every frozen
+// relation, in relation_schemas E-order x ascending ordinal. Fixes the dense,
+// deterministic id space (HP-9) BEFORE any rule reads it.
+static void AssignSymbolicFields(const RegionTemplate &R,
+                                 RegionInstanceRelations &inst) {
+  for (const RelationSchema &schema : R.relation_schemas) {
+    for (uint32_t i = 0u; i < schema.decl.Arity(); ++i) {
+      (void) inst.InternSymbolicField(schema.id, i);
+    }
+  }
+}
+
+// Append `(b -> h)` to `proj` unless the EXACT pair is already present (a
+// self-join can match one (i, j) once per body pred; two body preds can bind the
+// same head field — both legitimately distinct pairs; we drop only exact repeats
+// from ONE pred so a doubly-used variable is counted once).
+static void AddRoutePair(RuleRoutingProjection &proj, SymbolicFieldId b,
+                         SymbolicFieldId h) {
+  std::pair<SymbolicFieldId, SymbolicFieldId> pair{b, h};
+  if (std::find(proj.body_to_head.begin(), proj.body_to_head.end(), pair) ==
+      proj.body_to_head.end()) {
+    proj.body_to_head.push_back(pair);
+  }
+}
+
+// P6.2: the CLAUSE-SOURCE routing walk. For every frozen relation, for every
+// clause defining it, for every POSITIVE body predicate whose declaration is ALSO
+// a frozen relation, emit (SymFld(body, i) -> SymFld(head, j)) for each body arg
+// pos i and head param pos j sharing a clause variable (ParsedVariable::Id()
+// equality — clause-scoped, same name ⇒ same id within a clause). A clause with no
+// such pair is STILL emitted (empty body_to_head) so `PromoteSharedSymbolicField`
+// sees its base-case producer. RuleId is a dense per-clause ordinal
+// (relation_schemas E-order, then decl.Clauses() parse order) — HP-9, never a
+// UniqueId/pointer. Negated/aggregate body atoms do NOT participate (a sound
+// under-approximation, F18): only positive predicates whose Of(pred).Id() is a
+// frozen relation — messages/functors/foreign drop out here; @product mates share
+// no variable and emit no pair naturally.
+static std::vector<RuleRoutingProjection> BuildRuleRoutingProjections(
+    const RegionTemplate &R, RegionInstanceRelations &inst) {
+  std::unordered_set<uint64_t> rel_ids;
+  for (const RelationSchema &schema : R.relation_schemas) {
+    rel_ids.insert(schema.id.v);
+  }
+
+  std::vector<RuleRoutingProjection> out;
+  uint32_t next_rule = 0u;
+  for (const RelationSchema &schema : R.relation_schemas) {
+    const ParsedDeclaration head_decl = schema.decl;
+    const RelationId head = schema.id;
+
+    // `Clauses()` spans the whole redeclaration group (ping's 2 clauses, tc's 2,
+    // etc. all appear under one decl — verified). The C5 belt: resolve through the
+    // declaration context so a `@key` on a non-first redeclaration is not missed
+    // (the F31 / F-K6-SHADOW precedent); `Clauses()` already does this.
+    for (ParsedClause clause : head_decl.Clauses()) {
+      RuleRoutingProjection proj;
+      proj.id = RuleId{next_rule++};
+      proj.head = head;
+
+      for (unsigned g = 0u; g < clause.NumGroups(); ++g) {
+        for (ParsedPredicate pred : clause.PositivePredicates(g)) {
+          const ParsedDeclaration body_decl = ParsedDeclaration::Of(pred);
+          if (!rel_ids.count(body_decl.Id())) {
+            continue;  // not frozen (message/functor/foreign) -> no route.
+          }
+          const RelationId body_rel{body_decl.Id()};
+          for (unsigned i = 0u; i < pred.Arity(); ++i) {
+            const uint64_t body_var = pred.NthArgument(i).Id();
+            for (unsigned j = 0u; j < clause.Arity(); ++j) {
+              if (clause.NthParameter(j).Id() == body_var) {
+                AddRoutePair(proj, inst.SymbolicFieldOf(body_rel, i),
+                             inst.SymbolicFieldOf(head, j));
+              }
+            }
+          }
+        }
+      }
+      out.push_back(std::move(proj));  // stored even if empty (base-case producer).
+    }
+  }
+  return out;
+}
+
+// P6.2: promote symbolic fields that provably carry the same value in EVERY
+// derivation into one union-find class. The primitive is directional, per (head
+// relation H, head ordinal j): union SymFld(H, j) with a source class `s` iff
+// EVERY producer clause of H sources H.j from exactly ONE frozen body field and
+// all those per-producer sources are the SAME class (under the current `find`).
+//   - a producer with NO source for H.j (empty) is a base case (message/constant/
+//     negation-fed) ⇒ H.j is NOT uniformly frozen-sourced ⇒ NO promotion;
+//   - a producer with >= 2 sources for H.j (a JOIN) ⇒ ambiguous ⇒ NO promotion
+//     (never union join-mates — the F16 co-occurrence trap).
+// A union performed on one head field can make a different head field's sources
+// collapse to one class, so iterate to a FIXPOINT (F28). union-by-min gives a
+// deterministic class-minimum representative (HP-9).
+static void PromoteSharedSymbolicField(RegionTemplate &R,
+                                       RegionInstanceRelations &inst) {
+  const uint32_t n = inst.next_symbolic_field;
+  std::vector<uint32_t> parent(n);
+  for (uint32_t i = 0u; i < n; ++i) {
+    parent[i] = i;
+  }
+  auto find = [&parent](uint32_t x) {  // path-halving; no self-recursion.
+    while (parent[x] != x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  auto merge = [&](uint32_t a, uint32_t b) {  // union-by-min.
+    a = find(a);
+    b = find(b);
+    if (a == b) {
+      return false;
+    }
+    if (a < b) {
+      parent[b] = a;
+    } else {
+      parent[a] = b;
+    }
+    return true;
+  };
+
+  // Group producer clauses by head relation once.
+  std::map<uint64_t, std::vector<const RuleRoutingProjection *>> by_head;
+  for (const RuleRoutingProjection &r : R.rules) {
+    by_head[r.head.v].push_back(&r);
+  }
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (const RelationSchema &schema : R.relation_schemas) {
+      const auto it = by_head.find(schema.id.v);
+      if (it == by_head.end() || it->second.empty()) {
+        continue;
+      }
+      for (uint32_t j = 0u; j < schema.decl.Arity(); ++j) {
+        const uint32_t head_field = inst.SymbolicFieldOf(schema.id, j).v;
+        bool all_single = true;
+        std::optional<uint32_t> agreed;  // the one source class, if any.
+        for (const RuleRoutingProjection *r : it->second) {
+          std::set<uint32_t> src;
+          for (const std::pair<SymbolicFieldId, SymbolicFieldId> &route :
+               r->body_to_head) {
+            if (route.second.v == head_field) {
+              src.insert(find(route.first.v));
+            }
+          }
+          if (src.size() != 1u) {  // base case (0) or join (>=2).
+            all_single = false;
+            break;
+          }
+          const uint32_t s = *src.begin();
+          if (!agreed) {
+            agreed = s;
+          } else if (find(*agreed) != s) {
+            all_single = false;
+            break;
+          }
+        }
+        if (all_single && agreed && find(head_field) != find(*agreed)) {
+          if (merge(head_field, *agreed)) {
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+
+  R.inherited_symbolic_fields.assign(n, SymbolicFieldId{0u});
+  for (uint32_t i = 0u; i < n; ++i) {
+    const uint32_t rep = find(i);
+    assert(rep <= i);  // union-by-min ⇒ representative is the class minimum.
+    R.inherited_symbolic_fields[i] = SymbolicFieldId{rep};
+  }
+}
+
 }  // namespace
 
 RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
@@ -554,6 +746,18 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
   // RESERVED EMPTY (P6.2 is its sole populator).
   R.recursive_components =
       ComputeRecursiveComponents(query, R.relation_schemas);
+
+  // ---- P6.2: routing rules + the promoted symbolic-field frame (COMPILE-TIME
+  // model + `-region-out` render only; codegen byte-unchanged — nobody in codegen
+  // reads these). Seed the region-global field interner, build the clause-source
+  // routing rules, then promote shared fields to a fixpoint. Order matters:
+  // `AssignSymbolicFields` must precede `BuildRuleRoutingProjections`
+  // (`SymbolicFieldOf` aborts on an un-seeded field), which precedes
+  // `PromoteSharedSymbolicField` (reads `R.rules`). No census re-derivation
+  // (routing rules carry no census count — the P6.1 precedent).
+  AssignSymbolicFields(R, out.instances);
+  R.rules = BuildRuleRoutingProjections(R, out.instances);
+  PromoteSharedSymbolicField(R, out.instances);
 
   // ---- CENSUS: DeriveRegionalCensus is the single authority ...
   out.census = DeriveRegionalCensus(query);

@@ -10,5 +10,8 @@ region R0  owner=program-root  parents=()  children=() {
   row-contract  E0  rel=reachable_from  member-key=(From, To)  support=monotone
   row-contract  E1  rel=path            member-key=(From, To)  support=monotone
   declared-key  E1  rel=path            path=(From)
+  rule  R0  produces=reachable_from  routes=(path.From->reachable_from.From, path.To->reachable_from.To)
+  shared-field  F0  members=(reachable_from.From, path.From)
+  shared-field  F1  members=(reachable_from.To, path.To)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=1 result-ports=0 row-contracts=2

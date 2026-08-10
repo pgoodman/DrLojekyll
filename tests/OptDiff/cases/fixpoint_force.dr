@@ -1,0 +1,26 @@
+; P6.2 F28 anti-single-pass referee: a promotion that ONLY converges after a
+; SECOND fixpoint iteration. In the un-optimized modes the relation_schemas
+; E-order is c, p, a, b: head p is walked BEFORE its sources a, b, so a single
+; promotion pass sees p.K's two sources {a.K},{b.K} still DISTINCT (a, b not yet
+; unioned to c) and under-promotes p.K; only iteration 2 (after a.K<-c.K,
+; b.K<-c.K) collapses them and promotes p.K into c's class. A buggy
+; no-while(changed) implementation leaves p.K a singleton, so the nodf/none
+; shared-field member list differs by one member (fixpoint: members=(c.K, p.K,
+; a.K, b.K); single-pass bug: members=(c.K, a.K, b.K), p.K absent) -- the byte
+; referee. In opt, p is eliminated, so the F28 discrimination is nodf/none-only
+; (mode-faithful, the P6.1 precedent). Answer is a complete read, mode-invariant.
+#message src_c(u64 K, u64 V).
+#message out_p(u64 K, u64 V).
+
+#local c(u64 K, u64 V).
+#local a(u64 K, u64 V).
+#local b(u64 K, u64 V).
+#local p(u64 K, u64 V).
+
+c(K, V) : src_c(K, V).
+a(K, V) : c(K, V).
+b(K, V) : c(K, V).
+p(K, V) : a(K, V).
+p(K, V) : b(K, V).
+
+out_p(K, V) : p(K, V).

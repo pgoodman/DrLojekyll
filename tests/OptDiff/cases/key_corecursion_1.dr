@@ -1,0 +1,36 @@
+; P6.2 exit-gate carrier: @key-bearing co-recursion with a NON-VACUOUS
+; (JOIN-in-cycle) back-edge so the p<->q SCC survives opt-mode canonicalization
+; (mirrors corecursion_1's ping:pong,add_edge). It exhibits BOTH P6.2 promotion
+; discriminator arms:
+;   PROMOTE (all producers agree): q's SOLE producer q:p routes p's fields into
+;     q, and lookup:q routes q into lookup -> the classes {lookup.K, p.K, q.K}
+;     and {lookup.V, p.V, q.V} form (rep = lookup's field, union-by-min).
+;   DO-NOT-PROMOTE (multi-source / co-occurrence -- the F16 trap): p has TWO
+;     frozen base producers a and b feeding p.K from DIFFERENT sources, so p.K is
+;     NOT head-source-promoted and a.K/b.K stay DISTINCT singletons (a buggy
+;     any-producer union would wrongly merge a.K==b.K -- absence from any
+;     shared-field line is the byte referee).
+; @key rides p/q (P5 declared-key render); a bound #query reads q (a request
+; port). The answer is a complete read (full-materialization backend), so this
+; .stdout is answer-invariant across all four optimization modes; the .region
+; sidecar pins the appended rule/shared-field block per mode.
+#message base_a(u64 K, u64 V).
+#message base_b(u64 K, u64 V).
+#message edge(u64 X, u64 V).
+#message out_pair(u64 K, u64 V).
+
+#local a(u64 K, u64 V).
+#local b(u64 K, u64 V).
+#local p(u64 K, u64 V) @key(K).
+#local q(u64 K, u64 V) @key(K).
+
+a(K, V) : base_a(K, V).
+b(K, V) : base_b(K, V).
+
+q(K, V) : p(K, V).
+p(K, V) : q(K, X), edge(X, V).
+p(K, V) : a(K, V).
+p(K, V) : b(K, V).
+
+out_pair(K, V) : q(K, V).
+#query lookup(bound u64 K, free u64 V) : q(K, V).

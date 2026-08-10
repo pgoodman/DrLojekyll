@@ -12,5 +12,7 @@ region R0  owner=program-root  parents=()  children=() {
   row-contract  E0  rel=                   member-key=()        support=monotone
   row-contract  E1  rel=user_is_logged_in  member-key=(UserId)  support=monotone
   row-contract  E2  rel=user               member-key=(UserID)  support=monotone
+  rule  R1  produces=user_is_logged_in  routes=(user.UserID->user_is_logged_in.UserId)
+  shared-field  F0  members=(user_is_logged_in.UserId, user.UserID)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=2 result-ports=0 row-contracts=3

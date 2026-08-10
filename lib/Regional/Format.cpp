@@ -12,6 +12,7 @@
 #include <drlojekyll/Regional/Regional.h>
 
 #include <algorithm>
+#include <map>
 #include <string>
 #include <variant>
 #include <vector>
@@ -235,6 +236,38 @@ static std::string RenderDeclaredPathText(const RelationSchema &schema,
   return out;
 }
 
+// P6.2: the relation name for a RelationId (linear scan over relation_schemas,
+// like the P6.1 recursive-component member-name lookup).
+static std::string RelNameOf(const RegionTemplate &R, RelationId id) {
+  for (const RelationSchema &s : R.relation_schemas) {
+    if (s.id.v == id.v) {
+      return std::string(s.decl.NameAsString());
+    }
+  }
+  return {};
+}
+
+// P6.2: "relName.paramName" for a SymbolicFieldId, via the interner's inverse.
+// The interner is small; a linear scan keeps the render side-effect-free.
+static std::string SymFieldText(const RegionTemplate &R,
+                                const RegionInstanceRelations &inst,
+                                SymbolicFieldId f) {
+  for (const auto &[key, id] : inst.symbolic_field_table) {
+    if (id.v != f.v) {
+      continue;
+    }
+    const RelationId rel{key.first};
+    const uint32_t ord = key.second;
+    for (const RelationSchema &s : R.relation_schemas) {
+      if (s.id.v == rel.v) {
+        return std::string(s.decl.NameAsString()) + "." +
+               std::string(s.decl.NthParameter(ord).NameAsString());
+      }
+    }
+  }
+  return {};
+}
+
 }  // namespace
 
 OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
@@ -401,6 +434,71 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
         os << name;
       }
       os << ")\n";
+    }
+
+    // P6.2 rule block: one line per PRODUCER CLAUSE that carries at least one
+    // frozen route (empty-body_to_head base-case rules are stored for promotion
+    // but render nothing). OWN literal width (NOT kind_w — E-K5-PAD). Rendered in
+    // stored order (the dense per-clause ordinal, RuleId), so rendered ids may be
+    // non-contiguous (base-case producers occupy ids but emit no line). A route
+    // renders as srcRel.srcName->headRel.headName.
+    bool any_rule = false;
+    for (const RuleRoutingProjection &r : R.rules) {
+      if (!r.body_to_head.empty()) {
+        any_rule = true;
+        break;
+      }
+    }
+    if (any_rule) {
+      for (const RuleRoutingProjection &r : R.rules) {
+        if (r.body_to_head.empty()) {
+          continue;
+        }
+        os << "  rule  R" << r.id.v << "  produces=" << RelNameOf(R, r.head)
+           << "  routes=(";
+        for (size_t k = 0u; k < r.body_to_head.size(); ++k) {
+          if (k) {
+            os << ", ";
+          }
+          os << SymFieldText(R, p.Instances(), r.body_to_head[k].first) << "->"
+             << SymFieldText(R, p.Instances(), r.body_to_head[k].second);
+        }
+        os << ")\n";
+      }
+    }
+
+    // P6.2 shared-field block: one line per PROMOTED class (size >= 2 members),
+    // by representative F<rep> (the class-minimum SymbolicFieldId, union-by-min).
+    // Singleton classes are NOT rendered (noise). Members ascend by
+    // SymbolicFieldId (== the seed order == relation_schemas E-order x ordinal).
+    // OWN literal width. Gated on any non-singleton class.
+    {
+      std::map<uint32_t, std::vector<uint32_t>> classes;  // rep -> members.
+      for (uint32_t f = 0u; f < R.inherited_symbolic_fields.size(); ++f) {
+        classes[R.inherited_symbolic_fields[f].v].push_back(f);
+      }
+      bool any_shared = false;
+      for (const auto &[rep, mem] : classes) {
+        if (mem.size() >= 2u) {
+          any_shared = true;
+          break;
+        }
+      }
+      if (any_shared) {
+        for (const auto &[rep, mem] : classes) {
+          if (mem.size() < 2u) {
+            continue;
+          }
+          os << "  shared-field  F" << rep << "  members=(";
+          for (size_t k = 0u; k < mem.size(); ++k) {
+            if (k) {
+              os << ", ";
+            }
+            os << SymFieldText(R, p.Instances(), SymbolicFieldId{mem[k]});
+          }
+          os << ")\n";
+        }
+      }
     }
   }
   os << "}\n";

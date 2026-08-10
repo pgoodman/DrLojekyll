@@ -15,5 +15,8 @@ region R0  owner=program-root  parents=()  children=() {
   row-contract    E1  rel=never  member-key=(B)     support=monotone
   row-contract    E2  rel=p      member-key=(A, B)  support=monotone
   row-contract    E3  rel=r      member-key=(A)     support=monotone
+  rule  R0  produces=q  routes=(p.B->q.B)
+  rule  R1  produces=never  routes=(p.B->never.B)
+  shared-field  F0  members=(q.B, never.B, p.B)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=2 result-ports=0 row-contracts=4

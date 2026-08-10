@@ -1,0 +1,31 @@
+region-program
+program-root {
+  input-abi   base_a/2(K:u64, V:u64)           -> R0 via P0
+  input-abi   base_b/2(K:u64, V:u64)           -> R0 via P1
+  input-abi   edge/2(X:u64, V:u64)             -> R0 via P2
+  query-abi   lookup(K:bound u64, V:free u64)  -> request-port P4
+  output-abi  out_pair/2(K:u64, V:u64)         -> R0 via P3
+}
+region R0  owner=program-root  parents=()  children=() {
+  input-port    P0  message=base_a/2    fields=(K, V)
+  input-port    P1  message=base_b/2    fields=(K, V)
+  input-port    P2  message=edge/2      fields=(X, V)
+  result-port   P3  message=out_pair/2  fields=(K, V)
+  request-port  P4  query=lookup/2  bound=(K)  plan=full-scan-filter
+  row-contract  E0  rel=lookup  member-key=(K, V)  support=monotone
+  row-contract  E1  rel=a       member-key=(K, V)  support=monotone
+  row-contract  E2  rel=b       member-key=(K, V)  support=monotone
+  row-contract  E3  rel=p       member-key=(K, V)  support=monotone
+  row-contract  E4  rel=q       member-key=(K, V)  support=monotone
+  declared-key  E3  rel=p       path=(K)
+  declared-key  E4  rel=q       path=(K)
+  recursive-component  C0  members=(p, q)
+  rule  R0  produces=lookup  routes=(q.K->lookup.K, q.V->lookup.V)
+  rule  R3  produces=p  routes=(q.K->p.K)
+  rule  R4  produces=p  routes=(a.K->p.K, a.V->p.V)
+  rule  R5  produces=p  routes=(b.K->p.K, b.V->p.V)
+  rule  R6  produces=q  routes=(p.K->q.K, p.V->q.V)
+  shared-field  F0  members=(lookup.K, p.K, q.K)
+  shared-field  F1  members=(lookup.V, p.V, q.V)
+}
+census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=3 result-ports=1 row-contracts=5

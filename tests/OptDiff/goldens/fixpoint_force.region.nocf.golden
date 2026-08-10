@@ -1,0 +1,17 @@
+region-program
+program-root {
+  input-abi   src_c/2(K:u64, V:u64)  -> R0 via P0
+  output-abi  out_p/2(K:u64, V:u64)  -> R0 via P1
+}
+region R0  owner=program-root  parents=()  children=() {
+  input-port    P0  message=src_c/2  fields=(K, V)
+  result-port   P1  message=out_p/2  fields=(K, V)
+  row-contract  E0  rel=c  member-key=(K, V)  support=monotone
+  row-contract  E1  rel=a  member-key=(K, V)  support=monotone
+  row-contract  E2  rel=b  member-key=(K, V)  support=monotone
+  rule  R1  produces=a  routes=(c.K->a.K, c.V->a.V)
+  rule  R2  produces=b  routes=(c.K->b.K, c.V->b.V)
+  shared-field  F0  members=(c.K, a.K, b.K)
+  shared-field  F1  members=(c.V, a.V, b.V)
+}
+census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=1 row-contracts=3

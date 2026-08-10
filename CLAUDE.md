@@ -706,8 +706,47 @@ never propagate a narrative constant.
 > gated own-width `recursive-component  C<k>  members=(…)` block (NO census count — the P5
 > declared-key precedent, so only recursive dumps move). Grounded + adversarially critiqued (the
 > panel refuted an insert-arm formulation empirically; the origin projection is the survivor) in
-> `docs/proposals/RegionalDataFlowCore.artifacts/p6-grounding.md`. **P6.2** (`rules` /
-> `RuleRoutingProjection` / `SymbolicFieldId` promotion) is the next grounded cut.
+> `docs/proposals/RegionalDataFlowCore.artifacts/p6-grounding.md`.
+
+> **P6.2 LANDED (session 22): typed edge-local routing + SymbolicFieldId promotion (compile-time,
+> codegen BYTE-UNCHANGED).** The two last RESERVED-EMPTY routing fields are now populated (the P6
+> compile-time first cut is COMPLETE). `struct RuleRoutingProjection { RuleId id; RelationId head;
+> vector<pair<SymbolicFieldId,SymbolicFieldId>> body_to_head; }` — ONE per PRODUCER CLAUSE of a
+> frozen relation (a `(body_field, head_field)` pair = a directed value-flow for one SHARED clause
+> variable). Built CLAUSE-SOURCE, not DataFlow-source: the post-Optimize graph CSE-merges
+> co-recursive relations onto one model table (ping/pong share `eqset=8 table=%table:4`) and LOSES
+> per-relation field identity, whereas the parsed clauses retain it — the SAME lesson that flipped
+> P6.1's insert-arm (p6.2-grounding.md §1.1). Three anon-namespace statics in `Planning.cpp`
+> (wired into `FrozenRegionalProgram::Build` after the P6.1 populate, before census):
+> `AssignSymbolicFields` (seeds ONE region-global `SymbolicFieldId` per (relation, ordinal) into the
+> new `RegionInstanceRelations::symbolic_field_table` interner — peer of the P5 `schema_table`,
+> DISTINCT domain, HP-9 dense order); `BuildRuleRoutingProjections` (the clause walk over
+> frozen-relation-filtered POSITIVE body predicates — `ParsedDeclaration::Of(pred).Id() ∈
+> relation_schemas` — matching head-pos↔body-pos by clause-scoped `ParsedVariable::Id()` equality;
+> RuleId = dense per-clause ordinal; a clause with no frozen route is STILL stored empty as a
+> BASE-CASE producer that BLOCKS promotion; negated/aggregate/@product body atoms do NOT participate
+> — a sound under-approximation, F18/Q5); `PromoteSharedSymbolicField` (a `while(changed)` union-find
+> FIXPOINT — F28 — with a DIRECTIONAL per-head-field primitive: union `SymFld(H,j)` with source class
+> `s` iff EVERY producer clause of H sources H.j from exactly ONE frozen body field and all agree —
+> an empty source = base case = NO promotion, ≥2 sources = a JOIN = ambiguous = NO promotion, the
+> F16 co-occurrence trap; union-by-min gives a deterministic class-minimum rep, stored into
+> `inherited_symbolic_fields`; the reconstruction-diffs `ProducerRulesOf(f_a)∪ProducerRulesOf(f_b)`
+> union was INCOHERENT across relations and this is the corrected survivor). `-region-out` renders a
+> gated own-width `rule R<k> produces=<rel> routes=(src.f->head.f, …)` block (empty-route base
+> producers occupy RuleIds but emit no line → rendered ids non-contiguous) + a `shared-field F<rep>
+> members=(rel.f, …)` block (promoted classes size≥2 only), AFTER the recursive-component block, NO
+> census count (P6.1/P5 precedent). Codegen BYTE-UNCHANGED (nobody outside `lib/Regional` reads
+> `rules`/`inherited_symbolic_fields`/`SymbolicFieldId`; `Program::Build` reads `DataFlowGraph()`).
+> Grounded + 4-refuter EMPIRICAL opus panel (zero blocking; C1 fixed the exit-gate carrier's vacuous
+> copy-cycle to a JOIN-in-cycle so `members=(p,q)` survives opt canonicalization; C2 added the F28
+> anti-single-pass referee) in `p6.2-grounding.md`. Carriers: NEW `key_corecursion_1` (@key
+> co-recursion — PROMOTE arm `shared-field members=(lookup.K, p.K, q.K)` + F16 DO-NOT-PROMOTE arm =
+> `a.K`/`b.K` ABSENT) and `fixpoint_force` (the F28 referee — nodf/none `shared-field members=(c.K,
+> p.K, a.K, b.K)`; a single-pass bug drops `p.K`); `corecursion_1`/`tc_nonlinear_diff`/`key_partial_1`
+> + ~17 more region goldens gained a pure `rule`/`shared-field` SUFFIX (every prior line
+> byte-identical; 30 region goldens moved, 2 new cases). Gate GREEN: OptDiff **SUITE: PASS (226)**,
+> ctest **5/5**, codegen byte-stable. **P6 compile-time first cut COMPLETE; P6.3–P6.6 (runtime
+> evaluation — fusion / cyclic activation / joint fixpoint / DRed) is a LATER, separately-gated cut.**
 
 > **P3 LANDED (session 18): the RequestEdge/FactDerivation acyclic slice.** The frozen program now
 > owns a TYPED P3 model beside the `RegionTemplate` — `include/drlojekyll/Regional/RegionInstance.h`

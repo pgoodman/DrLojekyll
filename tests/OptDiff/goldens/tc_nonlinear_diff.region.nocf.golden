@@ -11,5 +11,10 @@ region R0  owner=program-root  parents=()  children=() {
   row-contract    E1  rel=edge       member-key=(From, To)  support=differential
   row-contract    E2  rel=tc         member-key=(From, To)  support=differential
   recursive-component  C0  members=(tc)
+  rule  R0  produces=reachable  routes=(tc.From->reachable.From, tc.To->reachable.To)
+  rule  R2  produces=tc  routes=(edge.From->tc.From, edge.To->tc.To)
+  rule  R3  produces=tc  routes=(tc.From->tc.From, tc.To->tc.To)
+  shared-field  F0  members=(reachable.From, tc.From)
+  shared-field  F1  members=(reachable.To, tc.To)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=0 row-contracts=3

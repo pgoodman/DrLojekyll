@@ -9,5 +9,9 @@ region R0  owner=program-root  parents=()  children=() {
   row-contract  E0  rel=ping  member-key=(A, B)  support=monotone
   row-contract  E1  rel=pong  member-key=(A, B)  support=monotone
   recursive-component  C0  members=(ping, pong)
+  rule  R1  produces=ping  routes=(pong.A->ping.A)
+  rule  R2  produces=pong  routes=(ping.A->pong.A, ping.B->pong.B)
+  shared-field  F0  members=(ping.A, pong.A)
+  shared-field  F1  members=(ping.B, pong.B)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=1 row-contracts=2

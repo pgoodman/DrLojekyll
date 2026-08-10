@@ -16,5 +16,8 @@ region R0  owner=program-root  parents=()  children=() {
   row-contract    E0  rel=q_outer  member-key=(X, Y)  support=monotone
   row-contract    E1  rel=q_proj   member-key=(X)     support=monotone
   row-contract    E2  rel=outer    member-key=(X, Y)  support=monotone
+  rule  R0  produces=q_outer  routes=(outer.X->q_outer.X, outer.Y->q_outer.Y)
+  shared-field  F0  members=(q_outer.X, outer.X)
+  shared-field  F1  members=(q_outer.Y, outer.Y)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=3 result-ports=0 row-contracts=3
