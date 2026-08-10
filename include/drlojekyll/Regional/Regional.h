@@ -152,12 +152,23 @@ struct RequestPortRecord {
   AccessPlan plan{AccessPlan::kRetainedIndexScan};
 };
 
-// RESERVED-EMPTY typed types at P2 (structural reservation only; P6 adds their
-// fields when the P3/P6 authority types they will reference exist). Populated
-// by nobody at P2 — the false-start certification (freeze is a pure read, no
+// RESERVED-EMPTY typed type at P2 (structural reservation only; P6.2 adds its
+// field map when the SymbolicFieldId routing authority exists). Populated by
+// nobody before P6.2 — the false-start certification (freeze is a pure read, no
 // recognition pass) holds by construction.
 struct RuleRoutingProjection {};   // P6.2 is the sole populator.
-struct RecursiveComponent {};      // P6.1 is the sole populator.
+
+// P6.1: a query-independent recursive component — the set of frozen relations
+// whose rows are materialized within ONE multi-view DataFlow stratum (an SCC
+// cycle; Stratify: "a recursive fixpoint is exactly a multi-view stratum").
+// A SELF-recursive relation is a size-1 `members` over a multi-view stratum; a
+// co-recursion is a size-N members over the shared stratum. Members are
+// sorted-unique by `RelationId` (== `decl.Id()`, the golden-order authority).
+// Populated by `ComputeRecursiveComponents` (Planning.cpp) — the SOLE populator;
+// a compile-time observer of the per-mode graph, driving NO codegen at P6.1.
+struct RecursiveComponent {
+  std::vector<RelationId> members;
+};
 
 // The ONE typed owner: the Stage-B region skeleton as typed records.
 struct RegionTemplate {

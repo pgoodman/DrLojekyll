@@ -24,6 +24,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <optional>
+#include <set>
 #include <unordered_set>
 #include <variant>
 #include <vector>
@@ -289,6 +291,86 @@ static unsigned CountBoundQueryRedecls(const ::hyde::Query &query) {
   return count;
 }
 
+// P6.1: the query-independent recursive components — a projection of the
+// DataFlow view-graph SCC condensation (`QueryView::Stratum()`, a Tarjan
+// condensation closing message publish->receive seams, Stratify.cpp) onto the
+// frozen relations. A recursive component IS one MULTI-VIEW stratum (an SCC
+// cycle; Stratify: "a recursive fixpoint is exactly a multi-view stratum"); its
+// members are the frozen relations whose rows are ORIGIN-materialized within it.
+//
+// Sound by (session-21 panel, empirically validated on tc / ping-pong):
+//  (a) a multi-view stratum is a cycle by construction (the "no view is its own
+//      user" invariant forces >=2 views), so SELF-recursion is a size-1 members
+//      over such a stratum — no self-edge check is needed;
+//  (b) `OriginDecls` is seeded at the insert-proxy and migrates ONLY via CSE
+//      folds — strictly NARROWER than "rows flow through" — so a base relation
+//      (edge) whose rows merely pass through a recursive JOIN never lands on the
+//      recursive UNION's origin (edge is correctly excluded from tc's component);
+//  (c) all decls sharing one multi-view stratum are ONE SCC ⟹ one component.
+// It reads NO `rules` (P6.1 ⊥ P6.2). It is a per-compile OBSERVER of the actual
+// (per-mode) graph — MODE-FAITHFUL, not mode-invariant: a canonicalization-
+// stripped vacuous `p:-p` self-loop is a recursive stratum only in the
+// un-optimized modes whose graph still holds it. Query-INDEPENDENT: `Stratum()`
+// is assigned pre-query and a `#query` introduces no dataflow cycle.
+static std::vector<RecursiveComponent> ComputeRecursiveComponents(
+    const ::hyde::Query &query,
+    const std::vector<RelationSchema> &relation_schemas) {
+  std::unordered_set<uint64_t> rel_ids;
+  for (const RelationSchema &schema : relation_schemas) {
+    rel_ids.insert(schema.id.v);
+  }
+
+  // (1) The recursive strata are the MULTI-VIEW ones.
+  std::map<unsigned, unsigned> views_per_stratum;
+  query.ForEachView([&](QueryView v) {
+    if (std::optional<unsigned> s = v.Stratum()) {
+      ++views_per_stratum[*s];
+    }
+  });
+
+  // (2) Project each view's ORIGIN decls onto its stratum, keeping only frozen
+  // relations sitting in a recursive (multi-view) stratum.
+  std::map<unsigned, std::set<uint64_t>> members;  // stratum(ascending) -> rels.
+  query.ForEachView([&](QueryView v) {
+    const std::optional<unsigned> s = v.Stratum();
+    if (!s) {
+      return;
+    }
+    const auto it = views_per_stratum.find(*s);
+    if (it == views_per_stratum.end() || it->second <= 1u) {
+      return;  // A singleton stratum is not an SCC cycle.
+    }
+    for (ParsedDeclaration decl : v.OriginDecls()) {
+      if (rel_ids.count(decl.Id())) {
+        members[*s].insert(decl.Id());
+      }
+    }
+  });
+
+  // (3) One component per non-empty recursive-stratum bucket, in ascending
+  // stratum order; members ascending by RelationId (== decl.Id(), the committed
+  // golden-order authority, matching CollectOriginInteriorDecls).
+  std::vector<RecursiveComponent> out;
+  for (const auto &[stratum, mem] : members) {
+    if (mem.empty()) {
+      continue;
+    }
+    RecursiveComponent component;
+    for (uint64_t id : mem) {  // std::set iterates ascending == RelationId order.
+      component.members.push_back(RelationId{id});
+    }
+    // Tigerstyle internal-consistency belt (NOT anti-stub — the region golden on
+    // the recursive carriers is the discriminating gate; this catches a corrupt
+    // build: an empty or unsorted component).
+    assert(!component.members.empty());
+    assert(std::is_sorted(
+        component.members.begin(), component.members.end(),
+        [](RelationId a, RelationId b) { return a.v < b.v; }));
+    out.push_back(std::move(component));
+  }
+  return out;
+}
+
 }  // namespace
 
 RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
@@ -466,7 +548,12 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
     }
   }
 
-  // `rules` / `recursive_components` stay RESERVED EMPTY (P6.1/P6.2 populate).
+  // ---- P6.1: recursive components — the query-independent SCC projection onto
+  // the frozen relations (`ComputeRecursiveComponents` is the SOLE populator;
+  // compile-time model + render only, codegen byte-unchanged). `rules` stays
+  // RESERVED EMPTY (P6.2 is its sole populator).
+  R.recursive_components =
+      ComputeRecursiveComponents(query, R.relation_schemas);
 
   // ---- CENSUS: DeriveRegionalCensus is the single authority ...
   out.census = DeriveRegionalCensus(query);

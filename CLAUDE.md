@@ -68,9 +68,14 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 176 corner-case programs after the
+(`<name>.dr` + `<name>.main.cpp`, 177 corner-case programs after the
 P1 greenfield cut removed the demand/keyed corpus — symrec_tie_1 is the standing
-determinism witness; agg_distinct_1 pins the aggregate multiplicity
+determinism witness; corecursion_1 is the P6.1 co-recursion witness
+(mutual `ping`/`pong` → ONE `recursive-component  members=(ping, pong)`; its
+region goldens the co-recursion pin, beside tc_nonlinear_diff's self-recursion
+`members=(tc)`, two_inductions' TWO-independent-components, and recursion's
+mode-FAITHFUL 0-vs-5 witness — un-optimized modes surface vacuous self-loops
+canonicalization strips); agg_distinct_1 pins the aggregate multiplicity
 semantics + carries a `.contract` golden; barrier_neck_1
 witnesses the `:-` separator, sugar for `@barrier` between every two
 body conjuncts, its df.opt golden pinning the staged-binary-vs-3-way
@@ -688,6 +693,21 @@ the demand-guarded pub and under-answer). The eqgate family is SIX as of
 never propagate a narrative constant.
 
 ## The frozen regional layer (Stage B, RegionalDataFlowCore — LANDED)
+
+> **P6.1 LANDED (session 21): query-independent recursive components (compile-time, codegen
+> BYTE-UNCHANGED).** `RegionTemplate.recursive_components` (was RESERVED-EMPTY) is now populated by
+> `ComputeRecursiveComponents` (Planning.cpp, the SOLE populator): a projection of the DataFlow
+> multi-view-stratum SCC condensation (`QueryView::Stratum()`, message-seam-closing) onto the frozen
+> relations via `OriginDecls` — a MULTI-VIEW stratum IS an SCC cycle (self-recursion = a size-1
+> `members`; co-recursion = size-N), and `OriginDecls` is narrower than rows-flow-through so a base
+> relation (edge) is excluded from tc's component. It reads NO `rules` (P6.1 ⊥ P6.2). MODE-FAITHFUL
+> (a per-compile observer of the actual graph — un-optimized modes surface vacuous self-loops opt
+> strips). `RecursiveComponent` gains `std::vector<RelationId> members`; `-region-out` renders a
+> gated own-width `recursive-component  C<k>  members=(…)` block (NO census count — the P5
+> declared-key precedent, so only recursive dumps move). Grounded + adversarially critiqued (the
+> panel refuted an insert-arm formulation empirically; the origin projection is the survivor) in
+> `docs/proposals/RegionalDataFlowCore.artifacts/p6-grounding.md`. **P6.2** (`rules` /
+> `RuleRoutingProjection` / `SymbolicFieldId` promotion) is the next grounded cut.
 
 > **P3 LANDED (session 18): the RequestEdge/FactDerivation acyclic slice.** The frozen program now
 > owns a TYPED P3 model beside the `RegionTemplate` — `include/drlojekyll/Regional/RegionInstance.h`

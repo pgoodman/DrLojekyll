@@ -1,0 +1,19 @@
+; Co-recursion carrier (session-21 P6.1): two MUTUALLY recursive relations
+; `ping` and `pong` form ONE strongly-connected component (ping from pong,
+; pong from ping). The regional model's `recursive-component` block must group
+; them as ONE component members=(ping, pong) spanning the cycle: a size-2
+; members list is the co-recursion signal, distinct from tc's size-1
+; self-recursion. There is NO `#query`; recursion detection runs off the
+; DataFlow SCC condensation (Stratify), which is query-independent. Results are
+; observed through the published `reachable_pair` message.
+#message add_edge(u64 From, u64 To).
+#message reachable_pair(u64 From, u64 To).
+
+#local ping(u64 A, u64 B).
+#local pong(u64 A, u64 B).
+
+ping(A, B) : add_edge(A, B).
+pong(A, B) : ping(A, B).
+ping(A, B) : pong(A, X), add_edge(X, B).
+
+reachable_pair(A, B) : ping(A, B).

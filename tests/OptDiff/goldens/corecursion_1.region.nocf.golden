@@ -1,0 +1,13 @@
+region-program
+program-root {
+  input-abi   add_edge/2(From:u64, To:u64)        -> R0 via P0
+  output-abi  reachable_pair/2(From:u64, To:u64)  -> R0 via P1
+}
+region R0  owner=program-root  parents=()  children=() {
+  input-port    P0  message=add_edge/2        fields=(From, To)
+  result-port   P1  message=reachable_pair/2  fields=(From, To)
+  row-contract  E0  rel=ping  member-key=(A, B)  support=monotone
+  row-contract  E1  rel=pong  member-key=(A, B)  support=monotone
+  recursive-component  C0  members=(ping, pong)
+}
+census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=1 row-contracts=2

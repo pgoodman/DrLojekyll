@@ -374,6 +374,34 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
            << "path=" << RenderDeclaredPathText(schema, path) << "\n";
       }
     }
+
+    // P6.1 recursive-component block: one line per recursive component, appended
+    // AFTER the declared-key block. Gated on non-empty `recursive_components` (a
+    // non-recursive program emits nothing → no golden moves), so — like the P5
+    // declared-key block — this carries NO census count. Rendered with its OWN
+    // literal spacing: "recursive-component" (19 chars) is NOT folded into the
+    // shared `kind_w` column (E-K5-PAD — it would re-pad every row-contract/port
+    // line in a recursive dump). Members render by NAME in ascending-RelationId
+    // order (the golden-order authority). MODE-FAITHFUL: an un-optimized graph's
+    // surviving vacuous self-cycle shows here where the optimized graph strips it.
+    for (auto c = 0u; c < R.recursive_components.size(); ++c) {
+      const RecursiveComponent &comp = R.recursive_components[c];
+      os << "  recursive-component  C" << c << "  members=(";
+      for (auto m = 0u; m < comp.members.size(); ++m) {
+        if (m) {
+          os << ", ";
+        }
+        std::string name;
+        for (const RelationSchema &schema : R.relation_schemas) {
+          if (schema.id.v == comp.members[m].v) {
+            name = std::string(schema.decl.NameAsString());
+            break;
+          }
+        }
+        os << name;
+      }
+      os << ")\n";
+    }
   }
   os << "}\n";
 

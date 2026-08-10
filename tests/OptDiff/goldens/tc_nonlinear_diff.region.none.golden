@@ -10,5 +10,6 @@ region R0  owner=program-root  parents=()  children=() {
   row-contract    E0  rel=reachable  member-key=(From, To)  support=differential
   row-contract    E1  rel=edge       member-key=(From, To)  support=differential
   row-contract    E2  rel=tc         member-key=(From, To)  support=differential
+  recursive-component  C0  members=(tc)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=0 row-contracts=3
