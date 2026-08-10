@@ -4,8 +4,8 @@ Session 22 close (2026-08-10). Branch `keyed-instances`. **P1 + P2 + P3 + P4 + P
 LANDED** (compile-clean, OptDiff **SUITE: PASS (226)**, ctest **5/5**). **The P6 COMPILE-TIME first cut
 is COMPLETE.** This seed supersedes `session-22-whole-program-seed.md` §1 for the Regional layer — P6.2
 added the `rules`/`inherited_symbolic_fields`/`SymbolicFieldId` routing authority + its `-region-out`
-render. It is the START-HERE backbone for **session 23**, whose headline is a FORK: the RUNTIME cut
-(P6.3–P6.6) vs the PHYSICAL cut (P7–P9).
+render. It is the START-HERE backbone for **session 23**, whose headline is a FORK — RANKED in §3 as **P7
+(physical cut) #1, the runtime cut (P6.3–P6.6) #2** — to confirm with the owner at the [OWNER STOP].
 
 **GREENFIELD RULING (owner), still governing THROUGH P6.2.** Every gate so far is STRUCTURAL, never
 answer-equality (the M3 backend answers correctly; the regional model is a compile-time observer).
@@ -97,9 +97,17 @@ Recursive structure   recursive_components (SCC)                             (P6
 RequestEdge   exact ownership, ACYCLIC forest        RuleActivationEdge  derivation dep, MAY cycle (P6.4 — DORMANT)
 ```
 
-## §3. The path forward as diffs — THE FORK (settle the ranking at the [OWNER STOP])
+## §3. The path forward as diffs — THE FORK (RANKED: P7 first; confirm with the owner at the [OWNER STOP])
 
-### (A) The RUNTIME cut — P6.3–P6.6 (real evaluation; TOUCHES codegen/runtime; answer-equality gates begin)
+> **RANKING (session-22 close): P7 #1, the runtime cut (P6.3–P6.6) #2.** Reasoning in the
+> "Recommendation" block at the end of this section. In short: P7 is closer to a PREREQUISITE than an
+> alternative — P6.3 fusion's payoff (co-recursive relations sharing ONE frontier keyed on the common
+> prefix) is a PHYSICAL arrangement, exactly what P7 builds; doing the runtime cut first fuses onto a
+> placeholder full-scan and gets re-touched at P7 anyway. P7 also keeps the structural-gate cadence
+> that landed P2–P6.2, is already deeply critiqued (s14-15), and finally makes a narrow `@key` SEEK
+> (closing the branch's namesake arc). The ranking is the owner's to confirm.
+
+### (A) The RUNTIME cut — P6.3–P6.6 (real evaluation; TOUCHES codegen/runtime; answer-equality gates begin) [RANKED #2]
 Authority: `keyed-rewrite-reconstruction-diffs.md §3-P6.3..P6.6` (lines ~579+) + `next-session-prompt.md`
 Phase 6 steps 3-6 + memory `mobius-differential-dataflow` / `free-termination-paper`. The LARGEST,
 riskiest cut — the honest end state (replace M3) but MUST be heavily sub-sliced. Sketch:
@@ -121,7 +129,7 @@ Exit-gate character: answer-equality vs the M3 backend BECOMES legitimate (cross
 (one-frontier-per-K, no-refcount liveness, acyclic-request/cyclic-activation separation). Flag to the
 owner: this is where the greenfield structural-only posture ENDS.
 
-### (B) The PHYSICAL cut — P7 (then P8/P9) (keeps the compile-time-observer posture one more layer)
+### (B) The PHYSICAL cut — P7 (then P8/P9) (keeps the compile-time-observer posture one more layer) [RANKED #1]
 Authority: `keyed-rewrite-p7p9-diffs.md` + `keyed-rewrite-p7p9-critique.md` (deeply critiqued s14-15).
 ```
 # P7  AccessPlan its own domain with REAL hash/trie paths — where a narrow @key first PAYS.
@@ -137,18 +145,47 @@ Authority: `keyed-rewrite-p7p9-diffs.md` + `keyed-rewrite-p7p9-critique.md` (dee
 Exit-gate character: STILL structural (greenfield discipline intact) — a trie plan proven to not rescan;
 codegen changes are honest-plan reads (the P4 precedent), answer-invariant vs the M3 backend.
 
-**Recommendation to bring to the owner (the ranking is theirs):** (B)/P7 keeps the tractable
-structural-gate cadence that landed P2–P6.2 and CASHES the P5/@key + P6.2 routing work into a real perf
-win (a narrow key finally seeks instead of scans) — lower risk, clear structural gate, natural next step.
-(A)/P6.3+ is the honest end state (the regional model finally EVALUATES) but is the largest cut, needs
-heavy sub-slicing, and flips the gate posture to answer-equality-bearing. A reasonable path: P7 next
-(cash the perf win under the structural gate), then the runtime cut once the physical layer is real.
+**Recommendation (RANKED, session-22 close): P7 #1, the runtime cut #2. Confirm with the owner.**
+
+**Why P7 first (four arguments, strongest first):**
+1. **Dependency ordering — the clincher.** P6.3 fusion is CHOSEN from the common binding prefix over the
+   promoted `SymbolicFieldId` classes (P6.2). But the PAYOFF of fusing — co-recursive relations sharing
+   ONE fixpoint frontier keyed on that prefix — is a PHYSICAL arrangement (a keyed index/trie), which is
+   exactly what P7 builds. Do the runtime cut first and the fused plan fuses onto the placeholder
+   full-scan (the fusion is NOMINAL) and gets re-touched at P7 anyway. P7 is closer to a PREREQUISITE
+   for the runtime cut to be worth doing than an alternative to it. (Precise: P6.3 *detection* is
+   P7-independent, but P6.3+ *realization* + P6.5 evaluation over shared arrangements need P7's physical
+   layer to be non-nominal.)
+2. **Cadence preservation.** The structural-gate compile-time-observer loop has landed 10+ phases cleanly
+   (P2→P6.2). P7 stays inside it (structural gate = "a trie/partial plan must NOT execute the old
+   whole-table rescan"; codegen changes are honest-plan reads, the proven P4 pattern). The runtime cut
+   deliberately BREAKS the cadence (answer-equality gates begin; the dormant activation/derivation half
+   goes live for the first time on real programs). Don't break a working process before the substrate it
+   needs is real.
+3. **Risk-adjusted + already grounded.** P7 is one bounded layer, deeply critiqued s14-15
+   (`keyed-rewrite-p7p9-diffs.md`/`-critique.md`: 15 survivors, 3 blocking corrections folded) — only the
+   anchors need RE-verification at tip. High probability of a clean 1–2 session landing. The runtime cut
+   is unbounded, regime-changing, realistically multi-session with intermediate non-green states.
+4. **Closes the branch's namesake arc.** `keyed-instances` is about `@key` becoming a real specialization:
+   P5 = logical meaning, P6.2 = routing, **P7 = a narrow `@key` finally SEEKS instead of scans** — the
+   first time the accumulated model yields FASTER generated code. Demonstrable, satisfying, loop-closing.
+
+**The one condition that flips it (record it):** if the owner's priority is explicitly "prove the
+architecture EVALUATES end-to-end" over "make it faster / finish the @key arc," do NOT take the whole
+runtime cut — spike a **compile-time-only P6.3 fusion-DETECTION slice** first (choose `FusedFixpoint` vs
+`JointFixpoint` at compile time, render it in `-region-out`, codegen unchanged, STRUCTURAL gate). That
+stays in the winning observer cadence, de-risks the big cut, and confirms the P6.2 routing model is
+sufficient before touching runtime — the safe hybrid. Otherwise: **P7 next, then the runtime cut once the
+physical layer is real (and even then, sub-slice it hard, starting with P6.3 detection).**
 
 ## §4. What session 23 should do (the grounding loop)
 1. **Ground the whole program at POST-P6.2** (this seed is the backbone — keep it current). Re-verify
    every anchor for the CHOSEN cut at tip (the P6.3+ reconstruction-diffs anchors PREDATE P1–P6.2; the
    p7p9-diffs anchors were last verified s15 at a different tip — RE-GROUND before trusting).
-2. **SETTLE the (A)-vs-(B) ranking with the owner** at the [OWNER STOP], with the recommendation above.
+2. **CONFIRM the ranking with the owner** at the [OWNER STOP]: the seed recommends **P7 #1** (§3
+   Recommendation — the dependency argument is the clincher: P7 is closer to a prerequisite than an
+   alternative). Present it as a recommendation to ratify/override, not an open fork; note the one
+   flip condition (a "prove it evaluates" priority → a compile-time-only P6.3 detection spike first).
 3. For the chosen cut: run the **build-pseudocode → design-goal diffs → adversarial EMPIRICAL critique →
    IR-desired-states** loop via WORKFLOWS (opus for diffs/critique/judgment; sonnet for mechanical
    census/carrier-dumps/anchor re-verification). VERIFY EMPIRICALLY by compiling throwaway carriers.

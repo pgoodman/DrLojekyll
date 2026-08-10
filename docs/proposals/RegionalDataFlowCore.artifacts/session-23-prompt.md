@@ -21,9 +21,11 @@ The M3 full-materialization backend still EVALUATES; the regional model is still
    `free-termination-paper`. For the PHYSICAL candidate: **`keyed-rewrite-p7p9-diffs.md`** +
    **`keyed-rewrite-p7p9-critique.md`** (both deeply critiqued in sessions 14-15).
 
-## The HEADLINE decision to SETTLE with the owner (do NOT presume)
-The P6 compile-time first cut is done. The next cut is a genuine FORK — settle the ranking at the
-[OWNER STOP]:
+## The HEADLINE decision to CONFIRM with the owner (the seed RANKS it — P7 #1)
+The P6 compile-time first cut is done. The next cut is a FORK the seed §3 already RANKS **P7 #1, the
+runtime cut #2** (the clincher: P7 is closer to a prerequisite than an alternative — P6.3 fusion's
+payoff is a physical arrangement P7 builds; run-first fuses onto a placeholder full-scan). Present the
+ranking to RATIFY/override at the [OWNER STOP], not as an open fork. The two arms:
 - **(A) The RUNTIME cut — P6.3–P6.6.** Begin real recursive EVALUATION in the regional model: P6.3
   fusion (FusedFixpoint vs JointFixpoint from the promoted `SymbolicFieldId` prefix), P6.4
   `DeriveActivationEdge` (the cross-state `RuleActivationEdge`, MAY cycle — the first dormant-half
@@ -40,9 +42,10 @@ The P6 compile-time first cut is done. The next cut is a genuine FORK — settle
   trie / Free Join / COLT (REBUILDS the P5 schema spine region-global over `SymbolicFieldSet`); P9 =
   access-path inference.
 
-The seed §3 lays out both as diffs. Recommend a ranking WITH rationale (the runtime cut is the
-"honest end state" but the largest/riskiest; the physical cut keeps the tractable structural-gate
-cadence and cashes the P5/@key work into a real perf win) — but the RANKING is the owner's.
+The seed §3 lays out both as diffs and carries the full ranked rationale (dependency ordering, cadence
+preservation, risk, and the @key-arc close) plus the ONE flip condition: if the owner's priority is
+"prove it EVALUATES end-to-end" over "make it faster," spike a compile-time-only P6.3 fusion-DETECTION
+slice first (still observer cadence), not the whole runtime cut. The ranking is the owner's to confirm.
 
 ## Standing rulings (do not re-litigate)
 - **GREENFIELD**: compiler not in use. Through P6.2 every gate is STRUCTURAL, never answer-equality.
