@@ -8,17 +8,21 @@ from the `AccessPlan` authority. The M3 full-materialization backend still EVALU
 Regional layer is a compile-time observer that now steers codegen via P4's plan-select + P7's seek.
 
 ## Read first (resume authority, in order)
-1. **`p7-execution-grounding.md`** — the LANDED P7 record (the CURRENT-CODE grounding): §1 the
-   Q1a-vs-Q1b scope fork (owner ratified **Q1a broad** — the seek fires on ANY partial binding, NOT
-   gated on `@key`; the P5↔physical firewall stays UP), §2 the seven open-Q resolutions, §3 the
-   five landed diffs (D1 enum split, D2 dispatch, D5 no-op, D6 belt, D8 test) + execution order, §4
-   the empirical-spike results, §5 IR states, §6 the exit gate.
-2. **memory `regional-dataflow-core-epoch`** (P7 banner at the head) + **`greenfield-rewrite-motivation`**.
-3. **`p7-grounding-seed.md`** (§1 the as-is pseudocode is still accurate for the freeze/codegen path;
-   §2 the P4-substrate reconciliation; §3 the P7 diffs now LANDED — read as history).
-4. For the physical layers: **`keyed-rewrite-p7p9-diffs.md` §2 (P8) / §3 (P9)** +
+1. **`session-24-whole-program-seed.md`** — THE START-HERE: §0 status, **§1 the grounded
+   whole-program pipeline pseudocode** (compile driver → DataFlow → Regional freeze → ControlFlow+Rel
+   → codegen → runtime, every anchor at tip), **§2 the path forward as DIFFS on that pseudocode**
+   (P7b / P6.3–P6.6 / P8-P9, each with a discriminating gate), §3 the four-authority↔cut map, §4 the
+   next-cut decision, §5 the per-candidate open questions. This is the pseudocode + diffs the
+   grounding loop starts FROM (re-verify its anchors at tip — the pipeline drifts each session).
+2. **`p7-execution-grounding.md`** — the LANDED P7 record: §1 the Q1a-vs-Q1b scope fork (owner
+   ratified **Q1a broad**), §2 the seven open-Q resolutions, §3 the five landed diffs + order, §4 the
+   empirical-spike results, §5 IR states, §6 the exit gate. The method exemplar for this session.
+3. **memory `regional-dataflow-core-epoch`** (P7 banner at the head) + **`greenfield-rewrite-motivation`**.
+4. **`p7-grounding-seed.md` §1** (the P7-scoped freeze/codegen pseudocode — more line-detail on the
+   query path than the whole-program seed) — read for the codegen anchors.
+5. For the physical layers: **`keyed-rewrite-p7p9-diffs.md` §2 (P8) / §3 (P9)** +
    **`keyed-rewrite-p7p9-critique.md`** (the s14–15 design; PARTLY STALE — predate P4/P5/P6/P7; trust
-   `p7-execution-grounding.md` §2-Q6 and the P7 banner for what is #query-path-only vs interior).
+   the whole-program seed §2 and `p7-execution-grounding.md` §2-Q6 for #query-path-only vs interior).
    For the runtime layers: **`reconstruction-diffs.md` §3-P6.3..P6.6** + the memory
    `demand-cost-model` / `mobius-differential-dataflow` / `free-termination-paper` theory tier.
 
@@ -49,18 +53,35 @@ execution go/no-go. If green-lit, execute as one coherent commit with the struct
 (OptDiff `SUITE: PASS`, ctest 5/5; carriers + goldens re-blessed after review; codegen byte-stable
 for every non-affected program), then update CLAUDE.md + the memory topic + write the session-25 seed.
 
-## Method — the grounding loop, via WORKFLOWS, opus + sonnet (the loop that landed P2–P7)
-1. **Pseudocode the as-is** (sonnet re-verify every anchor at tip — the pipeline drifts each session).
-2. **Formulate design-goal diffs at hunk grain** (opus), settle the open questions, each with a
-   DISCRIMINATING STRUCTURAL exit gate.
-3. **Critique adversarially** (opus refuter panel) — **VERIFY EMPIRICALLY**: compile throwaway
-   carriers and dump `-region-out`/`.rel`/`.h`/`.cpp`; for a change with a measurable blast radius,
-   a THROWAWAY-WORKTREE spike (apply the candidate diffs, build `-Werror`, run the full suite,
-   measure the true golden move + answer-invariance, DISCARD) is the decisive de-risk — it caught
-   P7's stale unit expectation and confirmed the Q1a blast radius. Keep the main tree pristine.
-4. **Author the desired IR states** (predict-then-verify, STRUCTURAL pins).
-Model tiering (memory `subagent-model-tiering`): sonnet = anchor re-verification + baseline dumps;
-opus = the design diffs, the refuter panel, the IR states.
+## Method — the grounding loop, run via WORKFLOWS with opus + sonnet (the loop that landed P2–P7)
+Run all four phases below as **workflows** (keep the orchestrator thin; several sequential
+single-phase workflows beat one mega-one; watch the `(await parallel(...)).filter(...)` precedence —
+an un-awaited `.filter` bit two prior sessions). Each phase produces a persisted artifact (extend
+`session-24-whole-program-seed.md` or a new `p<cut>-execution-grounding.md`). Do it **DOCS-ONLY**
+until execution is green-lit.
+
+1. **Build the pseudocode of the algorithms + architecture.** Start from the whole-program seed §1
+   (the grounded as-is) and **re-verify every anchor at tip** — the pipeline drifts each session
+   (sonnet: the freeze/select path, the codegen READ + the two scan surfaces, the mint sites, the
+   runtime). Keep the seed current.
+2. **Formulate design-goal diffs ON that pseudocode** at hunk grain (opus). Start from the seed §2
+   diffs for the chosen cut; settle the §5 open questions. Each diff carries a DISCRIMINATING
+   STRUCTURAL exit gate (what dump/byte differs, and how a bug in that diff is caught).
+3. **Critique the diffs adversarially** (opus refuter panel) — **VERIFY EMPIRICALLY**: compile
+   throwaway carriers and dump `-region-out`/`.rel`/`.ir`/`.h`/`.cpp`; for a change with a measurable
+   blast radius, a **THROWAWAY-WORKTREE spike** (apply the candidate diffs, build `-Werror`, run the
+   full suite, measure the true golden move + answer-invariance, DISCARD — main tree stays pristine)
+   is the decisive de-risk — it caught P7's stale unit expectation and confirmed the Q1a blast radius.
+   Rank survivors; record refuted diffs as certifications.
+4. **Author the desired OUTPUT STATES of the IRs** (predict-then-verify, STRUCTURAL pins): for each
+   affected IR (`.df` / `.rel` / `.ir` / `.region` / generated `.h`/`.cpp`), predict the exact
+   post-change dump on a named carrier, decide precisely which goldens MOVE vs stay byte-identical,
+   then (at execution) build and verify the real dumps match. Sonnet pulls baseline dumps; opus
+   authors the desired states.
+
+Model tiering (memory `subagent-model-tiering`): **sonnet** = the mechanical anchor
+re-verification, baseline carrier dumps, symbol/line grounding; **opus** = the design-goal diffs,
+the adversarial refuter panel, the IR desired-states. Keep the orchestrator thin.
 
 ## Gotchas (carried)
 - clangd diagnostics in this repo are NOISE (no include paths) — trust the real build only.
