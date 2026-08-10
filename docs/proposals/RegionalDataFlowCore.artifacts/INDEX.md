@@ -2,13 +2,24 @@
 
 ## Current resumption authority
 
-Start with **`session-21-prompt.md`** (the current next-session charter) and its
-START-HERE backbone **`session-21-whole-program-seed.md`** (tip `375e8713`, **P1 +
-P2 + P3 + P4 + P5 LANDED**; next actionable = **P6**, recursive regional execution —
-the LARGEST phase, sub-sliced; the headline open decision is compile-time-model
-first cut vs runtime-evaluation engine). The prior charter was **`session-20-prompt.md`**
-+ **`session-20-whole-program-seed.md`** (tip `c546a6a4`, next actionable was P5 —
-now LANDED at `375e8713`).
+Start with **`session-22-prompt.md`** (the current next-session charter) and its
+START-HERE backbone **`session-22-whole-program-seed.md`** (tip `734712c0`, **P1 +
+P2 + P3 + P4 + P5 + P6.1 LANDED**; next actionable = **P6.2**, typed edge-local
+routing + `SymbolicFieldId` promotion — the LAST compile-time slice of P6; the
+headline open decision is the clause-vs-DataFlow rule source, the P6.1 identity
+lesson). The prior charter was **`session-21-prompt.md`** +
+**`session-21-whole-program-seed.md`** (tip `375e8713`, next actionable was P6 —
+P6.1 now LANDED at `734712c0`).
+**P6.1 LANDED (session 21, 2026-08-09)**: query-independent recursive components
+(compile-time, codegen BYTE-UNCHANGED) — `RegionTemplate.recursive_components`
+populated by `ComputeRecursiveComponents` (Planning.cpp) projecting the DataFlow
+multi-view-stratum SCC condensation (`QueryView::Stratum()`, message-seam-closing)
+onto frozen relations via `OriginDecls`; gated own-width `-region-out`
+`recursive-component` block (NO census count); MODE-FAITHFUL; carriers
+`corecursion_1`/`two_inductions`/`recursion`/`tc_nonlinear_diff`; a 3-refuter opus
+panel EMPIRICALLY refuted an insert-arm formulation → the origin projection is the
+survivor. Record: **`p6-grounding.md`** (§6 = the shipped v2 + panel verdict).
+SUITE PASS 224, ctest 5/5.
 **P5 LANDED (session 20, 2026-08-09)**: the partial-binding DAG — the ORDERED
 `DeclaredAccessPath` authority + the per-relation order-free binding-schema DAG
 (`RelSchemaLocalId`/`MaterializePrefixChain`, lazy) interned at freeze from
