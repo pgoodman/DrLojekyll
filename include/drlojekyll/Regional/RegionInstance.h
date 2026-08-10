@@ -255,6 +255,20 @@ static_assert(static_cast<uint8_t>(AccessPlan::kPartialKeyHashSeek) == 3);
 // one arm EmitQueryFriends emits (full-scan cursor / .Find existence / via_index
 // First-Next cursor). kUnplanned is never returned; kTriePrefixWalk excluded (P8).
 
+// The physical AccessPlan render token — the SINGLE source of truth for BOTH the
+// Regional dump (`-region-out`, request-port `plan=`) and the ControlFlow `.ir`
+// interior-scan line (P7b `scan-* … plan=`). Kept inline beside the enum so the two
+// dumps can never drift (p7b-execution-grounding.md §2-Q5).
+inline const char *AccessPlanText(AccessPlan plan) {
+  switch (plan) {
+    case AccessPlan::kUnplanned: return "unplanned";
+    case AccessPlan::kFullScanFilter: return "full-scan-filter";
+    case AccessPlan::kFullKeyHashLookup: return "full-key-hash-lookup";
+    case AccessPlan::kPartialKeyHashSeek: return "partial-key-hash-seek";
+  }
+  return "unplanned";
+}
+
 // P4 always reads a COMPLETE relation (an ordinary unbound-style read); kActiveSubset
 // is a P5 residual-specialization concern.
 enum class AccessCompleteness : uint8_t { kCompleteRelation, kActiveSubset /*P5*/ };

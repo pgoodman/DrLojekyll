@@ -453,6 +453,15 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     scan->index.Emplace(scan, index);
   }
 
+  // P7b: stamp the physical AccessPlan. This is the SOLE LIVE TABLESCAN mint,
+  // and the all-columns-bound case early-returns above (no scan minted), so an
+  // index here always covers a STRICT subset of the columns => codegen emits
+  // the keyed_chain (Index::First/Next) arm => a partial-key hash SEEK; an
+  // absent index (zero bound columns) is an honest full scan. keyed_probe
+  // (all-key .Find) is unreachable on this path, so the two-way form is total.
+  scan->plan_kind = index ? AccessPlan::kPartialKeyHashSeek
+                          : AccessPlan::kFullScanFilter;
+
   for (QueryColumn view_col : view_cols) {
     const auto in_var = seq->VariableFor(impl, view_col);
     scan->in_vars.AddUse(in_var);

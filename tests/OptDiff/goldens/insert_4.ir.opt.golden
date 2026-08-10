@@ -1,0 +1,178 @@
+const u64 @0 = 0
+
+const bool @1 = false
+
+const bool @2 = true
+
+global u64 @29
+
+create %table:4[bool,i32]
+  bool	%col:5
+  i32	%col:6	; X
+
+  %index:7[bool,i32] on %col:5, %col:6
+
+create %table:8[i32]
+  i32	%col:9	; X
+
+  %index:10[i32] on %col:9
+
+create %table:11[bool]
+  bool	%col:12
+
+  %index:13[bool] on %col:12
+
+create %table:14[bool,i32]
+  bool	%col:15
+  i32	%col:16
+
+  %index:17[bool,i32] on %col:15, %col:16
+
+create %table:18[i32]
+  i32	%col:19	; X
+
+  %index:20[i32] on %col:19
+
+create %table:21[i32,bool]
+  i32	%col:22	; X
+  bool	%col:23
+
+  %index:24[i32,bool] on %col:22, %col:23
+  %index:41[_,bool] on %col:23
+
+create %table:25[i32]
+  i32	%col:26	; X
+
+  %index:27[i32] on %col:26
+
+init proc ^init:3()
+  vector-define $empty:94<i32>
+  vector-define $empty:95<i32>
+  seq
+    call ^entry:28($empty:94<i32>, $empty:95<i32>)
+    return-false
+
+proc ^entry:28($param:30<i32>, $param:35<i32>)
+  vector-define $net_additions:33<bool>
+  vector-define $pivots:34<bool>
+  vector-define $add_queue:38<bool,i32>
+  seq
+    par
+      vector-loop {@32} over $param:30<i32>
+        update-count +nonrecursive {@2, @32} in %table:14[bool,i32]
+          if-crossed
+            update-count +nonrecursive {@2} in %table:11[bool]
+              if-crossed
+                par
+                  vector-append {@2} into $net_additions:33<bool>
+                  vector-append {@2} into $pivots:34<bool>
+      vector-loop {@X:37} over $param:35<i32>
+        update-count +nonrecursive {@X:37} in %table:25[i32]
+          if-crossed
+            par
+              check-member in-I {@2} in %table:11[bool]
+                if-absent
+                  update-count +nonrecursive {@2, @X:37} in %table:4[bool,i32]
+                    if-crossed
+                      vector-append {@2, @X:37} into $add_queue:38<bool,i32>
+              update-count +nonrecursive {@X:37, @2} in %table:21[i32,bool]
+                if-crossed
+                  vector-append {@2} into $pivots:34<bool>
+    vector-clear $param:30<i32>
+    vector-clear $param:35<i32>
+    call ^flow:96($net_additions:33<bool>, $pivots:34<bool>, $add_queue:38<bool,i32>)
+    return-false
+
+proc ^receive:log_in/1:85($param:86<i32>)
+  vector-define $empty:88<i32>
+  seq
+    call ^entry:28($param:86<i32>, $empty:88<i32>)
+    return-true
+
+proc ^receive:m/1:89($param:90<i32>)
+  vector-define $empty:92<i32>
+  seq
+    call ^entry:28($empty:92<i32>, $param:90<i32>)
+    return-true
+
+proc ^flow:96($net_additions:33<bool>, $pivots:34<bool>, $add_queue:38<bool,i32>)
+  vector-define $delete_queue:48<bool,i32>
+  vector-define $overdelete:49<bool,i32>
+  vector-define $addition:53<bool,i32>
+  vector-define $net_removals:57<bool,i32>
+  vector-define $net_additions:61<bool,i32>
+  vector-define $delete_queue:68<i32>
+  vector-define $add_queue:72<i32>
+  vector-define $overdelete:73<i32>
+  vector-define $addition:76<i32>
+  vector-define $net_removals:79<i32>
+  vector-define $net_additions:82<i32>
+  seq
+    @29 += 1
+    vector-unique $pivots:34<bool>
+    join-tables
+      vector-loop {@40} over $pivots:34<bool>
+      select {%col:22 as @X:43, %col:23 as @42} from %table:21[i32,bool] using %index:41[_,bool] where %col:23 = @40
+        check-member present {@42} in %table:11[bool]
+          if-member
+            update-count +nonrecursive {@X:43} in %table:18[i32]
+    vector-clear $pivots:34<bool>
+    vector-unique $net_additions:33<bool>
+    vector-loop {@45} over $net_additions:33<bool>
+      scan-table select {@X:47} from %table:25[i32] plan=full-scan-filter
+        check-member in-new {@X:47} in %table:25[i32]
+          if-member
+            update-count -nonrecursive {@45, @X:47} in %table:4[bool,i32]
+              if-crossed
+                vector-append {@45, @X:47} into $delete_queue:48<bool,i32>
+    vector-unique $delete_queue:48<bool,i32>
+    vector-loop {@51, @52} over $delete_queue:48<bool,i32>
+      claim-del {@51, @52} in %table:4[bool,i32]
+        if-claimed
+          vector-append {@51, @52} into $overdelete:49<bool,i32>
+    vector-unique $add_queue:38<bool,i32>
+    vector-loop {@55, @56} over $add_queue:38<bool,i32>
+      claim-add {@55, @56} in %table:4[bool,i32]
+        if-claimed
+          vector-append {@55, @56} into $addition:53<bool,i32>
+    vector-loop {@59, @60} over $overdelete:49<bool,i32>
+      check-member net-deleted {@59, @60} in %table:4[bool,i32]
+        if-member
+          vector-append {@59, @60} into $net_removals:57<bool,i32>
+    vector-loop {@63, @64} over $addition:53<bool,i32>
+      check-member net-added {@63, @64} in %table:4[bool,i32]
+        if-member
+          vector-append {@63, @64} into $net_additions:61<bool,i32>
+    vector-unique $net_removals:57<bool,i32>
+    vector-loop {@66, @X:67} over $net_removals:57<bool,i32>
+      update-count -nonrecursive {@X:67} in %table:8[i32]
+        if-crossed
+          vector-append {@X:67} into $delete_queue:68<i32>
+    vector-unique $net_additions:61<bool,i32>
+    vector-loop {@70, @X:71} over $net_additions:61<bool,i32>
+      update-count +nonrecursive {@X:71} in %table:8[i32]
+        if-crossed
+          vector-append {@X:71} into $add_queue:72<i32>
+    vector-unique $delete_queue:68<i32>
+    vector-loop {@75} over $delete_queue:68<i32>
+      claim-del {@75} in %table:8[i32]
+        if-claimed
+          vector-append {@75} into $overdelete:73<i32>
+    vector-unique $add_queue:72<i32>
+    vector-loop {@78} over $add_queue:72<i32>
+      claim-add {@78} in %table:8[i32]
+        if-claimed
+          vector-append {@78} into $addition:76<i32>
+    vector-loop {@81} over $overdelete:73<i32>
+      check-member net-deleted {@81} in %table:8[i32]
+        if-member
+          vector-append {@81} into $net_removals:79<i32>
+    vector-loop {@84} over $addition:76<i32>
+      check-member net-added {@84} in %table:8[i32]
+        if-member
+          vector-append {@84} into $net_additions:82<i32>
+    commit-sweep %table:4[bool,i32]
+    commit-sweep %table:8[i32]
+    commit-sweep %table:11[bool]
+    return-true
+

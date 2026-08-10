@@ -834,6 +834,13 @@ OutputStream &operator<<(OutputStream &os, ProgramTableScanRegion region) {
       os << "} in " << *index;
     }
 
+    // P7b: the physical AccessPlan token — a gated own-token, so an unplanned
+    // (statically-dead) scan renders byte-identically to pre-P7b. Uses the
+    // single-source `hyde::AccessPlanText` shared with the Regional dump.
+    if (auto plan = region.PlanKind(); plan != AccessPlan::kUnplanned) {
+      os << " plan=" << AccessPlanText(plan);
+    }
+
     os << '\n';
     os.PushIndent();
     os << (*body);

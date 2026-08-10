@@ -2822,6 +2822,27 @@ void Generator::EmitScan(ProgramTableScanRegion region) {
                            input_vars.size() == maybe_index->KeyColumns().size();
   const bool keyed_probe = maybe_index && !keyed_chain &&
                            input_vars.size() == fields.size();
+
+  // P7b V-PLAN-HONEST: the interior-scan emission-fidelity referee. The stored
+  // physical plan (a compile-time SHADOW of the arm this dispatch is about to
+  // emit; RegionInstance.h) must agree with that arm. `kUnplanned` is SKIPPED
+  // (the statically-dead join-pivot mint carries it). Reads only the booleans
+  // already computed here; it never drives the dispatch. Survives NDEBUG
+  // (fprintf+abort, the V-* convention — not `assert`).
+  if (const auto plan = region.PlanKind(); plan != AccessPlan::kUnplanned) {
+    const bool honest =
+        (plan == AccessPlan::kFullScanFilter && !keyed_chain && !keyed_probe) ||
+        (plan == AccessPlan::kPartialKeyHashSeek && keyed_chain) ||
+        (plan == AccessPlan::kFullKeyHashLookup && keyed_probe);
+    if (!honest) {
+      fprintf(stderr,
+              "V-PLAN-HONEST: table scan %u plan=%s but keyed_chain=%d "
+              "keyed_probe=%d\n",
+              id, AccessPlanText(plan), keyed_chain, keyed_probe);
+      abort();
+    }
+  }
+
   if (keyed_chain) {
     // Keyed scan via the index chain.
     cc << cc.Indent() << "for (uint32_t " << cursor << " = "

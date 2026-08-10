@@ -5,6 +5,7 @@
 
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Parse/Parse.h>
+#include <drlojekyll/Regional/RegionInstance.h>
 #include <drlojekyll/Util/DefUse.h>
 #include <drlojekyll/Util/PassPolicy.h>
 #include <drlojekyll/Util/Node.h>
@@ -1063,6 +1064,14 @@ class ProgramTableScanRegion
   // The variables which are scanned. There is one variable for each column in
   // the table. This does not have a 1:1 correspondence with `SelectedColumns`.
   DefinedNodeRange<DataVariable> OutputVariables(void) const;
+
+  // The physical AccessPlan this interior scan realizes (P7b). Stamped at the
+  // sole live mint (`BuildMaybeScanPartial`) as `Index() ? kPartialKeyHashSeek
+  // : kFullScanFilter`; `kUnplanned` only for the statically-dead join-pivot
+  // mint. It NEVER drives emission (codegen picks the arm from `Index()` +
+  // `InputVariables()`); it is a compile-time SHADOW the EmitScan V-PLAN-HONEST
+  // belt cross-checks against the emitted arm, and the `.ir` render token.
+  AccessPlan PlanKind(void) const noexcept;
 
  private:
   friend class ProgramRegion;

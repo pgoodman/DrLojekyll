@@ -694,6 +694,46 @@ never propagate a narrative constant.
 
 ## The frozen regional layer (Stage B, RegionalDataFlowCore — LANDED)
 
+> **P7b LANDED (session 24): interior/join plan-driven scans — the EmitScan V-PLAN-HONEST belt.**
+> P7 threaded the `AccessPlan` authority onto the `#query` path ONLY; P7b extends it to the
+> INTERIOR/JOIN table-scan path. `ProgramTableScanRegionImpl` gains an `AccessPlan
+> plan_kind{kUnplanned}` (`Program.h`) — EXCLUDED from Hash/Equals/MergeEqual (the S5′
+> `mint_tag` precedent) so region CSE/id-numbering is unperturbed — stamped at the SOLE LIVE
+> TABLESCAN mint `BuildMaybeScanPartial` (`Build.h`) as `index ? kPartialKeyHashSeek :
+> kFullScanFilter` (the all-columns-bound case early-returns, so a minted scan always keys a
+> STRICT subset → codegen's `keyed_chain` First/Next arm → seek; `keyed_probe`/all-key `.Find`
+> is UNREACHABLE on this path, so the two-way form is total). The second mint,
+> `BuildNestedLoopJoin` (`Join.cpp:254`), is STATICALLY DEAD (its sole caller is the `else` of
+> `else if (true || …)` at `Join.cpp:742` — unreachable in every build mode; acyclic pivot
+> joins emit `TABLEJOIN`, never `TABLESCAN`), so `kUnplanned` is a pure dead-default the belt
+> SKIPS. **The headline is the D4 "Option-2" honesty belt: V-PLAN-HONEST moves to the EmitScan
+> emission site** (`Database.cpp`, after `keyed_probe` is computed) as a per-kind IMPLICATION
+> (`kFullScanFilter ⇒ ¬keyed_chain∧¬keyed_probe`, `kPartialKeyHashSeek ⇒ keyed_chain`,
+> `kFullKeyHashLookup ⇒ keyed_probe`; fprintf+abort, survives NDEBUG) — it READS the booleans
+> `EmitScan` already computes and NEVER drives dispatch, so **codegen is BYTE-UNCHANGED**
+> (`plan_kind` is a compile-time SHADOW of the arm codegen already selected from
+> `Index()`×arity). Render: a gated ` plan=<token>` on the `.ir` `scan-*` line
+> (`ControlFlow/Format.cpp`), via the NEW single-source `inline hyde::AccessPlanText`
+> (`RegionInstance.h`) shared with the Regional `-region-out` dump (the file-static in
+> `lib/Regional/Format.cpp` was deleted → calls the inline; the two dumps can never drift).
+> SCOPE: `#query`-path belt (`Build.cpp:457/515`) UNCHANGED; NO new Rel op / runtime structure
+> (P8/P9 untouched). Corpus reality (swept all 4 modes): 69 `scan-index` (all seek) + 22
+> `scan-table` (all filter), ZERO all-key scan-index → the belt referees 91 live scan lines and
+> never fires. Gate GREEN: OptDiff **SUITE: PASS (226)**, ctest **5/5** (RegionInstance
+> unchanged — P7b touches no ctest expectation), codegen byte-stable. Goldens: **0 modified, 2
+> ADDITIVE-NEW** `.ir` goldens (`negate_1.ir.opt` pins `plan=partial-key-hash-seek` on the
+> negation crossover scan; `insert_4.ir.opt` pins `plan=full-scan-filter` on the @product-arm
+> full scan — via new `ir opt` `.irgold` steps; the sole prior `.ir` golden `symrec_tie_1` has
+> zero scan lines → byte-invisible). Grounded + adversarially critiqued + EMPIRICALLY validated
+> (grounding-loop workflow: sonnet anchors → opus design → 2-refuter opus panel + a
+> throwaway-worktree spike that built clean, ran the suite belt-LIVE across all 4 modes with
+> zero golden diffs, then HARDENED the belt to `assert plan != kUnplanned` and re-ran green to
+> prove no live scan escapes unplanned) in
+> `docs/proposals/RegionalDataFlowCore.artifacts/p7b-execution-grounding.md`. **NEXT (owner
+> re-ranks): P6.3–P6.6 runtime evaluation (compile-time P6.3 fusion-detection spike = low-risk
+> entry), P7c (retire the probe-REDUNDANT TUPLECMP belt on the now-honest seek — the R-final
+> Fold C candidate), or P8/P9 (ordered trie / inference).**
+
 > **P7 LANDED (session 23): physical access planning — the partial-key hash SEEK (Q1a broad).**
 > A bound+free `#query` now lowers to an index SEEK (`Index::First/Next`) instead of P4's
 > full-scan-filter cursor — the FIRST codegen QUALITY win from the `AccessPlan` authority, and the

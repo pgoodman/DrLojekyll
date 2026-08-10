@@ -1151,6 +1151,12 @@ std::optional<DataIndex> ProgramTableScanRegion::Index(void) const noexcept {
   }
 }
 
+// P7b: the physical AccessPlan this interior scan realizes (a compile-time
+// shadow of the arm EmitScan already selects; refereed by V-PLAN-HONEST).
+AccessPlan ProgramTableScanRegion::PlanKind(void) const noexcept {
+  return impl->plan_kind;
+}
+
 unsigned ProgramCallRegion::Id(void) const noexcept {
   return impl->id;
 }

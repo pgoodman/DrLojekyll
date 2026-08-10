@@ -251,6 +251,14 @@ BuildNestedLoopJoin(ProgramImpl *impl, QueryJoin join, QueryView pred_view,
     TABLE *const pred_table = pred_model->table;
     assert(pred_table != nullptr);
 
+    // P7b: this is the SECOND TABLESCAN mint, but it is STATICALLY DEAD — its
+    // sole caller (below) is the `else` of an `else if (true || ...)`, so it is
+    // unreachable in every build mode, and `plan_kind` stays `kUnplanned` (the
+    // EmitScan V-PLAN-HONEST belt SKIPS kUnplanned). If this path is ever
+    // revived (the `true ||` removed), stamp the honest plan HERE to stay
+    // belt-correct: `scan->out_cols.Empty() ? kFullKeyHashLookup :
+    // kPartialKeyHashSeek` (an all-side-columns pivot => keyed_probe .Find;
+    // otherwise the keyed_chain First/Next seek).
     TABLESCAN *const scan = impl->operation_regions.CreateDerived<TABLESCAN>(
         impl->next_id++, parent);
     parent->body.Emplace(parent, scan);

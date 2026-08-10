@@ -1560,6 +1560,14 @@ class ProgramTableScanRegionImpl final : public OP {
 
   // Output variables, one per column in the table!
   DefList<VAR> out_vars;
+
+  // P7b: the physical AccessPlan this scan realizes. Set at the sole live mint
+  // (`BuildMaybeScanPartial`); left `kUnplanned` at the statically-dead
+  // `BuildNestedLoopJoin` mint. EXCLUDED from Hash/Equals/MergeEqual (the S5'
+  // mint_tag precedent) — a survivor keeps its own plan across CSE, and two
+  // Equals-equal scans carry the same plan (it is a pure function of index-
+  // presence, which IS part of the Equals key), so the render stays honest.
+  AccessPlan plan_kind{AccessPlan::kUnplanned};
 };
 
 using TABLESCAN = ProgramTableScanRegionImpl;

@@ -133,17 +133,9 @@ static const char *PortKindTok(PortKind kind) {
   return "input-port";
 }
 
-// P4/P7: the physical AccessPlan render token (p4-grounding.md §3.1/§9;
-// p7-execution-grounding.md §3).
-static const char *AccessPlanText(AccessPlan plan) {
-  switch (plan) {
-    case AccessPlan::kUnplanned: return "unplanned";
-    case AccessPlan::kFullScanFilter: return "full-scan-filter";
-    case AccessPlan::kFullKeyHashLookup: return "full-key-hash-lookup";
-    case AccessPlan::kPartialKeyHashSeek: return "partial-key-hash-seek";
-  }
-  return "unplanned";
-}
+// P4/P7/P7b: the physical AccessPlan render token is now the SINGLE-SOURCE inline
+// `hyde::AccessPlanText` in RegionInstance.h (shared with the ControlFlow `.ir`
+// scan render so the two dumps can never drift — p7b-execution-grounding.md §2-Q5).
 
 // The program-root ABI's declaration text: a message decl for input/output, a
 // query decl for query ABIs, and the literal `<none>` for the synthetic
