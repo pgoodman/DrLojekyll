@@ -1,0 +1,14 @@
+; key_partial_1 -- the P5 positive @key carrier (the partial-binding DAG; there
+; was NO positive @key case post-P1, all key_*_1 cases reject at parse). `@key`
+; rides on the #local `path` and is read through a DISTINCT bound #query (a
+; #query cannot re-declare the #local's name). @key drives the P5
+; DeclaredAccessPath model + the -region-out `declared-key` render (pinned via
+; the .irgold region step); the ANSWER is unchanged (the full-materialization
+; backend answers a complete read), so this .stdout is answer-invariant across
+; all four optimization modes. The DAG STRUCTURE (prefix chain, [A,B]/[B,A]
+; convergence) is gated in ctest RegionInstanceP5, not here (a .dr golden cannot
+; observe internal schema ids).
+#message edge_2(u64 From, u64 To).
+#local path(u64 From, u64 To) @key(From).
+path(F, T) : edge_2(F, T).
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

@@ -206,7 +206,9 @@ static RelationSchema BuildRelationSchemaFromInsert(
                              field) != rc.member_key.end();
   }
   return RelationSchema{RelationId{decl.Id()}, decl, std::move(positions),
-                        view.CanReceiveDeletions()};
+                        view.CanReceiveDeletions(),
+                        InternDeclaredPaths(RelationId{decl.Id()},
+                                            decl.InstanceKeys())};  // P5.
 }
 
 // Tier-2 origin arm: a RelationSchema for an undemanded origin-interior with
@@ -217,7 +219,9 @@ static RelationSchema BuildRelationSchemaFromOrigin(const ::hyde::Query &query,
                                                     ParsedDeclaration decl) {
   return RelationSchema{RelationId{decl.Id()}, decl,
                         std::vector<bool>(decl.Arity(), true),
-                        ResolveOriginSupport(query, decl)};
+                        ResolveOriginSupport(query, decl),
+                        InternDeclaredPaths(RelationId{decl.Id()},
+                                            decl.InstanceKeys())};  // P5 (A4).
 }
 
 // P3: does a `#query` redeclaration carry any bound parameter? (The bound test
@@ -452,6 +456,16 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
     R.relation_schemas.push_back(BuildRelationSchemaFromOrigin(query, decl));
   }
 
+  // ---- P5: the binding-schema DAG (order-free nodes, order-sig edges). LAZY
+  // prefix chains from the declared `@key` paths of every relation schema —
+  // NEVER the power set. This is compile-time structure the AccessPlan does not
+  // yet consume (P5 moves no codegen); it is made LOAD-BEARING by V-PREFIX-CHAIN.
+  for (const RelationSchema &schema : R.relation_schemas) {
+    for (const DeclaredAccessPath &p : schema.declared_access_paths.paths) {
+      out.instances.MaterializePrefixChain(p);
+    }
+  }
+
   // `rules` / `recursive_components` stay RESERVED EMPTY (P6.1/P6.2 populate).
 
   // ---- CENSUS: DeriveRegionalCensus is the single authority ...
@@ -510,6 +524,57 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
             "one region / zero child calls (regions=%u child-calls=%u)\n",
             out.census.regions, out.census.child_calls);
     abort();
+  }
+
+  // V-PREFIX-CHAIN (P5): the binding-schema DAG is COMPLETE and non-dead. Tied
+  // to the INDEPENDENT parse authority `HasInstanceKey()` (NOT a self-derivation
+  // from the same paths the producer read — A2), so a stub that skips
+  // InternDeclaredPaths / MaterializePrefixChain aborts instead of passing
+  // vacuously. For every relation the parser marked keyed: (i) its declared
+  // paths are non-empty, AND (ii) the relation's interned schema nodes are
+  // EXACTLY the UNION over its declared paths of all their prefixes (A5 —
+  // union, never per-path, so `@key(A,B) @key(B)` legitimately interns `{B}`;
+  // this proves terminal-present + every-intermediate-interned + non-prefix-
+  // absent in one equality).
+  for (const RelationSchema &schema : R.relation_schemas) {
+    if (!schema.decl.HasInstanceKey()) {
+      continue;
+    }
+    if (schema.declared_access_paths.paths.empty()) {
+      fprintf(stderr,
+              "V-PREFIX-CHAIN: keyed relation '%.*s' has no interned declared "
+              "access paths (a stub skipped InternDeclaredPaths)\n",
+              static_cast<int>(schema.decl.NameAsString().size()),
+              schema.decl.NameAsString().data());
+      abort();
+    }
+    std::set<std::vector<uint32_t>> expected;
+    for (const DeclaredAccessPath &p : schema.declared_access_paths.paths) {
+      std::vector<uint32_t> running;
+      expected.insert(running);  // the empty prefix (per-relation root).
+      for (uint32_t f : p.ordered_fields) {
+        running.push_back(f);
+        std::sort(running.begin(), running.end());
+        expected.insert(running);
+      }
+    }
+    std::set<std::vector<uint32_t>> actual;
+    for (const auto &[key, id] : out.instances.schema_table) {
+      if (key.first == schema.id) {
+        actual.insert(key.second);
+      }
+    }
+    if (actual != expected) {
+      fprintf(stderr,
+              "V-PREFIX-CHAIN: binding-schema DAG for keyed relation '%.*s' is "
+              "not exactly its declared-prefix union (interned %zu, expected "
+              "%zu) — a missed prefix, a stray non-prefix subset, or a "
+              "power-set materialization\n",
+              static_cast<int>(schema.decl.NameAsString().size()),
+              schema.decl.NameAsString().data(), actual.size(),
+              expected.size());
+      abort();
+    }
   }
 
   return out;

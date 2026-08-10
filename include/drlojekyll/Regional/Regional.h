@@ -84,6 +84,13 @@ struct RelationSchema {
   std::vector<bool> member_key_positions;
 
   bool support{false};        // true => "differential"; false => "monotone".
+
+  // P5: the relation's ORDERED declared `@key` access paths (the THIRD
+  // authority — logical access path). Interned from `decl.InstanceKeys()` at
+  // BOTH schema arms; empty for an unkeyed relation. The `-region-out`
+  // `declared-key` render + the freeze-side binding-schema DAG read this. NEVER
+  // fed to the physical `AccessPlan` (the four-authority separation).
+  DeclaredAccessPathSet declared_access_paths;
 };
 
 // One program-root ABI record (retypes the pre-P2 RegionalAbi string shell).

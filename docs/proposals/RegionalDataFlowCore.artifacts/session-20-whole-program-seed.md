@@ -1,5 +1,17 @@
 # Keyed-instance rewrite — POST-P4 whole-program pseudocode + path forward as diffs (session-20 seed)
 
+> **P5 LANDED (session 20, 2026-08-09).** The partial-binding DAG shipped: the ORDERED
+> `DeclaredAccessPath` authority (RegionInstance.h) + the per-relation order-free binding-schema DAG
+> (`RelSchemaLocalId`/`schema_table`/`binding_edges` + `MaterializePrefixChain`, lazy — no power set),
+> interned at freeze from `decl.InstanceKeys()`, made load-bearing by the `HasInstanceKey()`-tied
+> **V-PREFIX-CHAIN** belt, rendered as a golden-pinned `-region-out` `declared-key` line (KeyPathId-
+> sorted → F21). **P5 moves NO codegen** (`.rel`/`datalog.h`/`.stdout` byte-stable — verified). Gate
+> GREEN: OptDiff **SUITE: PASS (223)** (new carrier `key_partial_1` — the first positive `@key` case
+> post-P1), ctest **5/5** (RegionInstance GateD–GateI DAG battery). Full record + the refuter-panel
+> survivors (A1–A7) + IR states: **`p5-grounding.md`**. NEXT actionable = **P6** (recursive regional
+> execution — the P3/P4 model's dormant derivation/route half first runs). The body below is the
+> POST-P4 view; §3-P5 is now the LANDED record.
+
 Session 19 close (2026-08-08). Branch `keyed-instances`, **tip `c546a6a4`** ("P4: honest complete-path
 specialization (AccessPlan / FullScanFilter)"). **P1 + P2 + P3 + P4 ARE LANDED** (compile-clean,
 OptDiff SUITE: PASS 222, ctest 5/5). This seed is the START-HERE whole-program backbone for **P5**. It

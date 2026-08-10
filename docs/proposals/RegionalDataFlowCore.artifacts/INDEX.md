@@ -4,8 +4,15 @@
 
 Start with **`session-20-prompt.md`** (the current next-session charter) and its
 START-HERE backbone **`session-20-whole-program-seed.md`** (tip `c546a6a4`, **P1 +
-P2 + P3 + P4 LANDED**; next actionable = **P5**, the partial-binding DAG — where a
-DECLARED `@key` first specializes). **`p4-grounding.md`** is the P4 record (the
+P2 + P3 + P4 + P5 LANDED**; next actionable = **P6**, recursive regional execution).
+**P5 LANDED (session 20, 2026-08-09)**: the partial-binding DAG — the ORDERED
+`DeclaredAccessPath` authority + the per-relation order-free binding-schema DAG
+(`RelSchemaLocalId`/`MaterializePrefixChain`, lazy) interned at freeze from
+`decl.InstanceKeys()`, the `HasInstanceKey()`-tied V-PREFIX-CHAIN belt, a golden-
+pinned `-region-out` `declared-key` line (F21), and the first positive `@key`
+carrier `key_partial_1`; model+render only (no codegen movement), OptDiff SUITE:
+PASS 223, ctest 5/5. Full record: **`p5-grounding.md`** (the layer-site inventory,
+the refuter-panel survivors A1–A7 §8, the IR states §9, the drift table §7). **`p4-grounding.md`** is the P4 record (the
 `AccessPlan` fourth authority selected-at-freeze / read-at-codegen; the §8 critique
 survivors + certifications; the §9 IR states; the freeze-store→codegen-read + negative-
 witness method template). NOTE for P5: `@key` survived P1 as INERT parsed metadata

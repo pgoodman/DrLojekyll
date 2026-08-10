@@ -2,10 +2,12 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -138,6 +140,32 @@ struct DerivationId {
   constexpr auto operator<=>(const DerivationId &) const noexcept = default;
 };
 
+// A declared access path's dense, deterministic id (P5). Assigned by
+// `InternDeclaredPaths` in a STABLE order (sorted by `ordered_fields`) so a
+// pragma reorder yields a byte-identical render (F21).
+struct KeyPathId {
+  uint32_t v;
+
+  constexpr bool operator==(const KeyPathId &) const noexcept = default;
+  constexpr auto operator<=>(const KeyPathId &) const noexcept = default;
+};
+
+// A per-RELATION order-free binding-schema node id (P5). DISTINCT from the
+// region-scoped `BindingStateSchemaId` (A3): the P5 schema DAG is keyed on
+// `(RelationId, sorted ordinal set)` — the honest P5 stand-in for the eventual
+// region-global `(region, SymbolicFieldSet)` rep, which P6.2/P8 populate. These
+// ids are a safe UNDER-approximation (never conflate two relations) and are
+// structurally un-promotable to `SymbolicFieldSet` — the P5 `schema_table` is
+// REBUILT at P8, never migrated. A firewall holds: no `RelSchemaLocalId` is ever
+// stored into a `BindingStateId` (the sole `BindingStateId` construction is
+// `EmptyBindingState`, schema `{0}`).
+struct RelSchemaLocalId {
+  uint32_t v;
+
+  constexpr bool operator==(const RelSchemaLocalId &) const noexcept = default;
+  constexpr auto operator<=>(const RelSchemaLocalId &) const noexcept = default;
+};
+
 // A regional rule id. RESERVED: `RegionTemplate::rules` is empty at P3 (the M3
 // backend performs derivation; P6.2 is the sole populator).
 struct RuleId {
@@ -243,6 +271,74 @@ inline AccessPlan SelectAccessPlan(const AccessRequirement &req) {
     return AccessPlan::kFullKeyHashLookup;
   }
   return AccessPlan::kFullScanFilter;
+}
+
+// ==================== logical-access-path authority (P5) ====================
+// The THIRD authority: an ORDERED, order-significant declared access path
+// (`@key(A,B)` != `@key(B,A)`). NEVER conflated with the ORDER-FREE binding
+// schema (#2 below), the physical `AccessPlan` (#4), or the logical fact id
+// (#1). A `@key` pragma is a source-level logical specialization-path contract;
+// it does NOT create a request, choose a physical layout, or become another
+// spelling of `bound`. P5 is model+render only — the physical partial-key seek
+// is a P7 cost decision.
+
+// One declared ordered access path of a relation. `ordered_fields` are
+// decl-ordinals in WRITTEN order — order IS identity (no within-path sort).
+struct DeclaredAccessPath {
+  KeyPathId id;
+  RelationId relation;
+  std::vector<uint32_t> ordered_fields;
+
+  bool operator==(const DeclaredAccessPath &) const noexcept = default;
+  auto operator<=>(const DeclaredAccessPath &) const noexcept = default;
+};
+
+// A relation's declared paths: an UNORDERED set (pragma order is irrelevant to
+// identity), unique by `ordered_fields`, with `KeyPathId`s assigned
+// deterministically (sorted by `ordered_fields`) so a pragma reorder renders
+// byte-identically (F21).
+struct DeclaredAccessPathSet {
+  std::vector<DeclaredAccessPath> paths;
+
+  bool operator==(const DeclaredAccessPathSet &) const noexcept = default;
+};
+
+// A navigation edge of the per-relation binding-schema DAG: ORDER-SIGNIFICANT
+// (the added field distinguishes `{A}--B-->{A,B}` from `{B}--A-->{A,B}`, the two
+// ordered edges that converge on the ONE order-free `{A,B}` schema). `parent`
+// and `child` are per-relation `RelSchemaLocalId`s, so `added_field` (a bare
+// decl-ordinal) is unambiguous.
+struct BindingEdge {
+  RelSchemaLocalId parent;
+  uint32_t added_field;
+  RelSchemaLocalId child;
+
+  bool operator==(const BindingEdge &) const noexcept = default;
+  auto operator<=>(const BindingEdge &) const noexcept = default;
+};
+
+// Intern a relation's declared `@key` paths (raw = `decl.InstanceKeys()`,
+// ordered decl-ordinal sets). PURE. The parser already rejected same-decl
+// duplicate ORDERED paths (Parser.cpp:980-991), so an exact repeat here is a
+// belt (dropped, not re-diagnosed). `KeyPathId`s are assigned in ascending
+// `ordered_fields` order — the F21 determinism source.
+inline DeclaredAccessPathSet InternDeclaredPaths(
+    RelationId relation, const std::vector<std::vector<unsigned>> &raw_paths) {
+  std::vector<std::vector<uint32_t>> uniq;
+  for (const std::vector<unsigned> &p : raw_paths) {
+    std::vector<uint32_t> path(p.begin(), p.end());  // ORDER kept — no sort.
+    if (std::find(uniq.begin(), uniq.end(), path) == uniq.end()) {
+      uniq.push_back(std::move(path));
+    }
+  }
+  std::sort(uniq.begin(), uniq.end());  // deterministic KeyPathId assignment (F21).
+  DeclaredAccessPathSet out;
+  uint32_t next_id = 0u;
+  for (std::vector<uint32_t> &path : uniq) {
+    out.paths.push_back(
+        DeclaredAccessPath{KeyPathId{next_id++}, relation, std::move(path)});
+  }
+  return out;
 }
 
 // ==================== ownership edges ====================
@@ -430,6 +526,59 @@ struct RegionInstanceRelations {
         routed_results.insert(RoutedResultId{e, fact});
       }
     }
+  }
+
+  // ==================== the P5 binding-schema DAG ====================
+  // ORDER-FREE schema nodes (`schema_table`) + ORDER-SIGNIFICANT edges
+  // (`binding_edges`), interned at freeze from the declared `@key` paths. The
+  // key is per-relation `(RelationId, sorted ordinal set)` — the honest P5
+  // stand-in for the region-global `(region, SymbolicFieldSet)` (A3). VALUE-FREE
+  // (schema, not value): `BindingStateId.vals` stays `{}` at P5.
+  std::map<std::pair<RelationId, std::vector<uint32_t>>, RelSchemaLocalId>
+      schema_table;
+  std::set<BindingEdge> binding_edges;  // std::set dedup IS the prefix-share law.
+  uint32_t next_rel_schema{0u};
+
+  // Intern one order-free schema node. `field_set` MUST be sorted+unique. The
+  // per-relation empty set interns like any other (A3(c) — no dead preseed).
+  RelSchemaLocalId InternBindingSchema(RelationId relation,
+                                       std::vector<uint32_t> field_set) {
+    std::pair<RelationId, std::vector<uint32_t>> key{relation,
+                                                     std::move(field_set)};
+    auto it = schema_table.find(key);
+    if (it != schema_table.end()) {
+      return it->second;
+    }
+    RelSchemaLocalId id{next_rel_schema++};
+    schema_table.emplace(std::move(key), id);
+    return id;
+  }
+
+  // LAZY prefix-chain materialization along ONE declared ordered path — NEVER
+  // the power set. `@key(A)` reuses the `{A}` node of `@key(A,B)` (interning
+  // `sorted(running)` at every step gives one shared id + one set-deduped edge);
+  // `[A,B]`/`[B,A]` converge on ONE `{A,B}` node via TWO ordered edges. Only
+  // declared/visited prefixes are interned (F8 non-prefix-absent).
+  void MaterializePrefixChain(const DeclaredAccessPath &p) {
+    std::vector<uint32_t> running;
+    RelSchemaLocalId prev = InternBindingSchema(p.relation, running);  // empty.
+    for (uint32_t f : p.ordered_fields) {
+      running.push_back(f);
+      std::sort(running.begin(), running.end());  // order-FREE node identity.
+      RelSchemaLocalId cur = InternBindingSchema(p.relation, running);
+      binding_edges.insert(BindingEdge{prev, f, cur});  // order-SIG edge.
+      prev = cur;
+    }
+  }
+
+  // Does the per-relation schema table hold this order-free field set? (Belt +
+  // ctest helper for the F8 present/absent claims.)
+  bool HasBindingSchema(RelationId relation,
+                        std::vector<uint32_t> field_set) const {
+    std::sort(field_set.begin(), field_set.end());
+    return schema_table.count(
+               std::pair<RelationId, std::vector<uint32_t>>{
+                   relation, std::move(field_set)}) != 0u;
   }
 };
 

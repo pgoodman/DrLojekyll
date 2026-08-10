@@ -319,3 +319,140 @@ TEST(RegionInstanceP4, GateC_DistinctStatesRouteDisjointly) {
   ASSERT_EQ(for_e8, 1u);
   ASSERT_EQ(rr.routed_results.size(), 2u);
 }
+
+// ---- (4) P5 gates: the partial-binding DAG (p5-grounding.md §4/§9.3). The
+// ORDERED DeclaredAccessPath authority + the ORDER-FREE binding-schema DAG,
+// kept distinct. The `-region-out` render carries NO numeric schema/edge id, so
+// these ctest gates are the MANDATORY structural anchor (A2): a stub that
+// interns nothing / sorts within a path / materializes the power set / conflates
+// ordered path with order-free schema FAILS here even though a render-only stub
+// could pass a golden.
+
+using hyde::BindingEdge;
+using hyde::DeclaredAccessPath;
+using hyde::DeclaredAccessPathSet;
+using hyde::InternDeclaredPaths;
+using hyde::KeyPathId;
+using hyde::RelSchemaLocalId;
+
+// Count interned schema nodes for one relation.
+static unsigned SchemaNodeCount(const RegionInstanceRelations &rr,
+                                RelationId rel) {
+  unsigned n = 0u;
+  for (const auto &[key, id] : rr.schema_table) {
+    if (key.first == rel) {
+      ++n;
+    }
+  }
+  return n;
+}
+
+// Count ordered edges whose CHILD is `child` (edges converging on a node).
+static unsigned EdgesInto(const RegionInstanceRelations &rr,
+                          RelSchemaLocalId child) {
+  unsigned n = 0u;
+  for (const BindingEdge &e : rr.binding_edges) {
+    if (e.child == child) {
+      ++n;
+    }
+  }
+  return n;
+}
+
+// P5 Gate D (DeclaredAccessPath identity): ORDER-SIGNIFICANT within a path,
+// ORDER-FREE across paths, deterministic KeyPathId (F21), exact-dup dedup.
+TEST(RegionInstanceP5, GateD_DeclaredPathOrderSemantics) {
+  // [A,B] and [B,A] are DISTINCT ordered paths (order IS identity).
+  const DeclaredAccessPathSet s = InternDeclaredPaths(kRelP, {{0u, 1u}, {1u, 0u}});
+  ASSERT_EQ(s.paths.size(), 2u);
+  // KeyPathId assigned deterministically by ascending ordered_fields:
+  // {0,1} before {1,0}.
+  ASSERT_EQ(s.paths[0].id.v, 0u);
+  ASSERT_TRUE((s.paths[0].ordered_fields == std::vector<uint32_t>{0u, 1u}));
+  ASSERT_EQ(s.paths[1].id.v, 1u);
+  ASSERT_TRUE((s.paths[1].ordered_fields == std::vector<uint32_t>{1u, 0u}));
+
+  // Pragma order is IRRELEVANT to identity (order-free across paths -> F21).
+  const DeclaredAccessPathSet swapped =
+      InternDeclaredPaths(kRelP, {{1u, 0u}, {0u, 1u}});
+  ASSERT_TRUE(s == swapped);
+
+  // An exact-duplicate ordered path is deduped to one (parser-rejected upstream;
+  // this is the belt).
+  const DeclaredAccessPathSet dup = InternDeclaredPaths(kRelP, {{0u, 1u}, {0u, 1u}});
+  ASSERT_EQ(dup.paths.size(), 1u);
+}
+
+// P5 Gate E (F8 prefix chain present + non-prefix subsets ABSENT + no power set).
+TEST(RegionInstanceP5, GateE_F8PrefixChainAndNonPrefixAbsent) {
+  RegionInstanceRelations rr;
+  rr.MaterializePrefixChain(
+      DeclaredAccessPath{KeyPathId{0u}, kRelP, {0u, 1u, 2u}});  // @key(A,B,C).
+
+  // EXACTLY the 4 visited prefixes {}, {A}, {A,B}, {A,B,C} — no power set.
+  ASSERT_EQ(SchemaNodeCount(rr, kRelP), 4u);
+  ASSERT_TRUE(rr.HasBindingSchema(kRelP, {}));
+  ASSERT_TRUE(rr.HasBindingSchema(kRelP, {0u}));
+  ASSERT_TRUE(rr.HasBindingSchema(kRelP, {0u, 1u}));
+  ASSERT_TRUE(rr.HasBindingSchema(kRelP, {0u, 1u, 2u}));
+  // Genuine NON-prefix subsets are ABSENT.
+  ASSERT_FALSE(rr.HasBindingSchema(kRelP, {0u, 2u}));
+  ASSERT_FALSE(rr.HasBindingSchema(kRelP, {1u}));
+  ASSERT_FALSE(rr.HasBindingSchema(kRelP, {2u}));
+  ASSERT_FALSE(rr.HasBindingSchema(kRelP, {1u, 2u}));
+  // A linear chain: exactly 3 edges.
+  ASSERT_EQ(rr.binding_edges.size(), 3u);
+}
+
+// P5 Gate F (prefix sharing): @key(A) reuses the {A} node/edge of @key(A,B).
+TEST(RegionInstanceP5, GateF_PrefixShare) {
+  RegionInstanceRelations rr;
+  rr.MaterializePrefixChain(DeclaredAccessPath{KeyPathId{0u}, kRelP, {0u}});
+  rr.MaterializePrefixChain(DeclaredAccessPath{KeyPathId{1u}, kRelP, {0u, 1u}});
+  // Nodes {}, {A}, {A,B} — the {A} node is SHARED, not duplicated.
+  ASSERT_EQ(SchemaNodeCount(rr, kRelP), 3u);
+  const RelSchemaLocalId a_from_short = rr.InternBindingSchema(kRelP, {0u});
+  const RelSchemaLocalId a_from_long = rr.InternBindingSchema(kRelP, {0u});
+  ASSERT_TRUE(a_from_short == a_from_long);
+  // Edges {}--A-->{A}, {A}--B-->{A,B}: the {}--A-->{A} edge is deduped -> 2.
+  ASSERT_EQ(rr.binding_edges.size(), 2u);
+}
+
+// P5 Gate G (convergence): @key(A,B) and @key(B,A) converge on ONE {A,B} schema
+// via TWO ordered edges (the headline order-free-node / order-sig-edge split).
+TEST(RegionInstanceP5, GateG_ConvergeTwoEdgesOneSchema) {
+  RegionInstanceRelations rr;
+  rr.MaterializePrefixChain(DeclaredAccessPath{KeyPathId{0u}, kRelP, {0u, 1u}});
+  rr.MaterializePrefixChain(DeclaredAccessPath{KeyPathId{1u}, kRelP, {1u, 0u}});
+  // Nodes {}, {A}, {B}, {A,B} — {A,B} is ONE converged node.
+  ASSERT_EQ(SchemaNodeCount(rr, kRelP), 4u);
+  ASSERT_TRUE(rr.HasBindingSchema(kRelP, {0u, 1u}));
+  const RelSchemaLocalId ab = rr.InternBindingSchema(kRelP, {0u, 1u});
+  // TWO ordered edges converge on {A,B}: {A}--B-->{A,B} and {B}--A-->{A,B}.
+  ASSERT_EQ(EdgesInto(rr, ab), 2u);
+  ASSERT_EQ(rr.binding_edges.size(), 4u);
+}
+
+// P5 Gate H (per-relation identity): {A} of relP and {A} of relQ are DISTINCT
+// nodes (no cross-relation conflation; Free-Join sharing is P8).
+TEST(RegionInstanceP5, GateH_PerRelationDistinct) {
+  RegionInstanceRelations rr;
+  const RelSchemaLocalId p_a = rr.InternBindingSchema(kRelP, {0u});
+  const RelSchemaLocalId q_a = rr.InternBindingSchema(kRelQ, {0u});
+  ASSERT_FALSE(p_a == q_a);
+  ASSERT_TRUE(rr.HasBindingSchema(kRelP, {0u}));
+  ASSERT_TRUE(rr.HasBindingSchema(kRelQ, {0u}));
+}
+
+// P5 Gate I (A5 sibling path): @key(A,B) @key(B) legally interns the {B} sibling
+// (NOT a prefix of [A,B]) — F8 non-prefix-absence is a UNION over declared
+// paths, never per-path, so this must NOT abort/false-fail.
+TEST(RegionInstanceP5, GateI_SiblingPathNotFalseAborted) {
+  RegionInstanceRelations rr;
+  rr.MaterializePrefixChain(DeclaredAccessPath{KeyPathId{0u}, kRelP, {0u, 1u}});
+  rr.MaterializePrefixChain(DeclaredAccessPath{KeyPathId{1u}, kRelP, {1u}});
+  // {B} is a declared sibling, legitimately present alongside {}, {A}, {A,B}.
+  ASSERT_EQ(SchemaNodeCount(rr, kRelP), 4u);
+  ASSERT_TRUE(rr.HasBindingSchema(kRelP, {1u}));
+  ASSERT_TRUE(rr.HasBindingSchema(kRelP, {0u, 1u}));
+}

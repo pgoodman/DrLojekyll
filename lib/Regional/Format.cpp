@@ -219,6 +219,22 @@ static std::string RenderMemberKeyText(const RelationSchema &schema) {
   return out;
 }
 
+// P5: the ORDERED declared-key path render — the relation's declared parameter
+// name per ORDINAL in the path's WRITTEN order (order IS identity; no sort). A
+// distinct authority from the order-free member key above.
+static std::string RenderDeclaredPathText(const RelationSchema &schema,
+                                          const DeclaredAccessPath &path) {
+  std::string out = "(";
+  const char *sep = "";
+  for (uint32_t ordinal : path.ordered_fields) {
+    out += sep;
+    out += schema.decl.NthParameter(ordinal).NameAsString();
+    sep = ", ";
+  }
+  out += ")";
+  return out;
+}
+
 }  // namespace
 
 OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
@@ -269,6 +285,15 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
     }
     if (!R.relation_schemas.empty()) {
       kind_w = std::max(kind_w, std::string("row-contract").size());
+    }
+    // P5: the declared-key block (gated on any keyed schema). "declared-key" is
+    // 12 chars == "row-contract", so kind_w never widens — no existing region
+    // golden moves (E-K5-PAD preserved).
+    for (const RelationSchema &schema : R.relation_schemas) {
+      if (schema.decl.HasInstanceKey()) {
+        kind_w = std::max(kind_w, std::string("declared-key").size());
+        break;
+      }
     }
     kind_w += 2u;
 
@@ -330,6 +355,24 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
          << Pad("member-key=" + RenderMemberKeyText(schema), key_w)
          << "support=" << (schema.support ? "differential" : "monotone")
          << "\n";
+    }
+
+    // P5 declared-key block: one line per declared access path, appended AFTER
+    // the row-contract block, in E-order then KeyPathId order (the deterministic
+    // InternDeclaredPaths order — a pragma reorder renders byte-identically,
+    // F21). Reuses the row-contract `E<k>`/`rel=` columns so they align;
+    // `path=(…)` is the trailing unpadded token (like `support=`). The ORDERED
+    // logical access path — distinct from the order-free `member-key`. Emitted
+    // in its OWN width block (never folded into the row-contract widths — A7),
+    // so an unkeyed corpus program emits nothing here and no golden moves.
+    for (auto e = 0u; e < R.relation_schemas.size(); ++e) {
+      const RelationSchema &schema = R.relation_schemas[e];
+      for (const DeclaredAccessPath &path : schema.declared_access_paths.paths) {
+        os << "  " << Pad("declared-key", kind_w)
+           << Pad("E" + std::to_string(e), etok_w)
+           << Pad("rel=" + std::string(schema.decl.NameAsString()), rel_w)
+           << "path=" << RenderDeclaredPathText(schema, path) << "\n";
+      }
     }
   }
   os << "}\n";
