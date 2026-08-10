@@ -434,13 +434,15 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
   // forcer so the flag-off id stream is byte-identical to tip.
   std::optional<ProgramProcedure> retract_proc =
       BuildQueryInjectorProcedure(impl, context, query, /*is_retract=*/true);
-  // P4 (p4-grounding.md §3.2/§8-S1): READ the AccessPlan the freeze selected for
-  // this bound-query redecl and withhold the index for kFullScanFilter, so a
-  // bound+free query read lowers to EmitQueryFriends' honest full-scan-filter
-  // cursor (via_index=false) instead of the retained index seek.
-  // The plan is the model's — not re-derived here — the compile-time data
-  // dependency that makes the AccessPlan authority non-nominal. An all-free query
-  // has no request port (PlanFor == nullopt) and keeps its retained behavior.
+  // P4/P7 (p4-grounding.md §3.2/§8-S1; p7-execution-grounding.md §3): READ the
+  // AccessPlan the freeze selected for this bound-query redecl. kFullScanFilter
+  // withholds the index (via_index=false -> EmitQueryFriends' honest full-scan-filter
+  // cursor); kPartialKeyHashSeek (P7) KEEPS it, so the SAME provisioning path below
+  // mints GetOrCreateIndex(col_indices) on the bound subset and EmitQueryFriends emits
+  // the via_index First/Next seek — the emission flip is driven by the selector return
+  // ALONE, no new codegen (this D5 site is intentionally NOT switched on plan).
+  // The plan is the model's — not re-derived here. An all-free query has no request
+  // port (PlanFor == nullopt) and keeps its retained behavior.
   const std::optional<AccessPlan> plan =
       context.frozen ? context.frozen->PlanFor(decl) : std::nullopt;
   const bool withhold_index = plan == AccessPlan::kFullScanFilter;
@@ -452,13 +454,22 @@ static void BuildQueryEntryPointImpl(ProgramImpl *impl, Context &context,
     }
   }
 
-  // V-PLAN-HONEST (§8-S1): a kFullScanFilter plan MUST leave the index withheld —
-  // else codegen silently ignored the model and the emission diverges from the
-  // authority. fprintf+abort (survives NDEBUG).
+  // V-PLAN-HONEST (§8-S1; P7 §3-D6): a per-kind IMPLICATION belt — kFullScanFilter
+  // MUST leave the index withheld, and kPartialKeyHashSeek MUST have provisioned one;
+  // either divergence means codegen and the AccessPlan authority disagree.
+  // fprintf+abort (survives NDEBUG). kFullKeyHashLookup is unchecked (.Find ignores
+  // the index).
   if (plan == AccessPlan::kFullScanFilter && scanned_index.has_value()) {
     fprintf(stderr,
             "V-PLAN-HONEST: query '%s' has plan=full-scan-filter but codegen "
             "kept a scanned index\n",
+            decl.NameAsString().data());
+    abort();
+  }
+  if (plan == AccessPlan::kPartialKeyHashSeek && !scanned_index.has_value()) {
+    fprintf(stderr,
+            "V-PLAN-HONEST: query '%s' has plan=partial-key-hash-seek but no "
+            "index was provisioned\n",
             decl.NameAsString().data());
     abort();
   }
@@ -499,6 +510,22 @@ static void BuildEmptyQueryEntryPointImpl(ProgramImpl *impl, Context &context,
             table->GetOrCreateIndex(impl, std::move(col_indices))) {
       scanned_index.emplace(DataIndex(index));
     }
+  }
+
+  // V-PLAN-HONEST (P7 §3-D6): same per-kind belt as BuildQueryEntryPointImpl.
+  if (plan == AccessPlan::kFullScanFilter && scanned_index.has_value()) {
+    fprintf(stderr,
+            "V-PLAN-HONEST: empty query '%s' has plan=full-scan-filter but "
+            "codegen kept a scanned index\n",
+            decl.NameAsString().data());
+    abort();
+  }
+  if (plan == AccessPlan::kPartialKeyHashSeek && !scanned_index.has_value()) {
+    fprintf(stderr,
+            "V-PLAN-HONEST: empty query '%s' has plan=partial-key-hash-seek but "
+            "no index was provisioned\n",
+            decl.NameAsString().data());
+    abort();
   }
 
   impl->queries.emplace_back(query, DataTable(table), scanned_index,

@@ -1,0 +1,151 @@
+// Auto-generated file; do not edit.
+
+#pragma once
+
+#include <drlojekyll/Runtime/Allocator.h>
+#include <drlojekyll/Runtime/Hash.h>
+#include <drlojekyll/Runtime/Table.h>
+#include <drlojekyll/Runtime/Vec.h>
+
+#include <cassert>
+#include <cstdint>
+#include <optional>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+struct Tup_u64_u64 {
+  uint64_t c0;
+  uint64_t c1;
+  auto operator<=>(const Tup_u64_u64 &) const noexcept = default;
+};
+
+using edge_2_input = Tup_u64_u64;
+
+// Rows of `reachable_from_4` (reachable_from/2).
+struct Row4 {
+  uint64_t f;
+  uint64_t t;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(f, t);
+  }
+  bool operator==(const Row4 &) const noexcept = default;
+};
+
+// Key of `idx_19` over `reachable_from_4`.
+struct Key19 {
+  uint64_t f;
+  uint64_t Hash(void) const noexcept {
+    return ::hyde::rt::HashRow(f);
+  }
+  bool operator==(const Key19 &) const noexcept = default;
+};
+
+// User-provided functors. Define the declared member functions in
+// your own translation unit; the generated code calls them.
+struct DatabaseFunctors {
+};
+
+// Receives published messages. The default methods do nothing.
+// Entry points deduce the log's static type, so any type
+// providing the same member signatures observes the published
+// delta stream (a @differential message publishes one call per
+// net presence change at each batch's commit sweep) with no
+// virtual dispatch.
+struct DatabaseLog {
+};
+
+// Internal flow procedures. Not driver-facing. Each signature
+// names exactly the state the procedure reads and writes.
+inline bool init_3(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key19> &idx_19, uint64_t &g9);
+inline bool proc_8(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key19> &idx_19, uint64_t &g9, ::hyde::rt::Vec<Tup_u64_u64> vec10);
+inline bool edge_2_2_detail(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key19> &idx_19, uint64_t &g9, ::hyde::rt::Vec<Tup_u64_u64> vec15);
+inline bool flow_20(::hyde::rt::Allocator &allocator, uint64_t &g9);
+
+// The sealed database state: tables, indices, and epoch counters.
+// Construction allocates empty tables and cannot fail; epoch 0
+// (the empty-program fixpoint) runs when the driver calls
+// `init(db, log, functors)`, and every entry point asserts it has
+// run. All driver-facing functions are hidden friends: reach them
+// by unqualified call with the database as an argument.
+struct Database {
+ public:
+  explicit Database(::hyde::rt::Allocator allocator_)
+    : allocator(allocator_),
+      reachable_from_4(allocator_),
+      idx_19(allocator_) {}
+
+  // Epoch 0: derives the empty-EDB least model and publishes its
+  // t=0 deltas to `log`. Call exactly once, before any message.
+  template <typename Log, typename Functors>
+  friend auto init(Database &db, Log &, Functors &) {
+    assert(!db.initialized_);
+    db.initialized_ = true;
+    return init_3(db.allocator, db.reachable_from_4, db.idx_19, db.g9);
+  }
+
+  // Message `edge_2/2`.
+  template <typename Log, typename Functors>
+  friend auto edge_2_2(Database &db, Log &, Functors &, ::hyde::rt::Vec<Tup_u64_u64> vec15) {
+    assert(db.initialized_);
+    return edge_2_2_detail(db.allocator, db.reachable_from_4, db.idx_19, db.g9, std::move(vec15));
+  }
+
+  // Query `reachable_from/2` (bf).
+  struct reachable_from_bf_cursor {
+    Database &db;
+    uint64_t From;
+    uint32_t pos;
+    bool next(uint64_t &To) {
+      while (pos != ::hyde::rt::kNoRow) {
+        const uint32_t id = pos;
+        pos = db.idx_19.Next(id);
+        const auto row = db.reachable_from_4.RowAt(id);
+        To = row.t;
+        return true;
+      }
+      return false;
+    }
+  };
+  friend reachable_from_bf_cursor reachable_from_bf(Database &db, uint64_t From) {
+    assert(db.initialized_);
+    return {db, From, db.idx_19.First({From})};
+  }
+
+ private:
+  ::hyde::rt::Allocator allocator;
+
+  ::hyde::rt::Table<Row4> reachable_from_4;
+  ::hyde::rt::Index<Key19> idx_19;
+
+  uint64_t g9 = 0;
+  bool initialized_ = false;
+};
+
+inline bool init_3(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key19> &idx_19, uint64_t &g9) {
+  ::hyde::rt::Vec<Tup_u64_u64> vec18(allocator);
+  proc_8(allocator, reachable_from_4, idx_19, g9, std::move(vec18));
+  return false;
+}
+
+inline bool proc_8(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key19> &idx_19, uint64_t &g9, ::hyde::rt::Vec<Tup_u64_u64> vec10) {
+  for (auto [v12, v13] : vec10) {
+    if (const auto ins0 = reachable_from_4.TryAdd({v12, v13}); ins0.added) {
+      idx_19.Add({v12}, ins0.id);
+    }
+  }
+  vec10.Clear();
+  flow_20(allocator, g9);
+  return false;
+}
+
+inline bool edge_2_2_detail(::hyde::rt::Allocator &allocator, ::hyde::rt::Table<Row4> &reachable_from_4, ::hyde::rt::Index<Key19> &idx_19, uint64_t &g9, ::hyde::rt::Vec<Tup_u64_u64> vec15) {
+  proc_8(allocator, reachable_from_4, idx_19, g9, std::move(vec15));
+  return true;
+}
+
+inline bool flow_20(::hyde::rt::Allocator &allocator, uint64_t &g9) {
+  g9 += 1;
+  return true;
+}
+

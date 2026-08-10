@@ -240,14 +240,20 @@ struct RegionalFactId {
 // adds the trie/prefix arms and dual-homes a Rel plan_kind for interior/join
 // scans (p4-grounding.md §3.1/§8-S4/S5).
 enum class AccessPlan : uint8_t {
-  kFullScanFilter = 0,     // withhold the index; full scan + bound-col filter
+  kUnplanned = 0,          // sentinel/default ONLY — the dispatch NEVER returns it;
+                           //   a RequestPortRecord defaults here until a plan is set.
+  kFullScanFilter = 1,     // withhold the index; full scan + bound-col filter
                            //   (a bound+free query read — an acyclic scan of the
                            //    fully-materialized relation, §8-S2)
-  kFullKeyHashLookup = 1,  // the all-bound `.Find` — an honest full-key hash probe
-  kRetainedIndexScan = 2,  // RESERVED (P7): keep the retained index seek as a
-                           //   cost-based decision. Also the default/sentinel for a
-                           //   record that carries no selected plan.
+  kFullKeyHashLookup = 2,  // the all-bound `.Find` — an honest full-key hash probe
+  kPartialKeyHashSeek = 3, // P7: Index::First/Next over GetOrCreateIndex(sorted(bound
+                           //   subset)) — a strict-subset bound+free query seek.
 };
+static_assert(static_cast<uint8_t>(AccessPlan::kPartialKeyHashSeek) == 3);
+// D4-INVARIANT (implicit CodegenPlanCapabilities): SelectAccessPlan returns only
+// {kFullScanFilter, kFullKeyHashLookup, kPartialKeyHashSeek} — each maps to exactly
+// one arm EmitQueryFriends emits (full-scan cursor / .Find existence / via_index
+// First-Next cursor). kUnplanned is never returned; kTriePrefixWalk excluded (P8).
 
 // P4 always reads a COMPLETE relation (an ordinary unbound-style read); kActiveSubset
 // is a P5 residual-specialization concern.
@@ -262,16 +268,22 @@ struct AccessRequirement {
   AccessCompleteness completeness{AccessCompleteness::kCompleteRelation};
 };
 
-// The branching selector (§8-S2/S4): a bound+free query read specializes to a full
-// scan + bound-col filter (answer-correct even over a recursive relation — the read is
-// an acyclic scan of the settled table, and the recursion's own indexes are untouched);
-// an all-bound query keeps `.Find` (a full-key hash probe codegen already emits). P7
-// adds the cost-based kRetainedIndexScan / trie arms.
+// The branching selector (§8-S2/S4, P7): an all-bound query keeps `.Find` (a full-key
+// hash probe codegen already emits); a bound+free query with a non-empty bound subset
+// specializes to a partial-key hash SEEK over GetOrCreateIndex(bound subset) —
+// answer-correct even over a recursive relation, since the read is an acyclic scan of
+// the SETTLED table via a secondary index and the recursion's own indexes are shared or
+// untouched (P7 §2-Q3, UNFENCED). NO cost model: prefer the seek whenever any column is
+// bound; the full-scan fallback stays always-legal (an all-free query never reaches
+// here — it takes the permanent-roots branch with no request port).
 inline AccessPlan SelectAccessPlan(const AccessRequirement &req) {
   if (!req.has_free) {
-    return AccessPlan::kFullKeyHashLookup;
+    return AccessPlan::kFullKeyHashLookup;   // all-bound -> .Find
   }
-  return AccessPlan::kFullScanFilter;
+  if (!req.available_bindings.empty()) {
+    return AccessPlan::kPartialKeyHashSeek;  // bound+free -> Index::First/Next seek
+  }
+  return AccessPlan::kFullScanFilter;        // no bound columns: honest full scan
 }
 
 // ==================== logical-access-path authority (P5) ====================

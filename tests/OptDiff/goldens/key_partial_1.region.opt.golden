@@ -6,7 +6,7 @@ program-root {
 }
 region R0  owner=program-root  parents=()  children=() {
   input-port    P0  message=edge_2/2  fields=(From, To)
-  request-port  P1  query=reachable_from/2  bound=(From)  plan=full-scan-filter
+  request-port  P1  query=reachable_from/2  bound=(From)  plan=partial-key-hash-seek
   row-contract  E0  rel=reachable_from  member-key=(From, To)  support=monotone
   row-contract  E1  rel=path            member-key=(From, To)  support=monotone
   declared-key  E1  rel=path            path=(From)

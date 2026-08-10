@@ -694,6 +694,43 @@ never propagate a narrative constant.
 
 ## The frozen regional layer (Stage B, RegionalDataFlowCore — LANDED)
 
+> **P7 LANDED (session 23): physical access planning — the partial-key hash SEEK (Q1a broad).**
+> A bound+free `#query` now lowers to an index SEEK (`Index::First/Next`) instead of P4's
+> full-scan-filter cursor — the FIRST codegen QUALITY win from the `AccessPlan` authority, and the
+> close of the `keyed-instances` namesake arc. `SelectAccessPlan` (`RegionInstance.h`) went from a
+> `has_free`-only stub to a real dispatch: all-bound → `.Find` (`kFullKeyHashLookup`); bound+free with
+> a non-empty bound subset → `kPartialKeyHashSeek` (NEW); no bound cols → `kFullScanFilter`. The enum
+> SPLIT `kRetainedIndexScan` into a `kUnplanned=0` sentinel (the dispatch NEVER returns it) +
+> `kPartialKeyHashSeek` (Q2 Option-A); `plan` ∉ Hash/Equals and `RequestPortRecord` is never hashed,
+> so the renumber is byte-safe. SCOPE = **Q1a (raw bound subset)**: the seek fires on ANY partial
+> binding, NOT gated on `@key` — the P5↔physical firewall (`Regional.h:92`) stays UP (the selector
+> never reads `declared_access_paths`; `@key` is a WITNESS of intent, and `GetOrCreateIndex`'s
+> `SortAndUnique` gives `[A,B]≡[B,A]` free). UNFENCED (Q3): a bound+free query reads the SETTLED
+> relation after the fixpoint quiesces, so the seek over a recursive-owned relation is answer-correct
+> (`GetOrCreateIndex` SHARES the fixpoint's index by `column_spec` or mints one non-colliding secondary
+> index — empirically confirmed: `transitive_closure_diff`→shared `idx_80`, `key_corecursion_1`→fresh
+> `idx_74`). **NEW CODEGEN SURFACE: NONE** — the flip is selector-driven: `withhold_index =
+> plan==kFullScanFilter` already goes false for a seek, so `Build.cpp`'s existing
+> `GetOrCreateIndex(col_indices)` provisions the bound-subset index and `EmitQueryFriends`' existing
+> `via_index` First/Next arm emits (D5 is a documented no-op). V-PLAN-HONEST generalized to a per-kind
+> IMPLICATION belt (`kFullScanFilter ⇒ ¬index` AND `kPartialKeyHashSeek ⇒ index`) at BOTH
+> query-entry-point sites; NO EmitScan belt / NO `plan_kind` on `ProgramTableScanRegion` (Q5/Q6 — the
+> D4→D6 hazard evaporates since P7 is #query-path-ONLY; interior/join scans stay index-presence-derived
+> = P7b). P8 (ordered trie) / P9 (path inference) OUT of scope (runtime all-hash). GATE GREEN: OptDiff
+> **SUITE: PASS**, ctest **5/5** (the P4 `RegionInstanceTest.cpp` GateA expectation flipped
+> bound+free→`kPartialKeyHashSeek`, + a free-only fallback assertion). Codegen byte-stable EXCEPT the
+> ~25 bound+free carriers' query cursors — golden-INVISIBLE (those cases carry NO codegen golden; their
+> 4-mode `.stdout`/oracle/monotone/behavioral goldens are the free answer-invariance net and stayed
+> byte-identical, recursive carriers included). Goldens MOVED (9): `key_partial_1.region.*` +
+> `key_corecursion_1.region.*` (the `plan=` token → `partial-key-hash-seek`) + the FIRST codegen golden
+> since P4, `key_partial_1.h.opt` (a NEW `h opt` `.irgold` step pinning the `Index<Key19> idx_19`
+> member + the `idx_19.First/.Next` cursor with NO `NumRows()` rescan / NO bound-col re-check). Grounded
+> + empirically de-risked (a throwaway-worktree spike: build + full suite + recursive answer-invariance
+> + index-sharing, all clean) in
+> `docs/proposals/RegionalDataFlowCore.artifacts/p7-execution-grounding.md` (+ `p7-grounding-seed.md`).
+> **P6.3–P6.6 (runtime evaluation: fusion / cyclic activation / joint fixpoint / DRed), P7b
+> (interior/join plan-driven scans), and P8/P9 remain — owner re-ranks.**
+
 > **P6.1 LANDED (session 21): query-independent recursive components (compile-time, codegen
 > BYTE-UNCHANGED).** `RegionTemplate.recursive_components` (was RESERVED-EMPTY) is now populated by
 > `ComputeRecursiveComponents` (Planning.cpp, the SOLE populator): a projection of the DataFlow

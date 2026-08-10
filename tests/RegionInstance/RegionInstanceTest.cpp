@@ -252,15 +252,21 @@ static unsigned DriveFullScanFilter(
   return kept;
 }
 
-// P4 Gate A (selector): the AccessPlan authority classifies by binding arity.
-// bound+free -> full scan; all-bound -> full-key hash probe (p4-grounding.md §3.1).
+// P4/P7 Gate A (selector): the AccessPlan authority classifies by binding arity.
+// P7 (p7-execution-grounding.md §2-Q1): bound+free WITH a non-empty bound subset now
+// selects a partial-key hash SEEK (was kFullScanFilter under P4); all-bound keeps the
+// full-key hash probe; a bound+free requirement with NO bound columns falls back to
+// full scan (never reached in practice — an all-free query has no request port).
 TEST(RegionInstanceP4, GateA_SelectAccessPlan) {
   const AccessRequirement bound_free{kRelP, /*has_free=*/true, {0u},
                                      AccessCompleteness::kCompleteRelation};
   const AccessRequirement all_bound{kRelP, /*has_free=*/false, {0u, 1u},
                                     AccessCompleteness::kCompleteRelation};
-  ASSERT_TRUE(SelectAccessPlan(bound_free) == AccessPlan::kFullScanFilter);
+  const AccessRequirement free_only{kRelP, /*has_free=*/true, {},
+                                    AccessCompleteness::kCompleteRelation};
+  ASSERT_TRUE(SelectAccessPlan(bound_free) == AccessPlan::kPartialKeyHashSeek);
   ASSERT_TRUE(SelectAccessPlan(all_bound) == AccessPlan::kFullKeyHashLookup);
+  ASSERT_TRUE(SelectAccessPlan(free_only) == AccessPlan::kFullScanFilter);
 }
 
 // P4 Gate B (the model DRIVES the acyclic slice): a FullScanFilter over a

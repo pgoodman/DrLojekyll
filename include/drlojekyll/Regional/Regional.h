@@ -145,12 +145,14 @@ struct RequestPortRecord {
   RootLeaseId lease;
   CallSiteId call_site;
 
-  // P4: the physical AccessPlan selected AT FREEZE for this bound query and READ
+  // P4/P7: the physical AccessPlan selected AT FREEZE for this bound query and READ
   // back at codegen (BuildQueryEntryPointImpl) — the real compile-time data
   // dependency that makes the AccessPlan authority non-nominal (p4-grounding.md
-  // §3.1/§3.2/§8-S1). kFullScanFilter withholds the index (nonrecursive bound+free);
-  // kFullKeyHashLookup is the all-bound `.Find`; kRetainedIndexScan keeps the seek.
-  AccessPlan plan{AccessPlan::kRetainedIndexScan};
+  // §3.1/§3.2/§8-S1). kFullScanFilter withholds the index; kFullKeyHashLookup is the
+  // all-bound `.Find`; kPartialKeyHashSeek (P7) provisions a bound-subset index and
+  // emits the First/Next seek. The default kUnplanned is a sentinel the dispatch
+  // never returns (p7-execution-grounding.md).
+  AccessPlan plan{AccessPlan::kUnplanned};
 };
 
 // P6.2: one per PRODUCER CLAUSE of a frozen relation — the clause-source routing

@@ -11,7 +11,7 @@ region R0  owner=program-root  parents=()  children=() {
   input-port    P1  message=base_b/2    fields=(K, V)
   input-port    P2  message=edge/2      fields=(X, V)
   result-port   P3  message=out_pair/2  fields=(K, V)
-  request-port  P4  query=lookup/2  bound=(K)  plan=full-scan-filter
+  request-port  P4  query=lookup/2  bound=(K)  plan=partial-key-hash-seek
   row-contract  E0  rel=lookup  member-key=(K, V)  support=monotone
   row-contract  E1  rel=a       member-key=(K, V)  support=monotone
   row-contract  E2  rel=b       member-key=(K, V)  support=monotone

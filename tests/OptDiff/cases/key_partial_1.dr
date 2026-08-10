@@ -3,9 +3,13 @@
 ; rides on the #local `path` and is read through a DISTINCT bound #query (a
 ; #query cannot re-declare the #local's name). @key drives the P5
 ; DeclaredAccessPath model + the -region-out `declared-key` render (pinned via
-; the .irgold region step); the ANSWER is unchanged (the full-materialization
-; backend answers a complete read), so this .stdout is answer-invariant across
-; all four optimization modes. The DAG STRUCTURE (prefix chain, [A,B]/[B,A]
+; the .irgold region step). Since P7 (session 23) it is ALSO the partial-key hash
+; SEEK carrier: the bound+free #query lowers to plan=partial-key-hash-seek and an
+; Index::First/Next cursor (the `h opt` .irgold step pins the FIRST codegen golden
+; since P4 -- the Index<Key19> idx_19 member + the idx_19.First/.Next cursor, no
+; NumRows() rescan). The seek is answer-invariant (the full-materialization backend
+; answers a complete read), so this .stdout is unchanged across all four
+; optimization modes. The DAG STRUCTURE (prefix chain, [A,B]/[B,A]
 ; convergence) is gated in ctest RegionInstanceP5, not here (a .dr golden cannot
 ; observe internal schema ids).
 #message edge_2(u64 From, u64 To).
