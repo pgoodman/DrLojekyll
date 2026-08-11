@@ -1,0 +1,14 @@
+region-program
+program-root {
+  input-abi   edge_2/2(A:u64, B:u64)    -> R0 via P0
+  output-abi  out_pair/2(A:u64, B:u64)  -> R0 via P1
+}
+region R0  owner=program-root  parents=()  children=() {
+  input-port    P0  message=edge_2/2    fields=(A, B)
+  result-port   P1  message=out_pair/2  fields=(A, B)
+  row-contract  E0  rel=r  member-key=(A, B)  support=monotone
+  recursive-component  C0  members=(r)
+  rule  R1  produces=r  routes=(r.A->r.A, r.B->r.B, r.A->r.B, r.B->r.A)
+  joint-fixpoint  C0
+}
+census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=1 row-contracts=1

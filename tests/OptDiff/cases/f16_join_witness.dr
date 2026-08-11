@@ -1,0 +1,31 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; F16 join-multiplicity witness (session-27, the P6.3 A1 close). The recursive
+; producer of `r` join-binds BOTH head ordinals from TWO distinct in-cycle
+; sources: head r.A is fed by r.A (identity, from `r(A,C)`) AND by r.B (non-
+; identity, from `r(B,A)`); symmetrically for r.B. Its routes are
+;   r.A->r.A, r.B->r.B, r.A->r.B, r.B->r.A
+; so the value at each head ordinal is determined by a JOIN of two recursive
+; rows, NOT a clean identity carry. The correct fusion classification is
+; therefore JOINT.
+;
+; This is the DISCRIMINATOR for the F16 single-source guard in
+; `ClassifyFusableComponents` (Planning.cpp): the pre-guard (F16-LAX) code saw
+; only the identity route on each ordinal and WRONGLY emitted
+;   fused-fixpoint  C0  binding-prefix=(A, B)
+; the F16-CLOSED code sees the >=2 distinct in-cycle sources per ordinal and
+; correctly emits `joint-fixpoint  C0` (mirroring PromoteSharedSymbolicField's
+; single-source promotion rule). The `.region` golden's joint-fixpoint block is
+; the gate; answers are recursion-classification-invariant (the M3 backend
+; materializes `r` identically in every mode). A genuinely additive triangle
+; recursion (NOT a vacuous self-reference) so the multi-view SCC survives
+; canonicalization in all four optimization modes.
+#message edge_2(u64 A, u64 B).
+#message out_pair(u64 A, u64 B).
+
+#local r(u64 A, u64 B).
+
+r(A, B) : edge_2(A, B).
+r(A, B) : r(A, C), r(C, B), r(B, A).
+
+out_pair(A, B) : r(A, B).

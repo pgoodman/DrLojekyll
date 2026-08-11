@@ -606,24 +606,41 @@ static void ClassifyFusableComponents(RegionTemplate &R,
       if (scc_ids.count(r.head.v) == 0u) {
         continue;  // not a producer of a member of THIS component.
       }
-      std::set<uint32_t> identity_dest;  // head ordinals preserved as identity.
+      // Collect the DISTINCT in-SCC source fields per head ordinal. The F16
+      // single-source guard (mirroring `PromoteSharedSymbolicField`'s
+      // `src.size() != 1` refusal, :537): a head ordinal join-bound by >=2
+      // DISTINCT in-cycle sources — or whose single in-cycle source is NON-
+      // identity — is NOT cleanly carried through the cycle, so it is NOT part
+      // of the fused binding prefix. (Two identical identity routes dedup to one
+      // source — `direct_only_join`'s self-double-bind stays FUSED; a self-JOIN
+      // like `p(A,B):-p(A,B),p(B,A)` binds each head ordinal from TWO in-cycle
+      // sources — the P6.3 A1 laxness — and is now correctly JOINT.) Outside-SCC
+      // frozen sources are FILTERS on a carried value, never a re-derivation, so
+      // they are skipped and never count against the single-source test.
+      std::map<uint32_t, std::set<std::pair<uint64_t, uint32_t>>>
+          in_scc_srcs_by_head;
       bool has_in_scc_route = false;
       for (const std::pair<SymbolicFieldId, SymbolicFieldId> &route :
            r.body_to_head) {
         const auto &[src_rel, src_ord] = field_of[route.first.v];
         const uint32_t head_ord = field_of[route.second.v].second;
         if (scc_ids.count(src_rel) == 0u) {
-          continue;  // sourced OUTSIDE the cycle (base/message/constant).
+          continue;  // sourced OUTSIDE the cycle (base/message/constant/filter).
         }
         has_in_scc_route = true;
-        if (src_ord == head_ord) {
-          identity_dest.insert(head_ord);
-        }
+        in_scc_srcs_by_head[head_ord].insert({src_rel, src_ord});
       }
       if (!has_in_scc_route) {
         continue;  // base/seed producer OR a renamed recursive edge.
       }
       any_recursive = true;
+      std::set<uint32_t> identity_dest;  // head ordinals preserved as identity.
+      for (const auto &[head_ord, srcs] : in_scc_srcs_by_head) {
+        // Exactly ONE distinct in-SCC source, at the SAME ordinal (identity).
+        if (srcs.size() == 1u && srcs.begin()->second == head_ord) {
+          identity_dest.insert(head_ord);
+        }
+      }
       uint32_t local = 0u;  // maximal contiguous identity prefix {0..local-1}.
       while (identity_dest.count(local) != 0u) {
         ++local;

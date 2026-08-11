@@ -713,10 +713,15 @@ never propagate a narrative constant.
 > (`Program::Build` consumes `DataFlowGraph()`, never `Region()`), so **every answer golden is
 > byte-identical = the detect-only soundness proof**. `-region-out` gains a gated own-width block
 > (`fused-fixpoint C<k> binding-prefix=(names…)` / `joint-fixpoint C<k>`, both tokens 14 chars → self-align;
-> NO census count — the P5/P6.1/P6.2 precedent). LATENT (named for the future consumer, NOT a bug here):
-> `identity_dest` marks an ordinal preserved on ANY in-cycle identity route WITHOUT promotion's F16
-> single-source guard — a P6.4/P6.5 consumer must re-check join multiplicity before trusting FUSED as
-> functional preservation. Gate GREEN: OptDiff **SUITE: PASS (226)**, ctest **5/5**, codegen byte-stable;
+> NO census count — the P5/P6.1/P6.2 precedent). F16 join-multiplicity guard: **CLOSED in session 27**
+> (was LATENT at the P6.3 landing) — `ClassifyFusableComponents` now collects the DISTINCT in-SCC source
+> fields per head ordinal and marks it identity-preserved ONLY if it has exactly ONE in-SCC source at the
+> SAME ordinal (mirroring `PromoteSharedSymbolicField`'s `src.size()!=1` guard); a head ordinal join-bound
+> by ≥2 distinct in-cycle sources — or a single non-identity source — is correctly NOT fused (outside-SCC
+> frozen sources are FILTERS, never counted). Witness `f16_join_witness`
+> (`r(A,B):-r(A,C),r(C,B),r(B,A)`, routes join-bind both head ordinals): F16-lax wrongly emitted
+> `fused-fixpoint binding-prefix=(A, B)`, F16-closed correctly `joint-fixpoint C0`. See the P6.3-A1
+> paragraph at the section tail. Gate GREEN: OptDiff **SUITE: PASS (226)**, ctest **5/5**, codegen byte-stable;
 > **18 region goldens MOVED** (pure additive suffix, 5 cases: corecursion_1 → `binding-prefix=(A)` — the
 > LOAD-BEARING partial-prefix discriminator, the `(A)`-not-`(A,B)` byte proving the detector reads `rules`;
 > two_inductions → two `joint-fixpoint` (renamed recursive edges); tc_nonlinear_diff →
@@ -732,8 +737,20 @@ never propagate a narrative constant.
 > CONSUMER-LESS at landing (the four-authority firewall bars `SelectAccessPlan` from reading it; P7 seeks
 > from the raw bound subset), so it needs an explicit firewall-relaxation decision to earn a reader. The
 > E-71 header-token mini-diff was found ALREADY DISCHARGED at tip (`lib/Rel/Format.cpp:400-403` emits `rel`).
-> NEXT (owner re-ranks): P6.4–P6.6 runtime evaluation (cyclic activation / joint fixpoint / DRed — the first
-> M3 divergence, LARGE), P8 (ordered trie, HEAVY), or P9 (after a firewall-relaxation decision).**
+> **P6.3-A1 / the runtime-eval fork (session 27):** grounding established that the model-drives-codegen
+> payoff is gated behind real prerequisites, so every incremental step short of them is observer/shadow
+> code (the P9 → P6.4 → P6.5 pattern). P6.4 (activation-edge derivation, `p6.4-activation-edge-grounding.md`,
+> refuter verdict SOUND but pure ctest-only scaffolding) was SKIPPED. P6.5 was re-scoped to Architecture A
+> (model DRIVES codegen — a `RecursiveEvaluationPlan` authority peer of `AccessPlan`, NOT the
+> `EvaluateEpoch` interpreter, which is a zero-codegen-consumer runtime-semantics half in a different
+> substrate); its grounding (`p6.5-archA-grounding.md`, UNANIMOUS 3-refuter REFUTE-AS-FRAMED) found the
+> smallest achievable slice A0 is a certification SHADOW (codegen byte-unchanged) and the real divergence
+> A1 is blocked on a MISSING codegen arm + the open F16 gap + possibly P8/P9. Owner chose "attack the A1
+> blockers", **F16 first** — LANDED this session (see the F16 note above): the guard + the `f16_join_witness`
+> discriminator, SUITE PASS + ctest 5/5, ZERO existing goldens moved, codegen byte-stable — the first real
+> (non-shadow) A1-prerequisite. NEXT (owner re-ranks): the OTHER A1 blocker (scope the fused-round codegen
+> arm — genuinely new emission in `LowerRoundBody`/`Stratum.cpp`), P8 (ordered trie — may be the real
+> A1 unblocker), or re-sequence the endpoint. P9 stays deferred (firewall-relaxation).**
 
 > **P7c LANDED (session 25): retire the probe-REDUNDANT partial-scan re-check — the AccessPlan
 > Fold C.** Now that P7b NAMES every interior partial index scan `kPartialKeyHashSeek` and the
