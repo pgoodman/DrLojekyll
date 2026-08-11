@@ -563,6 +563,87 @@ static void PromoteSharedSymbolicField(RegionTemplate &R,
   }
 }
 
+// P6.3 (fusion-DETECTION spike): classify each recursive component FUSABLE vs
+// JOINT and, when fused, record its common preserved binding prefix. This is a
+// PURE, COMPILE-TIME observer over already-frozen records — it mutates only the
+// P6.3 fields on `RecursiveComponent` (never hashed, never read by codegen), so
+// every answer golden stays byte-identical (the detect-only soundness proof).
+// It reads ONLY the clause-source `R.rules` (P6.2) + `R.recursive_components`
+// (P6.1) + the field interner's inverse — DELIBERATELY NOT `inherited_symbolic_
+// fields`: P6.2 promotion is global/symmetric and can promote a field via an
+// unrelated single-producer chain (corecursion_1's `shared-field F1=(ping.B,
+// pong.B)` is promoted even though the recursive edge preserves only column A),
+// so reusing it would over-name the prefix `(A, B)` where the routes preserve
+// only `(A)`. The route-derived per-clause minimum is the sound survivor.
+//
+// A "within-cycle producer" of a component is a rule whose head is in the SCC
+// AND that carries at least one route sourced from an SCC member. Base/seed
+// producers (message/constant/outside-sourced) carry no in-SCC route and are
+// excluded; a recursive clause that renames every cycle-carried variable records
+// no route at all (`BuildRuleRoutingProjections` needs a shared clause variable)
+// and so contributes no within-cycle producer — its component defaults JOINT.
+// The classification is the sound conservative under-approximation: FUSED only
+// when provable, JOINT otherwise.
+static void ClassifyFusableComponents(RegionTemplate &R,
+                                      const RegionInstanceRelations &inst) {
+  // Invert the field interner: SymbolicFieldId.v -> (relation.v, ordinal).
+  const uint32_t n = inst.next_symbolic_field;
+  std::vector<std::pair<uint64_t, uint32_t>> field_of(
+      n, std::pair<uint64_t, uint32_t>{~0ull, 0u});
+  for (const auto &[key, id] : inst.symbolic_field_table) {
+    field_of[id.v] = key;  // key = (relation.v, ordinal).
+  }
+
+  for (RecursiveComponent &comp : R.recursive_components) {
+    std::set<uint64_t> scc_ids;
+    for (const RelationId m : comp.members) {
+      scc_ids.insert(m.v);
+    }
+
+    bool any_recursive = false;
+    uint32_t prefix_len = ~0u;  // +inf; min-reduced over within-cycle producers.
+    for (const RuleRoutingProjection &r : R.rules) {
+      if (scc_ids.count(r.head.v) == 0u) {
+        continue;  // not a producer of a member of THIS component.
+      }
+      std::set<uint32_t> identity_dest;  // head ordinals preserved as identity.
+      bool has_in_scc_route = false;
+      for (const std::pair<SymbolicFieldId, SymbolicFieldId> &route :
+           r.body_to_head) {
+        const auto &[src_rel, src_ord] = field_of[route.first.v];
+        const uint32_t head_ord = field_of[route.second.v].second;
+        if (scc_ids.count(src_rel) == 0u) {
+          continue;  // sourced OUTSIDE the cycle (base/message/constant).
+        }
+        has_in_scc_route = true;
+        if (src_ord == head_ord) {
+          identity_dest.insert(head_ord);
+        }
+      }
+      if (!has_in_scc_route) {
+        continue;  // base/seed producer OR a renamed recursive edge.
+      }
+      any_recursive = true;
+      uint32_t local = 0u;  // maximal contiguous identity prefix {0..local-1}.
+      while (identity_dest.count(local) != 0u) {
+        ++local;
+      }
+      prefix_len = std::min(prefix_len, local);
+    }
+
+    if (any_recursive && prefix_len > 0u) {
+      comp.fusion = RecursiveComponent::Fusion::kFused;
+      comp.binding_prefix.clear();
+      for (uint32_t k = 0u; k < prefix_len; ++k) {
+        comp.binding_prefix.push_back(k);
+      }
+    } else {
+      comp.fusion = RecursiveComponent::Fusion::kJoint;
+      comp.binding_prefix.clear();
+    }
+  }
+}
+
 }  // namespace
 
 RegionalCensus DeriveRegionalCensus(const ::hyde::Query &query) {
@@ -758,6 +839,21 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
   AssignSymbolicFields(R, out.instances);
   R.rules = BuildRuleRoutingProjections(R, out.instances);
   PromoteSharedSymbolicField(R, out.instances);
+
+  // ---- P6.3 (fusion-DETECTION spike): classify each recursive component
+  // FUSABLE vs JOINT from the clause-source `rules` (COMPILE-TIME model +
+  // `-region-out` render only; codegen byte-unchanged, no census count — the
+  // P6.1/P6.2 precedent). Runs AFTER `PromoteSharedSymbolicField` only for tidy
+  // ordering; it reads the raw `rules`, never the promoted frame.
+  ClassifyFusableComponents(R, out.instances);
+#ifndef NDEBUG
+  // Anti-stub belt (aborts in the debug-built suite compiler; the assert is
+  // NDEBUG-gated, so the discriminating region goldens are the build-independent
+  // gate): every component is classified after freeze.
+  for (const RecursiveComponent &comp : R.recursive_components) {
+    assert(comp.fusion != RecursiveComponent::Fusion::kUnclassified);
+  }
+#endif
 
   // ---- CENSUS: DeriveRegionalCensus is the single authority ...
   out.census = DeriveRegionalCensus(query);

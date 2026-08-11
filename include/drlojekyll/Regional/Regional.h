@@ -187,6 +187,29 @@ struct RuleRoutingProjection {   // P6.2 is the sole populator.
 // a compile-time observer of the per-mode graph, driving NO codegen at P6.1.
 struct RecursiveComponent {
   std::vector<RelationId> members;
+
+  // P6.3 (fusion-DETECTION spike): a COMPILE-TIME classification of this
+  // component as FUSABLE (a fused-fixpoint plan — a common binding prefix is
+  // preserved as identity by EVERY within-cycle producer) vs JOINT. Populated
+  // by `ClassifyFusableComponents` (Planning.cpp) AFTER P6.2 promotion, from the
+  // clause-source `rules` (NOT `inherited_symbolic_fields`, whose global/
+  // symmetric promotion over-names). Like `members`, these fields are NEVER
+  // hashed and NEVER read by codegen (`Program::Build` consumes `DataFlowGraph()`,
+  // never `Region()`) — a `-region-out` render + a future P6.4/P6.5 planner are
+  // the only consumers. `kUnclassified` is the anti-stub default (a component
+  // never left unclassified after freeze — asserted at the Build tail).
+  enum class Fusion : uint8_t { kUnclassified = 0u, kFused, kJoint };
+  Fusion fusion{Fusion::kUnclassified};
+
+  // The common preserved binding prefix as HEAD parameter ordinals {0..L-1};
+  // non-empty IFF `fusion == kFused`. NB (F16 laxness, named for the future
+  // consumer): an ordinal is marked preserved on ANY in-cycle identity route,
+  // WITHOUT promotion's single-source guard — a head ordinal join-bound by one
+  // identity route AND a second in-cycle source would be over-marked. Harmless
+  // for the detect-only spike (no consumer; M3 answers correctly); a P6.4/P6.5
+  // consumer must re-check join multiplicity before trusting FUSED as
+  // functional binding-preservation.
+  std::vector<uint32_t> binding_prefix;
 };
 
 // The ONE typed owner: the Stage-B region skeleton as typed records.

@@ -31,5 +31,10 @@ region R0  owner=program-root  parents=()  children=() {
   rule  R11  produces=direct_only_join  routes=(direct_only_join.A->direct_only_join.A)
   rule  R12  produces=direct_and_join  routes=(direct_and_join.A->direct_and_join.A)
   rule  R13  produces=direct_and_join  routes=(direct_and_join.A->direct_and_join.A)
+  fused-fixpoint  C0  binding-prefix=(A)
+  fused-fixpoint  C1  binding-prefix=(A)
+  fused-fixpoint  C2  binding-prefix=(A)
+  fused-fixpoint  C3  binding-prefix=(A)
+  fused-fixpoint  C4  binding-prefix=(A)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=0 row-contracts=7

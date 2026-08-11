@@ -19,5 +19,7 @@ region R0  owner=program-root  parents=()  children=() {
   rule  R0  produces=output  routes=(loop2.A->output.A)
   rule  R3  produces=loop2  routes=(loop1.A->loop2.A)
   shared-field  F0  members=(output.A, loop2.A)
+  joint-fixpoint  C0
+  joint-fixpoint  C1
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=3 result-ports=0 row-contracts=3

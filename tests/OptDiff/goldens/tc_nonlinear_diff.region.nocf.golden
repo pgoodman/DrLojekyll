@@ -16,5 +16,6 @@ region R0  owner=program-root  parents=()  children=() {
   rule  R3  produces=tc  routes=(tc.From->tc.From, tc.To->tc.To)
   shared-field  F0  members=(reachable.From, tc.From)
   shared-field  F1  members=(reachable.To, tc.To)
+  fused-fixpoint  C0  binding-prefix=(From, To)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=0 input-ports=1 result-ports=0 row-contracts=3

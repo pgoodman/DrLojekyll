@@ -694,6 +694,47 @@ never propagate a narrative constant.
 
 ## The frozen regional layer (Stage B, RegionalDataFlowCore — LANDED)
 
+> **P6.3 fusion-DETECTION spike LANDED (session 26): classify each recursive component FUSABLE vs
+> JOINT (compile-time, dump-only, codegen BYTE-UNCHANGED).** The FIRST cut of the P6.3–P6.6 runtime-eval
+> arc, taken DETECT-ONLY: `ClassifyFusableComponents` (`Planning.cpp`, run after `PromoteSharedSymbolicField`
+> at `:760`, before census) tags each `RecursiveComponent` `Fusion ∈ {kUnclassified(anti-stub default),
+> kFused, kJoint}` and, when fused, records the common preserved binding prefix as HEAD ordinals `{0..L-1}`.
+> It reads ONLY the clause-source `R.rules` (P6.2) + `R.recursive_components` (P6.1) + the field interner's
+> inverse — **DELIBERATELY NOT `inherited_symbolic_fields`** (P6.2 promotion is global/symmetric and can
+> promote via an unrelated single-producer chain — corecursion_1's `shared-field F1=(ping.B, pong.B)` is
+> promoted even though the recursive edge preserves only column A; reusing it would over-name the prefix
+> `(A, B)` where routes preserve only `(A)`). ALGORITHM: a within-cycle producer = a rule whose head ∈ SCC
+> AND that carries ≥1 route sourced from an SCC member; per such rule take the maximal contiguous identity
+> prefix `{0..local-1}` (head_ord == src_ord over in-SCC routes), `prefix_len = min`; `kFused` iff
+> `any_recursive && prefix_len > 0`, else `kJoint`. Base/seed producers (no in-SCC route) and renamed
+> recursive edges (empty route — `BuildRuleRoutingProjections` needs a shared clause var) contribute no
+> within-cycle producer → default JOINT (the sound conservative under-approximation: FUSED only when
+> provable). The two P6.3 fields on `RecursiveComponent` are NEVER hashed, NEVER read by codegen
+> (`Program::Build` consumes `DataFlowGraph()`, never `Region()`), so **every answer golden is
+> byte-identical = the detect-only soundness proof**. `-region-out` gains a gated own-width block
+> (`fused-fixpoint C<k> binding-prefix=(names…)` / `joint-fixpoint C<k>`, both tokens 14 chars → self-align;
+> NO census count — the P5/P6.1/P6.2 precedent). LATENT (named for the future consumer, NOT a bug here):
+> `identity_dest` marks an ordinal preserved on ANY in-cycle identity route WITHOUT promotion's F16
+> single-source guard — a P6.4/P6.5 consumer must re-check join multiplicity before trusting FUSED as
+> functional preservation. Gate GREEN: OptDiff **SUITE: PASS (226)**, ctest **5/5**, codegen byte-stable;
+> **18 region goldens MOVED** (pure additive suffix, 5 cases: corecursion_1 → `binding-prefix=(A)` — the
+> LOAD-BEARING partial-prefix discriminator, the `(A)`-not-`(A,B)` byte proving the detector reads `rules`;
+> two_inductions → two `joint-fixpoint` (renamed recursive edges); tc_nonlinear_diff →
+> `binding-prefix=(From, To)`; key_corecursion_1 → `binding-prefix=(K)` == inert @key(K); recursion nodf/none
+> → 5 vacuous fused self-loops, MODE-FAITHFUL, opt/nocf byte-identical). **VALUE (blunt): ZERO runtime/
+> codegen/answer value today** — it CLOSES P6.3's open question with corpus proof (fusability IS
+> compile-time-decidable from `rules` + `recursive_components` alone) and PINS the sound route-derived
+> definition against the promotion-reuse trap as a goldened byte; its only consumer is the dump + a future
+> P6.4/P6.5 planner. Grounded DOCS-ONLY (anchor sonnet → design opus → 5-concern opus refuter panel, verdict
+> PROCEED) then owner-gated execution + predict-then-verify on the carriers.
+> Authority `p6.3-fusion-detection-grounding.md`. **P9 (access-path inference) was grounded the same
+> session (`p9-inference-grounding.md`, verdict SOUND-BUT-SPECULATIVE) and DEFERRED by the owner: it is
+> CONSUMER-LESS at landing (the four-authority firewall bars `SelectAccessPlan` from reading it; P7 seeks
+> from the raw bound subset), so it needs an explicit firewall-relaxation decision to earn a reader. The
+> E-71 header-token mini-diff was found ALREADY DISCHARGED at tip (`lib/Rel/Format.cpp:400-403` emits `rel`).
+> NEXT (owner re-ranks): P6.4–P6.6 runtime evaluation (cyclic activation / joint fixpoint / DRed — the first
+> M3 divergence, LARGE), P8 (ordered trie, HEAVY), or P9 (after a firewall-relaxation decision).**
+
 > **P7c LANDED (session 25): retire the probe-REDUNDANT partial-scan re-check — the AccessPlan
 > Fold C.** Now that P7b NAMES every interior partial index scan `kPartialKeyHashSeek` and the
 > V-PLAN-HONEST belt proves the emitted arm is the full-key-exact `keyed_chain`

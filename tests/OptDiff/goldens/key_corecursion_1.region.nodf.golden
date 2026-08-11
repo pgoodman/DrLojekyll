@@ -27,5 +27,6 @@ region R0  owner=program-root  parents=()  children=() {
   rule  R6  produces=q  routes=(p.K->q.K, p.V->q.V)
   shared-field  F0  members=(lookup.K, p.K, q.K)
   shared-field  F1  members=(lookup.V, p.V, q.V)
+  fused-fixpoint  C0  binding-prefix=(K)
 }
 census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=3 result-ports=1 row-contracts=5

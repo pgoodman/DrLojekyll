@@ -494,6 +494,38 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
         }
       }
     }
+
+    // P6.3 fusion block: one line per recursive component (1:1 with the P6.1
+    // recursive-component block), appended AFTER the shared-field block. Gated by
+    // the loop over `recursive_components` (a non-recursive program emits nothing
+    // → no golden moves), so — like the P6.1/P6.2 blocks — it carries NO census
+    // count. OWN literal spacing ("fused-fixpoint"/"joint-fixpoint" are both 14
+    // chars, so the C<k> column self-aligns even in a future dump that mixes the
+    // two kinds; NOT folded into the shared `kind_w` — E-K5-PAD). A FUSED line
+    // names the binding prefix by the FIRST member's parameters (members ascend
+    // by RelationId; the identity route guarantees the shared VALUE, and every
+    // within-cycle producer preserves {0..L-1} so members.front() has arity ≥ L).
+    for (auto c = 0u; c < R.recursive_components.size(); ++c) {
+      const RecursiveComponent &comp = R.recursive_components[c];
+      if (comp.fusion != RecursiveComponent::Fusion::kFused) {
+        os << "  joint-fixpoint  C" << c << "\n";
+        continue;
+      }
+      os << "  fused-fixpoint  C" << c << "  binding-prefix=(";
+      for (size_t k = 0u; k < comp.binding_prefix.size(); ++k) {
+        if (k) {
+          os << ", ";
+        }
+        for (const RelationSchema &schema : R.relation_schemas) {
+          if (schema.id.v == comp.members.front().v) {
+            os << std::string(
+                schema.decl.NthParameter(comp.binding_prefix[k]).NameAsString());
+            break;
+          }
+        }
+      }
+      os << ")\n";
+    }
   }
   os << "}\n";
 
