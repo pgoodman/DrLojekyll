@@ -13,12 +13,13 @@ plan naming + honesty belt, P7c the re-check retire). No pre-ranked next cut —
    diff, §4 the empirical spike + 3-refuter panel, §5 IR states, §6 exit gate. The method exemplar.
 2. **`p7b-execution-grounding.md`** — the LANDED P7b record (the plan-naming + V-PLAN-HONEST belt
    P7c builds on).
-3. **`session-24-whole-program-seed.md`** — the grounded whole-program pseudocode. STILL VALID
-   except the P7b/P7c deltas: (a) §1.3 `ProgramTableScanRegionImpl` has `plan_kind` + `PlanKind()`;
-   (b) §1.4-B `EmitScan` opens with the V-PLAN-HONEST per-kind implication belt (skip on
-   `kUnplanned`), `.ir` scan render carries a gated ` plan=` token; (c) **P7c**:
-   `BuildMaybeScanPartial`'s per-column seek branch no longer adds cmp equality pairs — the seek
-   body's `cmp` is now vacuous (the gate is gone). Re-verify anchors at tip — the pipeline drifts.
+3. **`session-26-whole-program-seed.md`** — the grounded whole-program pseudocode, REFRESHED at
+   the P7c tip (`99b91335`): §0 status (P1–P7c landed), §1 the as-is pipeline pseudocode with
+   P7b/P7c folded in as LANDED (§1.3 the `BuildMaybeScanPartial` mint + the vacuous seek `cmp`;
+   §1.4-B `EmitScan` plan-driven + V-PLAN-HONEST belt), §2 the path forward as diffs (P6.3–P6.6,
+   P8, P9, the small cuts), §3 the four authorities, §4 the next-cut table, §5 open questions.
+   START HERE for the whole-program view. Re-verify anchors at tip — the pipeline drifts each
+   session. (The older `session-24-whole-program-seed.md` is the pre-P7b snapshot — superseded.)
 4. **memory `regional-dataflow-core-epoch`** (P7c banner at the head) + **`greenfield-rewrite-motivation`**.
 5. For the runtime layers: **`reconstruction-diffs.md §3-P6.3..P6.6`** + memory `demand-cost-model`
    / `mobius-differential-dataflow` / `free-termination-paper`. For the physical layers:
