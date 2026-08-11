@@ -694,6 +694,42 @@ never propagate a narrative constant.
 
 ## The frozen regional layer (Stage B, RegionalDataFlowCore — LANDED)
 
+> **P7c LANDED (session 25): retire the probe-REDUNDANT partial-scan re-check — the AccessPlan
+> Fold C.** Now that P7b NAMES every interior partial index scan `kPartialKeyHashSeek` and the
+> V-PLAN-HONEST belt proves the emitted arm is the full-key-exact `keyed_chain`
+> (`Index::First/Next`), the redundant `TUPLECMP` re-check `BuildMaybeScanPartial` wrapped around
+> each seek body is GONE. **This is the FIRST cut where the `AccessPlan` authority PAYS OFF in
+> emission** — unlike P7/P7b it MOVES codegen (the seek carriers' generated
+> `if (key == scanned) { … }` gate disappears; `.h`/`.ir` shrink). THE CUT (shape (i), minimal):
+> in `BuildMaybeScanPartial` (`Build.h`) the per-column indexed branch is reached ONLY on the
+> `kPartialKeyHashSeek` arm (the all-columns-bound case early-returns before the mint), so the two
+> `cmp->lhs_vars/rhs_vars.AddUse` pairs (and the dead `in_var`/`j` machinery) were exclusively on
+> the seek path — deleting them leaves the `cmp` a VACUOUS (trivially-equal) TUPLECMP that survives
+> only as the body's parent region + `col_id_to_var` recordization anchor. PRESERVED: `scan->in_vars`
+> (the seek probe key, `Database.cpp:2818`), `in_cols`, `out_vars`, `col_id_to_var` (populated for
+> EVERY column). CORRECTNESS: the index key set == the bound-column set by construction
+> (`GetOrCreateIndex(in_col_indices)`), and `Index::First/Next` is FULL-KEY EXACT by contract
+> (`include/drlojekyll/Runtime/Table.h:789-824`), so every yielded row already has key columns == the
+> requested key — the deleted `in_var==out_var` pairs were always-true. This is the SAME argument
+> that let the TABLEJOIN body (and the differential sections) omit their per-row re-check
+> (`Table.h:799-803`) — P7c is Fold C for the partial-scan path; keep the two linked. The full-scan
+> arm (`index==nullptr`) ALREADY built an empty cmp (the 22 `scan-table` carriers exercise the shape),
+> so P7c only makes the seek arm match; the P7b V-PLAN-HONEST belt is UNCHANGED and still never fires.
+> IR shape: opt/nodf (controlflow-opt ON) elide the vacuous cmp entirely (`OptimizeImpl(TUPLECMP)`,
+> `Optimize.cpp:595` — replace kEqual-empty with body); nocf/none keep an empty `if-compare`
+> EmitCompare renders as no gate (`Database.cpp:2914`); both emit identical gate-free codegen. Gate
+> GREEN: OptDiff **SUITE: PASS (226)**, ctest **5/5**, EVERY answer golden (`.stdout`/oracle/
+> monotone/behavioral) BYTE-IDENTICAL across all 4 modes (answer-invariance = the correctness proof).
+> Goldens: **1 MOVED** (`negate_1.ir.opt` — the `if-compare`/`if-true` gate removed, 5 ins/7 del, all
+> region ids + other lines byte-identical) + **1 NEW** (`negate_1.h.opt` via a new `h opt` `.irgold`
+> step — pins the gate-free `idx_28.First/.Next` loop; `negate_1` had no `.h` golden). Grounded
+> (confirm-then-ground) + in-tree empirical spike + 3-refuter opus panel (all `refuted=false` high
+> confidence, "none found") in
+> `docs/proposals/RegionalDataFlowCore.artifacts/p7c-execution-grounding.md`. **NEXT (owner
+> re-ranks): P6.3–P6.6 runtime evaluation (P6.3 fusion-detection spike = low-risk entry) or P8/P9
+> (ordered trie / path inference) — the AccessPlan-authority arc through emission is now complete
+> for the partial-scan path.**
+
 > **P7b LANDED (session 24): interior/join plan-driven scans — the EmitScan V-PLAN-HONEST belt.**
 > P7 threaded the `AccessPlan` authority onto the `#query` path ONLY; P7b extends it to the
 > INTERIOR/JOIN table-scan path. `ProgramTableScanRegionImpl` gains an `AccessPlan

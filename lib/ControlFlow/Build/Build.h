@@ -467,19 +467,23 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
     scan->in_vars.AddUse(in_var);
   }
 
-  // Every partial index scan emits this TUPLECMP belt re-checking the
-  // scanned results against the requested key. The index probe is in fact
-  // full-key exact (Table.h `First`/`Next` — the contract the join folds
-  // pinned), so the belt is probe-REDUNDANT by the same argument that
-  // retired the join belts — but retiring it is its OWN fold with its own
-  // witness and gate family (the R-final Fold C candidate); until that
-  // lands, the belt stays, deliberately.
+  // The scan body nests under a TUPLECMP `cmp`. Historically (pre-P7c) this
+  // TUPLECMP re-checked each scanned row's key columns against the requested
+  // key. That re-check was probe-REDUNDANT: the runtime Index::First/Next probe
+  // is FULL-KEY EXACT (include/drlojekyll/Runtime/Table.h:789-824 — a slot
+  // matches only on the generated Key's memberwise VALUE `operator==` over
+  // every key column), the SAME fact that let the TABLEJOIN body drop its
+  // per-row re-check. P7c (Fold C for the partial-scan path) retires it: the
+  // per-column loop below adds NO comparison pairs for the seek, so this `cmp`
+  // survives only as the body's parent region and the col_id_to_var
+  // recordization anchor, emitting a vacuous (trivially-equal) compare that
+  // codegen renders as no gate. The full-scan arm (no index) already built an
+  // empty cmp; P7c makes the seek arm match.
   TUPLECMP * const cmp = impl->operation_regions.CreateDerived<TUPLECMP>(
       scan, ComparisonOperator::kEqual);
   scan->body.Emplace(scan, cmp);
 
   auto i = 0u;
-  auto j = 0u;
   for (TABLECOLUMN *table_col : table->columns) {
 
     VAR *out_var = scan->out_vars.Create(
@@ -492,9 +496,13 @@ static bool BuildMaybeScanPartial(ProgramImpl *impl, QueryView view,
       assert(index != nullptr);
       scan->in_cols.AddUse(table_col);
 
-      VAR *in_var = scan->in_vars[j++];
-      cmp->lhs_vars.AddUse(in_var);
-      cmp->rhs_vars.AddUse(out_var);
+      // P7c: a bound column is by construction an index KEY column here (the
+      // index covers exactly the bound subset) and this is always the
+      // kPartialKeyHashSeek arm (index present). Because Index::First/Next is
+      // full-key exact (see the cmp comment above), the scanned row's key
+      // columns already equal the requested key — so we add NO equality pair
+      // (cmp->lhs_vars/rhs_vars) here. The requested key values still flow to
+      // the seek probe via scan->in_vars, populated above.
 
     } else {
       scan->out_cols.AddUse(table_col);

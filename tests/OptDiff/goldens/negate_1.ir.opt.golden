@@ -76,13 +76,11 @@ proc ^flow:60($add_queue:21<i32,i32>, $net_additions:25<i32>)
     vector-unique $net_additions:25<i32>
     vector-loop {@A:27} over $net_additions:25<i32>
       scan-index select {@A:30, @B:31} from %table:11[i32,i32] where {@A:27} in %index:28[i32,_] plan=partial-key-hash-seek
-        if-compare {@A:30} = {@A:27}
-          if-true
-            check-member in-new {@A:30, @B:31} in %table:11[i32,i32]
-              if-member
-                update-count -nonrecursive {@A:27, @B:31} in %table:4[i32,i32]
-                  if-crossed
-                    vector-append {@A:27, @B:31} into $delete_queue:32<i32,i32>
+        check-member in-new {@A:30, @B:31} in %table:11[i32,i32]
+          if-member
+            update-count -nonrecursive {@A:27, @B:31} in %table:4[i32,i32]
+              if-crossed
+                vector-append {@A:27, @B:31} into $delete_queue:32<i32,i32>
     vector-unique $delete_queue:32<i32,i32>
     vector-loop {@35, @36} over $delete_queue:32<i32,i32>
       claim-del {@35, @36} in %table:4[i32,i32]
