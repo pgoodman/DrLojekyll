@@ -1936,11 +1936,22 @@ OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif) {
     } else {
       os << "whole-query-scc scc#" << fam.scc->v;
     }
+    // The §6 `root_use` slot, singular. A flat family has a SET of root
+    // obligations (its terminal-insert + bound-read covers), not the single
+    // specialization root of a §6 context family, so `root_use` is nullopt here
+    // and renders `root=none`; Phase-D subdivision fills the singular field.
+    os << " root=";
+    if (fam.root_use.has_value()) {
+      os << "u#" << fam.root_use->v;
+    } else {
+      os << "none";
+    }
     os << "\n";
     for (const FamilyNode &node : fam.nodes) {
       os << "  node if#" << fam.id.v << "." << node.id.local << " origin=q#"
-         << node.origin.v << " " << node.tag << " residual="
-         << residual_tok(node.origin.v);
+         << node.origin.v << " " << node.tag << " role="
+         << (node.role == OccurrenceRole::kRoot ? "root" : "interior")
+         << " residual=" << residual_tok(node.origin.v);
       if (node.output_collection.has_value()) {
         os << " -> lc#" << node.output_collection->v;
       }
@@ -1956,6 +1967,26 @@ OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif) {
         // is exactly the one obligation that carries an authority).
         os << "insert -> lc#" << flow.sites[u.terminal_site.v].collection.v
            << " ea#" << u.terminal_site.v;
+      } else if (u.cls == UseClass::kBoundQueryRead) {
+        // A bound-#query read of a materialized collection (§7.2 item 1). No
+        // authority (reads don't emit — §8.4); covered by the collection's
+        // writer0 INSERT node. `bound=(...)` are the adornment's bound columns.
+        const LogicalCollection &lc = flow.collections[u.read_collection.v];
+        const auto decl =
+            QueryInsert::From(by_det.at(lc.writer0.v).first).Declaration();
+        bos << decl.Name();
+        os << "query " << take() << " bound=(";
+        std::unordered_map<unsigned, std::string> pname;
+        for (auto p : decl.Parameters()) {
+          bos << p.Name();
+          pname.emplace(p.Index(), take());
+        }
+        auto sep = "";
+        for (uint32_t idx : u.read_bound_cols) {
+          os << sep << pname[idx];
+          sep = ",";
+        }
+        os << ") reads lc#" << u.read_collection.v;
       } else {
         os << "col=";
         if (u.producer_col == UINT32_MAX) {

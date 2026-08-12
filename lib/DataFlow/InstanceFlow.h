@@ -189,6 +189,7 @@ struct OriginUse {
   UseClass cls;
   DerivationSiteId terminal_site;    // valid iff cls == kTerminalInsert
   LogicalCollectionId read_collection;  // valid iff cls == kBoundQueryRead
+  std::vector<uint32_t> read_bound_cols;  // bound param indices; kBoundQueryRead
 };
 
 // A family = one SCC-condensation component (grounding B4).

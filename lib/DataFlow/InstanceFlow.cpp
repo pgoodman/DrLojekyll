@@ -6,8 +6,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
+#include <set>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+
+#include <drlojekyll/Parse/Parse.h>
 
 #include "Query.h"
 
@@ -173,7 +177,18 @@ InstanceFlowProgram BuildFlatInstanceFlow(Query query) {
     node.origin = QueryOriginId{d};
     node.kind = info.kind;
     node.tag = info.tag;
-    node.role = OccurrenceRole::kInterior;  // TODO(CP1): root selection.
+    // CP2 root selection: a node is a kRoot occurrence iff it satisfies a §7.2
+    // item-1 OUTPUT root obligation — a terminal-INSERT writer (and, by
+    // coincidence in the flat slice, every bound-#query-read target, since a
+    // read is covered by its collection's writer0 INSERT node). Candidate
+    // CONTEXTS (§7.2 items 3/4: join pivots, aggregate groups) are the separate
+    // `seeds` catalog, NEVER node roles — so surfacing seeds never churns role=.
+    // `Family::root_use` stays nullopt: a flat family has a SET of root
+    // obligations, not the single specialization root of a §6 context family
+    // (the dump renders `root=none`; Phase-D subdivision fills the singular
+    // field). See session-33-grounding.md (CLAIM-2 F2, panel-adjudicated).
+    node.role = (info.kind == kIFInsert) ? OccurrenceRole::kRoot
+                                         : OccurrenceRole::kInterior;
     node.residual = ResidualOf(info.v, info.kind);
     if (info.kind == kIFInsert) {
       node.output_collection =
@@ -237,6 +252,61 @@ InstanceFlowProgram BuildFlatInstanceFlow(Query query) {
     if (a.role != b.role) return a.role < b.role;
     return a.consumer_out_col < b.consumer_out_col;
   });
+
+  // 5b. bound-#query-read boundary obligations (§7.2 item 1). A bound `#query`
+  // reads a KEY-restricted slice of a materialized collection — a root
+  // obligation with no ForEachUse edge (the query is decl metadata, not a
+  // view). Enumerate per (collection whose decl IsQuery with >=1 bound param,
+  // per unique bound adornment), mirroring the demand pass's read enumeration
+  // (Demand.cpp:468). Each read is covered by the collection's writer0 INSERT
+  // node (§8.4: a non-authoritative occurrence MAY read the authoritative
+  // collection; the read carries NO authority). The reads are APPENDED as a
+  // deterministic CONTIGUOUS SUFFIX after the sorted interior/terminal uses
+  // (ordered by (read_collection, bound-index-vector)), so existing use ids
+  // never renumber (grounding CLAIM-1 R1).
+  std::vector<OriginUse> reads;
+  std::set<std::pair<uint32_t, std::vector<uint32_t>>> seen_adornments;
+  for (const LogicalCollection &lc : flow.collections) {
+    const QueryView wv = by_det.at(lc.writer0.v).v;
+    const ParsedDeclaration decl = QueryInsert::From(wv).Declaration();
+    if (!decl.IsQuery()) {
+      continue;
+    }
+    for (ParsedDeclaration redecl : decl.UniqueRedeclarations()) {
+      std::vector<uint32_t> bound;
+      for (ParsedParameter p : redecl.Parameters()) {
+        if (p.Binding() == ParameterBinding::kBound) {
+          bound.push_back(p.Index());
+        }
+      }
+      if (bound.empty()) {
+        continue;  // all-free query: no key obligation (drains the whole rel).
+      }
+      if (!seen_adornments.emplace(lc.id.v, bound).second) {
+        continue;  // dedup a repeated bound adornment.
+      }
+      OriginUse u;
+      u.consumer = QueryOriginId{lc.writer0.v};  // occ resolves to writer0 node
+      u.producer = kConstProducer;
+      u.producer_col = kNoCol;
+      u.consumer_out_col = kNoCol;
+      u.role = 0u;
+      u.cls = UseClass::kBoundQueryRead;
+      u.read_collection = lc.id;
+      u.read_bound_cols = std::move(bound);
+      reads.push_back(std::move(u));
+    }
+  }
+  std::sort(reads.begin(), reads.end(),
+            [](const OriginUse &a, const OriginUse &b) {
+    if (a.read_collection.v != b.read_collection.v) {
+      return a.read_collection.v < b.read_collection.v;
+    }
+    return a.read_bound_cols < b.read_bound_cols;
+  });
+  for (OriginUse &r : reads) {
+    raw.push_back(std::move(r));
+  }
 
   flow.uses = std::move(raw);
   for (uint32_t i = 0u; i < flow.uses.size(); ++i) {
@@ -408,6 +478,42 @@ bool ValidateInstanceFlow(Query query, const InstanceFlowProgram &flow,
   for (unsigned u = 0u; u < m; ++u) {
     if (!covered[u]) {
       fprintf(stderr, "V-IF-COVERAGE: use u#%u is not covered\n", u);
+      abort();
+    }
+  }
+
+  // V-IF-COVERAGE (kBoundQueryRead arm, grounding CLAIM-1 R1): every bound-read
+  // use forms a CONTIGUOUS SUFFIX of `uses` (once a read is seen, no interior/
+  // terminal use follows — the id-stability guarantee), its `read_collection`
+  // resolves, and its covering occurrence is a live INSERT node (the collection
+  // writer0 — §8.4). Reads carry no authority, so V-IF-EMISSION is untouched.
+  bool in_read_suffix = false;
+  for (unsigned i = 0u; i < m; ++i) {
+    const OriginUse &u = flow.uses[i];
+    if (u.cls == UseClass::kBoundQueryRead) {
+      in_read_suffix = true;
+      if (u.read_collection.v >= flow.collections.size()) {
+        fprintf(stderr,
+                "V-IF-COVERAGE: bound-read u#%u reads unresolved collection "
+                "lc#%u\n",
+                i, u.read_collection.v);
+        abort();
+      }
+      const FamilyNodeId occ = flow.coverage[i].occurrence;
+      const FamilyNode &node = flow.families[occ.family].nodes[occ.local];
+      if (node.kind != kIFInsert) {
+        fprintf(stderr,
+                "V-IF-COVERAGE: bound-read u#%u occurrence if#%u.%u is a %s "
+                "node, not an insert\n",
+                i, occ.family, occ.local, node.tag);
+        abort();
+      }
+    } else if (in_read_suffix) {
+      fprintf(stderr,
+              "V-IF-COVERAGE: use u#%u (%s) follows a bound-read — reads must "
+              "be a contiguous id suffix\n",
+              i, u.cls == UseClass::kTerminalInsert ? "terminal-insert"
+                                                    : "interior");
       abort();
     }
   }
