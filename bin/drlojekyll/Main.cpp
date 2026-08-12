@@ -56,6 +56,7 @@ static OutputStream *gDOTStream = nullptr;
 static OutputStream *gDFStream = nullptr;
 static OutputStream *gContractStream = nullptr;
 static OutputStream *gOriginStream = nullptr;  // K5 advisory origin-provenance.
+static OutputStream *gInstanceFlowStream = nullptr;  // s32 InstanceFlow grove.
 static OutputStream *gRelStream = nullptr;
 static OutputStream *gRelDotStream = nullptr;  // K6-7b DR-IR DOT twin.
 static OutputStream *gDRStream = nullptr;
@@ -168,6 +169,14 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
     gContractStream->Flush();
   }
 
+  // Session-32: the `-instanceflow-out` flat-grove text dump, through the
+  // QueryInstanceFlow tag struct. An OBSERVER at the Query->Rel seam (codegen
+  // byte-unchanged); opt-mode-pinned. Drained alongside `-contract-out`.
+  if (gInstanceFlowStream) {
+    (*gInstanceFlowStream) << hyde::QueryInstanceFlow{*query_opt};
+    gInstanceFlowStream->Flush();
+  }
+
   return ret;
 }
 
@@ -246,6 +255,7 @@ static int HelpMessage(const char *argv[]) {
       << "  -df-out <PATH>            Emit the data flow IR in BB-with-arguments text form to PATH." << std::endl
       << "  -contract-out <PATH>      Emit the Stage-A row contracts in text form to PATH." << std::endl
       << "  -origin-out <PATH>        Emit the K5 Tier-2 origin provenance (advisory) to PATH." << std::endl
+      << "  -instanceflow-out <PATH>  Emit the InstanceFlow flat grove in text form to PATH." << std::endl
       << "  -rel-out <PATH>      Emit the Rel (DR-IR) flow graph in text form to PATH." << std::endl
       << "  -rel-dot-out <PATH>       Emit the Rel (DR-IR) flow graph as GraphViz DOT to PATH." << std::endl
       << "  -region-out <PATH>        Emit the Stage-B frozen regional program in text form to PATH." << std::endl
@@ -328,6 +338,7 @@ extern "C" int main(int argc, const char *argv[]) {
   std::unique_ptr<hyde::FileStream> df_out;
   std::unique_ptr<hyde::FileStream> contract_out;
   std::unique_ptr<hyde::FileStream> origin_out;  // K5 advisory origin dump.
+  std::unique_ptr<hyde::FileStream> instanceflow_out;  // s32 InstanceFlow grove.
   std::unique_ptr<hyde::FileStream> rel_out;
   std::unique_ptr<hyde::FileStream> rel_dot_out;  // K6-7b.
   std::unique_ptr<hyde::FileStream> region_out;
@@ -445,6 +456,24 @@ extern "C" int main(int argc, const char *argv[]) {
                              << "' for origin-provenance output";
         }
         hyde::gOriginStream = &(origin_out->os);
+      }
+
+    // Session-32 InstanceFlow flat-grove text dump (the `-instanceflow-out`
+    // surface). Byte-for-byte the `-contract-out` plumbing.
+    } else if (!strcmp(argv[i], "--instanceflow-out") ||
+               !strcmp(argv[i], "-instanceflow-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "InstanceFlow grove output";
+      } else {
+        instanceflow_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!instanceflow_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for InstanceFlow grove output";
+        }
+        hyde::gInstanceFlowStream = &(instanceflow_out->os);
       }
 
     // Rel (DR-IR) text dump (the `-rel-out` surface).

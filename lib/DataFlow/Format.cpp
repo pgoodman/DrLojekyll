@@ -1854,4 +1854,98 @@ OutputStream &operator<<(OutputStream &os, QueryOrigins qo) {
   return os;
 }
 
+// The InstanceFlow flat-grove dump (`-instanceflow-out`, InstanceFlow.md §16).
+// STAGING: pass-1 structural surface — census header, collections, sites,
+// SCC-split families + nodes, authorities. The per-node `role=`, `root=`, and
+// the `covers` lines are pass-2 (the uses/coverage catalog). NOT goldened until
+// pass 2 finalizes the grammar.
+OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif) {
+  const Query query = qif.query;
+  const InstanceFlowProgram &flow = query.impl->instance_flow;
+
+  // det_seq -> (view, kind) for name rendering (the grove stores value ids).
+  std::unordered_map<unsigned, std::pair<QueryView, unsigned>> by_det;
+  ForEachViewKindTagged(query, [&](QueryView v, unsigned kind, const char *) {
+    by_det.emplace(v.DeterministicOrder(), std::make_pair(v, kind));
+  });
+
+  std::ostringstream buf;
+  OutputStream bos(os.display_manager, buf);
+  const auto take = [&buf]() {
+    auto s = buf.str();
+    buf.str("");
+    return s;
+  };
+  const auto name_tok = [&](QueryColumn c) -> std::string {
+    if (!c.IsConstantOrConstantRef()) {
+      if (auto var = c.Variable()) {
+        bos << *var;
+        return take();
+      }
+    }
+    bos << 'c' << c.Id();
+    return take();
+  };
+  const auto residual_tok = [&](unsigned det) -> std::string {
+    const auto &info = by_det.at(det);
+    std::string out = "(";
+    auto sep = "";
+    for (auto c : VisibleColumnsOf(info.first, info.second)) {
+      out += sep + name_tok(c);
+      sep = ",";
+    }
+    return out + ")";
+  };
+
+  os << "instanceflow  origins=" << flow.origins.size()
+     << " uses=" << flow.uses.size()
+     << " collections=" << flow.collections.size()
+     << " sites=" << flow.sites.size()
+     << " families=" << flow.families.size() << "\n\n";
+
+  os << "collections\n";
+  for (const LogicalCollection &lc : flow.collections) {
+    const auto ins = QueryInsert::From(by_det.at(lc.writer0.v).first);
+    const auto decl = ins.Declaration();
+    bos << decl.Name();
+    os << "  lc#" << lc.id.v << " decl=" << take() << "/" << decl.Arity()
+       << "\n";
+  }
+
+  os << "sites\n";
+  for (const DerivationSite &site : flow.sites) {
+    os << "  ds#" << site.id.v << " writer=q#" << site.writer.v << " -> lc#"
+       << site.collection.v << "\n";
+  }
+  os << "\n";
+
+  for (const Family &fam : flow.families) {
+    os << "family if#" << fam.id.v << " ";
+    if (fam.ownership == SccOwnership::kAcyclic) {
+      os << "acyclic";
+    } else {
+      os << "whole-query-scc scc#" << fam.scc->v;
+    }
+    os << "\n";
+    for (const FamilyNode &node : fam.nodes) {
+      os << "  node if#" << fam.id.v << "." << node.id.local << " origin=q#"
+         << node.origin.v << " " << node.tag << " residual="
+         << residual_tok(node.origin.v);
+      if (node.output_collection.has_value()) {
+        os << " -> lc#" << node.output_collection->v;
+      }
+      os << "\n";
+    }
+  }
+  os << "\n";
+
+  os << "authorities\n";
+  for (const EmissionAuthority &ea : flow.authorities) {
+    os << "  ea#" << ea.id.v << " site=ds#" << ea.site.v << " domain=all writer=if#"
+       << ea.writer.family << "." << ea.writer.local << "\n";
+  }
+
+  return os;
+}
+
 }  // namespace hyde

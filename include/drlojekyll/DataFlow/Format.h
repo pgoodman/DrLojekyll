@@ -49,4 +49,17 @@ struct QueryOrigins {
 
 OutputStream &operator<<(OutputStream &os, QueryOrigins qo);
 
+// The InstanceFlow flat-grove text dump (the `-instanceflow-out` surface;
+// docs/proposals/InstanceFlow.md §16). A tag struct keeps this operator<<
+// disjoint from the DOT / `.df` / contract / origin ones. The maximally-shared
+// empty-context grove of the FINAL (post-Optimize) graph — deterministic (ids
+// from `det_seq` + canonical catalog order, never pointer/iteration order),
+// pure byte-compare, OPT-MODE-only pinning (the grove is a post-Optimize graph
+// property). Reads `impl->instance_flow`; an OBSERVER — codegen byte-unchanged.
+struct QueryInstanceFlow {
+  Query query;
+};
+
+OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif);
+
 }  // namespace hyde

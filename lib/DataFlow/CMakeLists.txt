@@ -9,6 +9,7 @@ set(DataFlow_PUBLIC_H
 set(DataFlow_SRCS
     "EquivalenceSet.h"
     "Identity.h"
+    "InstanceFlow.h"
     "Optimize.h"
     "Prov.h"
     "Query.h"
@@ -29,6 +30,7 @@ set(DataFlow_SRCS
     "IO.cpp"
     "IdentityJoin.cpp"
     "Induction.cpp"
+    "InstanceFlow.cpp"
     "Insert.cpp"
     "Join.cpp"
     "KVIndex.cpp"

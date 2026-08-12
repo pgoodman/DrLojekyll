@@ -28,6 +28,7 @@ class ErrorLog;
 class QueryImpl;
 class OutputStream;
 struct QueryContracts;  // Format.h — the `-contract-out` dump tag (H-A8).
+struct QueryInstanceFlow;  // Format.h — the `-instanceflow-out` dump tag (s32).
 class FrozenRegionalProgram;  // Regional/Regional.h — the Stage-B planner.
 
 enum class ComparisonOperator : int;
@@ -1174,6 +1175,10 @@ class Query {
   // Stage A (H-A8): the `-contract-out` emitter reads `impl->row_contracts`
   // through this Query wrapper (Format.cpp includes the private QueryImpl).
   friend OutputStream &operator<<(OutputStream &os, QueryContracts qc);
+
+  // Session-32: the `-instanceflow-out` emitter reads `impl->instance_flow`
+  // through this Query wrapper (Format.cpp includes the private QueryImpl).
+  friend OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif);
 
   // Stage B: the frozen-regional-program planner (lib/Regional/Planning.cpp)
   // reads `impl->row_contracts` for the R-STORE row-contract lines.

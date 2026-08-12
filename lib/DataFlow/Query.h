@@ -9,6 +9,7 @@
 #include <drlojekyll/Util/DefUse.h>
 
 #include "Identity.h"
+#include "InstanceFlow.h"
 #include "RowContract.h"
 
 #include <cassert>
@@ -1238,6 +1239,14 @@ class QueryImpl {
   // nothing to preserve (the F1 lesson). Read by the H-A7 validators and the
   // H-A8 `-contract-out` dump; Stage B's input. Empty until the tail call.
   RowContractMap row_contracts;
+
+  // Session-32 InstanceFlow (docs/proposals/InstanceFlow.md): the flat
+  // empty-context grove, materialized ONCE in the `Query::Build` tail (post
+  // row-contracts) by `BuildFlatInstanceFlow`. A PURE, RECOMPUTABLE function of
+  // the FINAL graph — like `row_contracts`, never present during Optimize. Read
+  // by `ValidateInstanceFlow` and the `-instanceflow-out` dump; an OBSERVER, so
+  // codegen is byte-identical. Empty until the tail call.
+  InstanceFlowProgram instance_flow;
 };
 
 // OWN-3 (ruled, always-on): the guard-annotation fold compatibility predicate

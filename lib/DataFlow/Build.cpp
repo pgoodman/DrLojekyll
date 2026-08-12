@@ -2656,6 +2656,16 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
+  // Session-32 InstanceFlow: build the flat empty-context grove (the maximally-
+  // shared FlatFamily baseline, InstanceFlow.md §7.3) + run the always-on grove
+  // validators. A PURE function of the FINAL graph (like row_contracts). An
+  // OBSERVER at the Query->Rel seam — nothing consumes the grove yet, so codegen
+  // is byte-identical. `Query(impl)` shares ownership (non-destructive).
+  impl->instance_flow = BuildFlatInstanceFlow(Query(impl));
+  if (!ValidateInstanceFlow(Query(impl), impl->instance_flow, log)) {
+    return std::nullopt;
+  }
+
 #ifndef NDEBUG
   // K5 conservation belt (DEBUG-only, RESCOPED): every demanded interior's
   // decl MUST be origin-reachable at a live view — the K5-D2 seed + K5-D3 union
