@@ -1,5 +1,11 @@
 # Session-31 seed — S1b: make the demand seed FLOW, then witness + bench the pruning
 
+> **SUPERSEDED (session 31 close).** The owner steered away from finishing the flat back-end
+> ("stop pussyfooting with intermediate flat approaches — boldly move into the target feature space").
+> The flat injector/witness/bench polish below is DEPRIORITIZED; the target is now KEYED INSTANCES
+> directly. See `session-32-keyed-instances-seed.md` + `session-32-prompt.md`. Kept for the flat-arm
+> anchors (injector site, witness recipe) only.
+
 > Written at the S1a close (2026-08-12, branch `keyed-instances`, tips `577c47dc`/`ca31026e`).
 > S1a resurrected the FLAT `-demand` transform and proved it is orthogonal (flag-off byte-identical,
 > SUITE PASS 227, ctest 5/5) AND that a `-demand` program compiles END-TO-END through the whole
