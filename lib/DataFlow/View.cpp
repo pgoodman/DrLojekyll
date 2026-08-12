@@ -555,6 +555,109 @@ bool QueryViewImpl::PrepareToDelete(void) {
   return true;
 }
 
+// OWN-3 (ruled): the guard-annotation fold compatibility predicate. CSE folds
+// ONLY `Equals` JOINs, and `instance_key` (the join's pivot-position vector)
+// is part of what a guard JOIN's `Equals` structurally compares, so it is
+// fold-invariant on JOIN carriers: two guard JOINs cannot be `Equals` yet carry
+// different pivots (proxy-TUPLE carriers are handled by the belt below). By
+// contrast `demand_side`/`kind`/`role` are non-structural site STAMPS recorded
+// PRE-CSE that legitimately differ across a valid fold (on non-recursive
+// witnesses CSE folds the raw-seed TUPLE into the d-reader, so a kRawSeed and
+// a kDReader guard of the SAME forcing collapse); `guarded_read` /
+// `demanded_view` are opaque handles that differ by construction in any
+// two-view fold. Hence the predicate keys on exactly the two fold-invariant
+// identity fields. `is_instance_key` is always false this slice (a future
+// recursive-subgoal slice revisits it). PURE: no views, no QueryImpl.
+//
+// MULTI-ADORNMENT JUSTIFICATION (D3.a.3, discharged; supersedes the D3.a.0
+// LABELED RESIDUAL): fold-eligible annotated views of ONE forcing forward the
+// SAME incoming view, so they carry an IDENTICAL instance_key -- the predicate
+// keys on the two fold-INVARIANT identity fields. `forcing_index` is the
+// LOAD-BEARING identity: a cross-forcing collapse is a mis-keyed instance and
+// CheckGuardAnnotationFold aborts. `instance_key` is a defensive BELT: within a
+// forcing every guard shares the adornment's pivot positions (equal, so no
+// legal same-forcing fold is ever rejected); it can differ ONLY across
+// forcings, which forcing_index already rejects. It is fold-invariant on JOIN
+// carriers (Join::Equals compares pivot vectors) and stale-but-harmless on
+// proxy-TUPLE carriers (Tuple::Equals ignores pivots, but two same-forcing
+// proxy TUPLEs forward different incoming views => ColumnsEq fails => never
+// Equals, so the false-abort is unreachable). direction (a) SURVIVORSHIP is
+// handled by PromoteSurvivorToBody (the surviving record's role is load-bearing:
+// ResolveLiveRecognition + the nested pre-pass derive input ONLY from a kBody
+// stamp).
+bool GuardAnnotationsCompatible(const GuardAnnotation &a,
+                                const GuardAnnotation &b) {
+  return a.forcing_index == b.forcing_index &&
+         a.instance_key == b.instance_key;
+}
+
+// OWN-3 (g1, D3.a.3): the SURVIVOR-RECORD POLICY. CSE picks the fold survivor
+// by depth/det_seq (Optimize.cpp:365), NOT by role -- so a kQueryProjection
+// guard can legally become the survivor of a kBody loser. Downstream,
+// ResolveLiveRecognition (Rel.cpp:977) resolves input_table ONLY from a
+// role==kBody stamp AND the nested pre-pass recursive-content fence
+// (Build.cpp:1452) gates on it too; a kQueryProjection survivor nulls
+// input_table -> the instance is silently skipped at mint (Rel.cpp:1053) +
+// blinds the recursive-content fence. Force kBody to survive whenever the loser
+// carried it. The survivor resolves the RIGHT input_table because a fold happens
+// ONLY when `Join::Equals` holds, forcing `joined_views[1]` pairwise-equality =>
+// the two guards share one input table; the compat gate governs IDENTITY,
+// `Equals` governs input-table SOUNDNESS. instance_key + forcing_index are
+// already equal by the compat gate; demanded_view is an opaque handle, left
+// as-is. PURE (mutates only `surv` from `loser`).
+void PromoteSurvivorToBody(GuardAnnotation &surv, const GuardAnnotation &loser) {
+  // Only a kBody loser carries a recoverable body input. Cases:
+  //   loser=kBody, surv=kQueryProjection -> REPAIR (adopt kBody + loser stamps).
+  //   surv=kBody (either loser)          -> no-op (kBody already survives).
+  //   both=kQueryProjection              -> no-op (no body input to recover;
+  //                                         the g8 stamp-time belt catches a
+  //                                         forcing that minted ZERO kBody).
+  if (loser.role == GuardAnnotation::kBody &&
+      surv.role == GuardAnnotation::kQueryProjection) {
+    surv.role = GuardAnnotation::kBody;  // the ONLY field read post-CSE.
+    // Adopt the loser's PRE-CSE site stamps so the promoted record stays
+    // self-consistent for the OWN-3 diagnostic prints. These are read by NOTHING
+    // downstream (defensive); demanded_view is left as-is (opaque handle).
+    surv.demand_side = loser.demand_side;  // kDReader (the real body read side)
+    surv.kind = loser.kind;
+    surv.guarded_read = loser.guarded_read;
+  }
+}
+
+// Deref-FREE record print (handles as raw %p, never dereferenced) so the pure
+// function is null-handle-safe for the death test's hand-built records.
+static void PrintGuardAnnotation(const char *label, const GuardAnnotation &g) {
+  fprintf(stderr,
+          "  %s: forcing_index=%u kind=%u demand_side=%u role=%u "
+          "is_instance_key=%d instance_key=[",
+          label, g.forcing_index, unsigned(g.kind), unsigned(g.demand_side),
+          unsigned(g.role), int(g.is_instance_key));
+  for (unsigned i = 0u; i < g.instance_key.size(); ++i) {
+    fprintf(stderr, "%s%u", i ? "," : "", g.instance_key[i]);
+  }
+  fprintf(stderr, "] guarded_read=%p demanded_view=%p\n",
+          static_cast<const void *>(g.guarded_read.impl),
+          static_cast<const void *>(g.demanded_view.impl));
+}
+
+// OWN-3 (ruled): the record-comparing incompatible-fold check, always-on
+// (bare fprintf(stderr, ...) + abort() that survives NDEBUG -- the DataFlow-
+// layer abort idiom, matching the DF-BIJECTION check in Format.cpp).
+void CheckGuardAnnotationFold(const GuardAnnotation &loser,
+                              const GuardAnnotation &survivor) {
+  if (GuardAnnotationsCompatible(loser, survivor)) {
+    return;
+  }
+  fprintf(stderr,
+          "OWN-3: incompatible guard-annotation fold -- two distinct demanded "
+          "instances collapsed into one survivor (mis-keyed instance). "
+          "loser forcing_index=%u, survivor forcing_index=%u:\n",
+          loser.forcing_index, survivor.forcing_index);
+  PrintGuardAnnotation("loser   ", loser);
+  PrintGuardAnnotation("survivor", survivor);
+  abort();
+}
+
 // Copy the group IDs and the receive/produce deletions from `this` to `that`.
 void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
 
@@ -609,6 +712,57 @@ void QueryViewImpl::CopyDifferentialAndGroupIdsTo(QueryViewImpl *that) {
 
   if (can_produce_deletions) {
     that->can_produce_deletions = true;
+  }
+
+  // Guard-annotation transfer (rides this choke point exactly as group_ids
+  // do): `this` = loser (being replaced), `that` = survivor. Unlike the
+  // group_ids monotone set-union above, the annotation index is a UNIQUE
+  // scalar the demand census counts once, so it CLEARS on move — a
+  // surviving-`this` funnel (SubstituteAllUsesWith keeps `this` valid, and
+  // the JOIN dup-output self-canon routes through it) would otherwise leave
+  // one index live on two views and double-count downstream.
+  if (guard_annotation_index != QueryView::kNoGuardAnnotation) {
+    if (that->guard_annotation_index == QueryView::kNoGuardAnnotation) {
+      that->guard_annotation_index = guard_annotation_index;
+      that->query = query;  // propagate (INV-OWN3-Q)
+    } else {
+      // Two annotated guards fold into one survivor. Always-on record-
+      // comparing diagnostic (OWN-3, ruled): compatible (same instance + key)
+      // folds are counted; an incompatible fold is a mis-keyed instance and
+      // aborts. The null check is ALWAYS-ON (NDEBUG-safe): a future index
+      // writer that forgets the co-located `query` stamp must abort loudly
+      // here, never degrade to a release SIGSEGV on the record fetch.
+      if (!query) {
+        fprintf(stderr, "OWN-3: annotated view with null query "
+                        "(INV-OWN3-Q broken)\n");
+        abort();
+      }
+      // The survivor-side half of INV-OWN3-Q is ALSO always-on: the record
+      // fetch below indexes `query->guard_annotations` with the SURVIVOR's
+      // index, so a survivor stamped against a null/different QueryImpl must
+      // abort loudly here, never reach an out-of-bounds operator[] in
+      // release (the Fable-review [2] catch).
+      if (!that->query || that->query != query) {
+        fprintf(stderr,
+                "OWN-3: fold survivor's query back-pointer %s the loser's "
+                "(INV-OWN3-Q broken on the survivor side)\n",
+                that->query ? "differs from" : "is null vs");
+        abort();
+      }
+      CheckGuardAnnotationFold(
+          query->guard_annotations[guard_annotation_index],
+          query->guard_annotations[that->guard_annotation_index]);
+      // SURVIVOR-RECORD POLICY (g1, D3.a.3): the compat gate above proved the
+      // fold well-keyed; now force kBody to survive so ResolveLiveRecognition
+      // (Rel.cpp:977) + the nested pre-pass fence (Build.cpp:1452) still see the
+      // body input. loser = `this`'s record, survivor = `that`'s record.
+      PromoteSurvivorToBody(
+          query->guard_annotations[that->guard_annotation_index],  // surv
+          query->guard_annotations[guard_annotation_index]);       // loser
+      ++query->guard_annotation_folded_count;  // the SOLE writer
+    }
+    guard_annotation_index = QueryView::kNoGuardAnnotation;
+    query = nullptr;  // keep index+query paired (INV-OWN3-Q bidirectional)
   }
 }
 

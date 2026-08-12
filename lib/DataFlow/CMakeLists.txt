@@ -23,6 +23,7 @@ set(DataFlow_SRCS
     "Compare.cpp"
     "Constant.cpp"
     "DeadFlowElimination.cpp"
+    "Demand.cpp"
     "Differential.cpp"
     "Format.cpp"
     "IO.cpp"

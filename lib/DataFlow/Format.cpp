@@ -1733,6 +1733,68 @@ OutputStream &operator<<(OutputStream &os, QueryContracts qc) {
     }
   });
 
+  // Declared-key reconciliation lines (R3a, ADJ-R3-E: SCOPED to
+  // relations carrying a bracket — a bracket-free module emits nothing here,
+  // so the existing demand contract goldens are byte-untouched). One line
+  // per bracketed demanded relation (single-forcing by the Step-2b strict
+  // scope), in forcing order: the declared key in WRITTEN order and the
+  // SIP-inferred bound set, both by column name — the oracle-5 observability
+  // fix (the match/mismatch boundary is readable, not guessed).
+  {
+    std::unordered_set<uint64_t> seen_decls;
+    for (const RecognizedSubgraph &rs :
+         qc.query.RecognizedSubgraphs()) {
+      const ParsedDeclaration decl = rs.demanded_decl;
+      if (!decl.HasInstanceKey() || !seen_decls.insert(decl.Id()).second) {
+        continue;
+      }
+      // One line per declared @key set (pragma-written order), paired with the
+      // inferred adornment (some RecognizedSubgraph's key_cols) whose SET equals
+      // it. Post-Step-2b bijection guarantees the pairing is total. The inner
+      // rescan is O(N²) in the per-decl set count (N ≤ arity, tiny).
+      auto set_eq = [](std::vector<unsigned> a, std::vector<unsigned> b) {
+        std::sort(a.begin(), a.end());
+        std::sort(b.begin(), b.end());
+        return a == b;
+      };
+      for (const InstanceKeySet &dset : decl.InstanceKeys()) {
+        const std::vector<unsigned> *inferred = nullptr;
+        for (const RecognizedSubgraph &rs2 : qc.query.RecognizedSubgraphs()) {
+          if (rs2.demanded_decl.Id() == decl.Id() &&
+              set_eq(rs2.key_cols, dset)) {
+            inferred = &rs2.key_cols;
+            break;
+          }
+        }
+        // ADJ-K1-I: an always-on belt (survives NDEBUG) — unreachable on any
+        // compiled program (Step 2b's bijection already passed), so the deref
+        // below is null-safe.
+        if (!inferred) {
+          const std::string_view rel_name = decl.NameAsString();
+          fprintf(stderr, "V-DECLARED-KEY-PAIR: declared @key set on '%.*s' "
+                  "has no matching demanded forcing (Step 2b bijection "
+                  "guarantees a match)\n", static_cast<int>(rel_name.size()),
+                  rel_name.data());
+          abort();
+        }
+        os << "declared-key rel=" << decl.NameAsString()
+           << " declared=(";
+        auto sep = "";
+        for (unsigned pi : dset) {
+          os << sep << decl.NthParameter(pi).NameAsString();
+          sep = ", ";
+        }
+        os << ") inferred=(";
+        sep = "";
+        for (unsigned pi : *inferred) {
+          os << sep << decl.NthParameter(pi).NameAsString();
+          sep = ", ";
+        }
+        os << ")\n";
+      }
+    }
+  }
+
   os << "census: views=" << num_views << " contracts=" << contracts.size()
      << " role{distinct=" << n_distinct << " member=" << n_member << " na="
      << n_na << "}\n"

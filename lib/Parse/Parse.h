@@ -589,6 +589,12 @@ class ParsedModuleImpl
   std::optional<DisplayManager> display_manager;
   std::optional<StringPool> string_pool;
 
+  // Set `true` once the demand transform has fabricated its demand messages
+  // onto this module, so a second `Query::Build` on the SAME module instance
+  // is detected and hard-aborts rather than re-fabricating stale decls
+  // (DemandSeeds G2 — Query::Build is at-most-once per module instance).
+  bool demand_fabricated{false};
+
   // Used by anonymous declarations.
   unsigned next_anon_decl_id{1};
 

@@ -148,6 +148,20 @@ static QueryViewImpl *RecognizeIdentity(QueryJoinImpl *join, const ProvMap &prov
 // carrying, for each of `join`'s output columns, the keep-side input column.
 static void ForwardToKeep(QueryImpl *query, QueryJoinImpl *join,
                           QueryViewImpl *keep) {
+  // M1: FOLD any guard annotation rather than let it MIGRATE onto the fresh
+  // tuple. CopyDifferentialAndGroupIdsTo (invoked by ReplaceAllUsesWith) would
+  // otherwise move `join`'s guard_annotation_index onto the tuple, where
+  // IsCutSuccessorDR (Rel.cpp) honors an annotation on ANY view kind -> a cut
+  // successor with no provisioned demand frontier -> orphaned forcing under
+  // -demand-instance. The guard is being ELIMINATED as redundant, so it is a
+  // FOLD: increment the folded count and clear the index BEFORE the transfer,
+  // keeping the OWN-3 census (n_stamped + folded == guard_annotations.size())
+  // balanced (n_stamped drops by one, folded rises by one).
+  if (join->guard_annotation_index != QueryView::kNoGuardAnnotation) {
+    ++query->guard_annotation_folded_count;
+    join->guard_annotation_index = QueryView::kNoGuardAnnotation;
+  }
+
   QueryTupleImpl *const tuple = Mint(query->tuples, "identity-join/forward");
 #ifndef NDEBUG
   tuple->producer = "IDENTITY-JOIN";

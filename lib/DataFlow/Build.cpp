@@ -2523,7 +2523,9 @@ static void BuildEquivalenceSets(QueryImpl *query) {
 
 std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
                                   const ErrorLog &log,
-                                  const PassPolicy &policy) {
+                                  const PassPolicy &policy,
+                                  bool demand_mode, bool demand_retract,
+                                  bool suppress_demand) {
 
   std::shared_ptr<QueryImpl> impl(new QueryImpl(module));
 
@@ -2572,14 +2574,35 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     }
   }
 
-  // Proxy-view-to-decl correlation map: written by `ConnectInsertsToSelects`
-  // (proxy view -> its relation decl). Its sole reader was the deleted demand
-  // transform; the map is now vestigial but the call still populates it (a
-  // by-ref out-param). A `Query::Build`-SCOPED local — its VIEW* keys dangle
-  // after `Optimize`, so it never becomes a QueryImpl member.
+  // The Tier-1 naming-lift correlation map (RES-3(a)): a `Query::Build`-
+  // SCOPED local — written by `ConnectInsertsToSelects` (proxy view -> its
+  // relation decl), read ONLY by `ApplyDemandTransform` below, destroyed at
+  // return. Never a QueryImpl member: its VIEW* keys dangle after
+  // `Optimize`, so nothing may outlive this two-call window.
   std::unordered_map<VIEW *, ParsedDeclaration> proxy_view_to_decl;
 
   if (!impl->ConnectInsertsToSelects(log, proxy_view_to_decl)) {
+    return std::nullopt;
+  }
+
+  // The LIVE DEMAND TRANSFORM (magic-sets / SLDMagic). Slotted here — AFTER
+  // `ConnectInsertsToSelects` (so predicate producing rules and demanding
+  // subgoals are wired end-to-end) and BEFORE `Optimize` (so demand
+  // relations are folded by the SAME CSE/canonicalize fixpoint — the
+  // shared-demand-frontier fusion) / `IdentifyInductions` / `Stratify` (so
+  // the induction cross-check validates the demand edges). Mode-gated: with
+  // `demand_mode == false` the pass returns at its head before minting any
+  // node, so the graph is byte-identical to today.
+  // df.demand is RESERVED but deliberately UN-GATED in P1 (the Fable
+  // review's catch): -demand is a SEMANTIC flag — a pass policy or bisect
+  // limit silently neutering it would also silently drop its clean
+  // diagnostics (the demand_multi_adorn_1 reject class). A future stage may
+  // define LOUD composition semantics; until then -demand alone decides.
+  if (!impl->ApplyDemandTransform(module, log, demand_mode, demand_retract,
+                                  suppress_demand, proxy_view_to_decl)) {
+    return std::nullopt;
+  }
+  if (num_errors != log.Size()) {
     return std::nullopt;
   }
 
@@ -2633,6 +2656,29 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   if (!ValidateRowContracts(impl.get(), log)) {  // H-A7 validators.
     return std::nullopt;
   }
+
+#ifndef NDEBUG
+  // K5 conservation belt (DEBUG-only, RESCOPED): every demanded interior's
+  // decl MUST be origin-reachable at a live view — the K5-D2 seed + K5-D3 union
+  // propagated it through Optimize. A demanded interior is never DCE'd, so
+  // `reachable` always contains it in correct code; a fire is a genuine gross
+  // drop (seed omitted or union moved off the CDaGI choke point).
+  // Redundant-with-Tier-1 defense-in-depth on the origin path. No query arm:
+  // queries are `!IsInline`-skipped from the seed; the pure-interior class is
+  // delegated to the advisory `-origin-out` dump + the fail-closed opt/nocf
+  // `.region` goldens (K5-D7).
+  {
+    std::unordered_set<uint64_t> reachable;
+    impl->ForEachView([&reachable](QueryViewImpl *v) {
+      for (ParsedDeclaration d : v->origin_decls) {
+        reachable.insert(d.Id());
+      }
+    });
+    for (const RecognizedSubgraph &rs : impl->recognized_subgraphs) {
+      assert(reachable.count(rs.demanded_decl.Id()));  // demanded-interior belt.
+    }
+  }
+#endif
 
   return Query(std::move(impl));
 }
