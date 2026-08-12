@@ -48,7 +48,12 @@ static void CollectMessages(const ::hyde::Query &query,
       if (!seen.insert(m.Id()).second) {
         continue;
       }
-      if (m.IsReceived()) {
+      // ADJ-2: a fabricated `demand__` seed message is REGION-INTERNAL (the
+      // injector sends it; no driver-facing input port). Excluding it here
+      // keeps it out of BOTH `census.input_ports` and the port-minting loop,
+      // so V-REGION-CENSUS (which re-derives from this same source) stays
+      // self-consistent. Dormant flag-off (no demand message is fabricated).
+      if (m.IsReceived() && !query.IsDemandMessage(m)) {
         received.push_back(m);
       }
       if (m.IsPublished()) {

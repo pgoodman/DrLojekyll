@@ -398,16 +398,27 @@ bool QueryImpl::ApplyDemandTransform(
     return true;
   }
 
-  // ACTIVATION GATE (RP-6, session 6). The transform runs when EITHER the
-  // global `-demand` flag is set OR any relation carries an explicit
-  // `@key(K...)` pragma — the pragma is a flagless FORCE-OPT-IN. A
-  // module with neither short-circuits before any walk: nothing is minted,
-  // no module state is mutated, the id-stream is untouched, and the
-  // QueryImpl graph is byte-identical — the hard containment gate for the
-  // pragma-free corpus. The scan is over the PARSED module (a #local whose
-  // flows were proxied away by Connect no longer lives in `relations` —
-  // the decl is the durable carrier), deduped by decl Id across
-  // sub-modules, decl order (deterministic).
+  // ACTIVATION GATE (S1a flat-`-demand` slice). The transform runs ONLY under
+  // the global `-demand` flag. A module built without the flag short-circuits
+  // before any walk: nothing is minted, no module state is mutated, the
+  // id-stream is untouched, and the QueryImpl graph is byte-identical — the
+  // hard containment gate for the flag-off corpus.
+  //
+  // RP-6 flagless `@key` FORCE-OPT-IN is DEFERRED: at this greenfield tip
+  // `@key` is inert parsed metadata (parse-surface rejects still fire; no
+  // semantic/activation effect), and the RP-6 pragma-activation layer belongs
+  // to the DIFF-R3 semantic slice (multi-adornment / keyed lowering), NOT the
+  // flat-`-demand` S1a slice. So `@key` alone never activates demand here; a
+  // `#local rel(...) @key(A).` module stays byte-identical unless `-demand` is
+  // also passed. Under `-demand`, an `@key`'d demanded relation is still
+  // reconciled by V-DECLARED-KEY below (the scan collects the pragma decls for
+  // that check + the pragma-appropriate reject advice). The scan is over the
+  // PARSED module (a #local whose flows were proxied away by Connect no longer
+  // lives in `relations` — the decl is the durable carrier), deduped by decl
+  // Id across sub-modules, decl order (deterministic).
+  if (!demand_mode) {
+    return true;
+  }
   std::vector<ParsedDeclaration> demand_key_decls;
   {
     std::unordered_set<uint64_t> seen_decl_ids;
@@ -427,9 +438,6 @@ bool QueryImpl::ApplyDemandTransform(
     }
   }
   const bool pragma_activated = !demand_key_decls.empty();
-  if (!demand_mode && !pragma_activated) {
-    return true;
-  }
 
   // G2: `Query::Build` is at-most-once per module instance. The fabrication
   // mutates the shared module; a re-entry would fabricate stale demand decls.

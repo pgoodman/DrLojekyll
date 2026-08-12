@@ -1439,6 +1439,13 @@ void Generator::EmitDatabaseDecl(void) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
       continue;
     }
+    // ABA suppression (§7, F2-B(ii)): a fabricated `demand__` seed message has
+    // no driver-facing entry point — the injector calls its `_detail` twin.
+    // Dormant flag-off (no demand message exists).
+    if (auto m = proc.Message();
+        m && program.Query().IsDemandMessage(*m)) {
+      continue;
+    }
     const auto &fx = EffectsOf(proc);
     hh << hh.Indent() << "// Message `" << proc.Message()->Name() << "/"
        << proc.Message()->Arity() << "`.\n";
@@ -3145,6 +3152,12 @@ void Generator::Run(void) {
   // Friendly aliases for each message's input-tuple shape.
   for (ProgramProcedure proc : program.Procedures()) {
     if (proc.Kind() != ProcedureKind::kMessageHandler) {
+      continue;
+    }
+    // ABA suppression (§7, F2-B(ii)): no driver-facing alias for a fabricated
+    // `demand__` seed message. Dormant flag-off. Mirrors the entry-point loop.
+    if (auto m = proc.Message();
+        m && program.Query().IsDemandMessage(*m)) {
       continue;
     }
     auto vec_params = proc.VectorParameters();

@@ -47,6 +47,7 @@ namespace {
 
 static unsigned gFirstId = 0u;
 static PassPolicy gPassPolicy;
+static bool gDemand = false;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
 static const char *gCxxOutDir = nullptr;
@@ -70,7 +71,7 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   gPassPolicy.bisect_counter = 0u;
 
   auto query_opt =
-      Query::Build(module, error_log, gPassPolicy);
+      Query::Build(module, error_log, gPassPolicy, gDemand);
   if (!query_opt) {
     return EXIT_FAILURE;
   }
@@ -598,6 +599,13 @@ extern "C" int main(int argc, const char *argv[]) {
       } else {
         hyde::gPassPolicy.bisect_limit = limit;
       }
+
+    // Enable the live demand transform (magic-sets / SLDMagic) for bound
+    // `#query`s. A SEMANTIC flag, orthogonal to the four golden optimization
+    // modes (never a fifth mode): with it off the transform returns at its
+    // head before minting anything, so the graph is byte-identical.
+    } else if (!strcmp(argv[i], "-demand") || !strcmp(argv[i], "--demand")) {
+      hyde::gDemand = true;
 
     // Datalog module file search path.
     } else if (!strcmp(argv[i], "-M")) {
