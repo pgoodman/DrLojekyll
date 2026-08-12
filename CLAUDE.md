@@ -614,6 +614,38 @@ aggregates/KV over INDUCTION-OWNED
 its OWN recursive result, rejected by the dataflow Stratify pass as the
 sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).
 
+## InstanceFlow (the new context-family IR — Phase A flat grove LANDED, s32)
+
+`lib/DataFlow/InstanceFlow.{h,cpp}` — a NEW compiler IR between the optimized
+Query and Rel (`docs/proposals/InstanceFlow.md`, the 2198-line vision; the
+owner-chosen direction as of session 32). InstanceFlow represents a deterministic
+GROVE of context-parameterized computation families built backward from consumer
+uses. **Only Phase A is built:** the maximally-shared FLAT empty-context grove
+(§7.3) — every family binds NO context, every node's residual IS its full logical
+schema. It is an OBSERVER at the Query→Rel seam: `BuildFlatInstanceFlow` runs at
+the `Query::Build` tail (`Build.cpp:2664`, post-`row_contracts`) and stores an
+`InstanceFlowProgram` by value on `QueryImpl` (the RowContract precedent), but
+NOTHING downstream reads it — so **codegen is byte-identical** (the invariant
+every slice through Phase C must preserve; the first codegen move is Phase D by
+design). Typed-id catalogs (`QueryOriginId`=`det_seq` / `OriginUseId` /
+`LogicalCollectionId` / `DerivationSiteId` / `EmissionAuthorityId` / `FamilyId` /
+`FamilyNodeId` / `QuerySccId`, mirroring `lib/DataFlow/Identity.h`; ids from
+`DeterministicOrder()` + canonical order, NEVER `UniqueId()`/iteration order).
+The grove: origins, collections (INSERT-target decls), derivation sites,
+SCC-condensation families (keyed on the **multi-view-stratum histogram** — a
+stratum with >1 live member IS a recursive SCC, the RowContract Phase-0/P6.1
+notion; `InductionGroupId` tags only the union node and would leave half an SCC
+in the acyclic family), emission authorities, the total-ordered `OriginUse` walk,
+and the per-consumer **coverage bijection** (coverage ≠ emission: `V-IF-COVERAGE`
+covers each consumer obligation once, `V-IF-EMISSION` binds only terminal
+INSERTs). Five always-on `V-IF-*` validators (fprintf+abort, NDEBUG-surviving):
+ORIGIN / CONTEXT / SCC / EMISSION / COVERAGE. `-instanceflow-out` text dump
+(opt-mode-pinned, goldenable, `QueryInstanceFlow` tag). DEFERRED (session-33
+CP2): per-node `role=`/`root=` (awaits pinning §6/§16 root_use), bound-`#query`-
+read uses (§7.2 item 5), candidate seeds (S5), and the `.irgold` witness goldens.
+Authority: `docs/proposals/InstanceFlow.artifacts/session-33-seed.md` (whole-
+program pseudocode + path-forward diffs) + `session-32-phaseA-grounding.md`.
+
 ## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
 
 > **S1a (2026-08-12) re-scope of the text below.** The FLAT DataFlow transform
