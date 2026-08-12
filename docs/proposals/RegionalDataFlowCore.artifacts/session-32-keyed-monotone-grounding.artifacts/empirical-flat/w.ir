@@ -1,0 +1,82 @@
+const u64 @0 = 0
+
+const bool @1 = false
+
+const bool @2 = true
+
+global u64 @16
+
+create %table:4[u64,u64]
+  u64	%col:5	; From
+  u64	%col:6	; To
+
+  %index:7[u64,u64] on %col:5, %col:6
+  %index:46[u64,_] on %col:5
+
+create %table:8[u64]
+  u64	%col:9
+
+  %index:10[u64] on %col:9
+
+create %table:11[u64,u64]
+  u64	%col:12	; From
+  u64	%col:13	; To
+
+  %index:14[u64,u64] on %col:12, %col:13
+  %index:27[u64,_] on %col:12
+
+init proc ^init:3()
+  vector-define $empty:40<u64,u64>
+  vector-define $empty:41<u64>
+  seq
+    call ^entry:15($empty:40<u64,u64>, $empty:41<u64>)
+    return-false
+
+proc ^entry:15($param:17<u64,u64>, $param:22<u64>)
+  vector-define $pivots:21<u64>
+  seq
+    par
+      vector-loop {@From:19, @To:20} over $param:17<u64,u64>
+        update-count +nonrecursive {@From:19, @To:20} in %table:11[u64,u64]
+          if-crossed
+            vector-append {@From:19} into $pivots:21<u64>
+      vector-loop {@24} over $param:22<u64>
+        update-count +nonrecursive {@24} in %table:8[u64]
+          if-crossed
+            vector-append {@24} into $pivots:21<u64>
+    vector-clear $param:17<u64,u64>
+    vector-clear $param:22<u64>
+    call ^flow:47($pivots:21<u64>)
+    return-false
+
+proc ^receive:add_edge/2:31($param:32<u64,u64>)
+  vector-define $empty:34<u64>
+  seq
+    call ^entry:15($param:32<u64,u64>, $empty:34<u64>)
+    return-true
+
+proc ^receive:demand__neighborhood_bf/1:35($param:36<u64>)
+  vector-define $empty:38<u64,u64>
+  seq
+    call ^entry:15($empty:38<u64,u64>, $param:36<u64>)
+    return-true
+
+proc ^inject:42(@Start:43)
+  vector-define $param:44<u64>
+  seq
+    vector-append {@Start:43} into $param:44<u64>
+    call ^receive:demand__neighborhood_bf/1:35($param:44<u64>)
+    return-true
+
+proc ^flow:47($pivots:21<u64>)
+  seq
+    @16 += 1
+    vector-unique $pivots:21<u64>
+    join-tables
+      vector-loop {@From:26} over $pivots:21<u64>
+      select {%col:9 as @28} from %table:8[u64] using %index:10[u64] where %col:9 = @From:26
+      select {%col:12 as @From:29, %col:13 as @To:30} from %table:11[u64,u64] using %index:27[u64,_] where %col:12 = @From:26
+        update-count +nonrecursive {@From:29, @To:30} in %table:4[u64,u64]
+    vector-clear $pivots:21<u64>
+    return-true
+

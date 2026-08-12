@@ -1,0 +1,78 @@
+const u64 @0 = 0
+
+const bool @1 = false
+
+const bool @2 = true
+
+global u64 @16
+
+create %table:4[u64,u64]
+  u64	%col:5	; From
+  u64	%col:6	; To
+
+  %index:7[u64,u64] on %col:5, %col:6
+  %index:41[u64,_] on %col:5
+
+create %table:8[u64]
+  u64	%col:9
+
+  %index:10[u64] on %col:9
+
+create %table:11[u64,u64]
+  u64	%col:12	; From
+  u64	%col:13	; To
+
+  %index:14[u64,u64] on %col:12, %col:13
+
+init proc ^init:3()
+  vector-define $empty:35<u64,u64>
+  vector-define $empty:36<u64>
+  seq
+    call ^entry:15($empty:35<u64,u64>, $empty:36<u64>)
+    return-false
+
+proc ^entry:15($param:17<u64,u64>, $param:22<u64>)
+  vector-define $net_additions:21<u64,u64>
+  vector-define $net_additions:25<u64>
+  seq
+    par
+      vector-loop {@From:19, @To:20} over $param:17<u64,u64>
+        update-count +nonrecursive {@From:19, @To:20} in %table:11[u64,u64]
+          if-crossed
+            vector-append {@From:19, @To:20} into $net_additions:21<u64,u64>
+      vector-loop {@24} over $param:22<u64>
+        update-count +nonrecursive {@24} in %table:8[u64]
+          if-crossed
+            vector-append {@24} into $net_additions:25<u64>
+    vector-clear $param:17<u64,u64>
+    vector-clear $param:22<u64>
+    call ^flow:42($net_additions:21<u64,u64>, $net_additions:25<u64>)
+    return-false
+
+proc ^receive:add_edge/2:26($param:27<u64,u64>)
+  vector-define $empty:29<u64>
+  seq
+    call ^entry:15($param:27<u64,u64>, $empty:29<u64>)
+    return-true
+
+proc ^receive:demand__neighborhood_bf/1:30($param:31<u64>)
+  vector-define $empty:33<u64,u64>
+  seq
+    call ^entry:15($empty:33<u64,u64>, $param:31<u64>)
+    return-true
+
+proc ^inject:37(@Start:38)
+  vector-define $param:39<u64>
+  seq
+    vector-append {@Start:38} into $param:39<u64>
+    call ^receive:demand__neighborhood_bf/1:30($param:39<u64>)
+    return-true
+
+proc ^flow:42($net_additions:21<u64,u64>, $net_additions:25<u64>)
+  seq
+    @16 += 1
+    subgraph-instance i#0 demand $net_additions:25<u64> input $net_additions:21<u64,u64> rescan %table:11[u64,u64] -> publish %table:4[u64,u64] key@{0} row@{1} seal
+    commit-sweep %table:8[u64]
+    commit-sweep %table:11[u64,u64]
+    return-true
+

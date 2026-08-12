@@ -1,0 +1,31 @@
+dataflow
+
+select ^select.0 (From:u64, To:u64)                ; recv #message add_edge/2
+  ATTRIBUTES eqset=1 class=table-less stratum=0 tag=build/predicate-select
+  => ^tuple.2 (From, To)
+
+select ^select.1 (c3:u64)                          ; recv #message demand__neighborhood_bf/1
+  ATTRIBUTES eqset=2 class=table-less stratum=1 tag=demand/seed-receive
+  => ^tuple.3 (c6=c3)
+
+tuple ^tuple.2 (From:u64, To:u64)
+  ATTRIBUTES table=%table:11 eqset=1 class=monotone stratum=2 tag=build/clause-head
+  => ^join.5 .in1(From, To)
+
+tuple ^tuple.3 (c6:u64)
+  ATTRIBUTES table=%table:8 eqset=2 class=monotone stratum=3 tag=demand/raw-seed
+  => ^join.5 .in0(c6)
+
+tuple ^tuple.4 (From:u64, To:u64)
+  ATTRIBUTES eqset=5 class=table-less stratum=5 tag=link/insert-proxy
+  => ^insert.6 (From, To)
+
+join ^join.5 (From:u64, To:u64) {
+  pivot From:u64 <- .in0.c6, .in1.From
+  out To:u64 <- .in1.To
+}
+  ATTRIBUTES eqset=5 class=table-less stratum=4 tag=demand/guard-join
+  => ^tuple.4 (From, To)
+
+insert ^insert.6 (From:u64, To:u64) into %table:4
+  ATTRIBUTES eqset=5 class=monotone stratum=6 tag=connect/query-insert

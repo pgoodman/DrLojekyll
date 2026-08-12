@@ -1,0 +1,59 @@
+I have verified all four assigned attack axes against current-tip code. Writing findings.
+
+---
+
+# REFUTER #3 (BUILDABILITY) — Findings
+
+Verdict-bearing verification done against tip, not extracts. Each finding: severity, concrete failure, anchor, fix.
+
+## F1 — MAJOR (blocking as-framed): the file inventory omits `lib/ControlFlow/Build/Build.cpp`, which holds the *required* cut-successor registration that provisions the monotone band-a1/a2 frontiers and stops the flat guard-web from double-lowering.
+
+**Concrete failure.** The mono slice's band-(a1) demand frontier and band-(a2) input frontier are `TableDeltaVector(demand_table|input_table, kNetAdditions)`. But standard frontier minting in `BuildDRInventory` is **differential-only** (`lib/Rel/Rel.cpp:1399`: `if (!TableIsDifferential(table) || …) continue;`). For the canonical mono witness (`edge`, `demand__neighborhood`, `neighborhood` all monotone) **none** of the three tables is differential, so no net-additions frontier is minted by that path. The monotone frontier is provisioned **only** via the eager cut-successor mechanism — and that registration lived in `Build.cpp`, which the P1 cut deleted (`git show --stat dc965d3c` → `lib/ControlFlow/Build/Build.cpp | 254 +--`) and which the design's file list (E4 §summary items 1-10) never names. Pre-cut `Build.cpp:1019-1025` verbatim:
+
+> *"Keyed instances (GT-5): under `-demand-instance`, a recognized-subgraph guard JOIN successor is fed by its SUBGRAPH_INSTANTIATE op (LowerSubgraphInstance), never the eager walk. Stop the descent (**the flat guard-join web … is NOT emitted**) AND provision this monotone input's net-additions frontier … BOTH the demand and edge boundary inputs."*
+
+Without this: (a) `V-INST-DRAIN` (`context.table_delta_vecs[demand_table][kNetAdditions] != nullptr`) aborts, or codegen null-derefs the frontier vector; **and** (b) the flat `-demand` guard-web (LIVE at tip via S1a) *and* the keyed store both lower the same pub → double publish.
+
+**This also resolves the design's own OPEN Risk R6.** The design leaves "does `-demand-instance` replace or compose with flat?" as an open decision. It is **already answered** by the deleted code: keyed *replaces* flat for recognized forcings, via the eager-walk-stop. `IsCutSuccessorDR` survives generically at tip (`Build.cpp:937`) but the recognized-subgraph arm is gone.
+
+**Fix.** Add `lib/ControlFlow/Build/Build.cpp` as an 11th file. Restore from `dc965d3c^`: (1) the recognized-subgraph cut-successor arm inside the cut-successor test (provisions the monotone demand+input net-additions frontiers), (2) the eager-walk-stop at the guard-JOIN boundary (kills the flat web for recognized forcings — closes R6 as REPLACE), (3) the `Program::Build(…, bool demand_instance)` param threading (`Build.cpp:1333`) + per-forcing feature-gap fences. ~50-150 lines, byte-recoverable.
+
+## F2 — MAJOR (correctness-in-buildout, not a compile blocker): `-Werror` is OFF, so growing `DROpKind`/`ProgramOperation` does **not** fail the build on a forgotten exhaustive-switch arm — the ~131 case-sites must be hand-audited, and a miss is a silent runtime abort or misbehavior.
+
+**Concrete failure.** I resolved the contradiction between `CMakeLists.txt:36` (`-Werror`) and `lib/Rel/Format.cpp:61` ("-Wswitch is warning-only"). `-Werror` is applied only under `if(WARNINGS_AS_ERRORS)` (`CMakeLists.txt:107`), and `WARNINGS_AS_ERRORS` is **never set** anywhere (no `option()`, no preset, absent from `build/debug/CMakeCache.txt`). So `-Wall`'s `-Wswitch` is warning-only. Adding the 3 `DROpKind` enumerators + `ProgramOperation::kSubgraphInstance` therefore compiles even where switch arms are missing — the missing arms fall through to the post-switch `abort()` (e.g. the DROpKind name-map at `Format.cpp:79`, 25 arms, no `default`) at **runtime**, or are silently skipped. Exhaustive-switch load: `Rel.cpp` (65 `case DROpKind::` sites), `Format.cpp` (44), `Program.cpp` (22 `case ProgramOperation::`), `Procedure.cpp` (27). The compiler will emit `-Wswitch` warnings pointing at each, but in a noisy build they are easy to miss — and E3 already flags the worst instance (`DROpStratum`/`key_of` defaulting to band 0 as "the #1 way a wrong ordering slips past every other validator").
+
+**Fix.** Do not rely on the compiler to enforce completeness. After adding the enumerators, `grep -n 'case DROpKind::\|case ProgramOperation::'` every switch in those 4 files and restore each arm from `dc965d3c^`. Treat `DROpStratum` (loud-fail on miss, per E3) and the `Format.cpp` name-maps as mandatory. Consider a throwaway local build with `-DWARNINGS_AS_ERRORS=ON` to turn the audit into a hard gate.
+
+## F3 — MINOR (refutes a blocker): StateCell **cannot** back the tuple-keyed sub-relation; the design correctly restores `InstanceStore.h`, and I confirmed it compiles verbatim against the current (data-structures-epoch) `Table.h`.
+
+**Verification.** The E5 verdict (restore, don't adapt) is sound — StateCell's `Recompute::Working` is a flat `{Vec<Summary>*, Vec<int32_t>*}` scalar multiset (`StateCell.h:207-265`), not a `Table<RowT>`; its `Seal` is a value copy, not the O(1) pointer swap the frozen-pair design needs. More importantly for buildability, I checked every `Table<RowT>` member `InstanceStore.h` depends on against current `Table.h`: `RowStore(Allocator)` ctor via `using RowStore<Row>::RowStore` (`Table.h:255`), `Find`→`kNoRow` (`Table.h:79-88`, `kNoRow` at `:18`), `RowAt`/`NumRows` (`:71-77`), `TryAdd` (`:255`), `Reset` (`:304`), `Seal` (`:297`) — all present, semantics unchanged. The dead-row compaction epoch did **not** perturb these; InstanceStore never calls the compaction path. Risk R8 (design's own) is **discharged**: `git show dc965d3c^:.../InstanceStore.h > …` compiles as-is. Not a blocker.
+
+## F4 — MINOR (refutes a blocker): the reserved `DROp` fields + `PlanNode`/`DRArm` spine **suffice**; no new field is needed.
+
+**Verification.** Every field the mint writes exists at tip: `table_op_table`/`table_op_sign` (`Rel.h:607-608`), `demanded_view`/`demand_table`/`input_table`/`instance_store_id`/`forcing_index` (`Rel.h:695-699`), `context_cols`/`context_col_sources` (`:706-707`), `arms` (`std::vector<DRArm>`, `:755`), `effects`/`ctx`. The rescan spine types are live: `PlanKind::{kAccess,kFold}` (`Rel.h:456`), `Lowering::kSectionWalk` (`:469`), `BindingSource::kInstanceKeySlot` (`:464`), `PlanNode.fold_table/fold_sign/fold_class` (`:496-498`), `bound_col_sources` (`:484`). The HP-3 "pub rides `table_op_table`, no new field" decision holds at tip (the comment block `Rel.h:691-692` is intact). Attack #2 refuted as a blocker.
+
+## F5 — MINOR (refutes a compile risk): `ResolveLiveRecognition` compiles — the S1a-restored `GuardAnnotation` did **not** drift.
+
+**Verification.** Design Risk R2 flagged `GuardAnnotation::kBody`/`::instance_key` as unverified. At tip (`Query.h:1001-1032`): `enum Role : uint8_t { kBody, kQueryProjection }` (unscoped ⇒ `GuardAnnotation::kBody` resolves), `std::vector<unsigned> instance_key`, `Role role`, `unsigned forcing_index`, `QueryView guarded_read`, `QueryView demanded_view` — exactly what the resolver reads. `QueryView::GuardAnnotationIndex()` (`Query.h:447`), `kNoGuardAnnotation` (`:446`), `ForEachView` (`:1126`) all present. `BuildDRInventory(impl, context, Query query, scc_map)` (`Rel.cpp:1363`) has `query`+`context` in scope, so the mint insertion at `Rel.cpp:1618` is clean. Risk R2 discharged.
+
+## F6 — MINOR: the `ProgramSubgraphInstanceRegion` region family is fully deleted, but its re-add is **bounded and mechanical** — not a scope blowup.
+
+**Verification.** Deleted at tip: public wrapper `ProgramSubgraphInstanceRegion` + `IsSubgraphInstance()` + impl class + `AsSubgraphInstance` + `Visit` overload + `FROM_OP` (Program.h `-94`, lib Program.h `-94`... i.e. Program.h public+impl, `Program.cpp -88`, `Operation.cpp -46`, `Format.cpp -32`). But: (a) `GROUPUPDATE` is a byte-exact peer template (its site-set: Program.h decl, `FROM_OP(…, AsGroupUpdate)` at `Program.cpp:385`, `Operation.cpp:147/461/490`, the `Is*` accessor, the Visit overload); (b) `ProgramVisitor::Visit(cls){}` has **empty default bodies** (`Visitor.cpp:13`, macro-generated) ⇒ adding a `Visit` overload breaks **no** existing visitor subclass (only `Format.cpp` is even a concrete subclass); (c) codegen dispatch is a manual `if/else if (region.IsX())` chain (`Database.cpp:1841`), so it takes exactly one new arm, not a visitor override. Scope is real (~5 files of boilerplate) but each line is templated by GROUPUPDATE and recoverable from `dc965d3c^`. Attack #3 is a scope item, not a blocker.
+
+## F7 — MINOR (refutes a blocker): codegen `EmitSubgraphInstance` re-targets cleanly onto the ADL/functor + data-structures epoch — and is *simpler* than StateCell.
+
+**Verification.** Attack #4. Every helper the emitter uses is present unchanged: `VecName` (`Database.cpp:232`), `EmitHashStruct` (`:303`), `EmitIndexAdds` (`:346`), `RowExpr` (`:350`), `table_member` (`:407`), `col_field` (`:409`), `index_member` (`:413`). The `Database`-struct-member + ref-param threading pattern the design mirrors (`StateCell.h`-based, `Database.cpp:883-932`) is **LIVE**, directly cloneable. Crucially, InstanceStore emission needs **no driver ABI** — `Row_<id>` is a plain published-row hash struct, unlike StateCell's `Reduce_<id>` functor bridge — so the ADL/functor-surface migration (every functor a driver free function) simply *does not touch* this emitter. Not a blocker.
+
+## F8 — MINOR: the 4→5-arg `Program::Build` ripple (design Risk R7) is trivial.
+
+**Verification.** Exactly one real invocation (`Main.cpp:111`) + the definition (`Build.cpp:1242`/`:1333`). `bin/Oracle`/`bin/RefHarness` operate at the `Query`/interpreter level, not `Program::Build`. Default the new param `false` in the header; one call-site edit. Non-issue.
+
+## F9 — MINOR (residual, cannot fully refute): the slice-1 monotone invariant `TableIsDifferential(pub_table)==false` is a real precondition; the loud fence the design proposes is necessary but I could not verify no corpus mono witness violates it silently.
+
+The design's Risk R5 fix (a `ValidatorFail` if `TableIsDifferential(pub_table)` under the mono slice) is correct and cheap. Residual risk: the *only* mono witness confirmed buildable end-to-end is the E1 `nbhd.dr` shape (bound `#query` over a monotone base). Any bound `#query` whose target is `@differential` silently needs the (unbuilt) differential arm. The fence converts this from miscompile to loud-abort — keep it mandatory from day one.
+
+---
+
+## VERDICT
+
+**The monotone slice SURVIVES as an approach, but NOT exactly "as framed."** The runtime store (F3), reserved DR-IR fields + spine (F4), recognition resolver (F5), region-family re-add (F6), codegen retarget (F7), and `Program::Build` ripple (F8) are all verified buildable — the substrate is intact and the work is byte-faithful restoration, not new design. **Two corrections are load-bearing before the one-session claim holds:** (F1) the file inventory must add `lib/ControlFlow/Build/Build.cpp` — its deleted recognized-subgraph cut-successor registration is what provisions the monotone band-a1/a2 frontiers and stops flat+keyed double-lowering (and it silently *closes* the design's open Risk R6 as "keyed replaces flat"); (F2) with `-Werror` OFF, the ~131 exhaustive-switch case-sites across 4 files are a manual audit, not a compiler-enforced one, so a forgotten arm is a silent runtime abort. Total surface: ~1200-1500 lines across **11** files (not 10), all recoverable from `dc965d3c^`. Feasible in one focused session **if** Build.cpp is added to the plan and the switch audit is treated as a hard gate (e.g. a throwaway `-DWARNINGS_AS_ERRORS=ON` build).
