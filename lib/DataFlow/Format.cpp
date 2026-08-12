@@ -1919,6 +1919,16 @@ OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif) {
   }
   os << "\n";
 
+  // InputColumnRole ordinal -> short legible token (the enum order in Query.h).
+  static const char *const kRoleName[] = {
+      "copied",    "negated",   "pivot",       "join-col",  "cmp-lhs",
+      "cmp-rhs",   "index-key", "index-val",   "functor-in", "agg-config",
+      "agg-group", "aggregated", "merged",     "materialized", "published"};
+  const auto role_tok = [&](unsigned r) -> const char * {
+    return r < (sizeof(kRoleName) / sizeof(kRoleName[0])) ? kRoleName[r]
+                                                          : "?role";
+  };
+
   for (const Family &fam : flow.families) {
     os << "family if#" << fam.id.v << " ";
     if (fam.ownership == SccOwnership::kAcyclic) {
@@ -1935,6 +1945,32 @@ OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif) {
         os << " -> lc#" << node.output_collection->v;
       }
       os << "\n";
+    }
+    for (const OriginUseId use_id : fam.covers) {
+      const OriginUse &u = flow.uses[use_id.v];
+      const FamilyNodeId occ = flow.coverage[use_id.v].occurrence;
+      os << "  covers u#" << use_id.v << " ";
+      if (u.cls == UseClass::kTerminalInsert) {
+        // Emission authority renders inline ONLY on a terminal-insert cover (the
+        // §16-vs-B2 reconciliation: coverage != emission, but the terminal cover
+        // is exactly the one obligation that carries an authority).
+        os << "insert -> lc#" << flow.sites[u.terminal_site.v].collection.v
+           << " ea#" << u.terminal_site.v;
+      } else {
+        os << "col=";
+        if (u.producer_col == UINT32_MAX) {
+          os << "*";
+        } else {
+          os << u.producer_col;
+        }
+        os << " role=" << role_tok(u.role) << " src=";
+        if (u.producer.v == UINT32_MAX) {
+          os << "const";
+        } else {
+          os << "q#" << u.producer.v;
+        }
+      }
+      os << " occ=if#" << occ.family << "." << occ.local << "\n";
     }
   }
   os << "\n";

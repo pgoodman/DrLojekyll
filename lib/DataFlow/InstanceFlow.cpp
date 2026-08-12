@@ -2,6 +2,7 @@
 
 #include "InstanceFlow.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
@@ -94,6 +95,7 @@ InstanceFlowProgram BuildFlatInstanceFlow(Query query) {
   // LogicalCollectionId interns `Declaration().Id()` over live INSERT views in
   // first-seen order; one DerivationSite per live INSERT in stored order.
   std::unordered_map<uint64_t, LogicalCollectionId> coll_by_decl;
+  std::unordered_map<unsigned, DerivationSiteId> site_of_origin;  // det_seq -> site
   for (auto iv : query.Inserts()) {
     const QueryView v = QueryView::From(iv);
     if (v.impl->is_dead) {
@@ -112,8 +114,9 @@ InstanceFlowProgram BuildFlatInstanceFlow(Query query) {
     } else {
       cid = it->second;
     }
-    flow.sites.push_back(DerivationSite{
-        DerivationSiteId{static_cast<uint32_t>(flow.sites.size())}, origin, cid});
+    const DerivationSiteId sid{static_cast<uint32_t>(flow.sites.size())};
+    site_of_origin.emplace(origin.v, sid);
+    flow.sites.push_back(DerivationSite{sid, origin, cid});
   }
 
   // ---- 3. SCC-condensation families + nodes (B4) ------------------------
@@ -187,9 +190,68 @@ InstanceFlowProgram BuildFlatInstanceFlow(Query query) {
         site.id, node_of_origin.at(site.writer.v)});
   }
 
-  // ---- 5. uses + coverage + seeds --------------------------------------
-  // TODO(CP1): the total-ordered ForEachUse walk (B1) + the per-consumer
-  // coverage bijection (B2) + candidate seeds (S5). Left empty in pass 1.
+  // ---- 5. uses + coverage (B1 total order, B2 decoupled) ----------------
+  // Collect every ForEachUse column-role edge over all live views. Producer =
+  // Containing(in) resolved to its origin; a CONSTANT operand records the
+  // reserved sentinel `kConstProducer` with `producer_col = kNoCol` (S4). A use
+  // whose consumer is an INSERT with no out-column (kMaterialized boundary) is a
+  // kTerminalInsert obligation carrying its site; every other edge is kInterior.
+  constexpr uint32_t kNoCol = UINT32_MAX;
+  const QueryOriginId kConstProducer{UINT32_MAX};
+
+  std::vector<OriginUse> raw;
+  for (unsigned d = 0u; d < num_views; ++d) {
+    const ViewInfo &info = by_det.at(d);
+    const unsigned consumer_kind = info.kind;
+    info.v.ForEachUse([&](QueryColumn in, InputColumnRole role,
+                          std::optional<QueryColumn> out) {
+      OriginUse u;
+      u.consumer = QueryOriginId{d};
+      if (in.IsConstantOrConstantRef()) {
+        u.producer = kConstProducer;
+        u.producer_col = kNoCol;
+      } else {
+        const QueryView pview = QueryView::Containing(in);
+        u.producer = QueryOriginId{pview.DeterministicOrder()};
+        u.producer_col = in.Index().value_or(kNoCol);
+      }
+      u.consumer_out_col =
+          out.has_value() ? out->Index().value_or(kNoCol) : kNoCol;
+      u.role = static_cast<unsigned>(role);
+      if (consumer_kind == kIFInsert && !out.has_value()) {
+        u.cls = UseClass::kTerminalInsert;
+        u.terminal_site = site_of_origin.at(d);
+      } else {
+        u.cls = UseClass::kInterior;
+      }
+      raw.push_back(u);
+    });
+  }
+
+  // B1: a strict total order — producer det_seq breaks the leading-shared-column
+  // and multi-INSERT ties that (consumer, producer_col, role) alone leave.
+  std::sort(raw.begin(), raw.end(), [](const OriginUse &a, const OriginUse &b) {
+    if (a.consumer.v != b.consumer.v) return a.consumer.v < b.consumer.v;
+    if (a.producer.v != b.producer.v) return a.producer.v < b.producer.v;
+    if (a.producer_col != b.producer_col) return a.producer_col < b.producer_col;
+    if (a.role != b.role) return a.role < b.role;
+    return a.consumer_out_col < b.consumer_out_col;
+  });
+
+  flow.uses = std::move(raw);
+  for (uint32_t i = 0u; i < flow.uses.size(); ++i) {
+    OriginUse &u = flow.uses[i];
+    u.id = OriginUseId{i};
+    // B2: coverage is a per-consumer-obligation bijection; the occurrence is the
+    // consumer's node (for a terminal insert the consumer IS the writer node).
+    const FamilyNodeId occ = node_of_origin.at(u.consumer.v);
+    flow.coverage.push_back(UseCoverage{u.id, occ});
+    flow.families[occ.family].covers.push_back(u.id);
+  }
+
+  // ---- 6. seeds (computed, NOT goldened — S5) ---------------------------
+  // TODO(CP1+): candidate JoinPivot / AggregateGroup / BoundaryBinding seeds.
+  // Deferred; the §5.1 literal-operand vocabulary is unresolved.
 
   return flow;
 }
@@ -316,8 +378,39 @@ bool ValidateInstanceFlow(Query query, const InstanceFlowProgram &flow,
     }
   }
 
-  // V-IF-COVERAGE: TODO(CP1) — the per-consumer-obligation bijection needs the
-  // uses catalog (pass 2).
+  // V-IF-COVERAGE (B2): the coverage is a bijection onto uses — every
+  // OriginUseId in [0,M) appears exactly once; each cover's use/occurrence
+  // resolves; the occurrence's family lists the use in its `covers`.
+  const unsigned m = static_cast<unsigned>(flow.uses.size());
+  if (flow.coverage.size() != m) {
+    fprintf(stderr, "V-IF-COVERAGE: %zu coverage records over %u uses\n",
+            flow.coverage.size(), m);
+    abort();
+  }
+  std::vector<bool> covered(m, false);
+  for (const UseCoverage &uc : flow.coverage) {
+    if (uc.use.v >= m || covered[uc.use.v]) {
+      fprintf(stderr,
+              "V-IF-COVERAGE: use u#%u out of range or covered more than once\n",
+              uc.use.v);
+      abort();
+    }
+    covered[uc.use.v] = true;
+    if (uc.occurrence.family >= flow.families.size() ||
+        uc.occurrence.local >=
+            flow.families[uc.occurrence.family].nodes.size()) {
+      fprintf(stderr, "V-IF-COVERAGE: use u#%u occurrence if#%u.%u does not "
+                      "resolve\n",
+              uc.use.v, uc.occurrence.family, uc.occurrence.local);
+      abort();
+    }
+  }
+  for (unsigned u = 0u; u < m; ++u) {
+    if (!covered[u]) {
+      fprintf(stderr, "V-IF-COVERAGE: use u#%u is not covered\n", u);
+      abort();
+    }
+  }
 
   return true;
 }
