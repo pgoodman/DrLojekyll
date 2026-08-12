@@ -614,13 +614,17 @@ aggregates/KV over INDUCTION-OWNED
 its OWN recursive result, rejected by the dataflow Stratify pass as the
 sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).
 
-## InstanceFlow (the new context-family IR — Phase A flat grove LANDED, s32)
+## InstanceFlow (the new context-family IR — Phase A + CP2 flat grove LANDED, s33)
 
 `lib/DataFlow/InstanceFlow.{h,cpp}` — a NEW compiler IR between the optimized
 Query and Rel (`docs/proposals/InstanceFlow.md`, the 2198-line vision; the
 owner-chosen direction as of session 32). InstanceFlow represents a deterministic
 GROVE of context-parameterized computation families built backward from consumer
-uses. **Only Phase A is built:** the maximally-shared FLAT empty-context grove
+uses. **Phase A + CP2 are built** (owner-ratified destination as of s33: the BIG
+UNIFICATION — demand + keyed + multi-adornment + carried-column elision all
+lowering from one family vocabulary, §20-E — via InstanceFlow as a SEPARATE
+derived IR, NOT nested/annotated dataflow, which re-tangles the physical/logical
+split-brain P1 deleted; §1). The maximally-shared FLAT empty-context grove
 (§7.3) — every family binds NO context, every node's residual IS its full logical
 schema. It is an OBSERVER at the Query→Rel seam: `BuildFlatInstanceFlow` runs at
 the `Query::Build` tail (`Build.cpp:2664`, post-`row_contracts`) and stores an
@@ -640,11 +644,24 @@ and the per-consumer **coverage bijection** (coverage ≠ emission: `V-IF-COVERA
 covers each consumer obligation once, `V-IF-EMISSION` binds only terminal
 INSERTs). Five always-on `V-IF-*` validators (fprintf+abort, NDEBUG-surviving):
 ORIGIN / CONTEXT / SCC / EMISSION / COVERAGE. `-instanceflow-out` text dump
-(opt-mode-pinned, goldenable, `QueryInstanceFlow` tag). DEFERRED (session-33
-CP2): per-node `role=`/`root=` (awaits pinning §6/§16 root_use), bound-`#query`-
-read uses (§7.2 item 5), candidate seeds (S5), and the `.irgold` witness goldens.
-Authority: `docs/proposals/InstanceFlow.artifacts/session-33-seed.md` (whole-
-program pseudocode + path-forward diffs) + `session-32-phaseA-grounding.md`.
+(opt-mode-pinned, goldenable, `QueryInstanceFlow` tag). **CP2 (s33, LANDED)**
+finished the dump surface: per-node `role=root|interior` (root = terminal-INSERT
+writer / bound-read target; candidate join/agg CONTEXTS stay the `seeds` catalog,
+NEVER node roles); family `root=none` (`root_use` stays `std::optional`, nullopt
+in the flat slice — the panel-adjudicated fix for the seeded `roots=(...)` plural
+that contradicted §6 `root_use:OriginUseId` singular / §16 `root=u#41`); the
+`kBoundQueryRead` coverage arm (one use per query-collection × bound adornment,
+appended as a deterministic CONTIGUOUS use-id SUFFIX so existing ids never
+renumber, covered by writer0, `V-IF-COVERAGE` arm asserts the suffix + INSERT occ).
+4 `.instanceflow` goldens pin it (join_1 / merge_2 / transitive_closure — the
+bound-read witness / barrier_neck_1). STILL an OBSERVER (codegen byte-identical;
+the invariant every slice through Phase C must preserve). DEFERRED: candidate
+seeds (S5); `role=input` (a Phase-D port concept). Authority:
+`docs/proposals/InstanceFlow.artifacts/session-34-seed.md` (post-CP2 whole-program
+view + the big-unification path as diffs, with the TRUE Phase-C blocker named:
+runtime-resource allocation is interleaved into `lib/ControlFlow/Build/*` ~8272
+LOC and must move to AFTER a Rel authority decides) + `session-33-grounding.md`
+(the 3-refuter panel, all claims refuted+folded) + `session-32-phaseA-grounding.md`.
 
 ## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
 
