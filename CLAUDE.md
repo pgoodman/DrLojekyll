@@ -26,6 +26,40 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > the typed regional path is rebuilt (phases P2–P9). The three sections below
 > tagged **[REMOVED at the P1 cut — historical]** describe deleted machinery;
 > read them only for the pre-cut history.
+>
+> **S1a LANDED (2026-08-12): FLAT `-demand` RESURRECTED (flag-off byte-identical).**
+> The keyed-instance greenfield rewrite reached its namesake goal's first
+> deliverable: the FLAT magic-sets transform is LIVE again (owner-ratified s29
+> Path R flat-only). `lib/DataFlow/Demand.cpp` + `lib/Parse/Demand.cpp` restored
+> from `6d6248a2` (the last-before-deletion tip — tip-K1-`@key`-API + S5′ Mint
+> tags, NOT `48cd0a4f`); `Query::Build` is 6-arg again `(module, log, policy,
+> demand_mode=false, demand_retract=false, suppress_demand=false)` with the
+> `-demand` CLI flag (Main.cpp `gDemand`) re-added and `bin/Oracle` pinned
+> `suppress_demand=true`. **ACTIVATION IS FLAG-ONLY:** RP-6 flagless `@key`
+> force-opt-in is DEFERRED (the DIFF-R3 semantic slice, not flat `-demand`), so
+> `@key` stays INERT flag-off and `key_partial_1`/`key_corecursion_1` are
+> byte-identical (the gate is `if (!demand_mode) return true;`). A `-demand`
+> program (recursive TC) compiles END-TO-END: guard JOINs + fabricated
+> `demand__` message + demand relation lower through `Query::Build` →
+> `FrozenRegionalProgram::Build` → `Program::Build` → codegen; §7 CodeGen
+> ABI-suppresses the demand message's public entry point (only the `_detail`
+> twin the injector calls survives) and §6a Regional `CollectMessages`
+> demand-filters it region-internal (V-REGION-CENSUS stays consistent). The
+> four always-on validator surfaces (RowContract/ProjectionRole, K5
+> origin_decls, Rel eager-web, Regional census) all pass on the demand graph.
+> Gate GREEN: build + `bin/Oracle`; OptDiff **SUITE: PASS (227)** byte-identical
+> (the orthogonality proof); ctest **5/5**; the demand program reaches a clean
+> `-df`/`-cpp`. **STILL REMOVED (S2+):** the `-demand-instance` keyed
+> InstanceStore nested lowering + `bool demand_instance` `Program::Build` param
+> (the vestigial `DRInstance`/`demand_table` scaffolding in `lib/Rel/Rel.h`
+> stays untouched). **S1b NEXT:** the ControlFlow injector seed-wiring
+> (`BuildQueryInjectorFromRegistry` + `context.demand_forcings`) so the demand
+> seed actually FLOWS at query time (answer correctness) + the recursive-TC
+> witness (`demand_tc_witness` shape) with oracle/monotone/behavioral goldens +
+> the bench carrier proving the measured selective pruning + the `kPushDown`
+> fixpoint-interior lowering exercised end-to-end. Authority:
+> `session-30-prompt.md`, `session-29-s1a-restoration-manifest.md`,
+> `session-31-s1b-seed.md`.
 
 ## Build
 
@@ -580,7 +614,21 @@ aggregates/KV over INDUCTION-OWNED
 its OWN recursive result, rejected by the dataflow Stratify pass as the
 sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).
 
-## The demand transform (`-demand`, magic-sets) — [REMOVED at the P1 cut — historical]
+## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
+
+> **S1a (2026-08-12) re-scope of the text below.** The FLAT DataFlow transform
+> is LIVE again (see the S1a note at the top of this file). Accurate at tip:
+> `-demand` is mode-gated OFF by default (`ApplyDemandTransform` returns at its
+> head when `!demand_mode`), orthogonal to the 4 golden modes, minting guard
+> JOINs + a fabricated `demand__` message per bound `#query`. The rest of this
+> section (single-adornment slice, `.drflags` mechanism, reject classes) is the
+> restored pre-cut behavior. WHAT DIFFERS from the pre-cut text: (1) activation
+> is FLAG-ONLY — the RP-6 flagless `@key` force-opt-in is DEFERRED, `@key` is
+> inert flag-off; (2) the ControlFlow injector that FLOWS the seed at query
+> time is S1b (not yet wired), so a `-demand` program compiles end-to-end but
+> the demanded relation is not yet auto-seeded; (3) corpus counts/witnesses
+> (`demand_tc_witness` etc.) were deleted at P1 and are being re-added in S1b.
+> Re-verify any claim below against code before relying on it.
 
 `-demand` (Main.cpp `gDemand` → `Query::Build(..., demand_mode)`) is a live
 magic-sets / SLDMagic rewrite of the Query graph for bound `#query`s: a SIP
