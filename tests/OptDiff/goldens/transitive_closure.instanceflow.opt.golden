@@ -1,0 +1,66 @@
+instanceflow  origins=16 uses=32 collections=3 sites=3 families=2
+
+collections
+  lc#0 decl=reachable_from/2
+  lc#1 decl=reaching_to/2
+  lc#2 decl=is_node/1
+sites
+  ds#0 writer=q#13 -> lc#0
+  ds#1 writer=q#14 -> lc#1
+  ds#2 writer=q#15 -> lc#2
+
+family if#0 acyclic root=none
+  node if#0.0 origin=q#0 select role=interior residual=(From,To)
+  node if#0.1 origin=q#4 tuple role=interior residual=(Node)
+  node if#0.2 origin=q#5 tuple role=interior residual=(Node)
+  node if#0.3 origin=q#6 tuple role=interior residual=(From,To)
+  node if#0.4 origin=q#7 tuple role=interior residual=(From,To)
+  node if#0.5 origin=q#8 tuple role=interior residual=(Node)
+  node if#0.6 origin=q#9 tuple role=interior residual=(From,To)
+  node if#0.7 origin=q#12 merge role=interior residual=(Node)
+  node if#0.8 origin=q#13 insert role=root residual=(From,To) -> lc#0
+  node if#0.9 origin=q#14 insert role=root residual=(From,To) -> lc#1
+  node if#0.10 origin=q#15 insert role=root residual=(Node) -> lc#2
+  covers u#6 col=0 role=copied src=q#11 occ=if#0.1
+  covers u#7 col=1 role=copied src=q#11 occ=if#0.2
+  covers u#8 col=0 role=copied src=q#11 occ=if#0.3
+  covers u#9 col=1 role=copied src=q#11 occ=if#0.3
+  covers u#10 col=0 role=copied src=q#11 occ=if#0.4
+  covers u#11 col=1 role=copied src=q#11 occ=if#0.4
+  covers u#12 col=0 role=copied src=q#12 occ=if#0.5
+  covers u#13 col=0 role=copied src=q#0 occ=if#0.6
+  covers u#14 col=1 role=copied src=q#0 occ=if#0.6
+  covers u#23 col=0 role=merged src=q#4 occ=if#0.7
+  covers u#24 col=0 role=merged src=q#5 occ=if#0.7
+  covers u#25 insert -> lc#0 ea#0 occ=if#0.8
+  covers u#26 insert -> lc#0 ea#0 occ=if#0.8
+  covers u#27 insert -> lc#1 ea#1 occ=if#0.9
+  covers u#28 insert -> lc#1 ea#1 occ=if#0.9
+  covers u#29 insert -> lc#2 ea#2 occ=if#0.10
+  covers u#30 query reachable_from bound=(From) reads lc#0 occ=if#0.8
+  covers u#31 query reaching_to bound=(To) reads lc#1 occ=if#0.9
+family if#1 whole-query-scc scc#0 root=none
+  node if#1.0 origin=q#1 tuple role=interior residual=(From,To)
+  node if#1.1 origin=q#2 tuple role=interior residual=(AutoVar_2,Node)
+  node if#1.2 origin=q#3 tuple role=interior residual=(From,X)
+  node if#1.3 origin=q#10 join role=interior residual=(X,From,To)
+  node if#1.4 origin=q#11 merge role=interior residual=(From,To)
+  covers u#0 col=1 role=copied src=q#10 occ=if#1.0
+  covers u#1 col=2 role=copied src=q#10 occ=if#1.0
+  covers u#2 col=0 role=copied src=q#11 occ=if#1.1
+  covers u#3 col=1 role=copied src=q#11 occ=if#1.1
+  covers u#4 col=0 role=copied src=q#11 occ=if#1.2
+  covers u#5 col=1 role=copied src=q#11 occ=if#1.2
+  covers u#15 col=0 role=pivot src=q#2 occ=if#1.3
+  covers u#16 col=1 role=join-col src=q#2 occ=if#1.3
+  covers u#17 col=0 role=join-col src=q#3 occ=if#1.3
+  covers u#18 col=1 role=pivot src=q#3 occ=if#1.3
+  covers u#19 col=0 role=merged src=q#1 occ=if#1.4
+  covers u#20 col=1 role=merged src=q#1 occ=if#1.4
+  covers u#21 col=0 role=merged src=q#9 occ=if#1.4
+  covers u#22 col=1 role=merged src=q#9 occ=if#1.4
+
+authorities
+  ea#0 site=ds#0 domain=all writer=if#0.8
+  ea#1 site=ds#1 domain=all writer=if#0.9
+  ea#2 site=ds#2 domain=all writer=if#0.10

@@ -1,0 +1,50 @@
+instanceflow  origins=14 uses=22 collections=2 sites=2 families=1
+
+collections
+  lc#0 decl=q_outer/2
+  lc#1 decl=q_proj/1
+sites
+  ds#0 writer=q#12 -> lc#0
+  ds#1 writer=q#13 -> lc#1
+
+family if#0 acyclic root=none
+  node if#0.0 origin=q#0 select role=interior residual=(X,Y)
+  node if#0.1 origin=q#1 select role=interior residual=(X,Y)
+  node if#0.2 origin=q#2 select role=interior residual=(Y,X)
+  node if#0.3 origin=q#3 tuple role=interior residual=(X)
+  node if#0.4 origin=q#4 tuple role=interior residual=(X)
+  node if#0.5 origin=q#5 tuple role=interior residual=(X,Y)
+  node if#0.6 origin=q#6 tuple role=interior residual=(X)
+  node if#0.7 origin=q#7 tuple role=interior residual=(X,Y)
+  node if#0.8 origin=q#8 tuple role=interior residual=(Y,X)
+  node if#0.9 origin=q#9 tuple role=interior residual=(X,Y)
+  node if#0.10 origin=q#10 merge role=interior residual=(X,Y)
+  node if#0.11 origin=q#11 merge role=interior residual=(X)
+  node if#0.12 origin=q#12 insert role=root residual=(X,Y) -> lc#0
+  node if#0.13 origin=q#13 insert role=root residual=(X) -> lc#1
+  covers u#0 col=1 role=copied src=q#2 occ=if#0.3
+  covers u#1 col=0 role=copied src=q#1 occ=if#0.4
+  covers u#2 col=0 role=copied src=q#10 occ=if#0.5
+  covers u#3 col=1 role=copied src=q#10 occ=if#0.5
+  covers u#4 col=0 role=copied src=q#11 occ=if#0.6
+  covers u#5 col=0 role=copied src=q#1 occ=if#0.7
+  covers u#6 col=1 role=copied src=q#1 occ=if#0.7
+  covers u#7 col=0 role=copied src=q#2 occ=if#0.8
+  covers u#8 col=1 role=copied src=q#2 occ=if#0.8
+  covers u#9 col=0 role=copied src=q#0 occ=if#0.9
+  covers u#10 col=1 role=copied src=q#0 occ=if#0.9
+  covers u#11 col=0 role=merged src=q#7 occ=if#0.10
+  covers u#12 col=1 role=merged src=q#7 occ=if#0.10
+  covers u#13 col=0 role=merged src=q#8 occ=if#0.10
+  covers u#14 col=1 role=merged src=q#8 occ=if#0.10
+  covers u#15 col=0 role=merged src=q#9 occ=if#0.10
+  covers u#16 col=1 role=merged src=q#9 occ=if#0.10
+  covers u#17 col=0 role=merged src=q#3 occ=if#0.11
+  covers u#18 col=0 role=merged src=q#4 occ=if#0.11
+  covers u#19 insert -> lc#0 ea#0 occ=if#0.12
+  covers u#20 insert -> lc#0 ea#0 occ=if#0.12
+  covers u#21 insert -> lc#1 ea#1 occ=if#0.13
+
+authorities
+  ea#0 site=ds#0 domain=all writer=if#0.12
+  ea#1 site=ds#1 domain=all writer=if#0.13

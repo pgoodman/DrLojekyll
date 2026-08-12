@@ -3,3 +3,4 @@ region opt
 region nodf
 region nocf
 region none
+instanceflow opt

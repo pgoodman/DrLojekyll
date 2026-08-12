@@ -1,0 +1,86 @@
+instanceflow  origins=26 uses=37 collections=5 sites=5 families=1
+
+collections
+  lc#0 decl=/0
+  lc#1 decl=t_all/1
+  lc#2 decl=tb_all/1
+  lc#3 decl=tp_all/1
+  lc#4 decl=s_all/1
+sites
+  ds#0 writer=q#21 -> lc#0
+  ds#1 writer=q#22 -> lc#1
+  ds#2 writer=q#23 -> lc#2
+  ds#3 writer=q#24 -> lc#3
+  ds#4 writer=q#25 -> lc#4
+
+family if#0 acyclic root=none
+  node if#0.0 origin=q#0 select role=interior residual=(A,B)
+  node if#0.1 origin=q#1 select role=interior residual=(B)
+  node if#0.2 origin=q#2 select role=interior residual=(B)
+  node if#0.3 origin=q#3 select role=interior residual=(c5)
+  node if#0.4 origin=q#4 select role=interior residual=(c6)
+  node if#0.5 origin=q#5 tuple role=interior residual=(A,c8)
+  node if#0.6 origin=q#6 tuple role=interior residual=(A,B)
+  node if#0.7 origin=q#7 tuple role=interior residual=(X)
+  node if#0.8 origin=q#8 tuple role=interior residual=(X)
+  node if#0.9 origin=q#9 tuple role=interior residual=(c13,X)
+  node if#0.10 origin=q#10 tuple role=interior residual=(A)
+  node if#0.11 origin=q#11 tuple role=interior residual=(A)
+  node if#0.12 origin=q#12 tuple role=interior residual=(A)
+  node if#0.13 origin=q#13 tuple role=interior residual=(A)
+  node if#0.14 origin=q#14 tuple role=interior residual=(B,A)
+  node if#0.15 origin=q#15 tuple role=interior residual=(c21)
+  node if#0.16 origin=q#16 join role=interior residual=(B,A)
+  node if#0.17 origin=q#17 join role=interior residual=(B,A)
+  node if#0.18 origin=q#18 join role=interior residual=(B,A)
+  node if#0.19 origin=q#19 join role=interior residual=(X)
+  node if#0.20 origin=q#20 join role=interior residual=(c29,A)
+  node if#0.21 origin=q#21 insert role=root residual=(c13) -> lc#0
+  node if#0.22 origin=q#22 insert role=root residual=(A) -> lc#1
+  node if#0.23 origin=q#23 insert role=root residual=(A) -> lc#2
+  node if#0.24 origin=q#24 insert role=root residual=(A) -> lc#3
+  node if#0.25 origin=q#25 insert role=root residual=(A) -> lc#4
+  covers u#0 col=* role=copied src=const occ=if#0.4
+  covers u#1 col=1 role=copied src=q#17 occ=if#0.5
+  covers u#2 col=* role=copied src=const occ=if#0.5
+  covers u#3 col=0 role=copied src=q#0 occ=if#0.6
+  covers u#4 col=1 role=copied src=q#0 occ=if#0.6
+  covers u#5 col=0 role=copied src=q#1 occ=if#0.7
+  covers u#6 col=0 role=copied src=q#2 occ=if#0.8
+  covers u#7 col=0 role=copied src=q#19 occ=if#0.9
+  covers u#8 col=* role=copied src=const occ=if#0.9
+  covers u#9 col=1 role=copied src=q#17 occ=if#0.10
+  covers u#10 col=1 role=copied src=q#17 occ=if#0.11
+  covers u#11 col=1 role=copied src=q#18 occ=if#0.12
+  covers u#12 col=1 role=copied src=q#20 occ=if#0.13
+  covers u#13 col=0 role=copied src=q#16 occ=if#0.14
+  covers u#14 col=1 role=copied src=q#16 occ=if#0.14
+  covers u#15 col=0 role=copied src=q#4 occ=if#0.15
+  covers u#16 col=0 role=join-col src=q#6 occ=if#0.16
+  covers u#17 col=1 role=pivot src=q#6 occ=if#0.16
+  covers u#18 col=0 role=pivot src=q#7 occ=if#0.16
+  covers u#19 col=0 role=pivot src=q#8 occ=if#0.17
+  covers u#20 col=0 role=pivot src=q#14 occ=if#0.17
+  covers u#21 col=1 role=join-col src=q#14 occ=if#0.17
+  covers u#22 col=0 role=join-col src=q#6 occ=if#0.18
+  covers u#23 col=1 role=pivot src=q#6 occ=if#0.18
+  covers u#24 col=0 role=pivot src=q#7 occ=if#0.18
+  covers u#25 col=0 role=pivot src=q#8 occ=if#0.18
+  covers u#26 col=0 role=pivot src=q#7 occ=if#0.19
+  covers u#27 col=0 role=pivot src=q#8 occ=if#0.19
+  covers u#28 col=0 role=join-col src=q#5 occ=if#0.20
+  covers u#29 col=0 role=pivot src=q#15 occ=if#0.20
+  covers u#30 col=* role=pivot src=const occ=if#0.20
+  covers u#31 insert -> lc#0 ea#0 occ=if#0.21
+  covers u#32 col=* role=materialized src=const occ=if#0.21
+  covers u#33 insert -> lc#1 ea#1 occ=if#0.22
+  covers u#34 insert -> lc#2 ea#2 occ=if#0.23
+  covers u#35 insert -> lc#3 ea#3 occ=if#0.24
+  covers u#36 insert -> lc#4 ea#4 occ=if#0.25
+
+authorities
+  ea#0 site=ds#0 domain=all writer=if#0.21
+  ea#1 site=ds#1 domain=all writer=if#0.22
+  ea#2 site=ds#2 domain=all writer=if#0.23
+  ea#3 site=ds#3 domain=all writer=if#0.24
+  ea#4 site=ds#4 domain=all writer=if#0.25

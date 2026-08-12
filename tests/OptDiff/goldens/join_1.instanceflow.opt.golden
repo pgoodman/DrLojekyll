@@ -1,0 +1,66 @@
+instanceflow  origins=20 uses=32 collections=2 sites=2 families=1
+
+collections
+  lc#0 decl=q/1
+  lc#1 decl=never/1
+sites
+  ds#0 writer=q#18 -> lc#0
+  ds#1 writer=q#19 -> lc#1
+
+family if#0 acyclic root=none
+  node if#0.0 origin=q#0 select role=interior residual=(A,B)
+  node if#0.1 origin=q#1 select role=interior residual=(A)
+  node if#0.2 origin=q#2 select role=interior residual=(c4)
+  node if#0.3 origin=q#3 select role=interior residual=(c5)
+  node if#0.4 origin=q#4 tuple role=interior residual=(B)
+  node if#0.5 origin=q#5 tuple role=interior residual=(B)
+  node if#0.6 origin=q#6 tuple role=interior residual=(c8,B)
+  node if#0.7 origin=q#7 tuple role=interior residual=(c10)
+  node if#0.8 origin=q#8 tuple role=interior residual=(c11,B)
+  node if#0.9 origin=q#9 tuple role=interior residual=(c13)
+  node if#0.10 origin=q#10 join role=interior residual=(c14,B)
+  node if#0.11 origin=q#11 join role=interior residual=(c16,B)
+  node if#0.12 origin=q#12 compare role=interior residual=(c18,B)
+  node if#0.13 origin=q#13 compare role=interior residual=(c20,B)
+  node if#0.14 origin=q#14 compare role=interior residual=(c22)
+  node if#0.15 origin=q#15 compare role=interior residual=(c23)
+  node if#0.16 origin=q#16 compare role=interior residual=(c24,B)
+  node if#0.17 origin=q#17 compare role=interior residual=(c26,B)
+  node if#0.18 origin=q#18 insert role=root residual=(B) -> lc#0
+  node if#0.19 origin=q#19 insert role=root residual=(B) -> lc#1
+  covers u#0 col=1 role=copied src=q#10 occ=if#0.4
+  covers u#1 col=1 role=copied src=q#17 occ=if#0.5
+  covers u#2 col=1 role=copied src=q#12 occ=if#0.6
+  covers u#3 col=* role=copied src=const occ=if#0.6
+  covers u#4 col=* role=copied src=const occ=if#0.7
+  covers u#5 col=1 role=copied src=q#13 occ=if#0.8
+  covers u#6 col=* role=copied src=const occ=if#0.8
+  covers u#7 col=* role=copied src=const occ=if#0.9
+  covers u#8 col=1 role=join-col src=q#6 occ=if#0.10
+  covers u#9 col=* role=pivot src=const occ=if#0.10
+  covers u#10 col=* role=pivot src=const occ=if#0.10
+  covers u#11 col=1 role=join-col src=q#8 occ=if#0.11
+  covers u#12 col=* role=pivot src=const occ=if#0.11
+  covers u#13 col=* role=pivot src=const occ=if#0.11
+  covers u#14 col=0 role=cmp-rhs src=q#0 occ=if#0.12
+  covers u#15 col=1 role=copied src=q#0 occ=if#0.12
+  covers u#16 col=* role=cmp-lhs src=const occ=if#0.12
+  covers u#17 col=1 role=copied src=q#12 occ=if#0.13
+  covers u#18 col=* role=cmp-lhs src=const occ=if#0.13
+  covers u#19 col=* role=cmp-rhs src=const occ=if#0.13
+  covers u#20 col=0 role=cmp-rhs src=q#1 occ=if#0.14
+  covers u#21 col=* role=cmp-lhs src=const occ=if#0.14
+  covers u#22 col=* role=cmp-lhs src=const occ=if#0.15
+  covers u#23 col=* role=cmp-rhs src=const occ=if#0.15
+  covers u#24 col=1 role=copied src=q#11 occ=if#0.16
+  covers u#25 col=* role=cmp-lhs src=const occ=if#0.16
+  covers u#26 col=* role=cmp-rhs src=const occ=if#0.16
+  covers u#27 col=1 role=copied src=q#16 occ=if#0.17
+  covers u#28 col=* role=cmp-lhs src=const occ=if#0.17
+  covers u#29 col=* role=cmp-rhs src=const occ=if#0.17
+  covers u#30 insert -> lc#0 ea#0 occ=if#0.18
+  covers u#31 insert -> lc#1 ea#1 occ=if#0.19
+
+authorities
+  ea#0 site=ds#0 domain=all writer=if#0.18
+  ea#1 site=ds#1 domain=all writer=if#0.19
