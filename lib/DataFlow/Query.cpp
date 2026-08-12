@@ -271,10 +271,6 @@ DerivClass QueryView::DerivationClassInto(QueryView target) const noexcept {
   return DerivClass::kNonRecursive;
 }
 
-bool QueryView::IsConstantAfterInitialization(void) const noexcept {
-  return impl->is_const_after_init;
-}
-
 bool QueryView::IsSelect(void) const noexcept {
   return impl->AsSelect() != nullptr;
 }

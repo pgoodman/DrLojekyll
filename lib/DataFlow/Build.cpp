@@ -2641,7 +2641,6 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
   if (num_errors != log.Size()) {
     return std::nullopt;
   }
-  impl->TrackConstAfterInit();
 
   BuildEquivalenceSets(impl.get());
   impl->Stratify(log);

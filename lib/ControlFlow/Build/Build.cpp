@@ -84,21 +84,6 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
   for (auto join : query.Joins()) {
 
     QueryView view(join);
-    if (!view.CanReceiveDeletions()) {
-      auto num_constant = 0u;
-      auto num_variable = 0u;
-      for (auto pred : join.JoinedViews()) {
-        if (pred.IsConstantAfterInitialization()) {
-          (void) TABLE::GetOrCreate(impl, context, pred);
-          ++num_constant;
-        } else {
-          ++num_variable;
-        }
-      }
-      if (num_constant && 1u == num_variable) {
-        // TODO(pag): Issue #240.
-      }
-    }
 
     for (auto pred : join.JoinedViews()) {
       (void) TABLE::GetOrCreate(impl, context, pred);
@@ -136,11 +121,6 @@ static void FillDataModel(const Query &query, ProgramImpl *impl,
 
   for (auto negate : query.Negations()) {
     const QueryView view(negate);
-    if (!view.CanReceiveDeletions()) {
-      if (negate.NegatedView().IsConstantAfterInitialization()) {
-        // TODO(pag): Issue #242.
-      }
-    }
     (void) TABLE::GetOrCreate(impl, context, negate.NegatedView());
     (void) TABLE::GetOrCreate(impl, context, view.Predecessors()[0]);
   }

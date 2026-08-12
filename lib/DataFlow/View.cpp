@@ -800,20 +800,6 @@ void QueryViewImpl::ReplaceAllUsesWith(QueryViewImpl *that) {
   PrepareToDelete();
 }
 
-// Does this view introduce a control dependency? If a node introduces a
-// control dependency then it generally needs to be kept around.
-bool QueryViewImpl::IntroducesControlDependency(void) const noexcept {
-//  if (this->AsMap()) {
-//    return true;
-//  }
-
-  // TODO(pag): Think about whether or not 1:1 MAPs are control dependencies.
-
-  std::unordered_map<QueryViewImpl *, bool> is_conditional;
-  return QueryViewImpl::IsConditional(const_cast<QueryViewImpl *>(this),
-                                      is_conditional);
-}
-
 // Returns `true` if all output columns are used.
 bool QueryViewImpl::AllColumnsAreUsed(void) const noexcept {
   if (IsUsedDirectly()) {
@@ -1458,116 +1444,6 @@ bool QueryViewImpl::RetainsEdgeTo(const QueryViewImpl *incoming_view,
     }
   }
   return false;
-}
-
-// Try to figure out if `view` is conditional. That could mean that it
-// depends directly on a condition, or that it depends on something that
-// may be present or may be absent (e.g. the output of a `JOIN`).
-//
-// Conditional in this case means: does `view` always have data after
-// initialization? Unconditional views derive purely from constants, which
-// are inserted at init time.
-//
-// A view whose evaluation is in progress when it is queried again depends
-// on itself through a cycle. A cycle contributes no data of its own, so it
-// cannot prove that data is always present; the in-progress entry is
-// therefore pessimistically `true` (conditional), and every path that
-// proves unconditionality stores `false` explicitly.
-bool QueryViewImpl::IsConditional(
-    QueryViewImpl *view,
-    std::unordered_map<QueryViewImpl *, bool> &conditional_views) {
-
-  if (conditional_views.count(view)) {
-    return conditional_views[view];
-  }
-
-  auto &is_cond = conditional_views[view];
-  is_cond = true;  // Pessimistic answer for cyclic re-entry.
-
-  // An unsatisfiable or dead view never has data, so it certainly does not
-  // always have data.
-  if (view->is_unsat || view->is_dead) {
-    is_cond = true;
-    return true;
-  }
-
-  // These all introduce control dependencies. It's too annoying to truly
-  // detect if the effective tests (e.g. compare `1=1`) actually are conditional
-  // so we just assume these things are conditional.
-  if (view->AsJoin() || view->AsCompare() || view->AsNegate() ||
-      view->AsAggregate() || view->AsKVIndex()) {
-
-    is_cond = true;
-    return true;
-
-  // Maps are not conditional iff their input view is not conditional and the
-  // functor's range is one-to-one.
-  } else if (QueryMapImpl *map = view->AsMap()) {
-    if (FunctorRange::kOneToOne != map->functor.Range()) {
-      is_cond = true;
-      return true;
-    }
-
-    QueryViewImpl *incoming_view = QueryViewImpl::GetIncomingView(
-        view->input_columns, view->attached_columns);
-    if (!incoming_view) {
-      is_cond = false;
-      return false;
-    } else {
-      is_cond = IsConditional(incoming_view, conditional_views);
-      return is_cond;
-    }
-
-  } else if (QueryMergeImpl *merge = view->AsMerge()) {
-
-    // A MERGE with no merged views never has data.
-    if (merge->merged_views.Empty()) {
-      is_cond = true;
-      return true;
-    }
-    for (QueryViewImpl *merged_view : merge->merged_views) {
-      if (IsConditional(merged_view, conditional_views)) {
-        is_cond = true;
-        return true;
-      }
-    }
-    is_cond = false;
-    return false;
-
-  } else if (QuerySelectImpl *sel = view->AsSelect()) {
-    if (auto stream = sel->stream.get()) {
-      if (stream->AsIO()) {
-        is_cond = true;
-        return true;
-      } else {
-        is_cond = false;
-        return false;
-      }
-    } else if (QueryRelationImpl *rel = sel->relation.get()) {
-      for (QueryViewImpl *insert : rel->inserts) {
-        if (IsConditional(insert, conditional_views)) {
-          is_cond = true;
-          return true;
-        }
-      }
-    }
-
-    is_cond = false;
-    return false;
-
-  } else if (view->AsTuple() || view->AsInsert()) {
-    if (QueryViewImpl *incoming_view = QueryViewImpl::GetIncomingView(
-            view->input_columns, view->attached_columns)) {
-      is_cond = IsConditional(incoming_view, conditional_views);
-    } else {
-      is_cond = false;
-    }
-    return is_cond;
-
-  } else {
-    assert(false);
-    return true;
-  }
 }
 
 // Returns a pointer to the only user of this node, or nullptr if there are

@@ -293,10 +293,6 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // is completely subsumed/replaced by `that`.
   void ReplaceAllUsesWith(QueryViewImpl *that);
 
-  // Does this view introduce a control dependency? If a node introduces a
-  // control dependency then it generally needs to be kept around.
-  bool IntroducesControlDependency(void) const noexcept;
-
   // Returns `true` if all output columns are used.
   bool AllColumnsAreUsed(void) const noexcept;
 
@@ -548,11 +544,6 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   // computed at the end of building the dataflow graph, and helps us optimize
   // JOINs and negations in the control-flow IR by letting us avoid persisting
   // data when that data is non-differential. That is, if non-differential
-  // data is flowing through a JOIN, and the stuff against which we're joining
-  // is constant after init, then we don't need to save our stuff to a table
-  // prior to the join -- we can force it through and dedup it downstream.
-  bool is_const_after_init{false};
-
   // Color to use in the eventual data flow output. Default is black. This
   // is influenced by `ParsedClause::IsHighlighted`, which in turn is enabled
   // by using the `@highlight` pragma after a clause head.
@@ -650,13 +641,6 @@ class QueryViewImpl : public Def<QueryViewImpl>, public User {
   static bool RetainsEdgeTo(const QueryViewImpl *incoming_view,
                             const UseList<QueryColumnImpl> &cols1,
                             const UseList<QueryColumnImpl> &cols2);
-
-  // Try to figure out if `view` is conditional, i.e. whether it depends on
-  // something that may be present or may be absent (e.g. the output of a
-  // `JOIN`).
-  static bool IsConditional(
-      QueryViewImpl *view,
-      std::unordered_map<QueryViewImpl *, bool> &conditional_views);
 
   // Returns a pointer to the only user of this node, or nullptr if there are
   // zero users, or more than one users.
@@ -1157,10 +1141,6 @@ class QueryImpl {
   // against `InductionInfo`) and after `BuildEquivalenceSets` (so data
   // models exist to receive strata).
   void Stratify(const ErrorLog &log);
-
-  // Track which views are constant after initialization.
-  // See `VIEW::is_const_after_init`.
-  void TrackConstAfterInit(void) const;
 
   // Finalize column ID values. Column ID values relate to lexical scope, to
   // some extent. Two columns with the same ID can be said to have the same

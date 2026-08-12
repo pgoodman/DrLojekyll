@@ -56,7 +56,7 @@ using RowContractMap = std::unordered_map<QueryViewImpl *, RowContract>;
 // directly from SCC structure; Phase 2 does a single acyclic per-operator
 // transfer over the remaining single-view strata. Must be called AFTER
 // `impl->Stratify(log)` (Phase 1 reads `view->stratum`) and after
-// `FinalizeColumnIDs`/`TrackConstAfterInit`.
+// `FinalizeColumnIDs`.
 RowContractMap InferConservativeRowContracts(QueryImpl *impl);
 
 // H-A7: run the always-on contract validators over `impl->row_contracts`.
