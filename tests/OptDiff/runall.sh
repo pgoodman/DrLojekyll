@@ -350,6 +350,7 @@ if [ "${1:-}" = "--one" ]; then
           -region-out "$iout/region.$mode.out" \
           -origin-out "$iout/origin.$mode.out" \
           -instanceflow-out "$iout/instanceflow.$mode.out" \
+          -materialization-out "$iout/materialization.$mode.out" \
           -ir-out "$iout/ir.$mode.out" \
           -cpp-out "$iout/cpp.$mode" \
           >"$iout/dr.$mode.log" 2>&1; then

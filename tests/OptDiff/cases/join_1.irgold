@@ -5,3 +5,4 @@ region nodf
 region nocf
 region none
 instanceflow opt
+materialization opt

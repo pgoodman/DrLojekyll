@@ -1,0 +1,5 @@
+materialization  resources=2 aliases=0 arrangements=0
+
+resources
+  sr#0 authority=lc#0 schema=(A,B) support=monotone
+  sr#1 authority=internal#0 schema=(X,B) support=monotone

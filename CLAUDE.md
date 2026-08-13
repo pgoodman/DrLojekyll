@@ -614,7 +614,7 @@ aggregates/KV over INDUCTION-OWNED
 its OWN recursive result, rejected by the dataflow Stratify pass as the
 sibling of the unstratified-negation reject — `agg_in_scc_1`/`kv_in_scc_1`).
 
-## InstanceFlow (the new context-family IR — Phase A + CP2 flat grove LANDED, s33)
+## InstanceFlow (the new context-family IR — Phase A + CP2 grove + s34 MaterializationPlan LANDED)
 
 `lib/DataFlow/InstanceFlow.{h,cpp}` — a NEW compiler IR between the optimized
 Query and Rel (`docs/proposals/InstanceFlow.md`, the 2198-line vision; the
@@ -662,6 +662,39 @@ view + the big-unification path as diffs, with the TRUE Phase-C blocker named:
 runtime-resource allocation is interleaved into `lib/ControlFlow/Build/*` ~8272
 LOC and must move to AFTER a Rel authority decides) + `session-33-grounding.md`
 (the 3-refuter panel, all claims refuted+folded) + `session-32-phaseA-grounding.md`.
+
+**s34 MaterializationPlan RESOURCE authority (resources-first slice, LANDED)** —
+`lib/DataFlow/Materialization.{h,cpp}`, the FIRST real step of the big
+unification (InstanceFlow.md §10, Phase-B item 3). A NEW typed IR authority
+stored by-value on `QueryImpl::materialization`, built at the `Query::Build`
+tail AFTER the grove (`PlanResources`). It DERIVES ControlFlow's stateful-storage
+decisions from the FINAL graph — `DeriveStatefulClasses` is a PURE `QueryView`-API
+replay of `FillDataModel`'s R1-R9 TABLE-need rules (`NeedsInduction*` inlined via
+`InductionGroupId()`/`NonInductiveSuccessors()`; the DataModel classes ARE the
+`EquivalenceSetId` partition, verified in the panel) — and CROSS-CHECKS them
+byte-for-byte against the real `view_to_model` allocation. **GRAIN (grounding
+refuter claim-d fold):** ONE authoritative `StateResource` per stateful PHYSICAL
+class (`EquivalenceSetId`), NOT per collection — a BIJECTION (V-MAT-BIJECTION) so
+`ResourceForView(v)=authority(EquivalenceSetId(v))` is the well-defined map the
+Phase-C `TABLE*`→`StateResourceId` retype consumes. Co-recursive shared stores
+(`reachable_from`+`reaching_to` alias tc's table) resolve through one canonical
+(min-`LogicalCollectionId`) authority + `ForwardingAlias` entries (§10 `aliases`),
+satisfying §17 V-MAT-AUTHORITY (every stateful collection resolves to exactly one
+authoritative resource). Residues = stateful classes with no collection writer
+(`InternalResidualCollectionId`, ascending eqset — the Tier-2 provenance shape).
+Arrangements DEFERRED (§2.5.3 (iii): no standing `collect_arrangement_requirements`
+pass; no Rel struct carries an arrangement identity). `CrossCheckMaterialization`
+(public `Query.h` friend, run at the `Program::Build` tail after `FillDataModel`)
+compares the STORED plan's classes to the real table-backed set and ABORTS on
+divergence — an always-on belt, verified LIVE (corrupt R4 → fires naming the
+missed residue classes; revert → quiescent). Still an OBSERVER: codegen
+byte-identical (OptDiff **SUITE PASS 227**). `-materialization-out` dump
+(`QueryMaterialization` tag, opt-mode-pinned); 5 `.materialization.opt` goldens
+(join_1 = residues; transitive_closure = the alias/co-recursion witness;
+corecursion_1 = shared-store residue; negate_1 = mixed differential/monotone;
+tc_nonlinear_diff = the §2.5.2 all-differential + `internal#2 (X,From,To)`
+witness). Authority: `session-34-seed.md` §2.5 + `session-34-grounding.md`
+(3-refuter panel: claims a/b/d refuted, c subsumed by the bijection fold).
 
 ## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
 
