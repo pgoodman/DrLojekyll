@@ -714,6 +714,38 @@ endpoint (retire `DRTable.model` for the id) depends on. NEXT: retype more Rel
 `TABLE*` fields onto the id, then the allocation inversion (the true blocker:
 allocation interleaved in `ControlFlow/Build`).
 
+**s35 Phase-C step 2 (the WHOLE Rel op model is resource-addressable, LANDED)** —
+extends the `StateResourceId` retype from the single `DRTable` to the entire
+`DROp`/`DRBranch`/`DRJoin` base-table surface via ONE index (NOT a relocation):
+`DRFlowGraph::table_to_resource` (`lib/Rel/Rel.h`), a
+`std::unordered_map<TABLE*, StateResourceId>` built once in `BuildDRInventory`
+(`Rel.cpp`) from the just-stamped `DRTable`s' resolved `resource` (mirrors the
+`view_to_model`/`eqset_to_resource` `_to_` idiom). It is the SOLE source every op
+base-table field resolves through: the `-rel-out` render (` resource=sr#K` after
+each **`args:`-line** base-table token, 18 sites in `Format.cpp`, the SAME sr#K id
+space as `-materialization-out` so the two dumps cross-reference by id) and the
+`V-REL-OP-RESOURCE` belt (`ValidateOpResources`, `BuildDRInventory` tail) read it;
+NOTHING that emits does, so codegen is BYTE-IDENTICAL (OptDiff **SUITE PASS 227**;
+only the 10 `.rel.opt` goldens moved, an ADDITIVE token, predicted-then-verified).
+The belt walks every non-null base-table field (resolution-FIRST for crash safety,
+then — where a semantic view partner exists — a class cross-check `field-table
+class == partner-view EquivalenceSetId`); belt-verified LIVE (drop a table from
+the map → fires naming the unresolved field; revert → quiescent). HONESTLY a
+REGRESSION FENCE + goldened coverage artifact, NOT a live bug-catcher: the pairing
+checks are tautological-at-construction today (every partner table is minted from
+`view_to_model[partner_view]->table`), earning real teeth only when Step 3 stores
+an op's table and id/view from INDEPENDENT sources. The ONE forward-load-bearing
+output is `table_to_resource` itself — the `TABLE*->id` function Step 3's
+allocation inversion inverts. Grounded (2 sonnet extractions + 2 opus refuters +
+a Step-2b measurement) in `InstanceFlow.artifacts/session-35-grounding.md`; **Step
+2b DEFERRED** on a view-set-equality soundness premise (Materialization ORs
+`support` over ALL class views, `TableIsDifferential` over the narrower
+`table->views` — not proven equal; the panel saw only the predicate difference).
+NEXT (owner-ratified scope, `session-35-arrangement-scope.md`): the ARRANGEMENT
+derivation (§2.5.3) — Stage A the index census tagged by `table_to_resource`
+(a codegen-byte-identical observer, reusing s35's map), then Stage B the pure
+`collect_arrangement_requirements` + cross-check, then Stage C the inversion.
+
 ## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
 
 > **S1a (2026-08-12) re-scope of the text below.** The FLAT DataFlow transform
