@@ -696,6 +696,24 @@ tc_nonlinear_diff = the §2.5.2 all-differential + `internal#2 (X,From,To)`
 witness). Authority: `session-34-seed.md` §2.5 + `session-34-grounding.md`
 (3-refuter panel: claims a/b/d refuted, c subsumed by the bijection fold).
 
+**s34 Phase-C step 1 (cross-checked `StateResourceId` shadow on `DRTable`, LANDED)**
+— the FIRST Rel object to carry a materialization-map identity beside its
+`TABLE*` (InstanceFlow.md §11). `DRTable` (`lib/Rel/Rel.h`) gains a
+`StateResourceId resource`, stamped at `BuildDRInventory` (`Rel.cpp`) from the
+table's member views' shared `EquivalenceSetId` via the resources plan
+(`MaterializationPlanOf(query)`, a public `Query.h` friend; `lib/Rel` +
+`lib/ControlFlow` gained `lib/DataFlow` on their private include paths). The
+`ResourceForView(v)=authority(EquivalenceSetId(v))` map is single-valued by
+V-MAT-BIJECTION. A SHADOW: the id is consumed by nothing and the `DRTable`
+inventory is NOT rendered in `-rel-out`, so codegen AND every dump stay
+byte-identical (SUITE PASS 227). `V-REL-RESOURCE` belt at the mint (a table's
+member views all share ONE class, and that class has exactly one authoritative
+resource) — belt-verified LIVE. Proves `TABLE*`->`StateResourceId` is derivable,
+total, and single-valued in the Rel object model — the property the Phase-C
+endpoint (retire `DRTable.model` for the id) depends on. NEXT: retype more Rel
+`TABLE*` fields onto the id, then the allocation inversion (the true blocker:
+allocation interleaved in `ControlFlow/Build`).
+
 ## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
 
 > **S1a (2026-08-12) re-scope of the text below.** The FLAT DataFlow transform

@@ -116,7 +116,30 @@ in s33 (allocation interleaved into `lib/ControlFlow/Build/*`, must move AFTER a
 Rel authority decides) is unchanged and is the megaproject after the first
 retype step.
 
+## Phase-C step 1 — LANDED this session (cross-checked `StateResourceId` shadow)
+
+The first retype step from the seed's Phase-C sequence: `DRTable` (`lib/Rel/Rel.h`,
+the canonical per-table wrapper — it already carried `member_views`) gains a
+`StateResourceId resource`, stamped at the single `BuildDRInventory` mint
+(`Rel.cpp:1375`) from the member views' shared `EquivalenceSetId` via
+`MaterializationPlanOf(query)`. Feasibility crux (verified before executing):
+`BuildDRInventory` already holds each table's views (`table->views`), so
+`ResourceForView(v)=authority(EquivalenceSetId(v))` is an in-hand stamp; the
+V-MAT-BIJECTION guarantee makes it single-valued. A SHADOW — the id is consumed
+by nothing and the `DRTable` inventory is NOT rendered in `-rel-out`, so codegen
+AND every dump stay byte-identical. The `V-REL-RESOURCE` belt (member views share
+one class; the class has exactly one authoritative resource) is the id's only
+reader; belt-verified live (corrupt the eqset→resource map → fires; revert →
+quiescent). This proves the retype is well-defined in the Rel object model.
+Deliberately NOT cross-checked here: `DRTable.differential` (`TableIsDifferential`
+= CanProduceDeletions ∨ agg/kv, over `table->views`) vs the plan's `support`
+(CanReceiveDeletions, the region-contract convention, over the whole eqset class)
+are DIFFERENT notions — reconciling them is a noted follow-on, not part of the
+resolution invariant.
+
 ## Open follow-ons (not blockers)
+- Reconcile the `support` token semantics with `TableIsDifferential` (the two use
+  CanReceive vs CanProduce + agg/kv; align, then cross-check support equality).
 - Arrangement derivation (§2.5.3) — the `collect_arrangement_requirements`
   question, deferred until a consumer exists.
 - A discriminating multi-non-mergeable-INSERT witness (still not in corpus) would
