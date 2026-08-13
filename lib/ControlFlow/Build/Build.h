@@ -212,6 +212,14 @@ class Context {
   // scope). Null when no stratum phases ran (no differential tables).
   std::shared_ptr<DRFlowGraph> dr_flow;
 
+  // Keyed-instance D1.b gate (HP-17 semantic-predicate staging). The keyed-
+  // instance mint (`BuildSubgraphInstanceOps`) and its census recount are
+  // guarded on this bit. Set from `effective_demand_instance` at the
+  // Program::Build head (the `-demand-instance` flag OR the RP-9 `@key`-pragma
+  // fallback selection). Not a debug toggle: it is a real mode bit on
+  // default-off production code.
+  bool demand_instance_enabled{false};
+
   // Stage B: the frozen regional program's stored census (set by
   // Program::Build from `frozen.Census()`). Read by the V-REGION-CENSUS
   // recount at the ValidateDROps tail (lib/Rel/Rel.cpp), which re-derives
@@ -257,6 +265,16 @@ class Context {
     uint64_t message;    // ParsedMessage::Id()
   };
   std::vector<EmittedIngestLoop> emitted_ingest_loops;
+
+  // V-INST-EMITTED (D2.b, HP-1): the (store_id, kind) of every keyed-instance
+  // region emitted, cross-checked against the flow's {kSubgraphInstantiate,
+  // kInstanceDeath, kInstanceSeal} enrollment. Enrolls ALL THREE kinds (a
+  // minted-but-unlowered seal aborts).
+  struct EmittedInstanceOp {
+    unsigned store_id;
+    uint8_t kind;  // DROpKind cast (kSubgraphInstantiate/Death/Seal)
+  };
+  std::vector<EmittedInstanceOp> emitted_instance_ops;
 
   // R-final SD-3 (THE FLIP): the walk-side eager MARKER census — a per-(kind,
   // view) count incremented AT the marker dispatch in BuildEagerRegion (co-
