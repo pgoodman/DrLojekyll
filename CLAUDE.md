@@ -100,9 +100,15 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > the demanded interior identically (E1 rel=path, support, census
 > row-contracts=2 all byte-equal); the Tier-1 guard-join support OR becomes
 > observable only under `-demand-retract` (differential demand — no corpus
-> witness), a named residue with S2+.** S1b/S1c COMPLETE. REMAINING: S2+
-> the keyed InstanceStore; `-demand-retract` witnesses. Authority:
-> `session-31-s1b-seed.md` §5.
+> witness), a named residue with S2+.** S1b/S1c COMPLETE. **NEXT SESSION
+> (owner-ratified s36 close): S2 — the keyed InstanceStore nested lowering
+> (`-demand-instance`), R-MONO slice first. Charter:
+> `KeyedInstances.artifacts/session-37-s2-prompt.md`; seed (inventory of
+> surviving assets vs P1-deleted, the s34-s36 BELTS-INTEGRATION obligation —
+> the derivations must learn the nested allocation rules, never gate a belt
+> off — and the S2a/b/c slicing):
+> `KeyedInstances.artifacts/session-37-s2-seed.md`.** The parked InstanceFlow
+> Stage-C plan remains `InstanceFlow.artifacts/session-37-seed.md`.
 
 ## Build
 

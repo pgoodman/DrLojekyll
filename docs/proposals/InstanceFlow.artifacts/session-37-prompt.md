@@ -1,14 +1,17 @@
 <!-- Copyright 2026, Peter Goodman. All rights reserved. -->
-# Session-37 charter — S1b tail: bench the pruning; then S1c or Stage C (owner re-ranks)
+# [SUPERSEDED — session 37 is S2] Former S1b charter (everything below landed IN s36)
 
-> **AMENDED at s36 close: S1b's CORE LANDED IN s36 ITSELF (CP4 `047a991b`) —
-> the injector (§1) AND the witness (§2) are DONE, gate green (SUITE PASS 228,
-> ctest 5/5, answer-correct ×4 modes, flag-off byte-identical). What remains
-> of this charter is §3 (the bench carrier — the MEASURED selective-pruning
-> proof + the non-selective regression) and the seed §5 residue (S1c Tier-1
-> demanded-interior naming; S2+ InstanceStore). The InstanceFlow Stage-C plan
-> stays parked in `session-37-seed.md`. The owner re-ranks: bench+S1c vs
-> Stage C. The original charter below is kept for §3's instructions.**
+> **SUPERSEDED at s36 close (owner call: "do S2 next session").** The ENTIRE
+> S1 arc completed in s36 itself: the injector + witness (CP4 `047a991b`),
+> the bench carrier + measured pruning (CP6 `d3347fcb`), the runbench
+> `drflags=` harness integration (CP7 `4d76a88a`, BASELINE run 12), and the
+> S1c `region-internal` restore (CP8 `9a66f5f0`). All gates green.
+> **THE session-37 charter is
+> `KeyedInstances.artifacts/session-37-s2-prompt.md`** (S2: the keyed
+> InstanceStore nested lowering, R-MONO first; seed
+> `KeyedInstances.artifacts/session-37-s2-seed.md`). The InstanceFlow
+> Stage-C plan stays parked in `session-37-seed.md` (this directory). The
+> original S1b charter below is retained as the historical record only.**
 
 You are resuming work on branch `keyed-instances` (Dr. Lojekyll, the `hyde`
 C++ Datalog compiler). **Owner redirect (2026-08-13, s36 close): this session
