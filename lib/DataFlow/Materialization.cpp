@@ -305,7 +305,13 @@ MaterializationResources PlanResources(Query query,
 // from emission's own assumption (both sides use `QueryColumn::Index()`), so
 // the cross-check certifies byte-equality with emission, not independent
 // soundness of that congruence.
-void DeriveArrangements(Query query, MaterializationResources &plan) {
+void DeriveArrangements(Query query, MaterializationResources &plan,
+                        bool demand_instance) {
+  // Re-derivation into a plan COPY is legal (the S2a demand_instance arm):
+  // clear the two outputs this function owns.
+  plan.arrangements.clear();
+  plan.interface_tables = 0u;
+
   // The bijection map (V-MAT-BIJECTION): class -> its authoritative resource.
   std::unordered_map<unsigned, StateResourceId> class_to_resource;
   for (const StateResource &r : plan.resources) {
@@ -382,6 +388,21 @@ void DeriveArrangements(Query query, MaterializationResources &plan) {
     const auto num_pivots = join.NumPivotColumns();
     if (!num_pivots) {
       continue;  // zero-pivot == @product: non-driving sides scan FULL.
+    }
+    // S2a demand_instance arm (the §2 belts-integration rule; s37 panel-fixed
+    // predicate): under the nested lowering a recognized-subgraph guard JOIN
+    // is excised from the eager walk and its band rescan is a full scan, so
+    // no pivot index is minted — UNLESS the join is deletion-capable, in
+    // which case the delta/stratum path still emits it (and mints the
+    // indexes) regardless of the eager excision. Set semantics keep entries
+    // that coincide with R-FULL or another rule's request. Soundness
+    // precondition: joins strictly inside a demanded body are rejected
+    // upstream by the plain `-demand` body walk (see Materialization.h).
+    if (demand_instance &&
+        QueryView(join).GuardAnnotationIndex() !=
+            QueryView::kNoGuardAnnotation &&
+        !QueryView(join).CanReceiveDeletions()) {
+      continue;
     }
     for (QueryView side : join.JoinedViews()) {
       std::vector<ColumnOrdinal> ords;
@@ -669,7 +690,18 @@ void CrossCheckMaterialization(Query query,
 void CrossCheckArrangements(Query query,
                             const std::vector<ArrangementKey> &real,
                             unsigned num_interface_tables) {
-  const MaterializationResources &plan = query.impl->materialization;
+  // The public form compares against the STORED (flat-derived) plan; the
+  // S2a `-demand-instance` caller passes a flag-aware re-derived copy to the
+  // 4-arg core instead (Materialization.h).
+  CrossCheckArrangements(query, real, num_interface_tables,
+                         query.impl->materialization);
+}
+
+void CrossCheckArrangements(Query query,
+                            const std::vector<ArrangementKey> &real,
+                            unsigned num_interface_tables,
+                            const MaterializationResources &plan) {
+  (void) query;
 
   std::set<ArrangementKey> real_set;
   for (const ArrangementKey &key : real) {

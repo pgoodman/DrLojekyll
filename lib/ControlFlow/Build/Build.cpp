@@ -1790,7 +1790,19 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
         real.push_back(std::move(key));
       }
     }
-    CrossCheckArrangements(query, real, num_interface_tables);
+    if (context.demand_instance_enabled) {
+      // S2a (§2 belts integration, panel-fixed mechanics): the STORED plan is
+      // flag-blind — `Query::Build` derived the FLAT index expectation and the
+      // `QueryImpl` is lowering-blind by design. Under the nested lowering,
+      // re-derive the arrangement set WITH the demand_instance arm into a plan
+      // COPY and cross-check against that; the stored plan and every dump stay
+      // byte-untouched.
+      MaterializationResources nested_plan = MaterializationPlanOf(query);
+      DeriveArrangements(query, nested_plan, true);
+      CrossCheckArrangements(query, real, num_interface_tables, nested_plan);
+    } else {
+      CrossCheckArrangements(query, real, num_interface_tables);
+    }
   }
 
   return Program(std::move(impl));

@@ -1053,8 +1053,19 @@ static void BuildSubgraphInstanceOps(
 
   for (const RecognizedSubgraph &rs : query.RecognizedSubgraphs()) {
     auto git = lr.by_forcing.find(rs.forcing_index);
-    if (git == lr.by_forcing.end() || !git->second.ok) {
+    if (git == lr.by_forcing.end()) {
       continue;  // fully-dead forcing (all guards eliminated) — ABA-safe skip
+    }
+    // V-INST-COHERE [ALWAYS-ON] (s37 panel): the eager-walk excision
+    // (`IsCutSuccessorDR`) keys on ANY live guard annotation, but this mint
+    // keys on a COMPLETE resolution — a forcing with live guards that
+    // resolves incompletely would be cut from the flat descent with NO
+    // instantiate op feeding it: a silent under-answer, not a missing
+    // feature. Make the two predicates agree loudly instead.
+    if (!git->second.ok) {
+      ValidatorFail("BuildSubgraphInstanceOps: forcing has LIVE guard "
+                    "annotations but resolves incompletely (V-INST-COHERE) — "
+                    "the eager-walk excision would orphan the subgraph");
     }
     const ResolvedInstance &ri = git->second;
     TABLE *const pub_table = ri.pub_table;
@@ -1926,6 +1937,12 @@ static void ValidateOpResources(const DRFlowGraph &flow) {
     // Generic resolution sweep (no stored view partner, or an alias of an
     // already-paired table): every remaining non-null base-table field.
     resolve(op.table_op_table, "op.table");
+    // S2a (§2 belts item 3): the nested-mint fields. HONESTLY tautological at
+    // construction today (both are minted from `view_to_model[...]->table`, so
+    // resolution is total by V-REL-RESOURCE) — a regression fence for the
+    // Step-3 retype, not a live bug-catcher (s37 panel).
+    resolve(op.demand_table, "op.demand_table");
+    resolve(op.input_table, "op.input_table");
     resolve(op.seed_source, "seed.source");
     resolve(op.seed_target, "seed.target");
     resolve(op.chain_source, "chain.source");

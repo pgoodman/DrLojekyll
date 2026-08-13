@@ -230,8 +230,29 @@ MaterializationResources PlanResources(Query query,
 //   (@product non-driving sides scan FULL — no requirement; Join.cpp:272 is
 //   statically dead code.)
 // Must run AFTER `PlanResources` (reads `plan.resources` for the class ->
-// resource map). Canonical order + dense ids per `ArrangementId`.
-void DeriveArrangements(Query query, MaterializationResources &plan);
+// resource map). Canonical order + dense ids per `ArrangementId`. Clears
+// `plan.arrangements`/`plan.interface_tables` at its head, so re-derivation
+// into a plan COPY is legal (the S2a demand_instance arm below).
+//
+// S2a (session-37, the §2 belts-integration arm): `demand_instance` replays
+// the NESTED lowering's index universe — a recognized-subgraph guard JOIN is
+// excised from the eager walk (`IsCutSuccessorDR`'s guard-annotation
+// disjunct) and the SUBGRAPHINSTANCE band's rescan is a FULL SCAN with a key
+// filter (pre-cut Database.cpp:2339 "the keyed index is a deferred perf
+// refinement"), so R-JOIN-UNIFORM must not derive those joins' pivot
+// indexes. The skip is gated on `!CanReceiveDeletions()` — a deletion-capable
+// guard join is ALSO emitted by the delta/stratum path, which mints its pivot
+// indexes regardless of the eager excision (panel refutation, s37). SOUNDNESS
+// PRECONDITION (recorded, s37 panel): a join strictly DOWNSTREAM of the cut
+// (inside the demanded body) would be excised without a guard annotation, but
+// the plain `-demand` body walk rejects multi-atom demanded bodies upstream,
+// so no such join exists in the admitted set — a future body-shape widening
+// must re-derive this rule. `Query::Build`'s call stays flagless (the stored
+// plan/-materialization-out remain the FLAT derivation; the QueryImpl is
+// lowering-blind); `Program::Build` re-derives into a copy under the flag and
+// cross-checks against that.
+void DeriveArrangements(Query query, MaterializationResources &plan,
+                        bool demand_instance = false);
 
 // V-MAT-AUTHORITY (§17) + V-MAT-BIJECTION (panel claim-d): resources <-> stateful
 // classes is a bijection; every stateful collection resolves to exactly one
@@ -248,5 +269,15 @@ bool ValidateMaterialization(Query query, const InstanceFlowProgram &flow,
 // friend). The plan is empty on a graph built before the tail; callers on the
 // FINAL frozen graph always see the populated plan.
 const MaterializationResources &MaterializationPlanOf(Query query);
+
+// S2a (session-37): the plan-override core of `CrossCheckArrangements` — the
+// public 3-arg form (Query.h) forwards the STORED plan here; `Program::Build`
+// under `-demand-instance` passes a flag-aware re-derived COPY instead (the
+// stored plan stays the flat derivation, untouched). Reads no `QueryImpl`
+// state — pure over its arguments.
+void CrossCheckArrangements(Query query,
+                            const std::vector<ArrangementKey> &real,
+                            unsigned num_interface_tables,
+                            const MaterializationResources &plan);
 
 }  // namespace hyde
