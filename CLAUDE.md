@@ -71,10 +71,19 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > behavioral binary == interpreter CBF. Flag-off corpus BYTE-IDENTICAL
 > (registry empty ⇒ dispatcher no-op). Gate: OptDiff **SUITE PASS (228)**,
 > ctest **5/5**; every `-demand` compile passes the s36 arrangement
-> cross-check quiescently. **S1b TAIL (next): the bench carrier** (the s29 O1
-> selective-pruning measurement with the REAL transform — `idx_hops`
-> 40000→~11 + the non-selective regression) + S1c polish (Tier-1 demanded-
-> interior naming re-add). Authority: `session-31-s1b-seed.md` §3-§5.
+> cross-check quiescently. **BENCH CARRIER LANDED same session
+> (`bench/workloads/demand_tc/`, MANUAL — runbench has no compiler-flag knob
+> yet; record `RegionalDataFlowCore.artifacts/s1b-bench-carrier.md`): the
+> REAL transform's pruning measured in-compiler (the s29 O1 open
+> emission-fidelity question CLOSED) — recursive-TC kPushDown shape, 4000×10
+> chains, answers count+hash EQUAL every cell; SELECTIVE (8 head probes)
+> join-work `idx_hops` 580,080→1,192 (~487×; demand's INGEST does ZERO
+> recursive-join hops — the guarded fixpoint fires only on demand);
+> NON-SELECTIVE (probe all 44k nodes) REGRESSES 4.7× idx_hops / 13.6× finds
+> (machinery scales with the demand set) ⇒ `-demand` stays opt-in/cost-gated,
+> never a fifth golden mode.** S1b REMAINING: S1c polish (Tier-1
+> demanded-interior naming re-add) + runbench flag-knob integration; S2+ the
+> keyed InstanceStore. Authority: `session-31-s1b-seed.md` §5.
 
 ## Build
 
