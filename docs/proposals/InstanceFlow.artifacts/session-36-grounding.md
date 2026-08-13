@@ -250,6 +250,32 @@ high-confidence, all empirical with live compiles + constructed probes)
   INSERT↔guard-TUPLE union, DataFlow Build.cpp:2412-2428). MUST-FOLD (adopted,
   §5): name the Stage-C residual lacks.
 
+## §4.5 Execution record (post-panel, gate GREEN)
+
+Landed as CP1 (`53cab01e`) with every panel must-fold applied:
+- **R-JOIN-UNIFORM** implemented as the ONE unconditional per-side rule (the
+  refuted routing split never entered code), with the
+  one-input-pivot-per-(side,pivot) fprintf+abort tripwire and the
+  R-QUERY-mirrors-`SelectAccessPlan` citation in the header comment.
+- **Typed domains** (owner mid-session direction): `ArrangementId`,
+  `ColumnOrdinal` (its own domain: a position in the store's column order —
+  not a `FieldId`, not a count), `ArrangementKey` (the id-free canonical
+  content whose defaulted ordering IS the canonical arrangement order; also
+  the census seam type). No bare `uint32_t`/`unsigned` crosses the seam.
+- **Literal golden bytes predicted first** (panel-b must-fold): the five full
+  `.materialization.opt` texts written to scratch BEFORE the build; the built
+  compiler's dumps byte-matched all five on the FIRST run; blessed via
+  `runall.sh --bless` after review (`BLESS: 5 golden(s) updated`, purely
+  additive).
+- **Gate:** OptDiff **SUITE: PASS (227)** — the cross-check quiescent
+  corpus-wide across all 4 modes (belt runs every compile; zero fires);
+  ctest **5/5**; codegen + `.rel`/`.contract`/`.region`/`.df` byte-identical.
+- **Belt live-verify:** dropping the R-NEG requirement → negate_1 aborts with
+  `CROSS-CHECK (arrangements): ControlFlow minted an index the plan MISSED:
+  sr#1 columns=(0)`; revert → quiescent (rc=0).
+- **Interface arm live-verify:** the E4 probe (dead-query program) compiles
+  clean with `interface-tables=1` derived AND censused in agreement.
+
 ## §5 Stage-C residual lacks (named per panel (d) — what the inversion STILL
 needs after this slice lands)
 

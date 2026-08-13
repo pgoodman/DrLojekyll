@@ -742,9 +742,55 @@ a Step-2b measurement) in `InstanceFlow.artifacts/session-35-grounding.md`; **St
 `support` over ALL class views, `TableIsDifferential` over the narrower
 `table->views` — not proven equal; the panel saw only the predicate difference).
 NEXT (owner-ratified scope, `session-35-arrangement-scope.md`): the ARRANGEMENT
-derivation (§2.5.3) — Stage A the index census tagged by `table_to_resource`
-(a codegen-byte-identical observer, reusing s35's map), then Stage B the pure
-`collect_arrangement_requirements` + cross-check, then Stage C the inversion.
+derivation (§2.5.3) — LANDED s36 (below); then Stage C the inversion.
+
+**s36 the ARRANGEMENT derivation (Stages A+B BUNDLED as derive-early /
+cross-check-late, LANDED)** — the resources plan's missing half (§2.5.3 closed;
+the true Step-3 unblocker). `DeriveArrangements` (`lib/DataFlow/
+Materialization.{h,cpp}`, run at the `Query::Build` tail after `PlanResources`)
+derives the INDEX requirement set PURE-side by replaying the six emission
+`GetOrCreateIndex` sites' column logic from the FINAL graph — R-FULL (every
+resource's all-columns creation-default index), **R-JOIN-UNIFORM** (per joined
+side of EVERY pivot-JOIN, the side's pivot input ordinals — the panel-refuted
+BuildJoin/EmitJoinFire routing split is extensionally INVISIBLE in the SET:
+fully-interior fixpoint joins scan all k≥2 sides, partially-interior joins
+always carry an eager/delta BuildJoin minting all sides; unit sides + all-bound
+patterns dedup into R-FULL, so NO differentialness predicate is needed —
+sidestepping the Step-2b view-set premise), R-NEG (non-@never crossover: the
+negate's non-constant key input ordinals on the pred class, Stratum.cpp
+:1168-1185 replayed verbatim), R-QUERY (per unique bound binding pattern over a
+surviving query-INSERT; mirrors `SelectAccessPlan`, which Regional→DataFlow
+layering bars calling), + the R-INTERFACE count (`#query` decls with no
+surviving INSERT ⇒ the resource-less always-empty `BuildEmptyQueryEntryPoint`
+table — COUNT derived + cross-checked; per-table sets a named Stage-C
+residual). Typed domains: `ArrangementId`, `ColumnOrdinal` (a position in the
+store's column order — its own domain, not `FieldId`, not a count),
+`ArrangementKey` (the id-free `(resource, ordinals)` content whose defaulted
+ordering IS the canonical order — ascending `StateResourceId` then lex ordinal
+vector — and the census seam type). THE TEETH: `CrossCheckArrangements`
+(`Query.h` friend) at the `Program::Build` tail censuses the REAL
+`impl->tables[*]->indices` through `context.dr_flow->table_to_resource` (the
+s35 map's FIRST real consumer; the universe is FINAL there — nothing mints or
+deletes a TABLEINDEX after region build, `#if 0` Build.cpp:1502 dead,
+`ProgramImpl::Optimize` index-free) and aborts naming every divergent
+arrangement on either side — a REAL falsifiable claim (pure derivation vs
+stateful emission walk are disjoint code paths), quiescent corpus-wide 227
+cases × 4 modes, belt-verified LIVE (drop R-NEG → negate_1 aborts naming `sr#1
+columns=(0)`; revert → quiescent). NAMED blind spot: the view-ordinal→
+table-ordinal CSE congruence is REPLAYED from emission's assumption (byte-
+equality, not independent soundness; the unchecked union is INSERT↔guard-TUPLE,
+DataFlow Build.cpp:2412-2428). Render: `-materialization-out` header
+`arrangements=K` (+ `interface-tables=J` only when J>0) + an `arrangements`
+block (`ar#K resource=sr#R columns=(ordinals)`, sr# = the ONE id space shared
+with `-rel-out`). Codegen byte-identical; only the 5 `.materialization.opt`
+goldens moved (additive, predicted-then-verified byte-exact on the FIRST
+build). Grounded: 4-sonnet recon + 4-opus refuter panel (claim (c) REFUTED as
+drafted → the uniform-rule fold; a/b/d survive) in
+`InstanceFlow.artifacts/session-36-grounding.md` (§5 = the named Stage-C
+residual lacks: interface-table authority, TABLEINDEX id-renumbering decision,
+column-order/schema authority, Step 2b, six-site column logic stays). NEXT:
+Stage C — the allocation inversion (`AllocateRuntimeResources` minting tables +
+indexes up front from the plan; the six sites become lookups).
 
 ## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
 
