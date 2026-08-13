@@ -656,6 +656,37 @@ OutputStream &operator<<(OutputStream &os, ProgramGroupUpdateRegion region) {
   return os;
 }
 
+OutputStream &operator<<(OutputStream &os,
+                         ProgramSubgraphInstanceRegion region) {
+  os << os.Indent() << "subgraph-instance i#" << region.StoreId();
+  // D3.a.1 band-(a0): only-when-present (differential demand only).
+  if (auto removal = region.RemovalFrontier(); removal) {
+    os << " death " << *removal;
+  }
+  os << " demand " << region.DemandFrontier() << " input "
+     << region.InputFrontier();
+  // D3.a.2 band-(a2'): only-when-present (differential input only).
+  if (auto irf = region.InputRemovalFrontier(); irf) {
+    os << " input-removals " << *irf;
+  }
+  os << " rescan "
+     << region.InputTable() << " -> publish " << region.PubTable() << " key@{";
+  auto sep = "";
+  for (auto p : region.KeyPositions()) { os << sep << p; sep = ", "; }
+  os << "} row@{";
+  sep = "";
+  for (auto p : region.RowPositions()) { os << sep << p; sep = ", "; }
+  // D3.a.1: the signed publish queues (differential regime only; the
+  // GROUP_UPDATE `emit-touched one-net-pair -> del / add` mold).
+  if (region.IsDifferential()) {
+    os << "} diff-publish -> " << region.DelQueue() << " / "
+       << region.AddQueue() << " seal";
+  } else {
+    os << "} seal";
+  }
+  return os;
+}
+
 OutputStream &operator<<(OutputStream &os, ProgramClaimRegion region) {
   os << os.Indent() << (region.IsDelete() ? "claim-del" : "claim-add")
      << " {";
@@ -952,6 +983,7 @@ class FormatDispatcher final : public ProgramVisitor {
   MAKE_VISITOR(ProgramCheckRecordRegion)
   MAKE_VISITOR(ProgramCommitSweepRegion)
   MAKE_VISITOR(ProgramGroupUpdateRegion)
+  MAKE_VISITOR(ProgramSubgraphInstanceRegion)
   MAKE_VISITOR(ProgramClaimRegion)
   MAKE_VISITOR(ProgramRetireRegion)
   MAKE_VISITOR(ProgramNetBatchRegion)
