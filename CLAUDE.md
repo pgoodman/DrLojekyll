@@ -788,9 +788,13 @@ build). Grounded: 4-sonnet recon + 4-opus refuter panel (claim (c) REFUTED as
 drafted → the uniform-rule fold; a/b/d survive) in
 `InstanceFlow.artifacts/session-36-grounding.md` (§5 = the named Stage-C
 residual lacks: interface-table authority, TABLEINDEX id-renumbering decision,
-column-order/schema authority, Step 2b, six-site column logic stays). NEXT:
-Stage C — the allocation inversion (`AllocateRuntimeResources` minting tables +
-indexes up front from the plan; the six sites become lookups).
+column-order/schema authority, Step 2b, six-site column logic stays). NEXT
+(OWNER REDIRECT, s36 close): **S1b — the demand injector seed-wiring** (answer
+correctness for `-demand` programs, the first user-visible payoff; charter
+`InstanceFlow.artifacts/session-37-prompt.md`, technical authority the
+REINSTATED `RegionalDataFlowCore.artifacts/session-31-s1b-seed.md`). Stage C
+(the allocation inversion) is scoped and PARKED in
+`InstanceFlow.artifacts/session-37-seed.md` until the owner re-ranks it.
 
 ## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
 

@@ -1,6 +1,19 @@
 # Session-31 seed — S1b: make the demand seed FLOW, then witness + bench the pruning
 
-> **SUPERSEDED (session 31 close).** The owner steered away from finishing the flat back-end
+> **REINSTATED (session 36 close, 2026-08-13, owner call).** After s32–s36 built the InstanceFlow
+> derived-authority arc (grove → resources → op retype → arrangements; Stage-C inversion scoped and
+> PARKED in `InstanceFlow.artifacts/session-37-seed.md`), the owner redirected the next session to
+> THIS work: S1b is the first USER-VISIBLE payoff (answer correctness for `-demand` programs).
+> This seed is the technical resume authority again — but FIVE sessions landed since it was written,
+> so RE-VERIFY every §6 anchor at tip. Known drift: the `Query::Build` tail now also runs
+> `BuildFlatInstanceFlow` + `PlanResources` + `DeriveArrangements` and `Program::Build` tail runs
+> `CrossCheckMaterialization` + `CrossCheckArrangements` — a live `-demand` compile passes ALL of
+> them (verified in the s36 refuter panel: guard joins = R-JOIN-UNIFORM, the forced query =
+> R-QUERY), so the new belts are no obstacle; the demand corpus witnesses are still absent at tip
+> (0 `.drflags` cases — re-add per §2). The superseded banner below is kept for the historical
+> record of the s31→s32 pivot.
+
+> **[historical] SUPERSEDED (session 31 close).** The owner steered away from finishing the flat back-end
 > ("stop pussyfooting with intermediate flat approaches — boldly move into the target feature space").
 > The flat injector/witness/bench polish below is DEPRIORITIZED; the target is now KEYED INSTANCES
 > directly. See `session-32-keyed-instances-seed.md` + `session-32-prompt.md`. Kept for the flat-arm

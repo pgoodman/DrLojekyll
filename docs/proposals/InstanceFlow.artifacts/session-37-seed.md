@@ -1,7 +1,14 @@
 <!-- Copyright 2026, Peter Goodman. All rights reserved. -->
-# Session-37 seed — InstanceFlow after the arrangement derivation: Stage C, the allocation inversion
+# [PARKED] Stage-C seed — InstanceFlow after the arrangement derivation: the allocation inversion
 
-> START-HERE for the next session. Written at the close of session 36 (branch
+> **PARKED (owner call, 2026-08-13, s36 close): session 37 is S1b (the demand
+> injector seed-wiring — the first user-visible payoff), NOT Stage C. See
+> `session-37-prompt.md` (the S1b charter) +
+> `RegionalDataFlowCore.artifacts/session-31-s1b-seed.md` (reinstated). This
+> seed remains the resume point for the InstanceFlow inversion when the owner
+> re-ranks it.**
+
+> Written at the close of session 36 (branch
 > `keyed-instances`). Session 36 landed the ARRANGEMENT derivation — Stages A+B
 > BUNDLED as derive-early / cross-check-late — gate GREEN (OptDiff **SUITE PASS
 > 227** codegen byte-identical, ctest **5/5**, belt live-verified both ways).
