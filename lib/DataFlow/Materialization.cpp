@@ -399,6 +399,10 @@ bool ValidateMaterialization(Query query, const InstanceFlowProgram &flow,
 // between the Query::Build grove point and Program::Build's FillDataModel that
 // would silently stale the shipped plan (panel claim-a fold ii). Abort on
 // divergence; on a correct pipeline it fires nothing.
+const MaterializationResources &MaterializationPlanOf(Query query) {
+  return query.impl->materialization;
+}
+
 void CrossCheckMaterialization(Query query,
                                const std::set<unsigned> &real) {
   const MaterializationResources &plan = query.impl->materialization;

@@ -66,4 +66,7 @@ dr_define_static_library(ControlFlow
 # (no include/drlojekyll/ surface).
 target_include_directories(ControlFlow PRIVATE
   "${PROJECT_SOURCE_DIR}/lib/Rel"
+  # s34 Phase-C: ControlFlow/Build/*.cpp include "Rel.h", which now transitively
+  # includes lib/DataFlow/Materialization.h (DRTable::resource : StateResourceId).
+  "${PROJECT_SOURCE_DIR}/lib/DataFlow"
 )

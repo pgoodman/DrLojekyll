@@ -37,4 +37,7 @@ dr_define_static_library(Rel
 target_include_directories(Rel PRIVATE
   "${PROJECT_SOURCE_DIR}/lib/ControlFlow"
   "${PROJECT_SOURCE_DIR}/lib/ControlFlow/Build"
+  # s34 Phase-C: DRTable refers to StateResourceId (lib/DataFlow/Materialization.h),
+  # the first Rel object to carry a materialization-map identity beside its TABLE*.
+  "${PROJECT_SOURCE_DIR}/lib/DataFlow"
 )

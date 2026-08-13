@@ -31,6 +31,7 @@ class OutputStream;
 struct QueryContracts;  // Format.h — the `-contract-out` dump tag (H-A8).
 struct QueryInstanceFlow;  // Format.h — the `-instanceflow-out` dump tag (s32).
 struct QueryMaterialization;  // Format.h — `-materialization-out` dump tag (s34).
+struct MaterializationResources;  // Materialization.h — the s34 resources plan.
 class FrozenRegionalProgram;  // Regional/Regional.h — the Stage-B planner.
 
 enum class ComparisonOperator : int;
@@ -1190,6 +1191,10 @@ class Query {
   // to cross-check it against the real `view_to_model` table allocation.
   friend void CrossCheckMaterialization(
       Query query, const std::set<unsigned> &real_stateful_classes);
+
+  // Session-34 Phase-C: lib/Rel reads `impl->materialization` (the resources plan)
+  // to stamp each `DRTable` with its `StateResourceId` (behind the map).
+  friend const MaterializationResources &MaterializationPlanOf(Query query);
 
   // Stage B: the frozen-regional-program planner (lib/Regional/Planning.cpp)
   // reads `impl->row_contracts` for the R-STORE row-contract lines.

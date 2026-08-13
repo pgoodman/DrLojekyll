@@ -158,4 +158,11 @@ bool ValidateMaterialization(Query query, const InstanceFlowProgram &flow,
                              const MaterializationResources &plan,
                              const ErrorLog &log);
 
+// Session-34 Phase-C: the stored resources plan, for lib/Rel to stamp each
+// `DRTable` with its `StateResourceId` (the first `TABLE*`->resource retype,
+// behind the materialization map). Reads `query.impl->materialization` (a `Query`
+// friend). The plan is empty on a graph built before the tail; callers on the
+// FINAL frozen graph always see the populated plan.
+const MaterializationResources &MaterializationPlanOf(Query query);
+
 }  // namespace hyde

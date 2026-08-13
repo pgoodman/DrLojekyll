@@ -1367,6 +1367,15 @@ DRFlowGraph BuildDRInventory(
   DRFlowGraph flow;
   flow.scc_map = scc_map;
 
+  // s34 Phase-C: the EquivalenceSetId -> StateResourceId map, built once from the
+  // resources plan (`MaterializationPlanOf` reads `query.impl->materialization`).
+  // The bijection (V-MAT-BIJECTION) makes this single-valued, so each DRTable's
+  // shared physical class maps to exactly one authoritative resource.
+  std::unordered_map<unsigned, uint32_t> eqset_to_resource;
+  for (const StateResource &r : MaterializationPlanOf(query).resources) {
+    eqset_to_resource.emplace(r.eqset, r.id.v);
+  }
+
   // ------------------------------------------------------------------ tables
   // A debug-labelled model entry per differential/monotone table, with its
   // identity-distinct member-view list (V-MEMBER-ID: never structurally
@@ -1379,6 +1388,41 @@ DRFlowGraph BuildDRInventory(
     for (const QueryView &view : table->views) {
       t.member_views.push_back(view);
     }
+
+    // s34 Phase-C: stamp the table's StateResourceId behind the materialization
+    // map, and CROSS-CHECK the retype invariant (V-REL-RESOURCE): a table's
+    // member views all share ONE storage class (they share one DataModel), and
+    // that class has exactly one authoritative resource. A SHADOW — the id is
+    // consumed by nothing, so codegen is byte-identical; the belt is its only
+    // reader. A fire is a real divergence between the resources plan and the
+    // physical table set (fprintf+abort, surviving NDEBUG).
+    if (t.member_views.empty()) {
+      fprintf(stderr,
+              "V-REL-RESOURCE: table %p has no member views — cannot resolve a "
+              "StateResourceId\n",
+              (void *) table);
+      abort();
+    }
+    const unsigned eqset = t.member_views.front().EquivalenceSetId();
+    for (const QueryView &view : t.member_views) {
+      if (view.EquivalenceSetId() != eqset) {
+        fprintf(stderr,
+                "V-REL-RESOURCE: table %p member views span storage classes %u "
+                "and %u\n",
+                (void *) table, eqset, view.EquivalenceSetId());
+        abort();
+      }
+    }
+    const auto rit = eqset_to_resource.find(eqset);
+    if (rit == eqset_to_resource.end()) {
+      fprintf(stderr,
+              "V-REL-RESOURCE: table %p storage class %u has no authoritative "
+              "resource in the plan\n",
+              (void *) table, eqset);
+      abort();
+    }
+    t.resource = StateResourceId{rit->second};
+
     flow.tables.push_back(std::move(t));
   }
 

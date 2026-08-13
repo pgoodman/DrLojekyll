@@ -23,6 +23,8 @@
 #include <drlojekyll/DataFlow/Query.h>
 #include <drlojekyll/Runtime/Table.h>  // RowFlags, DerivClass (runtime copy)
 
+#include "Materialization.h"  // s34 Phase-C: StateResourceId (DRTable::resource)
+
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -400,6 +402,16 @@ class DRTable {
   TABLE *model{nullptr};
   bool differential{false};
   std::vector<QueryView> member_views;  // identity-distinct feeders
+
+  // s34 Phase-C (the FIRST Rel object to carry a materialization-map identity
+  // beside its `TABLE*`): the authoritative `StateResource` of this table's
+  // physical storage class, resolved at `BuildDRInventory` from the member
+  // views' shared `EquivalenceSetId` via the resources plan
+  // (`ResourceForView(v) = authority(EquivalenceSetId(v))`, the bijection
+  // V-MAT-BIJECTION guarantees single-valued). A SHADOW today — cross-checked at
+  // the mint (V-REL-RESOURCE), consumed by nothing, so codegen is byte-identical.
+  // The Phase-C endpoint retires `model` in favor of this id. `~0u` = unstamped.
+  StateResourceId resource{~0u};
 };
 
 // ---------------------------------------------------------------------------
