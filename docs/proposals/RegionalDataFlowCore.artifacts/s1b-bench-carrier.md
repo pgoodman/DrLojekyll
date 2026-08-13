@@ -63,7 +63,15 @@ demanded frontier (the seed §2 `kPushDown` obligation).
 
 ## Residue
 
-- `runbench.sh` integration needs a per-engine compiler-flags knob (the
-  bench/README run-11 COST note) — the carrier is manual until then.
+- ~~`runbench.sh` integration needs a per-engine compiler-flags knob~~ —
+  DONE same day: the harness-consumed `drflags=` engine knob (runbench.sh;
+  BASELINE.md run 12). The carrier is now a first-class runbench family
+  (`bench/workloads/demand_tc/runspec.txt`); the harness sentinel
+  cross-check referees plain==demand answer-hash equality per knob-point
+  (the driver adapts to either query signature via a dependent `requires`
+  check — no build-time define). First harness run: 12 folded runs, all
+  sentinels agree; counters reproduce this record's numbers exactly
+  (selective demand ingest `idx_hops` = literal 0), wall adds ~8× selective
+  speedup / ~4.4× non-selective slowdown as the timing narrative.
 - S1c polish (Tier-1 demanded-interior naming) and S2+ (keyed InstanceStore)
   per `session-31-s1b-seed.md` §5.

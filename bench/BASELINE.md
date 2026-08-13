@@ -381,3 +381,30 @@ this a byte-identity epoch rather than a timing epoch:
   demand_multi_adorn_1 diagnostic ADDED, goldens blessed from oracle truth;
   the pre-existing 165 UNCHANGED — zero golden churn); ctest 3/3; oracle +
   monotone sidecars byte-identical throughout.
+
+## Accepted run 12 (S1b close, 2026-08-13, branch keyed-instances) — the
+## demand carrier ENTERS the harness (the run-11 COST-note condition met)
+
+`runbench.sh` now carries the compiler-flag mechanism run 11 named as the
+precondition: a harness-consumed `drflags=` engine knob (comma-separated
+flags appended to the $DR line; artifacts + mode labels gain a sanitized
+tag, e.g. `opt` vs `opt+demand`; the binary never sees the knob). The
+driver-emitted (workload, knobs) key deliberately EXCLUDES drflags, so the
+sentinel cross-check enforces answer-hash agreement across the plain and
+flagged variants of one knob-point — flagged-vs-plain semantic equality is
+now harness-refereed, not driver-asserted.
+
+First accepted run (`bench/workloads/demand_tc/runspec.txt`, opt, REPS=2,
+COUNTS=1, 12 folded runs, sentinels agree in every cell; full record
+`docs/proposals/RegionalDataFlowCore.artifacts/s1b-bench-carrier.md`):
+
+- SELECTIVE (4000×10 chains, 8 head probes; 220k-row full closure):
+  ctr_idx_hops ingest+probe 580,080 (plain) vs 1,192 (`-demand`) — ~487×
+  less join work, demand's ingest epoch a literal 0; wall ~37ms vs ~4.5ms
+  total (~8×). Answers 80 rows, hash-equal.
+- NON-SELECTIVE (probe all 44,000 nodes): ctr_idx_hops 800,000 vs
+  3,748,000 (4.7× REGRESSION), wall ~39ms vs ~173ms — the cost-gate
+  confirmation. Answers 220,000 rows (the full closure through the demand
+  path), hash-equal.
+- Verdict unchanged, now harness-recorded: `-demand` stays opt-in /
+  cost-gated, never a fifth golden mode.

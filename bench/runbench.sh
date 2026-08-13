@@ -10,6 +10,16 @@
 #               baseline <name>   <knob k=v ...>
 #               progsize <rules> [<rules> ...]
 #             The SAME (family, knobs) engine line is run once per mode.
+#             Among an engine line's knobs, `drflags=<f1[,f2...]>` is
+#             HARNESS-CONSUMED (never passed to the binary): the comma-
+#             separated compiler flags are appended to the $DR line (e.g.
+#             drflags=-demand — the S1b carrier), the compile artifacts and
+#             the recorded mode label gain a sanitized flags tag (opt vs
+#             opt+demand), and the fragment/manifest rows key on the tagged
+#             label. The driver-emitted (workload, knobs) key deliberately
+#             EXCLUDES drflags, so the sentinel cross-check enforces
+#             answer-hash agreement across drflags variants at one
+#             knob-point — a flagged-vs-plain semantic-equality referee.
 #   modes     space-separated subset of "opt nodf nocf none debug"
 #             (default "opt"; debug = -g without NDEBUG, seam off,
 #             flagged mode=debug per R25)
@@ -85,26 +95,35 @@ cxx_flags() {
   esac
 }
 
-# Compile one engine (family, mode); records Q5 compile metrics (R20).
-# Sets ENGINE_BIN / COUNTS_BIN on success; returns nonzero on failure.
-compile_engine() {  # $1=family $2=case.dr(rel) $3=mode
-  local family=$1 drfile=$REPO/$2 mode=$3
-  local gen="$WORKROOT/gen_${family}_${mode}"
-  ENGINE_BIN="$WORKROOT/bin_${family}_${mode}"
-  COUNTS_BIN="$WORKROOT/bin_${family}_${mode}_counts"
+# Compile one engine (family, mode, drflags); records Q5 compile metrics
+# (R20). Sets ENGINE_BIN / COUNTS_BIN / MLABEL on success; returns nonzero
+# on failure. $4 (optional) = space-separated extra compiler flags from the
+# engine line's `drflags=` knob; artifacts and row labels gain a sanitized
+# tag so flagged and plain compiles of one family never collide, and an
+# empty $4 reproduces the pre-knob artifact names byte-for-byte.
+compile_engine() {  # $1=family $2=case.dr(rel) $3=mode $4=drflags
+  local family=$1 drfile=$REPO/$2 mode=$3 drflags=${4:-}
+  local dftag=""
+  if [ -n "$drflags" ]; then
+    dftag=$(echo "$drflags" | tr -cd 'a-zA-Z0-9')
+  fi
+  MLABEL="$mode${dftag:++$dftag}"
+  local gen="$WORKROOT/gen_${family}_${mode}${dftag:+_$dftag}"
+  ENGINE_BIN="$WORKROOT/bin_${family}_${mode}${dftag:+_$dftag}"
+  COUNTS_BIN="${ENGINE_BIN}_counts"
   [ -x "$ENGINE_BIN" ] && return 0
   mkdir -p "$gen"
   local t0 t1
   t0=$(now_ns)
-  # shellcheck disable=SC2046
-  if ! timeout "$CTIMEOUT" "$DR" "$drfile" $(mode_flags "$mode") \
+  # shellcheck disable=SC2046,SC2086
+  if ! timeout "$CTIMEOUT" "$DR" "$drfile" $(mode_flags "$mode") $drflags \
       -cpp-out "$gen" > "$gen/dr.log" 2>&1; then
-    echo "COMPILE-FAIL(dr) $family $mode" >&2
-    printf "compile\t%s\t%s\t-\t-\tDR-FAIL\tno\n" "$family" "$mode" >> "$MANIFEST"
+    echo "COMPILE-FAIL(dr) $family $MLABEL" >&2
+    printf "compile\t%s\t%s\t-\t-\tDR-FAIL\tno\n" "$family" "$MLABEL" >> "$MANIFEST"
     return 1
   fi
   t1=$(now_ns)
-  emit_compile_row "$family" "$mode" dr_wall_ns $((t1 - t0))
+  emit_compile_row "$family" "$MLABEL" dr_wall_ns $((t1 - t0))
   # The artifact basename follows #database (default "datalog"); detect it.
   local anchor header
   anchor=$(ls "$gen"/*.cpp | head -1)
@@ -114,15 +133,15 @@ compile_engine() {  # $1=family $2=case.dr(rel) $3=mode
   if ! timeout "$CTIMEOUT" "$CXX" $(cxx_flags "$mode") -I "$REPO/include" -I "$gen" \
       "$REPO/bench/workloads/$family/driver.cpp" "$anchor" \
       "$REPO/lib/Runtime/Allocator.cpp" -o "$ENGINE_BIN" > "$gen/cxx.log" 2>&1; then
-    echo "COMPILE-FAIL(cxx) $family $mode (see $gen/cxx.log)" >&2
-    printf "compile\t%s\t%s\t-\t-\tCXX-FAIL\tno\n" "$family" "$mode" >> "$MANIFEST"
+    echo "COMPILE-FAIL(cxx) $family $MLABEL (see $gen/cxx.log)" >&2
+    printf "compile\t%s\t%s\t-\t-\tCXX-FAIL\tno\n" "$family" "$MLABEL" >> "$MANIFEST"
     return 1
   fi
   t1=$(now_ns)
-  emit_compile_row "$family" "$mode" cxx_wall_ns $((t1 - t0))
-  emit_compile_row "$family" "$mode" header_bytes "$(stat -f %z "$header")"
-  emit_compile_row "$family" "$mode" header_lines "$(wc -l < "$header" | tr -d ' ')"
-  emit_compile_row "$family" "$mode" binary_bytes "$(stat -f %z "$ENGINE_BIN")"
+  emit_compile_row "$family" "$MLABEL" cxx_wall_ns $((t1 - t0))
+  emit_compile_row "$family" "$MLABEL" header_bytes "$(stat -f %z "$header")"
+  emit_compile_row "$family" "$MLABEL" header_lines "$(wc -l < "$header" | tr -d ' ')"
+  emit_compile_row "$family" "$MLABEL" binary_bytes "$(stat -f %z "$ENGINE_BIN")"
   if [ "$COUNTS" = 1 ] && [ "$mode" != debug ]; then
     # shellcheck disable=SC2046
     timeout "$CTIMEOUT" "$CXX" $(cxx_flags "$mode") -DDRLOJEKYLL_BENCH_COUNTERS \
@@ -130,8 +149,8 @@ compile_engine() {  # $1=family $2=case.dr(rel) $3=mode
         "$REPO/bench/workloads/$family/driver.cpp" "$anchor" \
         "$REPO/lib/Runtime/Allocator.cpp" -o "$COUNTS_BIN" \
         > "$gen/cxx_counts.log" 2>&1 || {
-      echo "COMPILE-FAIL(counts) $family $mode" >&2
-      printf "compile\t%s\t%s+counts\t-\t-\tCXX-FAIL\tno\n" "$family" "$mode" >> "$MANIFEST"
+      echo "COMPILE-FAIL(counts) $family $MLABEL" >&2
+      printf "compile\t%s\t%s+counts\t-\t-\tCXX-FAIL\tno\n" "$family" "$MLABEL" >> "$MANIFEST"
       return 1
     }
   fi
@@ -238,18 +257,30 @@ while IFS= read -r line || [ -n "$line" ]; do
       family=$1
       drrel=$2
       shift 2
+      # Split the harness-consumed `drflags=` knob (comma-separated compiler
+      # flags) out of the runtime knob list; the binary never sees it.
+      drflags=""
+      runknobs=""
+      for knob in "$@"; do
+        case $knob in
+          drflags=*) drflags=$(echo "${knob#drflags=}" | tr ',' ' ') ;;
+          *) runknobs="$runknobs $knob" ;;
+        esac
+      done
+      # shellcheck disable=SC2086
+      set -- $runknobs
       for mode in $MODES; do
-        if ! compile_engine "$family" "$drrel" "$mode"; then
+        if ! compile_engine "$family" "$drrel" "$mode" "$drflags"; then
           status=1
           continue
         fi
         rep=0
         while [ "$rep" -lt "$REPS" ]; do
-          run_one engine "$family" "$ENGINE_BIN" "$mode" "$rep" "$@"
+          run_one engine "$family" "$ENGINE_BIN" "$MLABEL" "$rep" "$@"
           rep=$((rep + 1))
         done
         if [ "$COUNTS" = 1 ] && [ "$mode" != debug ] && [ -x "$COUNTS_BIN" ]; then
-          run_one engine "$family" "$COUNTS_BIN" "$mode+counts" 0 "$@"
+          run_one engine "$family" "$COUNTS_BIN" "$MLABEL+counts" 0 "$@"
         fi
       done
       ;;

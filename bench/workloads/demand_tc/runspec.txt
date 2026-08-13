@@ -1,0 +1,9 @@
+# demand_tc — the S1b demand-pruning carrier (s1b-bench-carrier.md).
+# Each knob-point runs PLAIN and `-demand` (the harness drflags= knob) at the
+# SAME (workload, knobs) key, so the runner's sentinel cross-check enforces
+# plain==demand answer-hash agreement per point. Run with COUNTS=1 for the
+# pruning narrative (ctr_idx_hops etc.); wall rows are the timing narrative.
+engine demand_tc bench/workloads/demand_tc/demand_tc.dr nchain=4000 len=10 probe=selective probes=8
+engine demand_tc bench/workloads/demand_tc/demand_tc.dr drflags=-demand nchain=4000 len=10 probe=selective probes=8
+engine demand_tc bench/workloads/demand_tc/demand_tc.dr nchain=4000 len=10 probe=all probes=8
+engine demand_tc bench/workloads/demand_tc/demand_tc.dr drflags=-demand nchain=4000 len=10 probe=all probes=8

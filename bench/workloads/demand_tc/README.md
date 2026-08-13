@@ -1,37 +1,34 @@
-# demand_tc — the S1b demand-pruning carrier (MANUAL; not runbench-integrated)
+# demand_tc — the S1b demand-pruning carrier (runbench family since run 12)
 
 The measured proof that the REAL `-demand` transform prunes (the s29 O1 spike
 re-run in-compiler — the spike's open "compiler-emission FIDELITY" question,
-closed 2026-08-13). `runbench.sh` carries no compiler-transform flag (see
-`bench/README.md`), so this family is run BY HAND; integrating it means
-teaching the manifest a per-engine compiler-flags knob first.
+closed 2026-08-13; accepted-run record in BASELINE.md run 12 and
+`docs/proposals/RegionalDataFlowCore.artifacts/s1b-bench-carrier.md`).
 
 The program is the recursive-TC `kPushDown` shape (identical to the suite's
 `demand_tc_witness`): one bound `#query` over a right-linear closure. The
-driver builds NCHAIN disjoint chains of length LEN, ingests them in one
-batch, then probes — 8 chain heads (`selective`) or every node (`all`, the
-demand-set == full-closure machinery-overhead regime) — folding all answers
-into one order-independent count+FNV pair that must byte-agree between the
-two binaries. Counters narrative ONLY (`-DDRLOJEKYLL_BENCH_COUNTERS`; the
-counts binary is never timed — bench/BASELINE.md discipline).
+driver builds nchain disjoint chains of length len, ingests them in one
+batch (epoch 0), then probes (epoch 1) — `probe=selective` (chain heads) or
+`probe=all` (every node; the demand-set == full-closure machinery-overhead
+regime) — folding all answers into one order-independent count+FNV
+sentinel. ONE driver serves both compiles: the probe call adapts at compile
+time (a `requires` check) to the forced (demand) vs plain query signature,
+so the runspec selects the transform purely via the harness `drflags=`
+knob. The plain and `-demand` engine lines share one (workload, knobs) key,
+so the runner's sentinel cross-check enforces plain==demand answer-hash
+agreement per knob-point.
 
 ## Run
 
 ```sh
-DR=build/debug/bin/drlojekyll
-W=/tmp/demand_tc_bench && mkdir -p $W/gen_plain $W/gen_demand
-$DR bench/workloads/demand_tc/demand_tc.dr -cpp-out $W/gen_plain
-$DR bench/workloads/demand_tc/demand_tc.dr -demand -cpp-out $W/gen_demand
-CXX="clang++ -std=c++23 -O2 -DNDEBUG -DDRLOJEKYLL_BENCH_COUNTERS -I include"
-$CXX -I $W/gen_plain  bench/workloads/demand_tc/driver.cpp \
-    $W/gen_plain/datalog.cpp  lib/Runtime/Allocator.cpp -o $W/plain.bin
-$CXX -DDEMAND_BUILD -I $W/gen_demand bench/workloads/demand_tc/driver.cpp \
-    $W/gen_demand/datalog.cpp lib/Runtime/Allocator.cpp -o $W/demand.bin
-$W/plain.bin  4000 10 selective 8   # vs
-$W/demand.bin 4000 10 selective 8
-$W/plain.bin  4000 10 all 0         # vs
-$W/demand.bin 4000 10 all 0
+DR=build/debug/bin/drlojekyll REPS=5 COUNTS=1 \
+  bench/runbench.sh /tmp/demand_tc_bench \
+  bench/workloads/demand_tc/runspec.txt opt
 ```
+
+Wall rows (`t_ingest_ns`/`t_probe_ns`) are the timing narrative (labels
+`opt` vs `opt+demand`); `ctr_*` rows from the `+counts` labels are the
+pruning narrative — never multiply the two.
 
 ## Accepted numbers (2026-08-13, tip = s36 CP4 lineage; 4000×10 chains,
 full closure 220,000 rows; ingest+probe totals; answers count+hash EQUAL in

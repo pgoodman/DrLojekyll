@@ -81,9 +81,15 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > recursive-join hops — the guarded fixpoint fires only on demand);
 > NON-SELECTIVE (probe all 44k nodes) REGRESSES 4.7× idx_hops / 13.6× finds
 > (machinery scales with the demand set) ⇒ `-demand` stays opt-in/cost-gated,
-> never a fifth golden mode.** S1b REMAINING: S1c polish (Tier-1
-> demanded-interior naming re-add) + runbench flag-knob integration; S2+ the
-> keyed InstanceStore. Authority: `session-31-s1b-seed.md` §5.
+> never a fifth golden mode. HARNESS-INTEGRATED same day (BASELINE.md run
+> 12): runbench gained the harness-consumed `drflags=` engine knob (flags
+> join the `$DR` line; artifacts/mode labels gain a tag, `opt+demand`; the
+> sentinel cross-check REFEREES plain==demand answer-hash equality per
+> knob-point since the (workload, knobs) key excludes drflags); the carrier
+> driver adapts to the forced-vs-plain query signature via a dependent
+> `requires` check, so ONE driver serves both compiles.** S1b REMAINING:
+> S1c polish (Tier-1 demanded-interior naming re-add); S2+ the keyed
+> InstanceStore. Authority: `session-31-s1b-seed.md` §5.
 
 ## Build
 
