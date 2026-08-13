@@ -572,7 +572,7 @@ if [ "${1:-}" = "--one" ]; then
 
   st=0
   case $NAME in
-    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|product_in_scc_diff_1|key_wildcard_1|key_anon_1|key_dup_1|key_unknown_1)
+    kvindex_2|kvindex_3|kvindex_4|agg_in_scc_1|kv_in_scc_1|algebra_dup_1|algebra_conflict_1|evm_func_parse|negate_never_diff_1|nonascii_1|truncated_decl_1|product_in_scc_diff_1|demand_cyclic_1|key_wildcard_1|key_anon_1|key_dup_1|key_unknown_1)
       for mode in opt nodf nocf none; do
         expect_diagnostic $mode || exit 1
       done

@@ -1,0 +1,24 @@
+; Copyright 2026, Peter Goodman. All rights reserved.
+;
+; demand_neighborhood_nested_witness -- the FLAGS-TWIN of
+; demand_neighborhood_mono_witness (s37 S2a, panel-mandated): the SAME program
+; text compiled under `-demand -demand-instance` (.drflags), so its four-mode
+; stdout runs the NESTED keyed-instance lowering. Its stdout golden is a
+; SYMLINK to goldens/demand_neighborhood_mono_witness.stdout (the
+; key_tc_witness twin mechanism; bless_copy refuses to write through it), so
+; nested==flat answer identity is enforced BY THE SUITE on this case, while
+; the mono twin's own .eqgate re-proves it live from the flat side.
+;
+; Its OWN rel.opt golden is the byte pin of the nested `-rel-out` surface --
+; the DRInstance descriptor render + kSubgraphInstantiate=1/kInstanceSeal=1
+; census + the excised guard-join web (no kEagerJoin/kJoinEmit) -- the ONE
+; goldened view of the nested Rel-IR until the RP-6 @key twins return
+; (S2c). The program text MUST stay byte-identical to the mono twin's; only
+; the header comment differs.
+
+#message add_edge(u64 From, u64 To).
+
+#local edge(u64 From, u64 To).
+edge(From, To) : add_edge(From, To).
+
+#query neighborhood(bound u64 Start, free u64 Node) : edge(Start, Node).
