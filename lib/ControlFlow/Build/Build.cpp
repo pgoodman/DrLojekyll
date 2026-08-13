@@ -1358,7 +1358,8 @@ WorkItem::~WorkItem(void) {}
 // carries the final query).
 std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
                                       const ErrorLog &log, unsigned first_id,
-                                      const PassPolicy &policy) {
+                                      const PassPolicy &policy,
+                                      bool demand_instance) {
   const ::hyde::Query &query = frozen.DataFlowGraph();
 
   // Reject data-flow view kinds that the control-flow builder does not yet
@@ -1461,8 +1462,117 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
              "recursive cycles are not yet supported";
     }
   }
+
+  // ---- Keyed-instance feature-gap fences (D2.b §2.3), per forcing. Gated on
+  // `-demand-instance` (under plain `-demand` the flat lowering handles all
+  // shapes, so NONE fire). Resolved from LIVE guard JOINs (the CSE-migrating
+  // GuardAnnotationIndex stamp) — never a stored RecognizedSubgraph handle.
+  //   FENCE (i) cyclic-demand — a recursive demand relation through the
+  //     instance boundary.
+  //   FENCE (i, ADJ-C2) recursive-CONTENT — a demanded body whose summarized
+  //     input is induction-owned / self-reachable (a labeled feature gap):
+  //     two independent defects (input ambiguity + single-scan cannot close a
+  //     TC) make it unlowerable in the R-MONO slice.
+  //   FENCE (iii) differential-summarized-input — a deletable input (R-DIFF is
+  //     D3.a).
+  // (FENCE (ii) mid-stream monotone edge-add is no longer a gap: R-a2's
+  // band-(a2) rebuilds the standing instance via a full edge-frontier rescan,
+  // so an edge-after-demand is HANDLED, not fenced — no reject here.)
+  // The per-forcing admissibility flags are computed ONCE and consumed by
+  // TWO arms with DIFFERENT outcomes (RP-9, session 6): under the explicit
+  // `-demand-instance` FLAG an inadmissible forcing is a STRICT reject (the
+  // developer override asked for the nested lowering; demand_cyclic_1 /
+  // demand_recursive_content_1 stay diagnostics); under `@key` PRAGMA
+  // activation an inadmissible forcing means a SILENT FLAT FALLBACK — the
+  // pragma fixes the keyed SEMANTICS, the compiler picks the arrangement
+  // (hint-not-mandate), and both lowerings realize the same answers (the
+  // eqgate contract).
+  bool any_forcing = false;
+  bool all_forcings_admissible = true;
+  {
+    const auto &annots = query.GuardAnnotations();
+    std::unordered_map<unsigned, std::vector<std::pair<QueryView, unsigned>>>
+        fguards;
+    query.ForEachView([&](QueryView v) {
+      const unsigned ai = v.GuardAnnotationIndex();
+      if (ai == QueryView::kNoGuardAnnotation) {
+        return;
+      }
+      fguards[annots[ai].forcing_index].emplace_back(v, ai);
+    });
+    for (auto &fe : fguards) {
+      any_forcing = true;
+      bool recursive_content = false, cyclic_demand = false;
+      for (auto &[v, ai] : fe.second) {
+        if (!v.IsJoin()) {
+          continue;
+        }
+        std::vector<QueryView> jl;
+        for (QueryView jv : QueryJoin::From(v).JoinedViews()) {
+          jl.push_back(jv);
+        }
+        if (jl.size() < 2u) {
+          continue;
+        }
+        if (annots[ai].role == GuardAnnotation::kBody) {
+          const QueryView in = jl[1];
+          if (in.InductionGroupId().has_value() || ViewSelfReachable(in)) {
+            recursive_content = true;
+          }
+          for (QueryView p : in.Predecessors()) {
+            if (p.InductionGroupId().has_value()) {
+              recursive_content = true;
+            }
+          }
+        }
+        if (ViewSelfReachable(jl[0])) {
+          cyclic_demand = true;
+        }
+      }
+      if (cyclic_demand || recursive_content) {
+        all_forcings_admissible = false;
+      }
+      if (demand_instance) {
+        if (cyclic_demand) {
+          log.Append() << "Recursive demand relations are not yet supported "
+                          "under -demand-instance";
+        } else if (recursive_content) {
+          log.Append() << "Demanded subgraphs with recursive (induction-owned) "
+                          "content are not yet supported under -demand-instance "
+                          "(a keyed-instance feature gap)";
+        }
+      }
+    }
+  }
+
   if (num_errors != log.Size()) {
     return std::nullopt;
+  }
+
+  // RP-9 (the fallback arm): an explicit `@key` pragma SELECTS the nested
+  // keyed-instance lowering when EVERY forcing admits it (with R-1BOUND all
+  // forcings share the one demanded relation, so admissibility is
+  // all-or-nothing by construction — recorded rule: any inadmissible
+  // forcing sends the WHOLE program to the flat arm). The pragma bit rides
+  // `RecognizedSubgraph::demanded_decl` (parse identity, Optimize-stable) —
+  // no new plumbing.
+  bool effective_demand_instance = demand_instance;
+  if (!demand_instance && any_forcing && all_forcings_admissible) {
+    const auto &subgraphs = query.RecognizedSubgraphs();
+    if (!subgraphs.empty() && subgraphs[0].demanded_decl.HasInstanceKey()) {
+
+      // INVARIANT (R-1BOUND + one demanded relation p): EVERY RecognizedSubgraph
+      // shares the ONE demanded_decl, so subgraphs[0]'s pragma bit correctly
+      // drives every forcing. State it positively rather than trust it silently
+      // — if a future slice keys distinct decls per forcing, [0] would ignore a
+      // differently-pragma'd decl at index >= 1 and this fires first.
+      for (const RecognizedSubgraph &rs : subgraphs) {
+        assert(rs.demanded_decl.Id() == subgraphs[0].demanded_decl.Id() &&
+               "K1: all forcings must share one demanded_decl (R-1BOUND)");
+        (void) rs;
+      }
+      effective_demand_instance = true;
+    }
   }
 
   auto impl = std::make_shared<ProgramImpl>(query, first_id);
@@ -1481,6 +1591,14 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
   // ValidateDROps tail (lib/Rel/Rel.cpp) — the positive-presence referee.
   context.frozen_census = &frozen.Census();
   context.frozen = &frozen;  // P4: BuildQueryEntryPointImpl reads PlanFor(redecl).
+
+  // Keyed-instance nested lowering selector: the `-demand-instance` flag OR
+  // the RP-9 `@key`-pragma selection (nested where every forcing admits it,
+  // silent flat fallback otherwise). Gates the DR-IR mint
+  // (BuildSubgraphInstanceOps), the census recount, the eager-walk
+  // chain-breaker excision + OD-4 provisioning, and the feature-gap fences.
+  // OFF the PassPolicy registry (a lowering selector, not a pass).
+  context.demand_instance_enabled = effective_demand_instance;
 
   BuildDataModel(query, program);
 

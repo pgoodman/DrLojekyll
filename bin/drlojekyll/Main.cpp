@@ -48,6 +48,7 @@ namespace {
 static unsigned gFirstId = 0u;
 static PassPolicy gPassPolicy;
 static bool gDemand = false;
+static bool gDemandInstance = false;
 static std::string gDatabaseName = "datalog";
 static bool gHasDatabaseName = false;
 static const char *gCxxOutDir = nullptr;
@@ -110,7 +111,8 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
   SetRelDotDumpStream(gRelDotStream);  // K6-7b: DR-IR DOT twin (same pattern).
 
   auto program_opt =
-      Program::Build(*frozen_opt, error_log, gFirstId, gPassPolicy);
+      Program::Build(*frozen_opt, error_log, gFirstId, gPassPolicy,
+                     gDemandInstance);
   if (!program_opt) {
     return EXIT_FAILURE;
   }
@@ -664,6 +666,14 @@ extern "C" int main(int argc, const char *argv[]) {
     // head before minting anything, so the graph is byte-identical.
     } else if (!strcmp(argv[i], "-demand") || !strcmp(argv[i], "--demand")) {
       hyde::gDemand = true;
+
+    // Enable the keyed-instance nested lowering for demanded subgraphs
+    // (implies `-demand`). A lowering SELECTOR / semantics — OFF the PassPolicy
+    // registry, never a registered pass name, never a 5th golden mode.
+    } else if (!strcmp(argv[i], "-demand-instance") ||
+               !strcmp(argv[i], "--demand-instance")) {
+      hyde::gDemand = true;          // implies -demand
+      hyde::gDemandInstance = true;
 
     // Datalog module file search path.
     } else if (!strcmp(argv[i], "-M")) {

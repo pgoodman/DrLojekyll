@@ -29,6 +29,7 @@ ProgramCheckMemberRegionImpl::~ProgramCheckMemberRegionImpl(void) {}
 ProgramCheckRecordRegionImpl::~ProgramCheckRecordRegionImpl(void) {}
 ProgramCommitSweepRegionImpl::~ProgramCommitSweepRegionImpl(void) {}
 ProgramGroupUpdateRegionImpl::~ProgramGroupUpdateRegionImpl(void) {}
+ProgramSubgraphInstanceRegionImpl::~ProgramSubgraphInstanceRegionImpl(void) {}
 ProgramClaimRegionImpl::~ProgramClaimRegionImpl(void) {}
 ProgramRetireRegionImpl::~ProgramRetireRegionImpl(void) {}
 ProgramNetBatchRegionImpl::~ProgramNetBatchRegionImpl(void) {}
@@ -145,6 +146,11 @@ ProgramOperationRegionImpl::AsCommitSweep(void) noexcept {
 
 ProgramGroupUpdateRegionImpl *
 ProgramOperationRegionImpl::AsGroupUpdate(void) noexcept {
+  return nullptr;
+}
+
+ProgramSubgraphInstanceRegionImpl *
+ProgramOperationRegionImpl::AsSubgraphInstance(void) noexcept {
   return nullptr;
 }
 
@@ -490,6 +496,46 @@ bool ProgramGroupUpdateRegionImpl::Equals(EqualitySet &eq, REGION *that_,
   const auto that = that_op->AsGroupUpdate();
   if (!that || statecell_id != that->statecell_id ||
       agg_table.get() != that->agg_table.get()) {
+    FAILED_EQ(that_);
+    return false;
+  }
+  return true;
+}
+
+// -----------------------------------------------------------------------------
+
+ProgramSubgraphInstanceRegionImpl *
+ProgramSubgraphInstanceRegionImpl::AsSubgraphInstance(void) noexcept {
+  return this;
+}
+
+uint64_t ProgramSubgraphInstanceRegionImpl::Hash(uint32_t depth) const {
+  (void) depth;
+  uint64_t hash = static_cast<unsigned>(this->OP::op) * 61;
+  hash ^= RotateRight64(hash, 13) * (store_id + 1u) * 17;
+  if (pub_table) {
+    hash ^= RotateRight64(hash, 11) * pub_table->id * 13;
+  }
+  return hash;
+}
+
+bool ProgramSubgraphInstanceRegionImpl::IsNoOp(void) const noexcept {
+  // Birth/rebuild + publish + seal always mutate the store and the pub table.
+  return false;
+}
+
+bool ProgramSubgraphInstanceRegionImpl::Equals(EqualitySet &eq, REGION *that_,
+                                               uint32_t depth) const noexcept {
+  (void) eq;
+  (void) depth;
+  const auto that_op = that_->AsOperation();
+  if (!that_op) {
+    FAILED_EQ(that_);
+    return false;
+  }
+  const auto that = that_op->AsSubgraphInstance();
+  if (!that || store_id != that->store_id ||
+      pub_table.get() != that->pub_table.get()) {
     FAILED_EQ(that_);
     return false;
   }
