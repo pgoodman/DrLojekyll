@@ -4,8 +4,10 @@
 > Assembled from the six-extractor sonnet fan-out (e1-rel-mint / e2-lowering /
 > e3-codegen-runtime / e4-flag-program / e5-belts / e6-witness-eqgate, scratchpad
 > copies) + orchestrator inline verification, at tip `7a9db1e4` (docs-only over
-> `28f2ccc0`). Restoration source `6d6248a2` throughout. STATUS: draft for the
-> opus refuter panel; owner ratifies before the final commit.
+> `28f2ccc0`). Restoration source `6d6248a2` throughout. STATUS: EXECUTED —
+> S2a LANDED this session (CP0-CP7, gate GREEN; §8 panel record + §9 landed
+> state below). Owner ratification of the whole S2a slice PENDING (nothing
+> pushed).
 
 ## §0 Verdict-shaping facts (each verified, not assumed)
 
@@ -225,3 +227,82 @@ byte-stable; `-demand-instance` off = zero perturbation beyond that bless);
 demand_tc_witness byte-identical post-bless; all four belts quiescent on the
 nested compile + live-fire verified; ctest 6/6; WIP commit per CP; owner
 ratifies before the final commit.
+
+## §8 The refuter-panel record (4 opus refuters, all refuted=true; every finding folded)
+
+- **(a) drift**: [REFUTED] CP2's file list missed `lib/ControlFlow/Format.cpp`
+  (the `operator<<(ProgramSubgraphInstanceRegion)` + FormatDispatcher
+  MAKE_VISITOR — the omission is SILENT via the empty `Visit` default) →
+  restored in CP1b, nested `.ir` smoke added to the gate (renders
+  `subgraph-instance i#0`). [REFUTED] the "DROpKindName fails compile" claim —
+  no `-Werror` in the build; all FIVE DROpKind switch sites are manual-
+  checklist (all five were extended in CP1). [WEAKENED] the R-QUERY story was
+  pre-cut-stale: P7 (post-fork) provisions the bound-query index, so the
+  nested band-(b) runs its `pub_has_indexes==true` arm on the witness —
+  predicted `idx.Add` inside the band, VERIFIED in the generated `.h`.
+  [REFUTED] the CP4 `_retract`-skip note — that arm was never deleted (live
+  at tip); the filtered patch could not double-restore it (not in the diff).
+- **(b) belts**: [REFUTED] the guard-annotation-only skip — a deletion-capable
+  guard join is ALSO emitted by the delta path (indexes minted regardless) →
+  the landed skip is `demand_instance && guard-annotated &&
+  !CanReceiveDeletions()`. [REFUTED] the compare-against-a-copy mechanics —
+  `CrossCheckArrangements` read the stored plan → the landed 4-arg
+  plan-override core + 3-arg forwarder. [WEAKENED] §3.1's referee claim —
+  CrossCheckMaterialization structurally cannot fire on a lowering-selector
+  change (FillDataModel is upstream of the walk and flag-blind); the no-arm
+  CONCLUSION stands on the allocation-site argument; it is OFF the live-fire
+  list. [WEAKENED] §3.3 — the two resolve() calls are tautological at
+  construction (kept as a regression fence, honest comment; the arms-spine
+  sweep is an S2b candidate).
+- **(c) eqgate**: [REFUTED] §6.3's "existing referees suffice" — the excision
+  predicate (any live guard annotation) and the mint predicate (complete
+  resolution) can diverge SILENTLY (cut-but-unminted = under-answer) → the
+  NEW always-on V-INST-COHERE belt at the mint; and the flags-twin nested
+  `.rel` pin landed in S2a (not deferred). All five divergence attacks
+  SURVIVE: injector byte-identical pre-cut→tip; publish-vs-sweep ordering
+  unchanged; P7-seek premise inverted (pre-cut already emitted the seek);
+  driver honors the cursor contract; Optimize.cpp byte-identical.
+- **(d) scope**: [REFUTED] WIP-greenness — CP1 landed without the 11-golden
+  census bless (suite red between CP1 and CP1b; fixed same session, bless
+  bound to CP1b). [REFUTED] the "dormant differential machinery" claim —
+  `diff`/`input_diff` derive from pub/input tables, NOT the retract flag, so
+  the diff-INPUT arms are reachable under bare `-demand` + `-demand-instance`
+  → `demand_diff_neighborhood_witness` (the e5 carrier) landed IN S2a as
+  their witness. [WEAKENED] the masked-check trap (unknown flag exits 1 —
+  demand_cyclic_1 would "reject" for the wrong reason mid-restore) — moot
+  once CP5 landed before CP7. One-session feasibility SURVIVES (the slice is
+  indivisible below CP1-CP5 + the arrangements arm: IsCutSuccessorDR is the
+  sole frontier-provisioning lever, so a mint-only shadow is unsound).
+
+## §9 Landed state (gate results, session 37)
+
+- Commits: CP0 `c52e7a12` (runtime + ctest), CP1 `7b8154e0` (Rel mint),
+  CP1b `b2ca94d5` (census bless + CF Format render), CP2-CP5 `a6c9fd6d`
+  (region family / lowering / fences / codegen / CLI), CP6 `fc01458b`
+  (belts arms + V-INST-COHERE), CP7 `f53ad1c5` (witness corpus + flags-twin).
+- Gate: OptDiff **SUITE PASS (232)** (228 + mono witness + nested twin + e5
+  carrier + cyclic fence); eqgate GREEN ×4 modes on BOTH carriers
+  (nested==flat==golden, byte-verified per mode); every restored answer
+  golden byte-equal to its pre-cut bytes (stdout/oracle/monotone/behavioral,
+  both carriers); ctest **6/6** (InstanceStore restored); belts quiescent on
+  every nested compile; arrangements live-fire verified (corrupt → the exact
+  predicted `sr#1 columns=(0)` abort; revert → quiescent); flag-off corpus
+  byte-identical modulo the ONE predicted+blessed census-token delta;
+  `demand_tc_witness` re-blessed census-only (flat arm undisturbed).
+- Predict-then-verify: the nested `.rel` == pre-cut nested golden shape +
+  `resource=sr#` args tokens + census `kSubgraphInstantiate=1/kInstanceSeal=1`
+  (first prediction byte-exact); the flat dumps changed by census tokens
+  ONLY; the nested `.h` carries the InstanceStore member + reference-param
+  threading + the band-(b) `idx.Add`.
+- Deliberate divergences from pre-cut (all recorded): instance-op `args:`
+  render uses `tidr` (s35 resource tokens); the V-INST-COHERE belt is NEW
+  (strictly stronger than pre-cut's silent `!ok` skip); tip comment wording
+  kept at the two demand-ABI-suppression loops; P7b/s34/s35 surfaces all
+  preserved.
+- S2b residue (named): `-demand-retract` + kInstanceDeath live path + the
+  remaining eqgate family + RelValidators death tests + the V-REL-OP-RESOURCE
+  arms-spine sweep + the R-DIFF discriminator live-fire (differentialness-
+  gated skip vs unconditional). S2c residue: multi-adornment + the @key
+  twins (RP-6) which retire the flags-twin's pin role. RP-9 restored VERBATIM
+  but dormant in this corpus (fires only under `-demand` + an `@key`'d
+  demanded decl; its witnesses return with RP-6/S2c).

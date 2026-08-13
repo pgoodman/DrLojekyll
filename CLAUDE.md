@@ -47,10 +47,9 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > demand-filters it region-internal (V-REGION-CENSUS stays consistent). The
 > four always-on validator surfaces (RowContract/ProjectionRole, K5
 > origin_decls, Rel eager-web, Regional census) all pass on the demand graph.
-> **STILL REMOVED (S2+):** the `-demand-instance` keyed
-> InstanceStore nested lowering + `bool demand_instance` `Program::Build` param
-> (the vestigial `DRInstance`/`demand_table` scaffolding in `lib/Rel/Rel.h`
-> stays untouched).
+> **STILL REMOVED at S1a (restored at S2a, next note):** the `-demand-instance`
+> keyed InstanceStore nested lowering + `bool demand_instance` `Program::Build`
+> param.
 >
 > **S1b CORE LANDED (2026-08-13, s36 CP4 `047a991b`): THE DEMAND SEED FLOWS —
 > `-demand` programs are ANSWER-CORRECT.** `BuildQueryInjectorFromRegistry`
@@ -109,6 +108,57 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > off — and the S2a/b/c slicing):
 > `KeyedInstances.artifacts/session-37-s2-seed.md`.** The parked InstanceFlow
 > Stage-C plan remains `InstanceFlow.artifacts/session-37-seed.md`.
+>
+> **S2a LANDED (2026-08-13, session 37): THE NAMESAKE'S NESTED ARM IS LIVE —
+> `-demand-instance` lowers a recognized demanded subgraph to a keyed
+> InstanceStore, ANSWER-IDENTICAL to flat `-demand` (eqgate GREEN ×4).**
+> Restore-then-adapt from `6d6248a2` (CP0-CP7, grounding + 4-opus refuter
+> panel record: `KeyedInstances.artifacts/session-37-s2a-grounding.md`).
+> Restored LIVE: `Runtime/InstanceStore.h` (+ its ctest target — ctest is
+> **6/6** now) · the Rel-IR mint (`BuildSubgraphInstanceOps` +
+> `ResolveLiveRecognition` + the 3 `DROpKind` values + census/validator arms
+> + renders; the 3 census `=0` tokens re-entered EVERY `.rel` golden, the one
+> flag-off byte delta, blessed once) · the ControlFlow `SUBGRAPHINSTANCE`
+> region family + `LowerSubgraphInstances` + descriptor loop + V-INST-EMITTED
+> · 5-arg `Program::Build(..., bool demand_instance=false)` + the fence block
+> (recursive demand/content strict rejects; RP-9 `@key` fallback restored
+> VERBATIM but dormant — no corpus case carries `-demand` + `@key`) ·
+> `IsCutSuccessorDR`'s guard-annotation disjunct (the chain-breaker) ·
+> `Database.cpp` InstanceStore emission (band a1 birth / a2 rescan / b
+> publish / Seal) · the `-demand-instance` CLI flag. THE §2 BELTS LEARNED THE
+> NESTED RULES (no belt gated off): `DeriveArrangements(query, plan,
+> demand_instance=false)` — R-JOIN-UNIFORM skips a guard-annotated pivot-JOIN
+> only when `!CanReceiveDeletions()` (the delta path still mints
+> deletion-capable joins' indexes; the upstream `-demand` body-walk
+> narrowness is the recorded soundness precondition) — with a
+> `CrossCheckArrangements` plan-override core so `Program::Build` re-derives
+> into a COPY under the flag (the stored plan/-materialization-out stay the
+> flat derivation); CrossCheckMaterialization needs NO arm (the nested
+> lowering allocates zero tables — the store lives beside them, the
+> StateCellStore precedent); `ValidateOpResources` resolves
+> `op.demand_table`/`op.input_table` (tautological-at-construction fence);
+> NEW always-on **V-INST-COHERE** (a forcing with live guard annotations that
+> resolves incompletely aborts — the excise-without-mint silent under-answer
+> the panel found). WITNESSES (corpus 228→232):
+> `demand_neighborhood_mono_witness` (R-MONO flat carrier + `.eqgate`; 9
+> goldens re-blessed at tip, every answer surface byte-equal pre-cut) ·
+> `demand_neighborhood_nested_witness` (NEW flags-twin, panel-mandated: same
+> program text under `-demand -demand-instance`, stdout golden SYMLINKED to
+> the mono twin — suite-enforced nested==flat — + its OWN `rel.opt` golden,
+> the ONE byte pin of the nested Rel surface: `kSubgraphInstantiate=1`,
+> DRInstance render, excised guard-join web, `resource=sr#` args tokens) ·
+> `demand_diff_neighborhood_witness` (the e5 diff-input × mono-demand carrier
+> — IN S2a because `input_diff` derives from the input table, not the retract
+> flag: the a2' arms are live under bare `-demand-instance`) ·
+> `demand_cyclic_1` (all-4-modes diagnostic: flat-compiles/nested-rejects).
+> Gate: OptDiff **SUITE PASS (232)**, eqgate ×4 BOTH carriers byte-verified,
+> ctest **6/6**, belts quiescent on every nested compile + the arrangements
+> live-fire (corrupt → the exact predicted `sr#1 columns=(0)` abort; revert →
+> quiescent). **S2b NEXT:** `-demand-retract` (kInstanceDeath live path,
+> restored dormant-verbatim), the remaining eqgate family
+> (`demand_neighborhood_witness`, `demand_diff_input_1`), RelValidators death
+> tests, the R-DIFF skip-discriminator live-fire. S2c: multi-adornment + the
+> RP-6 `@key` twins (which retire the flags-twin's pin role).
 
 ## Build
 
@@ -130,12 +180,14 @@ cmake -B build/coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug -DDRLOJEKYLL_ENABLE_TE
 ## Test
 
 ```sh
-cd build/debug && ctest --output-on-failure   # IdentityTypes, MiniDisassembler,
-                                              # PointsTo, RegionInstance, Runtime
+cd build/debug && ctest --output-on-failure   # IdentityTypes, InstanceStore,
+                                              # MiniDisassembler, PointsTo,
+                                              # RegionInstance, Runtime
                                               # (RegionInstance = the P3 request/
                                               #  derivation-model discriminating gate;
-                                              #  DataFlowValidators / RelValidators /
-                                              #  InstanceStore removed at the P1 cut)
+                                              #  InstanceStore RESTORED at S2a;
+                                              #  DataFlowValidators / RelValidators
+                                              #  still removed at the P1 cut)
 ```
 
 End-to-end tests compile a `.dr` file at build time via `compile_datalog()`
@@ -151,8 +203,10 @@ and `-disable-controlflow-opt` (skips `ProgramImpl::Optimize`: region
 flattening, no-op removal, procedure dedup).
 
 The suite is golden-master-based: each case in `tests/OptDiff/cases/`
-(`<name>.dr` + `<name>.main.cpp`, 177 corner-case programs after the
-P1 greenfield cut removed the demand/keyed corpus — symrec_tie_1 is the standing
+(`<name>.dr` + `<name>.main.cpp`, 186 corner-case programs — the P1 cut
+removed the demand/keyed corpus, S1b/S2a restored the demand + neighborhood
+witnesses; re-derive as `ls tests/OptDiff/cases/*.dr | wc -l`, never propagate
+the constant — symrec_tie_1 is the standing
 determinism witness; corecursion_1 is the P6.1 co-recursion witness
 (mutual `ping`/`pong` → ONE `recursive-component  members=(ping, pong)`; its
 region goldens the co-recursion pin, beside tc_nonlinear_diff's self-recursion
@@ -889,7 +943,7 @@ adjudication; re-measure, never propagate the constant) — an unconditional
 transform would rewrite ~a quarter of the goldens, so mode-gating is
 mandatory.
 
-## The keyed-instance nested lowering (`-demand-instance`) — [REMOVED at the P1 cut — historical]
+## The keyed-instance nested lowering (`-demand-instance`) — [RESTORED at S2a (session 37, R-MONO + e5 slice) — the text below is the pre-cut description; re-verify multi-adornment/@key/retract claims against code until S2b/S2c re-land them]
 
 `-demand-instance` (Main.cpp `gDemandInstance`; implies `-demand`; OFF the
 PassPolicy registry — a lowering selector, not a pass) lowers a recognized
