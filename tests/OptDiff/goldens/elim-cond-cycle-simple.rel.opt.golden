@@ -13,19 +13,19 @@ op.12 kJoinEmit sign=· ctx=eager stratum=0 form=eager
 op.11 kIngestLoop sign=+ ctx=eager stratum=0
     args: message=cond_func/1
 op.3 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:5
+    args: table=%table:5 resource=sr#0
 op.4 kEagerSelect sign=· ctx=eager stratum=0
-    args: table=%table:5
+    args: table=%table:5 resource=sr#0
 op.5 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:5
+    args: table=%table:5 resource=sr#0
 op.1 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#3
 op.9 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:12
+    args: table=%table:12 resource=sr#1
 op.10 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:12
+    args: table=%table:12 resource=sr#1
 op.2 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:15
+    args: table=%table:15 resource=sr#2
 
 rounds:
 

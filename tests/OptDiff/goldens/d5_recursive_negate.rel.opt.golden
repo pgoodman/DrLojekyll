@@ -50,53 +50,53 @@ branch.5 src=%table:24 -> tgt=%table:18 ends_at_join=false
 join.0 view=<X,Y> pivot_vec=$join-pivots.38 targets=[%table:14]
 
 op.58 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:7
+    args: table=%table:7 resource=sr#2
 op.55 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:7, +, NonRecursive), kVecAppend(%table:7, kNetAddition)}
     spine: —
-    args: table=%table:7 message=edge/2
+    args: table=%table:7 resource=sr#2 message=edge/2
 op.57 kIngestFold sign=- ctx=eager stratum=0
     effects: {kCounter(%table:11, -, NonRecursive), kVecAppend(%table:11, kDeleteQueue)}
     spine: —
-    args: table=%table:11 message=dead/1
+    args: table=%table:11 resource=sr#3 message=dead/1
 op.56 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:11, +, NonRecursive), kVecAppend(%table:11, kAddQueue)}
     spine: —
-    args: table=%table:11 message=dead/1
+    args: table=%table:11 resource=sr#3 message=dead/1
 op.60 kJoinEmit sign=· ctx=eager stratum=6 form=delta
-    args: table=%table:14
+    args: table=%table:14 resource=sr#5
 op.59 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:21
+    args: table=%table:21 resource=sr#1
 op.54 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:21, +, NonRecursive), kVecAppend(%table:21, kNetAddition)}
     spine: —
-    args: table=%table:21 message=src/1
+    args: table=%table:21 resource=sr#1 message=src/1
 op.21 kClaimDrain sign=- ctx=seed stratum=3 form=single-pass gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:11, kDeleteQueue), kFlagWrite(%table:11, -), kVecAppend(%table:11, kOverdeleteSet)}
-    args: table=%table:11
+    args: table=%table:11 resource=sr#3
 op.22 kClaimDrain sign=+ ctx=seed stratum=3 form=single-pass gate=kAddGateTotalPositive
     effects: {kVecDrain(%table:11, kAddQueue), kFlagWrite(%table:11, +), kVecAppend(%table:11, kAdditionSet)}
-    args: table=%table:11
+    args: table=%table:11 resource=sr#3
 op.23 kFrontierFilter sign=- ctx=seed stratum=3 deferral=immediate
     reads: NetDeleted(%table:11)
     effects: {kVecDrain(%table:11, kOverdeleteSet), kVecAppend(%table:11, kNetRemoval)}
-    args: table=%table:11
+    args: table=%table:11 resource=sr#3
 op.24 kFrontierFilter sign=+ ctx=seed stratum=3 deferral=immediate
     reads: NetAdded(%table:11)
     effects: {kVecDrain(%table:11, kAdditionSet), kVecAppend(%table:11, kNetAddition)}
-    args: table=%table:11
+    args: table=%table:11 resource=sr#3
 op.2 kSeedFold sign=- ctx=seed stratum=6 src=%table:4 join_pivot
     effects: {kVecDrain(%table:4, kNetRemoval), kVecAppend($join-pivots.38)}
     spine: —
-    args: src=%table:4 pivots=$join-pivots.38
+    args: src=%table:4 resource=sr#0 pivots=$join-pivots.38
 op.3 kSeedFold sign=+ ctx=seed stratum=6 src=%table:4 join_pivot
     effects: {kVecDrain(%table:4, kNetAddition), kVecAppend($join-pivots.38)}
     spine: —
-    args: src=%table:4 pivots=$join-pivots.38
+    args: src=%table:4 resource=sr#0 pivots=$join-pivots.38
 op.4 kSeedFold sign=+ ctx=seed stratum=6 src=%table:7 join_pivot
     effects: {kVecDrain(%table:7, kNetAddition), kVecAppend($join-pivots.38)}
     spine: —
-    args: src=%table:7 pivots=$join-pivots.38
+    args: src=%table:7 resource=sr#2 pivots=$join-pivots.38
 op.53 kPivotAssemble sign=· ctx=seed stratum=6
     effects: {kVecDrain(%table:4, kNetRemoval), kVecDrain(%table:4, kNetAddition), kVecDrain(%table:7, kNetRemoval), kVecDrain(%table:7, kNetAddition), kVecClear($join-pivots.38), kVecAppend($join-pivots.38)}
     spine: —
@@ -119,31 +119,31 @@ op.13 kFixpointFire sign=· ctx=fixpoint stratum=6
 op.9 kSeedFold sign=+ ctx=seed stratum=8 src=%table:21 tgt=%table:4 class=NonRecursive
     effects: {kVecDrain(%table:21, kNetAddition), kCounter(%table:4, +, NonRecursive), kInIReadFrozen(%table:4, InI, seed), kVecAppend(%table:4, kAddQueue)}
     spine: kFold(%table:4, +, NonRecursive)
-    args: src=%table:21 tgt=%table:4
+    args: src=%table:21 resource=sr#1 tgt=%table:4 resource=sr#0
 op.14 kClaimDrain sign=- ctx=fixpoint stratum=8 form=in-round gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:4, kDeleteQueue), kFlagWrite(%table:4, -), kVecAppend(%table:4, kOverdeleteSet), kVecAppend(%table:4, kClaimedDel), kVecClear(%table:4, kDeleteQueue)}
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.15 kClaimDrain sign=+ ctx=fixpoint stratum=8 form=in-round gate=kAddGateTotalPositive
     effects: {kVecDrain(%table:4, kAddQueue), kFlagWrite(%table:4, +), kVecAppend(%table:4, kAdditionSet), kVecAppend(%table:4, kClaimedAdd), kVecClear(%table:4, kAddQueue)}
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.25 kClaimDrain sign=- ctx=fixpoint stratum=8 form=in-round gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:14, kDeleteQueue), kFlagWrite(%table:14, -), kVecAppend(%table:14, kOverdeleteSet), kVecAppend(%table:14, kClaimedDel), kVecClear(%table:14, kDeleteQueue)}
-    args: table=%table:14
+    args: table=%table:14 resource=sr#5
 op.26 kClaimDrain sign=+ ctx=fixpoint stratum=8 form=in-round gate=kAddGateTotalPositive
     effects: {kVecDrain(%table:14, kAddQueue), kFlagWrite(%table:14, +), kVecAppend(%table:14, kAdditionSet), kVecAppend(%table:14, kClaimedAdd), kVecClear(%table:14, kAddQueue)}
-    args: table=%table:14
+    args: table=%table:14 resource=sr#5
 op.32 kClaimDrain sign=- ctx=fixpoint stratum=8 form=in-round gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:18, kDeleteQueue), kFlagWrite(%table:18, -), kVecAppend(%table:18, kOverdeleteSet), kVecAppend(%table:18, kClaimedDel), kVecClear(%table:18, kDeleteQueue)}
-    args: table=%table:18
+    args: table=%table:18 resource=sr#6
 op.33 kClaimDrain sign=+ ctx=fixpoint stratum=8 form=in-round gate=kAddGateTotalPositive
     effects: {kVecDrain(%table:18, kAddQueue), kFlagWrite(%table:18, +), kVecAppend(%table:18, kAdditionSet), kVecAppend(%table:18, kClaimedAdd), kVecClear(%table:18, kAddQueue)}
-    args: table=%table:18
+    args: table=%table:18 resource=sr#6
 op.39 kClaimDrain sign=- ctx=fixpoint stratum=8 form=in-round gate=kDelGateCnrNonPositive
     effects: {kVecDrain(%table:24, kDeleteQueue), kFlagWrite(%table:24, -), kVecAppend(%table:24, kOverdeleteSet), kVecAppend(%table:24, kClaimedDel), kVecClear(%table:24, kDeleteQueue)}
-    args: table=%table:24
+    args: table=%table:24 resource=sr#4
 op.40 kClaimDrain sign=+ ctx=fixpoint stratum=8 form=in-round gate=kAddGateTotalPositive
     effects: {kVecDrain(%table:24, kAddQueue), kFlagWrite(%table:24, +), kVecAppend(%table:24, kAdditionSet), kVecAppend(%table:24, kClaimedAdd), kVecClear(%table:24, kAddQueue)}
-    args: table=%table:24
+    args: table=%table:24 resource=sr#4
 op.5 kChainFold sign=· ctx=fixpoint stratum=8
     effects: {kVecDrain(%table:14, kClaimedDel), kCounter(%table:24, -, Recursive), kInIReadFrozen(%table:24, InI, fixpoint), kVecAppend(%table:24, kDeleteQueue)}
     spine: kFold(%table:24, -, Recursive)
@@ -207,56 +207,56 @@ op.43 kRederive sign=· ctx=fixpoint stratum=8
 op.19 kFrontierFilter sign=- ctx=fixpoint stratum=8 deferral=add-loop-output
     reads: NetDeleted(%table:4)
     effects: {kVecDrain(%table:4, kOverdeleteSet), kVecAppend(%table:4, kNetRemoval)}
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.20 kFrontierFilter sign=+ ctx=fixpoint stratum=8 deferral=add-loop-output
     reads: NetAdded(%table:4)
     effects: {kVecDrain(%table:4, kAdditionSet), kVecAppend(%table:4, kNetAddition)}
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.30 kFrontierFilter sign=- ctx=fixpoint stratum=8 deferral=add-loop-output
     reads: NetDeleted(%table:14)
     effects: {kVecDrain(%table:14, kOverdeleteSet), kVecAppend(%table:14, kNetRemoval)}
-    args: table=%table:14
+    args: table=%table:14 resource=sr#5
 op.31 kFrontierFilter sign=+ ctx=fixpoint stratum=8 deferral=add-loop-output
     reads: NetAdded(%table:14)
     effects: {kVecDrain(%table:14, kAdditionSet), kVecAppend(%table:14, kNetAddition)}
-    args: table=%table:14
+    args: table=%table:14 resource=sr#5
 op.37 kFrontierFilter sign=- ctx=fixpoint stratum=8 deferral=add-loop-output
     reads: NetDeleted(%table:18)
     effects: {kVecDrain(%table:18, kOverdeleteSet), kVecAppend(%table:18, kNetRemoval)}
-    args: table=%table:18
+    args: table=%table:18 resource=sr#6
 op.38 kFrontierFilter sign=+ ctx=fixpoint stratum=8 deferral=add-loop-output
     reads: NetAdded(%table:18)
     effects: {kVecDrain(%table:18, kAdditionSet), kVecAppend(%table:18, kNetAddition)}
-    args: table=%table:18
+    args: table=%table:18 resource=sr#6
 op.44 kFrontierFilter sign=- ctx=fixpoint stratum=8 deferral=add-loop-output
     reads: NetDeleted(%table:24)
     effects: {kVecDrain(%table:24, kOverdeleteSet), kVecAppend(%table:24, kNetRemoval)}
-    args: table=%table:24
+    args: table=%table:24 resource=sr#4
 op.45 kFrontierFilter sign=+ ctx=fixpoint stratum=8 deferral=add-loop-output
     reads: NetAdded(%table:24)
     effects: {kVecDrain(%table:24, kAdditionSet), kVecAppend(%table:24, kNetAddition)}
-    args: table=%table:24
+    args: table=%table:24 resource=sr#4
 op.46 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:4, InI, seed), kFlagWrite(%table:4)}
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.47 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
     effects: {kFlagWrite(%table:7)}
-    args: table=%table:7
+    args: table=%table:7 resource=sr#2
 op.48 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:11, InI, seed), kFlagWrite(%table:11)}
-    args: table=%table:11
+    args: table=%table:11 resource=sr#3
 op.49 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:14, InI, seed), kFlagWrite(%table:14)}
-    args: table=%table:14
+    args: table=%table:14 resource=sr#5
 op.50 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:18, InI, seed), kFlagWrite(%table:18)}
-    args: table=%table:18
+    args: table=%table:18 resource=sr#6
 op.51 kCommitSweep sign=· ctx=seed band=9 flavor=monotone publish_target=false
     effects: {kFlagWrite(%table:21)}
-    args: table=%table:21
+    args: table=%table:21 resource=sr#1
 op.52 kCommitSweep sign=· ctx=seed band=9 flavor=differential publish_target=false
     effects: {kInIReadFrozen(%table:24, InI, seed), kFlagWrite(%table:24)}
-    args: table=%table:24
+    args: table=%table:24 resource=sr#4
 
 rounds:
   scc=0 phase=overdelete body_ops=[op.12,op.14,op.25,op.32,op.39,op.5,op.7,op.10,op.16,op.27,op.34,op.41] output_ops=[op.18,op.29,op.36,op.43]

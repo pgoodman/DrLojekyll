@@ -923,6 +923,21 @@ class DRFlowGraph {
   std::unordered_map<TABLE *, std::unordered_map<VecRole, unsigned>>
       table_vecs;
 
+  // s35 Phase-C step 2: the TABLE* -> StateResourceId INDEX (a lookup dictionary,
+  // NOT a relocation — every `TABLE*` stays exactly where it is). The base-table
+  // half of the "Rel refers to StateResourceId" retype (InstanceFlow.md §11).
+  // Built ONCE in `BuildDRInventory` from `tables` (each `DRTable`'s already-
+  // resolved, V-REL-RESOURCE-checked `resource`), so it is total over
+  // `impl->tables` and single-valued (V-MAT-BIJECTION: one resource per physical
+  // class). It is the SOLE source every op/branch/join base-table field resolves
+  // through: the `V-REL-OP-RESOURCE` belt and the `-rel-out` `resource=sr#K`
+  // render read it, and NOTHING that emits does — codegen is byte-identical.
+  // Step 3 (the allocation inversion) inverts exactly this map (`id -> handle`)
+  // to retype the ops off `TABLE*`; the mint direction (`TABLE* -> id`) is the
+  // transitional bridge. Mirrors the `view_to_model` / `eqset_to_resource`
+  // naming idiom (a `_to_` index), never a relocation of storage.
+  std::unordered_map<TABLE *, StateResourceId> table_to_resource;
+
   // table -> recursive-SCC group id (only tables in a stratum-phase-owned SCC
   // appear). Copied from the discovery's `ComputeRecursiveSCCs` result.
   std::unordered_map<TABLE *, unsigned> scc_map;

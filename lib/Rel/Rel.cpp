@@ -1360,6 +1360,149 @@ static void BuildDREagerInventory(ProgramImpl *impl, Context &context,
   }
 }
 
+// V-REL-OP-RESOURCE (s35 Phase-C step 2): every non-null base-table `TABLE*`
+// across the whole Rel op model RESOLVES to a StateResourceId via the retype
+// index (`flow.table_to_resource`), and — where the carrying object also names
+// the field's semantic view — the field table's physical class equals that
+// view's `EquivalenceSetId` (the op-construction PAIRING check). Run over the
+// FULLY-built flow at the `BuildDRInventory` tail. A SHADOW belt: it is the ids'
+// only reader; codegen is byte-identical (fprintf+abort, surviving NDEBUG — the
+// V-REL-RESOURCE idiom).
+//
+// HONEST SCOPE (session-35-grounding.md §4.6): the pairing check is TAUTOLOGICAL
+// at construction today (every partner table is minted from
+// `view_to_model[partner_view]->table`, so same-DataModel⟺same-EqSetId makes it
+// structurally unable to fail), and resolution is total by construction. So this
+// is a REGRESSION FENCE — it earns real teeth exactly when Step 3 begins storing
+// an op's table and its resource/view from INDEPENDENT sources that could
+// disagree — the same "currently-always-holds invariant" role as V-PROJ-ROLE-
+// STABLE / V-XOVER-ONE. Resolution is checked BEFORE the class cross-check so a
+// hypothetical foreign pointer is reported as unresolved, never dereferenced.
+static void ValidateOpResources(const DRFlowGraph &flow) {
+  const auto resolve = [&](TABLE *t, const char *what) {
+    if (!t) {
+      return;  // null base-table fields (optional/dead families) are skipped.
+    }
+    if (flow.table_to_resource.find(t) == flow.table_to_resource.end()) {
+      fprintf(stderr,
+              "V-REL-OP-RESOURCE: %s base-table %p resolves to no "
+              "StateResourceId (not in impl->tables)\n",
+              what, (void *) t);
+      abort();
+    }
+  };
+  const auto paired = [&](TABLE *t, QueryView v, const char *what) {
+    if (!t) {
+      return;
+    }
+    resolve(t, what);  // resolution FIRST (crash-free even on a foreign ptr).
+    if (t->views.empty()) {
+      fprintf(stderr,
+              "V-REL-OP-RESOURCE: %s base-table %p has no member views\n", what,
+              (void *) t);
+      abort();
+    }
+    const unsigned tclass = t->views.front().EquivalenceSetId();
+    if (tclass != v.EquivalenceSetId()) {
+      fprintf(stderr,
+              "V-REL-OP-RESOURCE: %s base-table class %u != paired view class "
+              "%u (an op stored the wrong table for its view)\n",
+              what, tclass, v.EquivalenceSetId());
+      abort();
+    }
+  };
+
+  // Branches: the source member + the terminal target carry their path-endpoint
+  // views as partners.
+  for (const DRBranch &b : flow.branches) {
+    if (!b.path.empty()) {
+      paired(b.source, b.path.front(), "branch.source");
+      paired(b.target, b.path.back(), "branch.target");  // null skipped
+    }
+  }
+
+  // Joins: the section-walk fold targets (resolution-only — the recursive walk
+  // retains no per-target view).
+  for (const DRJoin &j : flow.joins) {
+    for (TABLE *t : j.targets) {
+      resolve(t, "join.target");
+    }
+  }
+
+  // Ops: kind-specific partnered fields + a comprehensive resolution sweep over
+  // the generic fields (effects tables, table_op_table, pivot sources, arm
+  // reads) so the WHOLE op model is covered.
+  for (const DROp &op : flow.ops) {
+    switch (op.kind) {
+      case DROpKind::kCrossover:
+        paired(op.negate_table, QueryView(*op.negate), "crossover.negate");
+        paired(op.negated_table, op.negate->NegatedView(), "crossover.negated");
+        if (op.pred_view) {
+          paired(op.pred_table, *op.pred_view, "crossover.pred");
+        }
+        break;
+      case DROpKind::kProductArm: {
+        if (op.product_view) {
+          paired(op.product_table, *op.product_view, "product.table");
+          std::vector<QueryView> sides;
+          for (QueryView s : QueryJoin::From(*op.product_view).JoinedViews()) {
+            sides.push_back(s);
+          }
+          for (unsigned k = 0u;
+               k < op.side_tables.size() && k < sides.size(); ++k) {
+            paired(op.side_tables[k], sides[k], "product.side");
+          }
+        }
+        break;
+      }
+      case DROpKind::kFixpointFire:
+        if (op.fire_join) {
+          paired(op.fire_table, *op.fire_join, "fire.table");
+        }
+        break;
+      case DROpKind::kNegateGate:
+        if (op.gate_negate) {
+          paired(op.gate_table,
+                 QueryNegate::From(*op.gate_negate).NegatedView(), "gate.table");
+        }
+        break;
+      case DROpKind::kGroupUpdate:
+      case DROpKind::kStateSeal:
+        if (op.agg_view) {
+          paired(op.agg_table, *op.agg_view, "agg.table");
+        }
+        break;
+      case DROpKind::kIngestFold:
+        if (op.ingest_receive) {
+          paired(op.ingest_table, *op.ingest_receive, "ingest.table");
+        }
+        break;
+      default:
+        break;  // per-table + eager + seed/chain families: resolution below.
+    }
+
+    // Generic resolution sweep (no stored view partner, or an alias of an
+    // already-paired table): every remaining non-null base-table field.
+    resolve(op.table_op_table, "op.table");
+    resolve(op.seed_source, "seed.source");
+    resolve(op.seed_target, "seed.target");
+    resolve(op.chain_source, "chain.source");
+    resolve(op.chain_target, "chain.target");
+    for (TABLE *t : op.pivot_source_tables) {
+      resolve(t, "pivot.source");
+    }
+    for (const auto &ar : op.arm_reads) {
+      resolve(ar.first, "arm.read");
+    }
+    for (const DREffect &e : op.effects) {
+      resolve(e.value_table, "effect.value");
+      resolve(e.counter_table, "effect.counter");
+      resolve(e.read_table, "effect.read");
+      resolve(e.write_table, "effect.write");
+    }
+  }
+}
+
 DRFlowGraph BuildDRInventory(
     ProgramImpl *impl, Context &context, Query query,
     const std::unordered_map<TABLE *, unsigned> &scc_map) {
@@ -1424,6 +1567,21 @@ DRFlowGraph BuildDRInventory(
     t.resource = StateResourceId{rit->second};
 
     flow.tables.push_back(std::move(t));
+  }
+
+  // s35 Phase-C step 2: build the TABLE* -> StateResourceId index (§11 retype,
+  // base-table half) from the DRTables just stamped. Every `impl->table` has
+  // exactly one DRTable with a resolved `resource` (V-REL-RESOURCE above), so
+  // this dictionary is total over `impl->tables` and single-valued. It is a
+  // pure lookup — no table moves; `impl->tables` is untouched. Every op/branch/
+  // join base-table field an op can hold is one of these tables (the fields are
+  // sourced from `view_to_model[...]->table` / the `impl->tables` loop, and no
+  // table is minted after this point that any DR op references — the second
+  // `tables.Create` site, BuildEmptyQueryEntryPoint, runs strictly AFTER
+  // BuildDRInventory and is referenced by no DR op). So this map resolves every
+  // field the V-REL-OP-RESOURCE belt walks.
+  for (const DRTable &t : flow.tables) {
+    flow.table_to_resource.emplace(t.model, t.resource);
   }
 
   // --------------------------------------------------------------- per-table vecs
@@ -2505,6 +2663,10 @@ DRFlowGraph BuildDRInventory(
                                         rec.order_key, rec.walk_seq, 0u));
     }
   }
+
+  // s35 Phase-C step 2: certify the whole op model is resource-addressable (the
+  // regression fence for the Step-3 op-field retype).
+  ValidateOpResources(flow);
 
   return flow;
 }

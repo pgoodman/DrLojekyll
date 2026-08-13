@@ -396,6 +396,26 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
     return "%table:" + std::to_string(t->id);
   };
 
+  // s35 Phase-C step 2: the ` resource=sr#K` token annotating a base-table
+  // reference with its StateResourceId (the `-rel-out` render of the retype
+  // index `flow.table_to_resource`). The sr#K id is the SAME id space as the
+  // `-materialization-out` dump, so the two dumps cross-reference by id. Applied
+  // ONLY to op `args:`-line base-table tokens (via `tidr`), never the header/
+  // effects/reads sublines — the goldened coverage subset (the belt certifies
+  // the whole model). Empty string if a table has no resource (never for a real
+  // base table — V-REL-OP-RESOURCE proves resolution — so the guard is defensive
+  // for a table-less/dump-only path).
+  const auto res = [&flow](TABLE *t) -> std::string {
+    auto it = flow.table_to_resource.find(t);
+    if (it == flow.table_to_resource.end()) {
+      return std::string();
+    }
+    return " resource=sr#" + std::to_string(it->second.v);
+  };
+  const auto tidr = [&tid, &res](TABLE *t) -> std::string {
+    return tid(t) + res(t);
+  };
+
   // ---- header ----
   // E-71-ruled at the D3.a epoch open (ledger §20(AC)): the header token is
   // `rel`, matching the -rel-out flag + the .rel golden surface (the §20(AA)
@@ -715,10 +735,10 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         os << "\n";
         emit_effects(op);
         emit_spine(op);
-        os << "    args: agg_table=" << tid(op.agg_table);
+        os << "    args: agg_table=" << tidr(op.agg_table);
         {
           TABLE *input_table = gu_input_table(op);
-          if (input_table) os << " input=" << tid(input_table);
+          if (input_table) os << " input=" << tidr(input_table);
         }
         os << " statecell=sc#" << op.statecell_id << "\n";
         break;
@@ -728,7 +748,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         os << " sign=" << SignGlyph(0) << " ctx=" << CtxName(op.ctx)
            << " band=10 sc#" << op.statecell_id << "\n";
         emit_effects(op);
-        os << "    args: agg_table=" << tid(op.agg_table)
+        os << "    args: agg_table=" << tidr(op.agg_table)
            << " statecell=sc#" << op.statecell_id << "\n";
         break;
       }
@@ -739,7 +759,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         emit_reads(op);
         emit_effects(op);
         emit_spine(op);
-        os << "    args: table=" << tid(op.ingest_table);
+        os << "    args: table=" << tidr(op.ingest_table);
         if (op.ingest_message.has_value()) {
           os << " message=" << std::string(op.ingest_message->NameAsString())
              << "/" << op.ingest_message->Arity();
@@ -781,7 +801,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
         emit_reads(op);
         emit_effects(op);
         emit_spine(op);
-        os << "    args: src=" << tid(op.seed_source);
+        os << "    args: src=" << tidr(op.seed_source);
         if (op.join_pivot) {
           // pivots vec resolved via the terminal join (grammar AR-2).
           int ji = -1;
@@ -793,7 +813,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
             os << " pivots=$" << VecRoleSigil(flow.vecs[pv].role) << "." << pv;
           }
         } else {
-          os << " tgt=" << tid(op.seed_target);
+          os << " tgt=" << tidr(op.seed_target);
         }
         os << "\n";
         break;
@@ -806,7 +826,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " gate=" << ClaimGateName(op.claim_gate) << "\n";
         emit_reads(op);
         emit_effects(op);
-        os << "    args: table=" << tid(op.table_op_table) << "\n";
+        os << "    args: table=" << tidr(op.table_op_table) << "\n";
         break;
       }
 
@@ -816,7 +836,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " deferral=" << DeferralName(op.deferral) << "\n";
         emit_reads(op);
         emit_effects(op);
-        os << "    args: table=" << tid(op.table_op_table) << "\n";
+        os << "    args: table=" << tidr(op.table_op_table) << "\n";
         break;
       }
 
@@ -827,7 +847,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << "\n";
         emit_reads(op);
         emit_effects(op);
-        os << "    args: table=" << tid(op.table_op_table) << "\n";
+        os << "    args: table=" << tidr(op.table_op_table) << "\n";
         break;
       }
 
@@ -843,7 +863,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " ctx=" << CtxName(op.ctx)
            << " stratum=" << DROpStratum(flow, op) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         os << "\n";
         break;
       }
@@ -854,7 +874,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " stratum=" << DROpStratum(flow, op)
            << " sink=" << EagerSinkName(op.eager_sink) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         if (op.eager_message.has_value()) {
           os << " message=" << std::string(op.eager_message->NameAsString())
              << "/" << op.eager_message->Arity();
@@ -877,7 +897,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " stratum=" << DROpStratum(flow, op)
            << " cmp=" << ComparisonOperatorName(cmp.Operator()) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         os << "\n";
         break;
       }
@@ -889,7 +909,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " ctx=" << CtxName(op.ctx)
            << " stratum=" << DROpStratum(flow, op) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         os << " functor=" << std::string(functor.NameAsString()) << "/"
            << functor.Arity();
         os << "\n";
@@ -907,7 +927,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " ctx=" << CtxName(op.ctx)
            << " stratum=" << DROpStratum(flow, op) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         os << "\n";
         break;
       }
@@ -917,7 +937,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " ctx=" << CtxName(op.ctx)
            << " stratum=" << DROpStratum(flow, op) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         os << "\n";
         break;
       }
@@ -932,7 +952,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " ctx=" << CtxName(op.ctx)
            << " stratum=" << DROpStratum(flow, op) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         os << "\n";
         break;
       }
@@ -942,7 +962,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " ctx=" << CtxName(op.ctx)
            << " stratum=" << DROpStratum(flow, op) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         os << "\n";
         break;
       }
@@ -968,7 +988,7 @@ static void EmitDRFlow(OutputStream &os, const DRFlowGraph &flow) {
            << " stratum=" << DROpStratum(flow, op)
            << " form=" << JoinEmitFormName(op.emit_form) << "\n";
         os << "    args:";
-        if (op.table_op_table) os << " table=" << tid(op.table_op_table);
+        if (op.table_op_table) os << " table=" << tidr(op.table_op_table);
         if (op.emit_form == JoinEmitForm::kEager) {
           os << " order=" << op.emit_order_key << " seq=" << op.emit_walk_seq;
         }

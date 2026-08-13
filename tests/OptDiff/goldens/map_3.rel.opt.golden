@@ -11,17 +11,17 @@ op.5 kEagerGenerate sign=· ctx=eager stratum=0
 op.10 kIngestLoop sign=+ ctx=eager stratum=0
     args: message=m/2
 op.3 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:6
+    args: table=%table:6 resource=sr#0
 op.7 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:6
+    args: table=%table:6 resource=sr#0
 op.4 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:10
+    args: table=%table:10 resource=sr#1
 op.8 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:10
+    args: table=%table:10 resource=sr#1
 op.6 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:15
+    args: table=%table:15 resource=sr#2
 op.9 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:15
+    args: table=%table:15 resource=sr#2
 
 rounds:
 

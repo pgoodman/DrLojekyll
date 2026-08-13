@@ -13,33 +13,33 @@ op.11 kEagerForward sign=· ctx=eager stratum=0
 op.18 kProductEmit sign=· ctx=eager stratum=0 form=eager
     args: order=4 seq=0
 op.12 kEagerUnion sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.13 kEagerUnion sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.14 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.15 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.16 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.17 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.1 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.2 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.4 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.5 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.6 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.7 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.0 kIngestFold sign=+ ctx=eager stratum=0
     effects: {kCounter(%table:8, +, NonRecursive)}
     spine: —
-    args: table=%table:8 message=add_node/1
+    args: table=%table:8 resource=sr#1 message=add_node/1
 
 rounds:
 

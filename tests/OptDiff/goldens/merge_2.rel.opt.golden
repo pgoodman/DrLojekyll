@@ -17,35 +17,35 @@ op.21 kIngestLoop sign=+ ctx=eager stratum=0
 op.22 kIngestLoop sign=+ ctx=eager stratum=0
     args: message=m3/2
 op.5 kEagerUnion sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.6 kEagerUnion sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.7 kEagerUnion sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.10 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.11 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.12 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.15 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.16 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.17 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:4
+    args: table=%table:4 resource=sr#0
 op.8 kEagerUnion sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.9 kEagerUnion sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.13 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.14 kEagerForward sign=· ctx=eager stratum=0
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.18 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 op.19 kEagerInsert sign=· ctx=eager stratum=0 sink=relation
-    args: table=%table:8
+    args: table=%table:8 resource=sr#1
 
 rounds:
 
