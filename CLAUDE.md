@@ -87,9 +87,22 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > sentinel cross-check REFEREES plain==demand answer-hash equality per
 > knob-point since the (workload, knobs) key excludes drflags); the carrier
 > driver adapts to the forced-vs-plain query signature via a dependent
-> `requires` check, so ONE driver serves both compiles.** S1b REMAINING:
-> S1c polish (Tier-1 demanded-interior naming re-add); S2+ the keyed
-> InstanceStore. Authority: `session-31-s1b-seed.md` §5.
+> `requires` check, so ONE driver serves both compiles. S1c LANDED same
+> session (CP8): the ADJ-2 `region-internal
+> demand__<name>/<arity>(p0:type)  [fabricated, driver-suppressed]` line
+> restored to `-region-out` on the typed model (`InternalMessageRecord` +
+> `RegionTemplate.internals`, declaration-order, dormant flag-off; the
+> 15-char kind token repads the witness's port/contract kind column 14→17 —
+> E-K5-PAD, predicted-then-verified ×4 modes). GROUNDED SCOPE NOTE: the
+> pre-cut Tier-1 machinery (`CollectDemandInteriorDecls`/
+> `ResolveInteriorSupport`) is NOT re-added — byte-diffing the pre-cut
+> witness golden proved the surviving K5 Tier-2 origin path already names
+> the demanded interior identically (E1 rel=path, support, census
+> row-contracts=2 all byte-equal); the Tier-1 guard-join support OR becomes
+> observable only under `-demand-retract` (differential demand — no corpus
+> witness), a named residue with S2+.** S1b/S1c COMPLETE. REMAINING: S2+
+> the keyed InstanceStore; `-demand-retract` witnesses. Authority:
+> `session-31-s1b-seed.md` §5.
 
 ## Build
 
