@@ -47,19 +47,34 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > demand-filters it region-internal (V-REGION-CENSUS stays consistent). The
 > four always-on validator surfaces (RowContract/ProjectionRole, K5
 > origin_decls, Rel eager-web, Regional census) all pass on the demand graph.
-> Gate GREEN: build + `bin/Oracle`; OptDiff **SUITE: PASS (227)** byte-identical
-> (the orthogonality proof); ctest **5/5**; the demand program reaches a clean
-> `-df`/`-cpp`. **STILL REMOVED (S2+):** the `-demand-instance` keyed
+> **STILL REMOVED (S2+):** the `-demand-instance` keyed
 > InstanceStore nested lowering + `bool demand_instance` `Program::Build` param
 > (the vestigial `DRInstance`/`demand_table` scaffolding in `lib/Rel/Rel.h`
-> stays untouched). **S1b NEXT:** the ControlFlow injector seed-wiring
-> (`BuildQueryInjectorFromRegistry` + `context.demand_forcings`) so the demand
-> seed actually FLOWS at query time (answer correctness) + the recursive-TC
-> witness (`demand_tc_witness` shape) with oracle/monotone/behavioral goldens +
-> the bench carrier proving the measured selective pruning + the `kPushDown`
-> fixpoint-interior lowering exercised end-to-end. Authority:
-> `session-30-prompt.md`, `session-29-s1a-restoration-manifest.md`,
-> `session-31-s1b-seed.md`.
+> stays untouched).
+>
+> **S1b CORE LANDED (2026-08-13, s36 CP4 `047a991b`): THE DEMAND SEED FLOWS —
+> `-demand` programs are ANSWER-CORRECT.** `BuildQueryInjectorFromRegistry`
+> (restored from pre-cut `6d6248a2`, recipe F2) + the registry-first
+> `BuildQueryInjectorProcedure` dispatcher ((query, BindingPattern)-keyed;
+> retract arm gated on message differentialness) + `context.demand_forcings`
+> (= `Query::DemandForcings()`, assigned at the `Program::Build` head): a bound
+> `#query` under `-demand` now injects its bound key as the fabricated
+> `demand__` seed at query time through the `kQueryMessageInjector` proc (an
+> always-on handler fence aborts if the fabricated message has no handler
+> proc). WITNESS RESTORED: `demand_tc_witness` (recursive TC via its `-demand`
+> `.drflags` — the first `.drflags` case back in corpus; 13 goldens re-blessed
+> against tip incl. oracle/monotone/behavioral + df/ir/h/rel/contract +
+> region×4; the `.rel` golden carries the s35/s36 `resource=sr#` surface).
+> ANSWER-CORRECT ×4 modes: driver answers == the demand-blind oracle per
+> probed key (incl. the standing-demand rebuild — edges arriving AFTER a
+> demand re-fire the guarded fixpoint — and a first-demanded-after-data key);
+> behavioral binary == interpreter CBF. Flag-off corpus BYTE-IDENTICAL
+> (registry empty ⇒ dispatcher no-op). Gate: OptDiff **SUITE PASS (228)**,
+> ctest **5/5**; every `-demand` compile passes the s36 arrangement
+> cross-check quiescently. **S1b TAIL (next): the bench carrier** (the s29 O1
+> selective-pruning measurement with the REAL transform — `idx_hops`
+> 40000→~11 + the non-selective regression) + S1c polish (Tier-1 demanded-
+> interior naming re-add). Authority: `session-31-s1b-seed.md` §3-§5.
 
 ## Build
 
@@ -788,13 +803,12 @@ build). Grounded: 4-sonnet recon + 4-opus refuter panel (claim (c) REFUTED as
 drafted → the uniform-rule fold; a/b/d survive) in
 `InstanceFlow.artifacts/session-36-grounding.md` (§5 = the named Stage-C
 residual lacks: interface-table authority, TABLEINDEX id-renumbering decision,
-column-order/schema authority, Step 2b, six-site column logic stays). NEXT
-(OWNER REDIRECT, s36 close): **S1b — the demand injector seed-wiring** (answer
-correctness for `-demand` programs, the first user-visible payoff; charter
-`InstanceFlow.artifacts/session-37-prompt.md`, technical authority the
-REINSTATED `RegionalDataFlowCore.artifacts/session-31-s1b-seed.md`). Stage C
-(the allocation inversion) is scoped and PARKED in
-`InstanceFlow.artifacts/session-37-seed.md` until the owner re-ranks it.
+column-order/schema authority, Step 2b, six-site column logic stays). The
+owner redirected s36's tail to S1b — the injector CORE LANDED same session
+(see the S1b note at the top of this file). NEXT: the S1b tail (bench carrier
++ S1c polish; charter `InstanceFlow.artifacts/session-37-prompt.md`) or Stage
+C (the allocation inversion, scoped + PARKED in
+`InstanceFlow.artifacts/session-37-seed.md`) — owner re-ranks.
 
 ## The demand transform (`-demand`, magic-sets) — [LIVE (flat) since S1a; multi-adornment/@key-activation text below is HISTORICAL until re-verified]
 

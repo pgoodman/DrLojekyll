@@ -1,5 +1,14 @@
 <!-- Copyright 2026, Peter Goodman. All rights reserved. -->
-# Session-37 charter — S1b: make the demand seed FLOW (answer correctness), then witness + bench it
+# Session-37 charter — S1b tail: bench the pruning; then S1c or Stage C (owner re-ranks)
+
+> **AMENDED at s36 close: S1b's CORE LANDED IN s36 ITSELF (CP4 `047a991b`) —
+> the injector (§1) AND the witness (§2) are DONE, gate green (SUITE PASS 228,
+> ctest 5/5, answer-correct ×4 modes, flag-off byte-identical). What remains
+> of this charter is §3 (the bench carrier — the MEASURED selective-pruning
+> proof + the non-selective regression) and the seed §5 residue (S1c Tier-1
+> demanded-interior naming; S2+ InstanceStore). The InstanceFlow Stage-C plan
+> stays parked in `session-37-seed.md`. The owner re-ranks: bench+S1c vs
+> Stage C. The original charter below is kept for §3's instructions.**
 
 You are resuming work on branch `keyed-instances` (Dr. Lojekyll, the `hyde`
 C++ Datalog compiler). **Owner redirect (2026-08-13, s36 close): this session
