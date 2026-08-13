@@ -1513,6 +1513,46 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
     }
   }
 #endif
+
+  // Session-36 arrangement shadow contract (session-36-grounding.md §2.3): the
+  // index universe is FINAL here (the only TABLEINDEX mint is
+  // `GetOrCreateIndex` during region build; `ProgramImpl::Optimize` and
+  // codegen never touch `indices`), so census every real index as its owning
+  // table's `StateResourceId` (via the s35 `table_to_resource` map — its first
+  // real consumer) + sorted column ordinals, and cross-check the stored
+  // DERIVED arrangement plan byte-for-byte against it. A table absent from the
+  // map must be a member-view-free empty-query INTERFACE table (the only
+  // post-inventory mint, Build.cpp:519) — tallied, never silently dropped.
+  {
+    const DRFlowGraph &dr_flow = *context.dr_flow;
+    std::vector<ArrangementKey> real;
+    auto num_interface_tables = 0u;
+    for (TABLE *table : impl->tables) {
+      const auto it = dr_flow.table_to_resource.find(table);
+      if (it == dr_flow.table_to_resource.end()) {
+        if (!table->views.empty()) {
+          fprintf(stderr,
+                  "CROSS-CHECK (arrangements): table %u has %zu member views "
+                  "but no resource — not an interface table\n",
+                  table->id, table->views.size());
+          abort();
+        }
+        ++num_interface_tables;
+        continue;
+      }
+      for (TABLEINDEX *index : table->indices) {
+        ArrangementKey key;
+        key.resource = it->second;
+        for (TABLECOLUMN *col : index->columns) {
+          key.columns.push_back(ColumnOrdinal{col->index});
+        }
+        std::sort(key.columns.begin(), key.columns.end());
+        real.push_back(std::move(key));
+      }
+    }
+    CrossCheckArrangements(query, real, num_interface_tables);
+  }
+
   return Program(std::move(impl));
 }
 

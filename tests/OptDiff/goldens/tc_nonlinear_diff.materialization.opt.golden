@@ -1,7 +1,14 @@
-materialization  resources=4 aliases=0 arrangements=0
+materialization  resources=4 aliases=0 arrangements=6
 
 resources
   sr#0 authority=lc#0 schema=(From,To) support=differential
   sr#1 authority=internal#0 schema=(From,To) support=differential
   sr#2 authority=internal#1 schema=(From,To) support=differential
   sr#3 authority=internal#2 schema=(X,From,To) support=differential
+arrangements
+  ar#0 resource=sr#0 columns=(0)
+  ar#1 resource=sr#0 columns=(0,1)
+  ar#2 resource=sr#0 columns=(1)
+  ar#3 resource=sr#1 columns=(0,1)
+  ar#4 resource=sr#2 columns=(0,1)
+  ar#5 resource=sr#3 columns=(0,1,2)

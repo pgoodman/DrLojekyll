@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
+#include <drlojekyll/Parse/ModuleIterator.h>
 #include <drlojekyll/Parse/Parse.h>
 
 #include "Query.h"
@@ -293,6 +295,226 @@ MaterializationResources PlanResources(Query query,
   return plan;
 }
 
+// Session-36: derive the ARRANGEMENT (index) requirements from the FINAL graph
+// (see Materialization.h for the rule set R-FULL/R-JOIN-UNIFORM/R-NEG/R-QUERY
+// and session-36-grounding.md for the panel record). PURE QueryView-API — the
+// falsifiable claim (the emission walk's `GetOrCreateIndex` requests are a pure
+// function of the final graph) is checked by `CrossCheckArrangements` at the
+// `Program::Build` tail. NOTE the one named blind spot (grounding §4-d): the
+// view-ordinal -> table-ordinal congruence across a shared model is REPLAYED
+// from emission's own assumption (both sides use `QueryColumn::Index()`), so
+// the cross-check certifies byte-equality with emission, not independent
+// soundness of that congruence.
+void DeriveArrangements(Query query, MaterializationResources &plan) {
+  // The bijection map (V-MAT-BIJECTION): class -> its authoritative resource.
+  std::unordered_map<unsigned, StateResourceId> class_to_resource;
+  for (const StateResource &r : plan.resources) {
+    class_to_resource.emplace(r.eqset, r.id);
+  }
+
+  // Per-class arity under the SAME rule that fixes the real table's column
+  // count (Data.cpp:150-205: InputColumns for an INSERT view, Columns
+  // otherwise — `VisibleColumnsOf` is that rule). Belt: every member of a
+  // class must agree (the class IS one physical schema; a divergence means the
+  // positional ordinal space is broken — the E2 congruence tripwire).
+  std::unordered_map<unsigned, unsigned> class_arity;
+  ForEachViewKindTagged(query, [&](QueryView v, unsigned kind, const char *) {
+    const unsigned eq = v.EquivalenceSetId();
+    const unsigned arity =
+        static_cast<unsigned>(VisibleColumnsOf(v, kind).size());
+    const auto it = class_arity.find(eq);
+    if (it == class_arity.end()) {
+      class_arity.emplace(eq, arity);
+    } else if (it->second != arity) {
+      fprintf(stderr,
+              "V-MAT-ARRANGE: storage class %u members disagree on arity "
+              "(%u vs %u) — the positional ordinal space is broken\n",
+              eq, it->second, arity);
+      abort();
+    }
+  });
+
+  // The requirement set. `ArrangementKey`'s defaulted ordering IS the
+  // canonical order (ascending resource, then lexicographic ordinal vector),
+  // and the set dedups exactly like `GetOrCreateIndex`'s per-table
+  // `column_spec` dedup (per-resource == per-table: table <-> class <->
+  // resource are bijective).
+  std::set<ArrangementKey> required;
+  const auto require = [&](QueryView v, std::vector<ColumnOrdinal> ords,
+                           const char *rule) {
+    std::sort(ords.begin(), ords.end());
+    ords.erase(std::unique(ords.begin(), ords.end()), ords.end());
+    const auto it = class_to_resource.find(v.EquivalenceSetId());
+    if (it == class_to_resource.end()) {
+      fprintf(stderr,
+              "V-MAT-ARRANGE: rule %s requires an index on non-stateful "
+              "class %u — the emitter would have no table there\n",
+              rule, v.EquivalenceSetId());
+      abort();
+    }
+    required.insert(ArrangementKey{it->second, std::move(ords)});
+  };
+
+  // R-FULL: the all-columns default index every table gets at creation.
+  for (const StateResource &r : plan.resources) {
+    const auto it = class_arity.find(r.eqset);
+    if (it == class_arity.end()) {
+      fprintf(stderr,
+              "V-MAT-ARRANGE: resource sr#%u backs class %u with no live "
+              "member view\n",
+              r.id.v, r.eqset);
+      abort();
+    }
+    std::vector<ColumnOrdinal> all;
+    all.reserve(it->second);
+    for (auto i = 0u; i < it->second; ++i) {
+      all.push_back(ColumnOrdinal{i});
+    }
+    required.insert(ArrangementKey{r.id, std::move(all)});
+  }
+
+  // R-JOIN-UNIFORM: per joined side of every pivot-JOIN, the side's pivot
+  // input-column ordinals (BuildJoin takes the FIRST input pivot of a side per
+  // pivot set — Join.cpp:393-401 `break` — while EmitJoinFire collects ALL;
+  // the singleton belt below makes the two conventions coincide, aborting on
+  // any future shape where they would not).
+  for (auto join : query.Joins()) {
+    const auto num_pivots = join.NumPivotColumns();
+    if (!num_pivots) {
+      continue;  // zero-pivot == @product: non-driving sides scan FULL.
+    }
+    for (QueryView side : join.JoinedViews()) {
+      std::vector<ColumnOrdinal> ords;
+      for (auto j = 0u; j < num_pivots; ++j) {
+        auto found = 0u;
+        for (auto pivot_col : join.NthInputPivotSet(j)) {
+          if (QueryView::Containing(pivot_col) == side) {
+            if (!found++) {
+              ords.push_back(ColumnOrdinal{*(pivot_col.Index())});
+            }
+          }
+        }
+        if (found > 1u) {
+          fprintf(stderr,
+                  "V-MAT-ARRANGE: join pivot %u has %u input columns on one "
+                  "side — BuildJoin/EmitJoinFire request different sets\n",
+                  j, found);
+          abort();
+        }
+      }
+      if (ords.empty()) {
+        fprintf(stderr,
+                "V-MAT-ARRANGE: a pivot-JOIN side participates in no pivot "
+                "set — the emitter would mint an empty-spec index\n");
+        abort();
+      }
+      require(side, std::move(ords), "R-JOIN");
+    }
+  }
+
+  // R-NEG: the negation crossover's predecessor-side partial scan
+  // (Stratum.cpp:1168-1185 replayed verbatim; both crossover arms request the
+  // same set, and monotone crossovers request it too, so no differentialness
+  // predicate is needed). The two drop clauses mirror BuildMaybeScanPartial:
+  // empty -> full scan (no index), all-columns -> early return (no scan).
+  for (auto negate : query.Negations()) {
+    if (negate.HasNeverHint()) {
+      continue;  // @never gates on Present — no crossover arm-pair.
+    }
+    const QueryView view = QueryView::From(negate);
+    const QueryView pred_view = view.Predecessors()[0];
+    std::vector<ColumnOrdinal> ords;
+    auto i = 0u;
+    for (QueryColumn out_col : negate.NegatedColumns()) {
+      (void) out_col;
+      const QueryColumn pred_key_col = negate.NthInputColumn(i++);
+      if (!pred_key_col.IsConstant()) {
+        if (QueryView::Containing(pred_key_col) != pred_view) {
+          fprintf(stderr,
+                  "V-MAT-ARRANGE: a negate key input is not a predecessor "
+                  "column — the crossover scan would mis-bind\n");
+          abort();
+        }
+        ords.push_back(ColumnOrdinal{*(pred_key_col.Index())});
+      }
+    }
+    std::sort(ords.begin(), ords.end());
+    ords.erase(std::unique(ords.begin(), ords.end()), ords.end());
+    if (ords.empty() || ords.size() == pred_view.Columns().size()) {
+      continue;
+    }
+    require(pred_view, std::move(ords), "R-NEG");
+  }
+
+  // R-QUERY: bound `#query` entry-point seeks (Build.cpp:432), one per unique
+  // binding pattern per surviving relation-INSERT of a query decl (the
+  // (unique pattern) x (shared class) quantification — every INSERT of one
+  // relation shares a class, so the per-insert replay dedups). Mirrors
+  // `SelectAccessPlan` (RegionInstance.h — Regional layering bars calling it):
+  // kFullScanFilter <=> empty bound set at tip, which withholds the index; an
+  // all-bound pattern requests all columns and dedups into R-FULL.
+  for (auto insert : query.Inserts()) {
+    if (!insert.IsRelation()) {
+      continue;
+    }
+    const ParsedDeclaration decl = insert.Relation().Declaration();
+    if (!decl.IsQuery()) {
+      continue;
+    }
+    const QueryView view = QueryView::From(insert);
+    std::unordered_set<std::string> seen_variants;
+    for (ParsedDeclaration redecl : decl.UniqueRedeclarations()) {
+      std::string binding(redecl.BindingPattern());
+      if (!seen_variants.insert(std::move(binding)).second) {
+        continue;
+      }
+      std::vector<ColumnOrdinal> ords;
+      for (auto param : redecl.Parameters()) {
+        if (param.Binding() == ParameterBinding::kBound) {
+          ords.push_back(ColumnOrdinal{param.Index()});
+        }
+      }
+      if (ords.empty()) {
+        continue;  // kFullScanFilter withholds — no requirement.
+      }
+      require(view, std::move(ords), "R-QUERY");
+    }
+  }
+
+  // R-INTERFACE (count only): one always-empty interface table per `#query`
+  // declaration with NO surviving INSERT view (Build.cpp:1445-1458 /
+  // BuildEmptyQueryEntryPoint). Its per-table index sets are a NAMED Stage-C
+  // residual (grounding §5.1); the COUNT is derived + cross-checked so the
+  // census never silently drops an unattributed table.
+  std::unordered_set<uint64_t> covered;
+  for (auto insert : query.Inserts()) {
+    if (insert.IsRelation()) {
+      const ParsedDeclaration decl = insert.Relation().Declaration();
+      if (decl.IsQuery()) {
+        covered.insert(decl.Id());
+      }
+    }
+  }
+  std::unordered_set<uint64_t> counted;
+  for (ParsedModule sub_module : ParsedModuleIterator(query.ParsedModule())) {
+    for (ParsedQuery parsed_query : sub_module.Queries()) {
+      const uint64_t id = ParsedDeclaration(parsed_query).Id();
+      if (!covered.count(id) && counted.insert(id).second) {
+        ++plan.interface_tables;
+      }
+    }
+  }
+
+  // Finalize: dense ids in the set's canonical order.
+  plan.arrangements.reserve(required.size());
+  for (const ArrangementKey &key : required) {
+    Arrangement a;
+    a.id = ArrangementId{static_cast<uint32_t>(plan.arrangements.size())};
+    a.key = key;
+    plan.arrangements.push_back(std::move(a));
+  }
+}
+
 // V-MAT-BIJECTION (panel claim-d) + V-MAT-AUTHORITY (§17). Internal-invariant
 // belt (fprintf+abort, surviving NDEBUG).
 bool ValidateMaterialization(Query query, const InstanceFlowProgram &flow,
@@ -433,6 +655,80 @@ void CrossCheckMaterialization(Query query,
     }
   }
   abort();
+}
+
+// Session-36: the arrangement shadow contract. ControlFlow passes the REAL
+// index universe censused at the `Program::Build` tail (each `TABLEINDEX` as
+// its owning table's `StateResourceId` via the s35 `table_to_resource` map +
+// its sorted column ordinals; the universe is FINAL there — no pass mints or
+// deletes a TABLEINDEX after region build) plus the count of resource-less
+// interface tables (empty-query tables, provably member-view-free). We compare
+// against the STORED derived plan and abort naming every divergent arrangement
+// on either side. Always-on (fprintf+abort, survives NDEBUG); on a correct
+// pipeline it fires nothing — exercised suite-wide across all 4 modes.
+void CrossCheckArrangements(Query query,
+                            const std::vector<ArrangementKey> &real,
+                            unsigned num_interface_tables) {
+  const MaterializationResources &plan = query.impl->materialization;
+
+  std::set<ArrangementKey> real_set;
+  for (const ArrangementKey &key : real) {
+    if (!real_set.insert(key).second) {
+      fprintf(stderr,
+              "CROSS-CHECK (arrangements): ControlFlow holds DUPLICATE "
+              "index (sr#%u, %zu cols) — table<->resource not injective?\n",
+              key.resource.v, key.columns.size());
+      abort();
+    }
+  }
+  std::set<ArrangementKey> derived_set;
+  for (const Arrangement &a : plan.arrangements) {
+    derived_set.insert(a.key);
+  }
+
+  const auto render = [](const ArrangementKey &key) {
+    std::string s = "sr#" + std::to_string(key.resource.v) + " columns=(";
+    const char *sep = "";
+    for (ColumnOrdinal c : key.columns) {
+      s += sep + std::to_string(c.v);
+      sep = ",";
+    }
+    return s + ")";
+  };
+
+  bool diverged = false;
+  for (const ArrangementKey &key : derived_set) {
+    if (!real_set.count(key)) {
+      if (!diverged) {
+        fprintf(stderr, "CROSS-CHECK (arrangements): derived plan diverges "
+                        "from the real index universe:\n");
+        diverged = true;
+      }
+      fprintf(stderr, "  plan derives an index ControlFlow did NOT mint: %s\n",
+              render(key).c_str());
+    }
+  }
+  for (const ArrangementKey &key : real_set) {
+    if (!derived_set.count(key)) {
+      if (!diverged) {
+        fprintf(stderr, "CROSS-CHECK (arrangements): derived plan diverges "
+                        "from the real index universe:\n");
+        diverged = true;
+      }
+      fprintf(stderr, "  ControlFlow minted an index the plan MISSED: %s\n",
+              render(key).c_str());
+    }
+  }
+  if (num_interface_tables != plan.interface_tables) {
+    fprintf(stderr,
+            "CROSS-CHECK (arrangements): %u resource-less interface tables "
+            "censused, plan derived %u\n",
+            num_interface_tables, plan.interface_tables);
+    diverged = true;
+  }
+  if (diverged) {
+    abort();
+  }
 }
 
 }  // namespace hyde

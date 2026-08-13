@@ -32,6 +32,7 @@ struct QueryContracts;  // Format.h — the `-contract-out` dump tag (H-A8).
 struct QueryInstanceFlow;  // Format.h — the `-instanceflow-out` dump tag (s32).
 struct QueryMaterialization;  // Format.h — `-materialization-out` dump tag (s34).
 struct MaterializationResources;  // Materialization.h — the s34 resources plan.
+struct ArrangementKey;  // Materialization.h — one (resource, ordinals) index key.
 class FrozenRegionalProgram;  // Regional/Regional.h — the Stage-B planner.
 
 enum class ComparisonOperator : int;
@@ -1192,6 +1193,12 @@ class Query {
   friend void CrossCheckMaterialization(
       Query query, const std::set<unsigned> &real_stateful_classes);
 
+  // Session-36: the ControlFlow arrangement belt reads `impl->materialization`
+  // to cross-check the derived arrangements against the real index universe.
+  friend void CrossCheckArrangements(Query query,
+                                     const std::vector<ArrangementKey> &real,
+                                     unsigned num_interface_tables);
+
   // Session-34 Phase-C: lib/Rel reads `impl->materialization` (the resources plan)
   // to stamp each `DRTable` with its `StateResourceId` (behind the map).
   friend const MaterializationResources &MaterializationPlanOf(Query query);
@@ -1221,6 +1228,20 @@ class Query {
 // any divergence. An always-on belt; on a correct pipeline it fires nothing.
 void CrossCheckMaterialization(Query query,
                                const std::set<unsigned> &real_stateful_classes);
+
+// Session-36: the arrangement shadow contract (session-36-grounding.md §2.3).
+// The stored plan's DERIVED arrangements (built at the `Query::Build` tail by
+// replaying the six emission `GetOrCreateIndex` sites' column logic pure-side)
+// MUST equal the REAL index universe at the `Program::Build` tail. The caller
+// (ControlFlow) censuses every `TABLEINDEX` as its owning table's
+// `StateResourceId` (via the s35 `table_to_resource` map) + sorted column
+// ordinals, tallying resource-less interface tables (empty-query tables)
+// separately. Aborts (fprintf+abort, surviving NDEBUG) naming every divergent
+// arrangement on either side. An always-on belt; on a correct pipeline it
+// fires nothing.
+void CrossCheckArrangements(Query query,
+                            const std::vector<ArrangementKey> &real,
+                            unsigned num_interface_tables);
 
 }  // namespace hyde
 namespace std {

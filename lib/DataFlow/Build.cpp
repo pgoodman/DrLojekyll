@@ -2678,6 +2678,14 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
+  // Session-36: derive the ARRANGEMENT (index) requirements — the resources
+  // plan's missing half (InstanceFlow.md §10 `ArrangementSpec`; the six
+  // emission `GetOrCreateIndex` sites replayed pure-side). Still an OBSERVER
+  // (nothing consumes arrangements for emission), cross-checked byte-for-byte
+  // against the real post-region-build index universe by
+  // `CrossCheckArrangements` at the `Program::Build` tail.
+  DeriveArrangements(Query(impl), impl->materialization);
+
 #ifndef NDEBUG
   // K5 conservation belt (DEBUG-only, RESCOPED): every demanded interior's
   // decl MUST be origin-reachable at a live view — the K5-D2 seed + K5-D3 union

@@ -2063,7 +2063,12 @@ OutputStream &operator<<(OutputStream &os, QueryMaterialization qm) {
   };
 
   os << "materialization  resources=" << plan.resources.size()
-     << " aliases=" << plan.aliases.size() << " arrangements=0\n\n";
+     << " aliases=" << plan.aliases.size()
+     << " arrangements=" << plan.arrangements.size();
+  if (plan.interface_tables) {
+    os << " interface-tables=" << plan.interface_tables;
+  }
+  os << "\n\n";
 
   os << "resources\n";
   for (const StateResource &r : plan.resources) {
@@ -2081,6 +2086,26 @@ OutputStream &operator<<(OutputStream &os, QueryMaterialization qm) {
     os << "aliases\n";
     for (const ForwardingAlias &a : plan.aliases) {
       os << "  lc#" << a.collection.v << " -> sr#" << a.to.v << "\n";
+    }
+  }
+
+  // Session-36: the derived arrangement requirements, canonical order (the
+  // `ar#` ids are dense in it). `resource=sr#K` cross-references the resources
+  // block above AND the `-rel-out` ` resource=sr#K` tokens (ONE id space).
+  // Columns are plain ordinals — positionally precise against the resource's
+  // `schema=` tuple (a names variant would have to trust cross-view positional
+  // naming; ordinals never lie).
+  if (!plan.arrangements.empty()) {
+    os << "arrangements\n";
+    for (const Arrangement &a : plan.arrangements) {
+      os << "  ar#" << a.id.v << " resource=sr#" << a.key.resource.v
+         << " columns=(";
+      auto sep = "";
+      for (ColumnOrdinal c : a.key.columns) {
+        os << sep << c.v;
+        sep = ",";
+      }
+      os << ")\n";
     }
   }
 

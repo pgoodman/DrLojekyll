@@ -1,4 +1,4 @@
-materialization  resources=6 aliases=0 arrangements=0
+materialization  resources=6 aliases=0 arrangements=8
 
 resources
   sr#0 authority=lc#0 schema=(B) support=monotone
@@ -7,3 +7,12 @@ resources
   sr#3 authority=internal#1 schema=(c10) support=monotone
   sr#4 authority=internal#2 schema=(c11,B) support=monotone
   sr#5 authority=internal#3 schema=(c13) support=monotone
+arrangements
+  ar#0 resource=sr#0 columns=(0)
+  ar#1 resource=sr#1 columns=(0)
+  ar#2 resource=sr#2 columns=(0)
+  ar#3 resource=sr#2 columns=(0,1)
+  ar#4 resource=sr#3 columns=(0)
+  ar#5 resource=sr#4 columns=(0)
+  ar#6 resource=sr#4 columns=(0,1)
+  ar#7 resource=sr#5 columns=(0)

@@ -1,7 +1,12 @@
-materialization  resources=2 aliases=1 arrangements=0
+materialization  resources=2 aliases=1 arrangements=4
 
 resources
   sr#0 authority=lc#0 schema=(From,To) support=monotone
   sr#1 authority=lc#2 schema=(Node) support=monotone
 aliases
   lc#1 -> sr#0
+arrangements
+  ar#0 resource=sr#0 columns=(0)
+  ar#1 resource=sr#0 columns=(0,1)
+  ar#2 resource=sr#0 columns=(1)
+  ar#3 resource=sr#1 columns=(0)
