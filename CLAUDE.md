@@ -154,11 +154,17 @@ CLI driver: `bin/drlojekyll/Main.cpp`.
 > Gate: OptDiff **SUITE PASS (232)**, eqgate ×4 BOTH carriers byte-verified,
 > ctest **6/6**, belts quiescent on every nested compile + the arrangements
 > live-fire (corrupt → the exact predicted `sr#1 columns=(0)` abort; revert →
-> quiescent). **S2b NEXT:** `-demand-retract` (kInstanceDeath live path,
-> restored dormant-verbatim), the remaining eqgate family
+> quiescent). OWNER-RATIFIED at the s37 close; pushed. **S2b NEXT
+> (chartered):** `-demand-retract` (kInstanceDeath live path, restored
+> dormant-verbatim), the remaining eqgate family
 > (`demand_neighborhood_witness`, `demand_diff_input_1`), RelValidators death
-> tests, the R-DIFF skip-discriminator live-fire. S2c: multi-adornment + the
-> RP-6 `@key` twins (which retire the flags-twin's pin role).
+> tests, the R-DIFF skip-discriminator live-fire. Charter:
+> `KeyedInstances.artifacts/session-38-s2b-prompt.md`; seed (the ALREADY-LIVE
+> inventory + the five no-precedent obligations: diff-demand frontier
+> provisioning, the self-disabling arrangements skip, the S1c Tier-1
+> support-OR residue, F32 behavioral policy, the netting coupling):
+> `KeyedInstances.artifacts/session-38-s2b-seed.md`. S2c after: multi-
+> adornment + the RP-6 `@key` twins (which retire the flags-twin's pin role).
 
 ## Build
 
