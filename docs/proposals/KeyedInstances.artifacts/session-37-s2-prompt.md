@@ -31,36 +31,54 @@ be bold, and build the nested arm. We believe in you.**
 
 ## Phase 1 — GROUND IT with workflows (before touching production code)
 
-Sonnet extracts, opus judges, thin orchestrator (the s36 pattern: 4-sonnet
-recon + 4-opus refuters caught a wrong join rule before it entered code).
-The grounding must PRODUCE and then CRITIQUE:
+Ground → critique → execute, with **workflows** (the `Workflow` tool) for the
+fan-out and deliberate model tiering: **sonnet** for mechanical extraction
+(transcribe the pre-cut nested arms to current-tip anchors; enumerate every
+nested allocation site; diff `6d6248a2` vs tip per file), **opus** for
+judgment (design diffs, adversarial refuter panels, synthesis). Keep the
+orchestrator thin — sonnet reads, you keep the conclusions. This exact
+pattern caught a wrong join rule in s36 before it ever entered code.
 
-1. **The restoration manifest** (the S1a recipe): per-file diff of
-   `6d6248a2`'s nested-arm code vs tip — what restores byte-faithful, what
-   must adapt to drift (the Rel op-model growth s30→s36, the s35 resource
-   stamps, kJoinEmit/kIngestLoop, the InstanceFlow observers at the
-   Query::Build tail). Enumerate EVERY nested-arm allocation site (tables,
-   indexes, stores) — this feeds item 2.
-2. **The §2 belts-integration design** (the crux, no pre-cut precedent):
-   the exact `demand_instance` arms `DeriveStatefulClasses` and
-   `DeriveArrangements` need so `CrossCheckMaterialization` /
-   `CrossCheckArrangements` stay quiescent on nested compiles — derived
-   from item 1's allocation-site extraction, NEVER by gating a belt off.
-   Also: `DRInstance` field population vs the V-REL-OP-RESOURCE walk (s35
-   skipped always-null fields — populated fields enter the belt), and the
-   census/eager-web validators the nested arm must satisfy.
-3. **Adversarial refuter panel (opus)**: (a) the restoration manifest's
-   drift claims (find a restored line that silently no-longer-composes);
-   (b) the belts-integration arms (find a nested allocation the derivation
-   arm misses — the cross-check fires on a valid program); (c) the eqgate
-   answer-identity claim under tip semantics (find a divergence source
-   between flat and nested at tip the pre-cut equivalence didn't face);
+Concretely, the grounding workflow(s) must PRODUCE and then CRITIQUE:
+
+1. **Whole-program pseudocode, built out.** Extend seed §1.5 into faithful,
+   current-tip-anchored pseudocode of every stage S2 touches: the recognition
+   front-end (RecognizedSubgraph/GuardAnnotation at tip), the pre-cut nested
+   arms (`BuildSubgraphInstanceOps`'s ABA-safe `ResolveLiveRecognition`, the
+   band a1/a2 lowerings, the codegen emission, `InstanceStore.h`'s API), the
+   eager-walk chain-breaker, and the s34-s36 derivation/belt pipeline the
+   nested arm must live inside. Sonnet extracts each subsystem (pre-cut AND
+   tip); you assemble the one coherent view.
+2. **Design-goal DIFFS on that pseudocode.** Express S2a as precise diffs
+   (the seed §1.5 diff block is the starting sketch — sharpen every `+` to
+   named functions/sites at tip): the flag plumbing, the DRInstance mint,
+   the band lowerings, the codegen arm, the runtime store, the eager-walk
+   excision, AND the §2 belts arms (`demand_instance` arms in
+   `DeriveStatefulClasses`/`DeriveArrangements` — derived from the
+   allocation-site extraction, NEVER by gating a belt off). Sketch far
+   enough into S2b/S2c to prove the line of sight.
+3. **Adversarial critique (opus refuter panel).** Fan out N independent
+   refuters, each trying to REFUTE: (a) the restoration manifest's drift
+   claims (find a restored line that silently no-longer-composes with the
+   s30-s36 Rel/validator growth); (b) the belts-integration arms (find a
+   nested allocation the derivation arm misses — the cross-check fires on a
+   valid program; or a DRInstance table field the V-REL-OP-RESOURCE walk
+   can't resolve); (c) eqgate answer-identity under TIP semantics (find a
+   flat-vs-nested divergence source the pre-cut equivalence never faced);
    (d) scope honesty (is R-MONO-first still the right slice, or does drift
-   force a smaller/larger first cut?). Default refuted=true on uncertainty.
-4. **Predict-then-verify targets**: the witness's expected `-rel-out`
-   census line (`kSubgraphInstantiate=1`, the DRInstance render), the
-   `.eqgate` flow, and the flat-arm goldens re-blessed against tip FIRST
-   (the S1b precedent) so the nested arm has a fixed target.
+   force a smaller/larger first cut?). Default refuted=true on uncertainty;
+   fold every surviving finding.
+4. **IR desired-output-states, same treatment (predict-then-verify).**
+   Write the DESIRED dumps FIRST, then critique them for internal
+   consistency and against the landed surfaces: the witness's `-rel-out`
+   (the census line gaining `kSubgraphInstantiate=1` + the DRInstance
+   descriptor render — check it against the reserved Rel.h render branches),
+   the `-region-out` nested surface (S1c's `region-internal` line + what
+   the nested arm adds), the `-materialization-out` deltas the belts arms
+   imply, and the `.eqgate` flow (the flat goldens re-blessed against tip
+   FIRST — the S1b precedent — so the nested arm has a fixed byte target).
+   These are the golden targets you build toward and later bless
+   (permutation discipline / E-K5-PAD apply).
 
 ## Phase 2 — EXECUTE S2a (after grounding; owner ratifies before the final commit)
 

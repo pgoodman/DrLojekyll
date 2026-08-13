@@ -75,6 +75,120 @@ last-before-deletion tip — NOT `48cd0a4f`):
   (`demand_cyclic_1` compiles flat / rejects nested;
   `demand_recursive_content_1`; `demand_agg_body_1` etc.).
 
+## §1.5 Whole-program pseudocode (tip `28f2ccc0`) + S2 as DIFFS on it
+
+```
+# ================= DataFlow: Query::Build (lib/DataFlow/Build.cpp) ==========
+Query::Build(module, log, policy, demand_mode, demand_retract, suppress_demand):
+  parse -> build -> ApplyDemandTransform   # S1a: flag-gated head; SIP walk
+  #   (kBaseAtom/kPushDown arms), mints guard JOINs + fabricated demand__
+  #   message + demand relation; STEP 10 records QueryDemandForcing{query,
+  #   message, bound_params}; RecognizedSubgraph (one per forcing,
+  #   demanded_decl, forcing_index) + GuardAnnotation (PRE-CSE facts:
+  #   kind/demand_side/role/instance_key) — THE RECOGNITION FRONT-END, LIVE.
+  -> Optimize -> Stratify -> FinalizeColumnIDs -> eqsets/inductions
+  impl->row_contracts   = InferConservativeRowContracts(impl)
+  impl->instance_flow   = BuildFlatInstanceFlow(...)          # s32 grove
+  impl->materialization = PlanResources(...)                  # s34 resources
+  DeriveArrangements(Query(impl), impl->materialization)      # s36 indexes
+  #   ^ replays the SIX GetOrCreateIndex sites' column logic (R-FULL/
+  #     R-JOIN-UNIFORM/R-NEG/R-QUERY + R-INTERFACE count) — TODAY'S rules.
+
+# ================= ControlFlow: Program::Build (4-arg at tip) ===============
+Program::Build(frozen, log, first_id, policy):          # S2 DIFF: +5th param
+  query = frozen.DataFlowGraph()
+  context.demand_forcings = &query.DemandForcings()     # S1b (landed)
+  FillDataModel(query, program, context)                # tables; full index each
+  CrossCheckMaterialization(query, real_classes)        # s34 belt, always-on
+  BuildEntryProcedure -> BuildStratumPhases:
+    dr_flow = BuildDRInventory(impl, context, query, sccs)
+    #   DRTables + resource stamps (s34/s35) + table_to_resource +
+    #   V-REL-RESOURCE / V-REL-OP-RESOURCE + branches/joins/ops census
+    #   (29 kinds; kSubgraphInstantiate/kInstanceDeath/kInstanceSeal RESERVED,
+    #   flow.instances NEVER populated at tip)
+    LowerDRFlow / LowerDRRounds / LowerCommitSweeps / LowerGroupUpdate
+    eager walk (BuildEagerInsertionRegions) fills ingest-fold holes
+  BuildIOProcedure per IO   # incl. the fabricated demand__ receive (handler)
+  BuildQueryEntryPoint per surviving query-INSERT:
+    BuildQueryInjectorProcedure                          # S1b: registry-first
+    GetOrCreateIndex(bound subset)                       # R-QUERY site
+  ProgramImpl::Optimize x2
+  census: CrossCheckArrangements(query, real_index_universe, n_interface)  # s36
+  return program -> C++ codegen (suppresses demand__ public ABI; emits
+    Table/Index/StateCellStore members + entry procs + query friends)
+
+# ================= Runtime stores at tip ====================================
+Table<Row> + Index<Key>           # the flat world; DiffTable for differential
+StateCellStore                    # per-GROUP standing cell (aggregates/KV)
+# (NO InstanceStore at tip — deleted at P1.)
+```
+
+### The S2 path as DIFFS (restore-then-adapt from `6d6248a2`)
+
+```diff
+  # ---- flag plumbing -------------------------------------------------------
++ Main.cpp: gDemandInstance (-demand-instance implies -demand)
++ Program::Build(frozen, log, first_id, policy, bool demand_instance=false)
++ context.demand_instance_enabled = effective_demand_instance
++ nested PRE-PASS fences (Program::Build head): recursive demand -> clean
++   diagnostic (demand_cyclic_1: compiles flat / rejects nested)
+
+  # ---- Rel-IR mint (the reserved scaffolding comes ALIVE) ------------------
+  BuildDRInventory(...):
++   BuildSubgraphInstanceOps(flow, impl, context, query, scc_map):   # gate:
++     if !context.demand_instance_enabled: return                    # flag-off
++     lr = ResolveLiveRecognition(impl, query)
++     #  ABA-SAFE: stored RecognizedSubgraph QueryView handles DANGLE past
++     #  Optimize; everything re-resolves from LIVE guard JOINs (the
++     #  CSE-migrating GuardAnnotationIndex stamp) + parse identities.
++     for rs in query.RecognizedSubgraphs():
++       ri = lr.by_forcing[rs.forcing_index] or continue   # dead forcing skip
++       HP-4 refusal belts (input side must be plain table-bearing)
++       flow.instances.push(DRInstance{demanded_view, pub_view,
++                                      demand_table, input_table, pub_table,
++                                      differential, forcing_index})
++       mint ops: kSubgraphInstantiate (band a1: demand-arrival birth — full
++                   input rescan Present-filtered into the keyed store)
++                 [kInstanceDeath  iff differential demand]  (retract drain)
++                 [kInstanceSeal]                            (batch seal)
++       + band (a2): input net-additions frontier -> rebuild standing
++         instances (edge-after-demand); (a2') net-removals drain (S2b).
++   census recount arm: the nested kinds enter the 29-kind census counts.
+
+  # ---- lowering + emission -------------------------------------------------
++ LowerDRFlow: dispatch the new op kinds -> region trees whose codegen
++   drives InstanceStore (Stratum.cpp ~:2326 pre-cut: per flow.instances[i],
++   a descriptor {differential, key arity, ...} feeds codegen emission)
++ eager walk: the recognized subgraph is EXCISED from the flat descent
++   (chain-breaker) + OD-4 provisioning replaces its flat provisioning
++ codegen: emit InstanceStore<Key> members + the instantiate/death/seal
++   bodies; the demanded pub reads through the store, not the flat table
+
+  # ---- runtime --------------------------------------------------------------
++ include/drlojekyll/Runtime/InstanceStore.h (StateCellStore's transpose):
++   InstanceId FindInstanceWithHash/InsertSlot/Rehash; per-iid Table payload;
++   sealed/working occupancy bits + touched_flag; Seal(); RecycleCurrent();
++   monotone flag gates the HP-7 seal belt.  # re-verify vs StateCell drift
+
+  # ---- THE NEW ARMS (no pre-cut precedent — §2) -----------------------------
++ DeriveStatefulClasses(query [, demand_instance]):
++   R1-R9 as today, MINUS/PLUS the nested deltas extracted in grounding
++   (which demanded-subgraph classes lose their flat TABLE, which keep it,
++   what the store replaces) — CrossCheckMaterialization stays quiescent.
++ DeriveArrangements(query, plan [, demand_instance]):
++   the nested arm's index requests (guard-join pivots persist? the store's
++   internal keying is NOT a TABLEINDEX?) — extracted per-site in grounding —
++   CrossCheckArrangements stays quiescent.
++ V-REL-OP-RESOURCE: DRInstance table fields become NON-NULL -> they enter
++   the belt walk (s35 skipped nulls); their tables must resolve via
++   table_to_resource (or the belt learns a store-resource notion).
+```
+
+Every `+` above is restore-then-adapt EXCEPT the last block (build-new) and
+the census/validator arms (rebuild against the s30-s36 validator family).
+The flag-off path is byte-identical BY CONSTRUCTION (every diff is behind
+`demand_instance_enabled` / the 5th param default).
+
 ## §2 THE NEW INTEGRATION OBLIGATION (did not exist pre-cut — name it FIRST)
 
 The pre-cut nested lowering predates the s34–s36 derived-authority belts.
