@@ -117,6 +117,14 @@ class Context {
   // Maps received messages to their handler procedures.
   std::unordered_map<ParsedMessage, PROC *> messsage_handler;
 
+  // The demand-forcing registry (`Query::DemandForcings()`, populated by the
+  // `-demand` transform's STEP 10). S1b (recipe F2):
+  // `BuildQueryInjectorProcedure` consults it FIRST — a demand-transformed
+  // query has no parse-level forcing predicate (`ForcingMessage()` stays
+  // nullopt), so its injector is built from the registry instead of the
+  // clause-var re-derivation. Null/empty unless built under `-demand`.
+  const std::vector<QueryDemandForcing> *demand_forcings{nullptr};
+
   // Vectors that are associated with `@differential` messages backed by
   // monotone flows. We unique the contents of these at the end of the data
   // flow procedure, then iterate and publish.

@@ -1,0 +1,19 @@
+region-program
+program-root {
+  input-abi   edge_2/2(From:u64, To:u64)                   -> R0 via P0
+  query-abi   reachable_from(From:bound u64, To:free u64)  -> request-port P1
+  output-abi  <none>
+}
+region R0  owner=program-root  parents=()  children=() {
+  input-port    P0  message=edge_2/2  fields=(From, To)
+  request-port  P1  query=reachable_from/2  bound=(From)  plan=partial-key-hash-seek
+  row-contract  E0  rel=reachable_from  member-key=(From, To)  support=monotone
+  row-contract  E1  rel=path            member-key=(From, To)  support=monotone
+  recursive-component  C0  members=(path)
+  rule  R0  produces=reachable_from  routes=(path.From->reachable_from.From, path.To->reachable_from.To)
+  rule  R2  produces=path  routes=(path.From->path.From)
+  shared-field  F0  members=(reachable_from.From, path.From)
+  shared-field  F1  members=(reachable_from.To, path.To)
+  fused-fixpoint  C0  binding-prefix=(From)
+}
+census: regions=1 child-calls=0 program-roots=1 request-ports=1 input-ports=1 result-ports=0 row-contracts=2

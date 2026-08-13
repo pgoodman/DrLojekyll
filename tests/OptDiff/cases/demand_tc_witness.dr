@@ -1,0 +1,32 @@
+; demand_tc_witness -- the PRIMARY witness of the live demand transform
+; (`-demand`; the demand_tc_witness.drflags sidecar passes the flag in all
+; four optimization modes -- demand is orthogonal to them, never a fifth
+; mode). See docs/proposals/DemandSeeds.artifacts/d4s3-recipe.md.
+;
+; The program is the PLAIN right-linear transitive closure with a single
+; bound query -- the transform does ALL the demand work: it fabricates the
+; demand-seed message (demand__reachable_from_bf) and the demand relation,
+; guards BOTH path rule bodies at their SIP sites (the base body at its
+; bound-column source atom; the recursive body by the push-down
+; edge_2 JOIN (d_path JOIN path)), and guards the query projection against
+; the raw seed. Under -demand, `path` materializes ONLY the demanded
+; frontier; the caller's bound argument seeds demand through a synthesized
+; injector (the force.dr machinery, generalized).
+;
+; DELIBERATELY: one bound query, NO all-free sibling (an all-free consumer
+; of path would make path demand-inert -- the tc.dr negative-witness shape,
+; d1 sec2.3), no negation, no aggregate, From-preserving recursion (the
+; single-adornment slice).
+;
+; The oracle referees ANSWER-identity: it evaluates this SAME program
+; definitionally WITHOUT demand, so its reachable_from rows are the full
+; closure; the driver's demand-ON answers for each probed key must be
+; exactly the oracle's rows for that key.
+
+#message edge_2(u64 From, u64 To).
+
+#local path(u64 From, u64 To).
+path(F, T) : edge_2(F, T).
+path(F, T) : path(F, M), edge_2(M, T).
+
+#query reachable_from(bound u64 From, free u64 To) : path(From, To).

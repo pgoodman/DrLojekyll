@@ -374,10 +374,127 @@ static std::optional<ProgramProcedure> BuildQueryForceProcedureImpl(
   return proc;
 }
 
-// The injector dispatcher. The user `@first` forcing surface is FORCE-ONLY
-// (user forcing messages get no retract arm).
+// S1b (restored from the pre-cut tip `6d6248a2`, recipe F2): build a bound
+// query's demand-seed injector from the `QueryDemandForcing` registry. The
+// per-bound-param input vars, the vectors, the VECTORAPPEND, the CALL to
+// `messsage_handler[message]`, and the RETURN are the same shape as
+// `BuildQueryForceProcedureImpl` — but the clause-var DisjointSet
+// re-derivation is REPLACED by the registry's binding (a demand-transformed
+// query has NO parse-level forcing predicate; the fabricated message's Nth
+// parameter corresponds to the query's `bound_params[N]`-th parameter). The
+// forcer's payload rides the ADD vector; the retract's rides the DEL vector;
+// the non-payload vector, when present, is kEmpty. The retract is only ever
+// over a differential message (its dispatcher's third conjunct), so it always
+// has BOTH vectors; a forcer over a MONOTONE message has the single ADD
+// vector only. add_vec is ALWAYS created before del_vec, matching BOTH twins'
+// id stream.
+static std::optional<ProgramProcedure> BuildQueryInjectorFromRegistry(
+    ProgramImpl *impl, Context &context, ParsedQuery query,
+    const QueryDemandForcing &entry, bool is_retract) {
+
+  ParsedDeclaration query_decl(query);
+  const ParsedMessage message = entry.message;
+  assert(message.IsReceived());
+  assert(!is_retract || message.IsDifferential());  // retract-only
+  assert(message.Arity() == entry.bound_params.size());
+
+  // ALWAYS-ON handler fence (ADV-8): `messsage_handler[message]` is an
+  // unordered_map::operator[]; a MISS default-inserts a nullptr callee that
+  // codegen dereferences (release SIGSEGV, no diagnostic). Always-on so it
+  // survives NDEBUG for BOTH injector kinds (the forcer twin's old assert was
+  // compiled out; under N fabricated demand messages the risk scales).
+  if (!context.messsage_handler.count(message)) {
+    fprintf(stderr,
+            "error: demand injector (%s): the fabricated demand message has "
+            "no handler procedure\n",
+            is_retract ? "retract" : "force");
+    abort();
+  }
+
+  auto proc = impl->procedure_regions.Create(
+      impl->next_id++, ProcedureKind::kQueryMessageInjector);
+  proc->has_raw_use = true;
+
+  // One parameter per bound query parameter, in message-parameter order.
+  for (unsigned param_index : entry.bound_params) {
+    const auto var =
+        proc->input_vars.Create(impl->next_id++, VariableRole::kParameter);
+    var->parsed_param = query_decl.NthParameter(param_index);
+  }
+
+  // Vector column types from the fabricated message's own parameters.
+  std::vector<TypeLoc> col_types;
+  for (auto i = 0u; i < message.Arity(); ++i) {
+    col_types.push_back(message.NthParameter(i).Type());
+  }
+
+  // Vector roles: add_vec ALWAYS created before del_vec (matches both twins'
+  // id stream — forcer add→del, retract add→del).
+  VECTOR *add_vec = nullptr, *del_vec = nullptr;
+  if (is_retract) {
+    add_vec = proc->vectors.Create(impl->next_id++, VectorKind::kEmpty,
+                                   col_types, 0);
+    del_vec = proc->vectors.Create(impl->next_id++, VectorKind::kParameter,
+                                   col_types, 0 /* disambiguation */);
+  } else {
+    add_vec = proc->vectors.Create(impl->next_id++, VectorKind::kParameter,
+                                   col_types, 0 /* disambiguation */);
+    if (message.IsDifferential()) {
+      del_vec = proc->vectors.Create(impl->next_id++, VectorKind::kEmpty,
+                                     col_types, 0);
+    }
+  }
+  VECTOR *const payload_vec = is_retract ? del_vec : add_vec;
+
+  SERIES *seq = impl->series_regions.Create(proc);
+  proc->body.Emplace(proc, seq);
+
+  VECTORAPPEND *append = impl->operation_regions.CreateDerived<VECTORAPPEND>(
+      seq, ProgramOperation::kAppendQueryParamsToMessageInjectVector);
+  seq->regions.AddUse(append);
+  append->vector.Emplace(append, payload_vec);
+  for (VAR *param_var : proc->input_vars) {
+    append->tuple_vars.AddUse(param_var);
+  }
+
+  CALL *call = impl->operation_regions.CreateDerived<CALL>(
+      impl->next_id++, seq, context.messsage_handler[message]);
+  seq->regions.AddUse(call);
+  call->arg_vecs.AddUse(add_vec);  // add always first
+  if (del_vec) {
+    call->arg_vecs.AddUse(del_vec);  // empty (force) / payload (retract)
+  }
+
+  RETURN *ret = impl->operation_regions.CreateDerived<RETURN>(
+      seq, ProgramOperation::kReturnTrueFromProcedure);
+  seq->regions.AddUse(ret);
+
+  return proc;
+}
+
+// The ONE injector dispatcher (forcer ⊕ retract). Registry match is
+// (query, BindingPattern)-keyed (the second belt — `ParsedQuery::operator==`
+// compares DeclarationContext = (name, arity) ONLY, so two adornments of one
+// name would cross-wire without the BindingPattern conjunct; a silent
+// miscompile the multi-adornment lift makes reachable); the retract arm
+// additionally gates on the fabricated message's differentialness. The user
+// `@first` forcing surface is FORCE-ONLY (user forcing messages get no
+// retract arm). Id-neutral for the registry-less path (pure match +
+// delegate).
 static std::optional<ProgramProcedure> BuildQueryInjectorProcedure(
     ProgramImpl *impl, Context &context, ParsedQuery query, bool is_retract) {
+
+  if (context.demand_forcings) {
+    for (const QueryDemandForcing &entry : *context.demand_forcings) {
+      if (entry.query == query &&
+          ParsedDeclaration(entry.query).BindingPattern() ==
+              ParsedDeclaration(query).BindingPattern() &&
+          (!is_retract || entry.message.IsDifferential())) {
+        return BuildQueryInjectorFromRegistry(impl, context, query, entry,
+                                              is_retract);
+      }
+    }
+  }
 
   if (!is_retract) {
     if (auto pred = query.ForcingMessage()) {
@@ -1354,6 +1471,11 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
   Context context;
   context.init_proc = impl->procedure_regions.Create(
       impl->next_id++, ProcedureKind::kInitializer);
+
+  // The demand-forcing registry (empty unless built under `-demand`): the
+  // injector builder consults it for demand-transformed queries (S1b,
+  // recipe F2).
+  context.demand_forcings = &query.DemandForcings();
 
   // Stage B: the frozen regional census, recounted by V-REGION-CENSUS at the
   // ValidateDROps tail (lib/Rel/Rel.cpp) — the positive-presence referee.
