@@ -212,6 +212,17 @@ struct RecursiveComponent {
   std::vector<uint32_t> binding_prefix;
 };
 
+// One region-internal line (S1c, the ADJ-2 re-add): a fabricated `demand__`
+// seed message is REGION-INTERNAL rather than an input port — the driver
+// cannot send it (codegen suppresses its public entry point; the synthesized
+// query injector's `_detail` call is its only caller), so it belongs to the
+// region's interior surface, not the ABI. Render derives
+// `demand__reachable_from_bf/1(p0:u64)  [fabricated, driver-suppressed]`
+// (the trailing "  [ ... ]" tag IS emitted bytes).
+struct InternalMessageRecord {
+  ParsedMessage message;
+};
+
 // The ONE typed owner: the Stage-B region skeleton as typed records.
 struct RegionTemplate {
   RegionId id{0};
@@ -227,6 +238,9 @@ struct RegionTemplate {
   std::vector<AbiRecord> abis;              // input, then query, then output.
   std::vector<PortRecord> ports;            // input ports, then result ports.
   std::vector<RequestPortRecord> request_ports;  // P3: bound-query request ports.
+  std::vector<InternalMessageRecord> internals;  // S1c: fabricated demand seeds
+                                                 // (declaration order; render-
+                                                 // only, never censused).
   std::vector<PermanentRootRecord> permanent_roots;
   std::vector<RelationSchema> relation_schemas;  // R-STORE, then Tier-2 origin.
 

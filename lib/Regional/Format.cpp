@@ -307,6 +307,13 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
     if (!R.request_ports.empty()) {
       kind_w = std::max(kind_w, std::string("request-port").size());
     }
+    // S1c: "region-internal" (15) is the longest kind token, so a dump with a
+    // fabricated demand message re-pads the whole port/contract kind column
+    // (E-K5-PAD — never assume byte-additivity); the demand-free corpus emits
+    // no internals and never widens.
+    if (!R.internals.empty()) {
+      kind_w = std::max(kind_w, std::string("region-internal").size());
+    }
     if (!R.permanent_roots.empty()) {
       kind_w = std::max(kind_w, std::string("permanent-root").size());
     }
@@ -354,6 +361,15 @@ OutputStream &operator<<(OutputStream &os, FrozenRegionalDump d) {
          << rp.query_decl.Arity() << "  bound="
          << BoundFieldNames(rp.query_decl) << "  plan=" << AccessPlanText(rp.plan)
          << "\n";
+    }
+
+    // S1c (ADJ-2): the fabricated demand-seed messages — region-internal, not
+    // ports (codegen suppresses their public ABI; the synthesized injector is
+    // the only caller). The trailing "  [ ... ]" tag IS emitted bytes.
+    for (const InternalMessageRecord &internal : R.internals) {
+      os << "  " << Pad("region-internal", kind_w)
+         << MessageDeclText(module, internal.message)
+         << "  [fabricated, driver-suppressed]\n";
     }
 
     for (const PermanentRootRecord &root : R.permanent_roots) {

@@ -735,6 +735,26 @@ std::optional<FrozenRegionalProgram> FrozenRegionalProgram::Build(
   std::vector<ParsedMessage> received, published;
   CollectMessages(query, received, published);
 
+  // S1c (the ADJ-2 re-add): the fabricated demand-seed messages render
+  // REGION-INTERNAL — received but demand-fabricated, the exact complement of
+  // CollectMessages' input-port filter — in declaration order across the
+  // sub-module walk, deduplicated by declaration id. Dormant flag-off (no
+  // demand message is fabricated ⇒ zero records ⇒ the render's kind column
+  // never widens and the pragma-free corpus stays byte-identical).
+  {
+    std::unordered_set<uint64_t> seen_internal;
+    for (ParsedModule sub_module : ParsedModuleIterator(query.ParsedModule())) {
+      for (ParsedMessage m : sub_module.Messages()) {
+        if (!seen_internal.insert(m.Id()).second) {
+          continue;
+        }
+        if (m.IsReceived() && query.IsDemandMessage(m)) {
+          R.internals.push_back(InternalMessageRecord{m});
+        }
+      }
+    }
+  }
+
   unsigned next_port = 0u;
 
   std::vector<AbiRecord> input_abis, query_abis, output_abis;

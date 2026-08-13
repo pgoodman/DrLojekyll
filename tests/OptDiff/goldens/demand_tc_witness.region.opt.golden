@@ -5,10 +5,11 @@ program-root {
   output-abi  <none>
 }
 region R0  owner=program-root  parents=()  children=() {
-  input-port    P0  message=edge_2/2  fields=(From, To)
-  request-port  P1  query=reachable_from/2  bound=(From)  plan=partial-key-hash-seek
-  row-contract  E0  rel=reachable_from  member-key=(From, To)  support=monotone
-  row-contract  E1  rel=path            member-key=(From, To)  support=monotone
+  input-port       P0  message=edge_2/2  fields=(From, To)
+  request-port     P1  query=reachable_from/2  bound=(From)  plan=partial-key-hash-seek
+  region-internal  demand__reachable_from_bf/1(p0:u64)  [fabricated, driver-suppressed]
+  row-contract     E0  rel=reachable_from  member-key=(From, To)  support=monotone
+  row-contract     E1  rel=path            member-key=(From, To)  support=monotone
   recursive-component  C0  members=(path)
   rule  R0  produces=reachable_from  routes=(path.From->reachable_from.From, path.To->reachable_from.To)
   rule  R2  produces=path  routes=(path.From->path.From)
