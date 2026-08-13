@@ -2015,4 +2015,76 @@ OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif) {
   return os;
 }
 
+// The MaterializationPlan resources-first dump (`-materialization-out`,
+// InstanceFlow.md §10/§16). One authoritative `StateResource` per stateful
+// physical class (bijection) + forwarding aliases for co-recursive shared
+// stores. Arrangements are DEFERRED (the §2.5.3 gap) — rendered as
+// `arrangements=0`. Reads `impl->materialization`; an OBSERVER.
+OutputStream &operator<<(OutputStream &os, QueryMaterialization qm) {
+  const Query query = qm.query;
+  const MaterializationResources &plan = query.impl->materialization;
+
+  // det_seq -> (view, kind) for schema-name rendering (the plan stores value
+  // ids + a representative origin; names come from the representative's view).
+  std::unordered_map<unsigned, std::pair<QueryView, unsigned>> by_det;
+  ForEachViewKindTagged(query, [&](QueryView v, unsigned kind, const char *) {
+    by_det.emplace(v.DeterministicOrder(), std::make_pair(v, kind));
+  });
+
+  std::ostringstream buf;
+  OutputStream bos(os.display_manager, buf);
+  const auto take = [&buf]() {
+    auto s = buf.str();
+    buf.str("");
+    return s;
+  };
+  const auto name_tok = [&](QueryColumn c) -> std::string {
+    if (!c.IsConstantOrConstantRef()) {
+      if (auto var = c.Variable()) {
+        bos << *var;
+        return take();
+      }
+    }
+    bos << 'c' << c.Id();
+    return take();
+  };
+  const auto schema_tok = [&](QueryOriginId rep) -> std::string {
+    const auto &info = by_det.at(rep.v);
+    std::string out = "(";
+    auto sep = "";
+    for (auto c : VisibleColumnsOf(info.first, info.second)) {
+      out += sep + name_tok(c);
+      sep = ",";
+    }
+    return out + ")";
+  };
+  const auto support_tok = [](SupportPolicy p) -> const char * {
+    return p == SupportPolicy::kDifferential ? "differential" : "monotone";
+  };
+
+  os << "materialization  resources=" << plan.resources.size()
+     << " aliases=" << plan.aliases.size() << " arrangements=0\n\n";
+
+  os << "resources\n";
+  for (const StateResource &r : plan.resources) {
+    os << "  sr#" << r.id.v << " authority=";
+    if (r.internal) {
+      os << "internal#" << r.residual.v;
+    } else {
+      os << "lc#" << r.collection.v;
+    }
+    os << " schema=" << schema_tok(r.representative)
+       << " support=" << support_tok(r.support) << "\n";
+  }
+
+  if (!plan.aliases.empty()) {
+    os << "aliases\n";
+    for (const ForwardingAlias &a : plan.aliases) {
+      os << "  lc#" << a.collection.v << " -> sr#" << a.to.v << "\n";
+    }
+  }
+
+  return os;
+}
+
 }  // namespace hyde

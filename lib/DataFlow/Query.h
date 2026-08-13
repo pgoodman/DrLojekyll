@@ -10,6 +10,7 @@
 
 #include "Identity.h"
 #include "InstanceFlow.h"
+#include "Materialization.h"
 #include "RowContract.h"
 
 #include <cassert>
@@ -1247,6 +1248,15 @@ class QueryImpl {
   // by `ValidateInstanceFlow` and the `-instanceflow-out` dump; an OBSERVER, so
   // codegen is byte-identical. Empty until the tail call.
   InstanceFlowProgram instance_flow;
+
+  // Session-34 MaterializationPlan (docs/proposals/InstanceFlow.md §10): the
+  // resources-first RESOURCE authority, materialized ONCE in the `Query::Build`
+  // tail (AFTER `instance_flow`) by `PlanResources`. Derives ControlFlow's
+  // stateful-storage decisions from the grove and is cross-checked against the
+  // real `view_to_model` allocation by `CrossCheckMaterialization` in
+  // ControlFlow. A PURE function of the FINAL graph; an OBSERVER (nothing
+  // consumes it yet), so codegen is byte-identical. Empty until the tail call.
+  MaterializationResources materialization;
 };
 
 // OWN-3 (ruled, always-on): the guard-annotation fold compatibility predicate

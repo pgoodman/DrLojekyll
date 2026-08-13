@@ -1396,6 +1396,23 @@ std::optional<Program> Program::Build(const FrozenRegionalProgram &frozen,
   // i.e. assign persistent tables to each disjoint set of views.
   FillDataModel(query, program, context);
 
+  // Session-34 MaterializationPlan shadow contract (InstanceFlow.md §10): the
+  // resources-first plan built from the grove at the Query::Build tail must
+  // account for EXACTLY the storage classes FillDataModel just made table-backed.
+  // Collect the real table-backed EquivalenceSetId set from `view_to_model` and
+  // cross-check it against the STORED plan — abort on any divergence. An
+  // always-on belt (the plan itself is a byte-identical OBSERVER; this proves
+  // the derivation matches today's allocation).
+  {
+    std::set<unsigned> real_stateful_classes;
+    query.ForEachView([&](QueryView view) {
+      if (program->view_to_model[view]->FindAs<DataModel>()->table) {
+        real_stateful_classes.insert(view.EquivalenceSetId());
+      }
+    });
+    CrossCheckMaterialization(query, real_stateful_classes);
+  }
+
   // Identify the monotone negated tables that need a net-additions frontier
   // and Seal enrollment for the negation crossover (D2'), before the eager
   // insertion walk (which appends into that frontier) runs.

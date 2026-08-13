@@ -2666,6 +2666,18 @@ std::optional<Query> Query::Build(const ::hyde::ParsedModule &module,
     return std::nullopt;
   }
 
+  // Session-34 MaterializationPlan (docs/proposals/InstanceFlow.md §10): the
+  // resources-first RESOURCE authority, derived from the grove + a replay of
+  // ControlFlow's `FillDataModel` TABLE-need rules. A PURE function of the FINAL
+  // graph (like the grove). An OBSERVER — nothing consumes it yet, so codegen is
+  // byte-identical; it is cross-checked against the real `view_to_model`
+  // allocation by `CrossCheckMaterialization` at the `Program::Build` tail.
+  impl->materialization = PlanResources(Query(impl), impl->instance_flow);
+  if (!ValidateMaterialization(Query(impl), impl->instance_flow,
+                               impl->materialization, log)) {
+    return std::nullopt;
+  }
+
 #ifndef NDEBUG
   // K5 conservation belt (DEBUG-only, RESCOPED): every demanded interior's
   // decl MUST be origin-reachable at a live view — the K5-D2 seed + K5-D3 union

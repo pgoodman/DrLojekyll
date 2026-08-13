@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -29,6 +30,7 @@ class QueryImpl;
 class OutputStream;
 struct QueryContracts;  // Format.h — the `-contract-out` dump tag (H-A8).
 struct QueryInstanceFlow;  // Format.h — the `-instanceflow-out` dump tag (s32).
+struct QueryMaterialization;  // Format.h — `-materialization-out` dump tag (s34).
 class FrozenRegionalProgram;  // Regional/Regional.h — the Stage-B planner.
 
 enum class ComparisonOperator : int;
@@ -1180,6 +1182,15 @@ class Query {
   // through this Query wrapper (Format.cpp includes the private QueryImpl).
   friend OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif);
 
+  // Session-34: the `-materialization-out` emitter reads `impl->materialization`
+  // through this Query wrapper (Format.cpp includes the private QueryImpl).
+  friend OutputStream &operator<<(OutputStream &os, QueryMaterialization qm);
+
+  // Session-34: the ControlFlow shadow-contract belt reads `impl->materialization`
+  // to cross-check it against the real `view_to_model` table allocation.
+  friend void CrossCheckMaterialization(
+      Query query, const std::set<unsigned> &real_stateful_classes);
+
   // Stage B: the frozen-regional-program planner (lib/Regional/Planning.cpp)
   // reads `impl->row_contracts` for the R-STORE row-contract lines.
   friend class ::hyde::FrozenRegionalProgram;
@@ -1192,6 +1203,19 @@ class Query {
 
   std::shared_ptr<QueryImpl> impl;
 };
+
+// Session-34 MaterializationPlan cross-check (docs/proposals/InstanceFlow.md
+// §10; session-34-seed.md §2.5.1). The falsifiable shadow contract: the stored
+// resources-first plan (built at the `Query::Build` tail from the grove) MUST
+// account for exactly the storage classes ControlFlow actually made
+// table-backed. The caller (ControlFlow, which owns `ProgramImpl`) computes
+// `real_stateful_classes` = the set of `QueryView::EquivalenceSetId()` whose
+// `view_to_model` class received a `TABLE`; this reads the STORED plan (not a
+// fresh derivation — so a future graph mutation between the two build points is
+// caught, panel claim-a fold) and aborts (fprintf+abort, surviving NDEBUG) on
+// any divergence. An always-on belt; on a correct pipeline it fires nothing.
+void CrossCheckMaterialization(Query query,
+                               const std::set<unsigned> &real_stateful_classes);
 
 }  // namespace hyde
 namespace std {

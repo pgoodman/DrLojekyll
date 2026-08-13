@@ -57,6 +57,7 @@ static OutputStream *gDFStream = nullptr;
 static OutputStream *gContractStream = nullptr;
 static OutputStream *gOriginStream = nullptr;  // K5 advisory origin-provenance.
 static OutputStream *gInstanceFlowStream = nullptr;  // s32 InstanceFlow grove.
+static OutputStream *gMaterializationStream = nullptr;  // s34 resources plan.
 static OutputStream *gRelStream = nullptr;
 static OutputStream *gRelDotStream = nullptr;  // K6-7b DR-IR DOT twin.
 static OutputStream *gDRStream = nullptr;
@@ -177,6 +178,14 @@ static int CompileModule(const Parser &parser, DisplayManager display_manager,
     gInstanceFlowStream->Flush();
   }
 
+  // Session-34: the `-materialization-out` resources-first plan text dump,
+  // through the QueryMaterialization tag struct. An OBSERVER (codegen
+  // byte-unchanged); opt-mode-pinned. Drained alongside `-instanceflow-out`.
+  if (gMaterializationStream) {
+    (*gMaterializationStream) << hyde::QueryMaterialization{*query_opt};
+    gMaterializationStream->Flush();
+  }
+
   return ret;
 }
 
@@ -256,6 +265,7 @@ static int HelpMessage(const char *argv[]) {
       << "  -contract-out <PATH>      Emit the Stage-A row contracts in text form to PATH." << std::endl
       << "  -origin-out <PATH>        Emit the K5 Tier-2 origin provenance (advisory) to PATH." << std::endl
       << "  -instanceflow-out <PATH>  Emit the InstanceFlow flat grove in text form to PATH." << std::endl
+      << "  -materialization-out <PATH>  Emit the MaterializationPlan resources in text form to PATH." << std::endl
       << "  -rel-out <PATH>      Emit the Rel (DR-IR) flow graph in text form to PATH." << std::endl
       << "  -rel-dot-out <PATH>       Emit the Rel (DR-IR) flow graph as GraphViz DOT to PATH." << std::endl
       << "  -region-out <PATH>        Emit the Stage-B frozen regional program in text form to PATH." << std::endl
@@ -339,6 +349,7 @@ extern "C" int main(int argc, const char *argv[]) {
   std::unique_ptr<hyde::FileStream> contract_out;
   std::unique_ptr<hyde::FileStream> origin_out;  // K5 advisory origin dump.
   std::unique_ptr<hyde::FileStream> instanceflow_out;  // s32 InstanceFlow grove.
+  std::unique_ptr<hyde::FileStream> materialization_out;  // s34 resources plan.
   std::unique_ptr<hyde::FileStream> rel_out;
   std::unique_ptr<hyde::FileStream> rel_dot_out;  // K6-7b.
   std::unique_ptr<hyde::FileStream> region_out;
@@ -474,6 +485,24 @@ extern "C" int main(int argc, const char *argv[]) {
                              << "' for InstanceFlow grove output";
         }
         hyde::gInstanceFlowStream = &(instanceflow_out->os);
+      }
+
+    // Session-34 MaterializationPlan resources dump (the `-materialization-out`
+    // surface). Byte-for-byte the `-instanceflow-out` plumbing.
+    } else if (!strcmp(argv[i], "--materialization-out") ||
+               !strcmp(argv[i], "-materialization-out")) {
+      ++i;
+      if (i >= argc) {
+        error_log.Append() << "Command-line argument '" << argv[i - 1]
+                           << "' must be followed by a file path for "
+                           << "MaterializationPlan output";
+      } else {
+        materialization_out.reset(new hyde::FileStream(display_manager, argv[i]));
+        if (!materialization_out->fs.is_open()) {
+          error_log.Append() << "Unable to open '" << argv[i]
+                             << "' for MaterializationPlan output";
+        }
+        hyde::gMaterializationStream = &(materialization_out->os);
       }
 
     // Rel (DR-IR) text dump (the `-rel-out` surface).

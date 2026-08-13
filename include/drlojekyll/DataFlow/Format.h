@@ -62,4 +62,17 @@ struct QueryInstanceFlow {
 
 OutputStream &operator<<(OutputStream &os, QueryInstanceFlow qif);
 
+// The MaterializationPlan resources-first text dump (the `-materialization-out`
+// surface; docs/proposals/InstanceFlow.md §10/§16). A tag struct keeps this
+// operator<< disjoint from the others. One authoritative `StateResource` per
+// stateful physical class (bijection) + forwarding aliases for shared stores;
+// deterministic (ids from `LogicalCollectionId`/`EquivalenceSetId`/canonical
+// order, never pointer/iteration order), OPT-MODE-only pinning. Reads
+// `impl->materialization`; an OBSERVER — codegen byte-unchanged.
+struct QueryMaterialization {
+  Query query;
+};
+
+OutputStream &operator<<(OutputStream &os, QueryMaterialization qm);
+
 }  // namespace hyde
